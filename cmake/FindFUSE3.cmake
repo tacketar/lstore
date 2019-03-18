@@ -11,13 +11,10 @@ ENDIF (FUSE_INCLUDE_DIR)
 
 # find includes
 FIND_PATH (FUSE_INCLUDE_DIR fuse3/fuse.h
-# /home/tacketar/local/include
   HINTS /usr/local/include
         /usr/local/include
         /usr/include
 )
-
-message(STATUS "FUSE include= ${FUSE_INCLUDE_DIR}")
 
 # find lib
 if (APPLE)
@@ -27,13 +24,13 @@ else (APPLE)
 endif (APPLE)
 FIND_LIBRARY(FUSE_LIBRARIES
         NAMES ${FUSE_NAMES}
-#        PATHS /lib64 /lib /usr/lib64 /usr/lib /usr/local/lib64 /usr/local/lib
 )
-message(STATUS "FUSE libs= ${FUSE_LIBRARIES}")
+
 SET(FUSE_LIBRARY ${FUSE_LIBRARIES})
 
 if (FUSE_LIBRARY AND FUSE_INCLUDE_DIR)
     SET(FUSE_FOUND 1)
+    SET(HAS_FUSE3 1)
 endif (FUSE_LIBRARY AND FUSE_INCLUDE_DIR)
 
 if (FUSE_FOUND)
