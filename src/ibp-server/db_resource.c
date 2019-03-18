@@ -187,7 +187,7 @@ int get_soft_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey) {
 // compare_expiration - Compares the expiration of 2 times for BTREE sorting
 //***************************************************************************
 
-int compare_expiration(DB *db, const DBT *k1, const DBT *k2)
+int compare_expiration(DB *db, const DBT *k1, const DBT *k2, size_t *locp)
 {
    DB_timekey_t tk1, tk2;
 
