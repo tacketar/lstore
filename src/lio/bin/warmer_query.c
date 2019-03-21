@@ -17,7 +17,7 @@
 #define _log_module_index 207
 
 #include <assert.h>
-#include <leveldb/c.h>
+#include <rocksdb/c.h>
 #include <apr_pools.h>
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
@@ -38,10 +38,10 @@
 // warmer_query_inode - Generate list based on inode
 //*************************************************************************
 
-void warmer_query_inode(leveldb_t *inode_db, int mode, int fonly)
+void warmer_query_inode(rocksdb_t *inode_db, int mode, int fonly)
 {
-    leveldb_readoptions_t *opt;
-    leveldb_iterator_t *it;
+    rocksdb_readoptions_t *opt;
+    rocksdb_iterator_t *it;
     char *buf;
     size_t nbytes;
     int we;
@@ -50,12 +50,12 @@ void warmer_query_inode(leveldb_t *inode_db, int mode, int fonly)
     char *name;
 
     //** Create the iterator
-    opt = leveldb_readoptions_create();
-    it = leveldb_create_iterator(inode_db, opt);
-    leveldb_iter_seek_to_first(it);
+    opt = rocksdb_readoptions_create();
+    it = rocksdb_create_iterator(inode_db, opt);
+    rocksdb_iter_seek_to_first(it);
 
-    while (leveldb_iter_valid(it) > 0) {
-        buf = (char *)leveldb_iter_value(it, &nbytes);
+    while (rocksdb_iter_valid(it) > 0) {
+        buf = (char *)rocksdb_iter_value(it, &nbytes);
         if (nbytes == 0) { goto next; }
 
         if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) { goto next; }
@@ -71,16 +71,16 @@ void warmer_query_inode(leveldb_t *inode_db, int mode, int fonly)
 
         free(name);
 next:
-        leveldb_iter_next(it);
+        rocksdb_iter_next(it);
 
         errstr = NULL;
-        leveldb_iter_get_error(it, &errstr);
+        rocksdb_iter_get_error(it, &errstr);
         if (errstr != NULL) { printf("ERROR: %s\n", errstr); fflush(stdout); }
     }
 
     //** Cleanup
-    leveldb_iter_destroy(it);
-    leveldb_readoptions_destroy(opt);
+    rocksdb_iter_destroy(it);
+    rocksdb_readoptions_destroy(opt);
 }
 
 
@@ -88,10 +88,10 @@ next:
 // warmer_query_rid - Generate list based on the RID
 //*************************************************************************
 
-void warmer_query_rid(char *rid_key, leveldb_t *inode_db, leveldb_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
+void warmer_query_rid(char *rid_key, rocksdb_t *inode_db, rocksdb_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
 {
-    leveldb_readoptions_t *opt;
-    leveldb_iterator_t *it;
+    rocksdb_readoptions_t *opt;
+    rocksdb_iterator_t *it;
     ex_off_t bytes_found;
     size_t nbytes;
     ex_off_t bsize;
@@ -107,14 +107,14 @@ void warmer_query_rid(char *rid_key, leveldb_t *inode_db, leveldb_t *rid_db, int
     tbx_type_malloc(match, char, n);
     n = sprintf(match, "%s|0", rid_key) + 1;
 
-    opt = leveldb_readoptions_create();
-    it = leveldb_create_iterator(rid_db, opt);
-    leveldb_iter_seek(it, match, n);
+    opt = rocksdb_readoptions_create();
+    it = rocksdb_create_iterator(rid_db, opt);
+    rocksdb_iter_seek(it, match, n);
 
     bytes_found = 0;
     bsize = 0;
-    while (leveldb_iter_valid(it) > 0) {
-        rid = leveldb_iter_key(it, &nbytes);
+    while (rocksdb_iter_valid(it) > 0) {
+        rid = rocksdb_iter_key(it, &nbytes);
         drid = strdup(rid);
         rec_rid = tbx_stk_string_token(drid, "|", &last, &n);
         sscanf(tbx_stk_string_token(NULL, "|", &last, &n), XIDT, &inode);
@@ -123,9 +123,9 @@ void warmer_query_rid(char *rid_key, leveldb_t *inode_db, leveldb_t *rid_db, int
             break;
         }
 
-        buf = (char *)leveldb_iter_value(it, &nbytes);
+        buf = (char *)rocksdb_iter_value(it, &nbytes);
         if (warm_parse_rid(buf, nbytes, &inode, &bsize, &state) != 0) { goto next; }
-        buf = (char *)leveldb_get(inode_db, opt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
+        buf = (char *)rocksdb_get(inode_db, opt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
         if (nbytes == 0) { goto next; }
 
         if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) { goto next; }
@@ -142,10 +142,10 @@ void warmer_query_rid(char *rid_key, leveldb_t *inode_db, leveldb_t *rid_db, int
         free(name);
 next:
         free(drid);
-        leveldb_iter_next(it);
+        rocksdb_iter_next(it);
 
         errstr = NULL;
-        leveldb_iter_get_error(it, &errstr);
+        rocksdb_iter_get_error(it, &errstr);
         if (errstr != NULL) { printf("ERROR: %s\n", errstr); fflush(stdout); }
 
         //** Accumulate the space and see if we kick out
@@ -157,8 +157,8 @@ next:
     }
 
     //** Cleanup
-    leveldb_iter_destroy(it);
-    leveldb_readoptions_destroy(opt);
+    rocksdb_iter_destroy(it);
+    rocksdb_readoptions_destroy(opt);
 }
 
 //*************************************************************************
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
     int fonly, mode;
     char *db_base = "/lio/log/warm";
     char *rid_key;
-    leveldb_t *inode_db, *rid_db;
+    rocksdb_t *inode_db, *rid_db;
     ex_off_t total_bytes;
 
     total_bytes = -1;  //** Default to print all files

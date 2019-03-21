@@ -16,7 +16,7 @@
 
 #define _log_module_index 207
 
-#include <leveldb/c.h>
+#include <rocksdb/c.h>
 #include <apr.h>
 #include <apr_hash.h>
 #include <apr_pools.h>
@@ -75,8 +75,8 @@ typedef struct {
 apr_hash_t *tagged_rids = NULL;
 apr_pool_t *tagged_pool = NULL;
 tbx_stack_t *tagged_keys = NULL;
-leveldb_t *db_rid = NULL;
-leveldb_t *db_inode = NULL;
+rocksdb_t *db_rid = NULL;
+rocksdb_t *db_inode = NULL;
 int verbose = 0;
 
 static int dt = 86400;

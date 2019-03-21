@@ -33,20 +33,20 @@ extern "C" {
 #include <tbx/varint.h>
 
 //****** Don't complain if not used.  These are helpers for lio_wamer and warmer_query *******
-__attribute__((unused)) static int open_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_db);
-__attribute__((unused)) static int warm_put_inode(leveldb_t *db, ex_id_t inode, int state, int nfailed, char *name);
+__attribute__((unused)) static int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db);
+__attribute__((unused)) static int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *name);
 __attribute__((unused)) static int warm_parse_inode(char *buf, int bufsize, int *state, int *nfailed, char **name);
-__attribute__((unused)) static int warm_put_rid(leveldb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
+__attribute__((unused)) static int warm_put_rid(rocksdb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
 __attribute__((unused)) static int warm_parse_rid(char *buf, int bufsize, ex_id_t *inode, ex_off_t *nbytes,int *state);
-__attribute__((unused)) static void create_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_db);
+__attribute__((unused)) static void create_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db);
 
 //*************************************************************************
 // warm_put_inode - Puts an entry in the inode DB
 //*************************************************************************
 
-static int warm_put_inode(leveldb_t *db, ex_id_t inode, int state, int nfailed, char *name)
+static int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *name)
 {
-    leveldb_writeoptions_t *wopt;
+    rocksdb_writeoptions_t *wopt;
     unsigned char buf[OS_PATH_MAX + 3*10];
     char *errstr = NULL;
     int n;
@@ -60,9 +60,9 @@ static int warm_put_inode(leveldb_t *db, ex_id_t inode, int state, int nfailed, 
     buf[sizeof(buf)-1] = 0;  //** Force a NULL terminated string
     n += strlen((const char *)buf+n);
 
-    wopt = leveldb_writeoptions_create();
-    leveldb_put(db, wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)buf, n, &errstr);
-    leveldb_writeoptions_destroy(wopt);
+    wopt = rocksdb_writeoptions_create();
+    rocksdb_put(db, wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)buf, n, &errstr);
+    rocksdb_writeoptions_destroy(wopt);
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
@@ -102,9 +102,9 @@ static int warm_parse_inode(char *sbuf, int bufsize, int *state, int *nfailed, c
 // warm_put_rid - Puts an entry in the RID DB
 //*************************************************************************
 
-static int warm_put_rid(leveldb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state)
+static int warm_put_rid(rocksdb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state)
 {
-    leveldb_writeoptions_t *wopt;
+    rocksdb_writeoptions_t *wopt;
     char *errstr = NULL;
     char *key;
     unsigned char buf[4*16];
@@ -120,9 +120,9 @@ static int warm_put_rid(leveldb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes
     n += tbx_zigzag_encode(nbytes, buf + n);   //** size
     n += tbx_zigzag_encode(state, buf + n);    //** state
 
-    wopt = leveldb_writeoptions_create();
-    leveldb_put(db, wopt, key, klen, (const char *)buf, n, &errstr);
-    leveldb_writeoptions_destroy(wopt);
+    wopt = rocksdb_writeoptions_create();
+    rocksdb_put(db, wopt, key, klen, (const char *)buf, n, &errstr);
+    rocksdb_writeoptions_destroy(wopt);
 
     free(key);
 
@@ -159,39 +159,39 @@ static int warm_parse_rid(char *sbuf, int bufsize, ex_id_t *inode, ex_off_t *nby
 // create_a_db - Creates  a LevelDB database using the given path
 //*************************************************************************
 
-static leveldb_t *create_a_db(char *db_path)
+static rocksdb_t *create_a_db(char *db_path)
 {
-    leveldb_t *db;
-    leveldb_options_t *opt_exists, *opt_create, *opt_none;
+    rocksdb_t *db;
+    rocksdb_options_t *opt_exists, *opt_create, *opt_none;
     char *errstr = NULL;
 
-    opt_exists = leveldb_options_create(); leveldb_options_set_error_if_exists(opt_exists, 1);
-    opt_create = leveldb_options_create(); leveldb_options_set_create_if_missing(opt_create, 1);
-    opt_none = leveldb_options_create();
+    opt_exists = rocksdb_options_create(); rocksdb_options_set_error_if_exists(opt_exists, 1);
+    opt_create = rocksdb_options_create(); rocksdb_options_set_create_if_missing(opt_create, 1);
+    opt_none = rocksdb_options_create();
 
-    db = leveldb_open(opt_exists, db_path, &errstr);
+    db = rocksdb_open(opt_exists, db_path, &errstr);
     if (errstr != NULL) {  //** It already exists so need to remove it first
         free(errstr);
         errstr = NULL;
 
         //** Remove it
-        leveldb_destroy_db(opt_none, db_path, &errstr);
+        rocksdb_destroy_db(opt_none, db_path, &errstr);
         if (errstr != NULL) {  //** Got an error so just kick out
             fprintf(stderr, "ERROR: Failed removing %s for fresh DB. ERROR:%s\n", db_path, errstr);
             exit(1);
         }
 
         //** Try opening it again
-        db = leveldb_open(opt_create, db_path, &errstr);
+        db = rocksdb_open(opt_create, db_path, &errstr);
         if (errstr != NULL) {  //** An ERror occured
             fprintf(stderr, "ERROR: Failed creating %s. ERROR:%s\n", db_path, errstr);
             exit(1);
         }
     }
 
-    leveldb_options_destroy(opt_none);
-    leveldb_options_destroy(opt_exists);
-    leveldb_options_destroy(opt_create);
+    rocksdb_options_destroy(opt_none);
+    rocksdb_options_destroy(opt_exists);
+    rocksdb_options_destroy(opt_create);
 
     return(db);
 }
@@ -200,7 +200,7 @@ static leveldb_t *create_a_db(char *db_path)
 //  create_warm_db - Creates the DBs using the given base directory
 //*************************************************************************
 
-static void create_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_db)
+static void create_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db)
 {
     char *db_path;
 
@@ -214,22 +214,22 @@ static void create_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_
 // open_a_db - Opens a LevelDB database
 //*************************************************************************
 
-static leveldb_t *open_a_db(char *db_path)
+static rocksdb_t *open_a_db(char *db_path)
 {
-    leveldb_t *db;
-    leveldb_options_t *opt;
+    rocksdb_t *db;
+    rocksdb_options_t *opt;
     char *errstr = NULL;
 
-    opt = leveldb_options_create();
+    opt = rocksdb_options_create();
 
-    db = leveldb_open(opt, db_path, &errstr);
+    db = rocksdb_open(opt, db_path, &errstr);
     if (errstr != NULL) {  //** It already exists so need to remove it first
         fprintf(stderr, "ERROR: Failed creating %s. ERROR:%s\n", db_path, errstr);
         free(errstr);
         errstr = NULL;
     }
 
-    leveldb_options_destroy(opt);
+    rocksdb_options_destroy(opt);
 
     return(db);
 }
@@ -238,7 +238,7 @@ static leveldb_t *open_a_db(char *db_path)
 //  open_warm_db - Opens the warmer DBs
 //*************************************************************************
 
-static int open_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_db)
+static int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db)
 {
     char *db_path;
 
@@ -257,10 +257,10 @@ static int open_warm_db(char *db_base, leveldb_t **inode_db, leveldb_t **rid_db)
 //  close_warm_db - Closes the DBs
 //*************************************************************************
 
-static void close_warm_db(leveldb_t *inode, leveldb_t *rid)
+static void close_warm_db(rocksdb_t *inode, rocksdb_t *rid)
 {
-    leveldb_close(inode);
-    leveldb_close(rid);
+    rocksdb_close(inode);
+    rocksdb_close(rid);
 }
 
 #ifdef __cplusplus

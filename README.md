@@ -28,7 +28,7 @@ You will need to bring your own copies of:
 
 * czmq-devel
 * fuse-devel
-* leveldb-devel
+* rocksdb-devel (needed for lio_warm and warmer_query)
 * openssl-devel
 * zlib-devel
 * zmq-devel
