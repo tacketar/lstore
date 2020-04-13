@@ -358,6 +358,8 @@ gop_op_status_t segment_get_gop_func(void *arg, int id)
             gop_start_execution(gop);  //** Start doing the transfer
             rpos += rlen;
             nbytes -= rlen;
+        } else {
+            gop = NULL;
         }
 
         //** Start the write
@@ -368,10 +370,12 @@ gop_op_status_t segment_get_gop_func(void *arg, int id)
         total += got;
         log_printf(5, "sid=" XIDT " fwrite(wb,1," XOT ", sc->fd)=" XOT " total=" XOT "\n", segment_id(sc->src), wlen, got, total);
         if (wlen != got) {
-            log_printf(1, "ERROR from fwrite=%d  dest sid=" XIDT "\n", errno, segment_id(sc->dest));
+            log_printf(1, "ERROR from fwrite=%d  dest got=" XOT "\n", errno, got);
             status = gop_failure_status;
-            gop_waitall(gop);
-            gop_free(gop, OP_DESTROY);
+            if (gop) {
+                gop_waitall(gop);
+                gop_free(gop, OP_DESTROY);
+            }
             goto fail;
         }
 
