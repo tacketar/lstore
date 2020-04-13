@@ -19,6 +19,14 @@
 
 #define _log_module_index 100
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <signal.h>
+
 #include <apr_errno.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -151,7 +159,7 @@ int tbx_mlog_printf(int suppress_header, int module_index, int level, const char
     sec = apr_time_sec(dt) % 60;
     usec = dt % apr_time_from_sec(1);
 
-    if (suppress_header == 0) n = fprintf(_log_fd, "[dt=%dh%02dm%02ds%06du mi=%d tid=%d file=%s:%d fn=%s] ", hours, min, sec, usec, module_index, tbx_atomic_thread_id, fname, line, fn);
+    if (suppress_header == 0) n = fprintf(_log_fd, "[dt=%dh%02dm%02ds%06du mi=%d tid=%ld file=%s:%d fn=%s] ", hours, min, sec, usec, module_index, (long)syscall(SYS_gettid), fname, line, fn);
     va_start(args, fmt);
     n += vfprintf(_log_fd, fmt, args);
     va_end(args);
