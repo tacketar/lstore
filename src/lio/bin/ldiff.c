@@ -30,7 +30,7 @@
 //*************************************************************************
 
 void compare_buffers(char *b1, char *b2, int64_t len, int64_t offset, int64_t *bad_bytes, int64_t *bad_groups,
-                     int64_t block_size, int *state, int64_t *state_offset, int64_t fsize)
+                     int64_t block_size, int *state, int64_t *state_offset, int64_t fsize, int64_t big)
 {
     int mode, ok;
     int64_t start, end, i, k, last, bs, be, bl, bos, boe;
@@ -50,8 +50,11 @@ void compare_buffers(char *b1, char *b2, int64_t len, int64_t offset, int64_t *b
                 bos = start % block_size;
                 boe = end % block_size;
                 bl = be - bs + 1;
-                printf("  MATCH  : " I64T " -> " I64T " (" I64T " bytes) [" I64T "%%" I64T  " -> " I64T "%%" I64T " (" I64T " blocks)]\n", start, end, k, bs, bos, be, boe, bl);
-
+                if (k<big) {
+                    printf("  MATCH  : " I64T " -> " I64T " (" I64T " bytes) [" I64T "%%" I64T  " -> " I64T "%%" I64T " (" I64T " blocks)] **SMALL**\n", start, end, k, bs, bos, be, boe, bl);
+                } else {
+                    printf("  MATCH  : " I64T " -> " I64T " (" I64T " bytes) [" I64T "%%" I64T  " -> " I64T "%%" I64T " (" I64T " blocks)] **BIG**\n", start, end, k, bs, bos, be, boe, bl);
+                }
                 start = offset + i;
                 mode = 1;
             }
@@ -90,7 +93,7 @@ void compare_buffers(char *b1, char *b2, int64_t len, int64_t offset, int64_t *b
 
 int main(int argc, char **argv)
 {
-    int64_t block_size, buf_size, state_offset;
+    int64_t block_size, buf_size, state_offset, big;
     int64_t fsize1, fsize2, max_size, cpos, len, bad_bytes, bad_groups;
     int start_option, i, state;
     char *fname1, *fname2;
@@ -162,6 +165,7 @@ int main(int argc, char **argv)
     printf("\n");
     printf("Printing comparision breakdown -- Single byte matches are suppressed (max_size=" I64T ")\n", max_size);
 
+    big = block_size/2;
     state = 0;
     state_offset = 0;
     bad_bytes = bad_groups = 0;
@@ -170,7 +174,7 @@ int main(int argc, char **argv)
         assert_result((int)fread(buf1, 1, len, fd1), len);
         assert_result((int)fread(buf2, 1, len, fd2), len);
 
-        compare_buffers(buf1, buf2, len, cpos, &bad_bytes, &bad_groups, block_size, &state, &state_offset, max_size);
+        compare_buffers(buf1, buf2, len, cpos, &bad_bytes, &bad_groups, block_size, &state, &state_offset, max_size, big);
     }
 
     printf("\n");
