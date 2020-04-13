@@ -91,6 +91,7 @@ GOP_API void gop_init(gop_op_generic_t *gop);
 GOP_API void gop_reset(gop_op_generic_t *gop);
 GOP_API void gop_set_auto_destroy(gop_op_generic_t *gop, int val);
 GOP_API void gop_start_execution(gop_op_generic_t *gop);
+GOP_API void gop_auto_destroy_exec(gop_op_generic_t *gop);
 GOP_API int gop_sync_exec(gop_op_generic_t *gop);
 GOP_API gop_op_status_t gop_sync_exec_status(gop_op_generic_t *gop);
 GOP_API int gop_tasks_failed(gop_op_generic_t *gop);

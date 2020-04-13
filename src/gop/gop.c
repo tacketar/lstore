@@ -584,6 +584,17 @@ void gop_mark_completed(gop_op_generic_t *gop, gop_op_status_t status)
 }
 
 //*************************************************************
+// gop_auto_destroy_exec - Quick way to exec a command when you
+//    don't care about the result of when it completes
+//*************************************************************
+
+void gop_auto_destroy_exec(gop_op_generic_t *gop)
+{
+    gop_set_auto_destroy(gop, 1);
+    gop_start_execution(gop);
+}
+
+//*************************************************************
 // gop_sync_exec - Quick way to exec a command when you
 //    are only concerned with success/failure
 //*************************************************************
