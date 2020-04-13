@@ -510,7 +510,7 @@ wq_merged_t wq_new_merged(wq_context_t *ctx, wq_op_t *t, int index, int rw_type)
 
 void wq_sort_and_merge_tasks(wq_context_t *ctx)
 {
-    int rw, i;
+    int rw, i, k, j;
     ex_off_t end;
     wq_work_t *w;
     wq_merged_t *m;
@@ -536,18 +536,22 @@ void wq_sort_and_merge_tasks(wq_context_t *ctx)
             for (i=1; i < w->n_tasks; i++) {
                 t = w->tasks[i];
                 if (end != t->rw->iov->offset) { //** offset doesn't match up with previous
+                    k = w->n_merged;
+                    j = 0;
                     m = &w->merged[w->n_merged];
                     *m = wq_new_merged(ctx, t, i, rw);
                     w->n_merged++;
                 } else {
+                    j=m->n_iov;
                     memcpy(&m->iov[m->n_iov], t->iov, t->n_iov * sizeof(struct iovec));
                     ctx->n_iov += t->n_iov;
                     m->n_iov += t->n_iov;
                     m->task_end_index = i;
                     m->len += t->rw->iov->len;
+                    k = w->n_merged-1;
                 }
                 end = t->rw->iov->offset + t->rw->iov->len;
-                log_printf(10, "rw=%d i=%d n_merged=%d off=" XOT " end=" XOT " len=" XOT "\n", rw, i, w->n_merged, t->rw->iov->offset, end, t->rw->iov->len);
+                log_printf(10, "rw=%d i=%d n_merged=%d off=" XOT " end=" XOT " len=" XOT " [ogid=%d m=%d n_iov_slot=%d]\n", rw, i, w->n_merged, t->rw->iov->offset, end, t->rw->iov->len, gop_get_id(&t->gop), k, j);
             }
         }
     }
@@ -574,7 +578,6 @@ void wq_execute_tasks(wq_context_t *ctx)
 
         for (i=0; i<w->n_merged; i++) {
             m = &w->merged[i];
-            log_printf(10, "rw=%d m=%d off=" XOT " len=" XOT "\n", rw, i, m->offset, m->len);
             tbx_type_malloc_clear(op, lio_rw_op_t, 1);
             op->fd = ctx->fd;
             op->n_iov = 1;
@@ -590,6 +593,7 @@ void wq_execute_tasks(wq_context_t *ctx)
             } else {
                 gop = lio_write_ex_gop_aio(op);
             }
+            log_printf(10, "rw=%d m=%d off=" XOT " len=" XOT " gid=%d\n", rw, i, m->offset, m->len, gop_get_id(gop));
             gop_set_private(gop, m);
             gop_set_myid(gop, rw);
             gop_opque_add(q, gop);
