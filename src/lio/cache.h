@@ -52,6 +52,25 @@ typedef lio_cache_t *(cache_create_t)(void *arg, data_attr_t *da, int timeout);
 #define C_EMPTY     2
 #define C_TORELEASE 4
 
+struct dio_range_lock_s;
+typedef int (range_check_t)(tbx_stack_t *stack, struct dio_range_lock_s *r, ex_off_t use_priority);
+typedef struct dio_range_lock_s {
+    ex_off_t lo;
+    ex_off_t hi;
+    ex_off_t lo_page;
+    ex_off_t hi_page;
+    ex_off_t priority;
+    range_check_t *check_range;
+    tbx_stack_t *dest_que;
+    int rw_mode;
+    tbx_stack_ele_t ele;
+} dio_range_lock_t;
+
+void dio_range_lock_set(dio_range_lock_t *r, int rw_mode, ex_off_t lo, ex_off_t hi, tbx_stack_t *dest_que, ex_off_t page_size);
+void dio_range_lock_contract(lio_segment_t *seg, dio_range_lock_t *r, ex_off_t lo, ex_off_t hi, ex_off_t page_size);
+void dio_range_lock(lio_segment_t *seg, dio_range_lock_t *r);
+void dio_range_unlock(lio_segment_t *seg, dio_range_lock_t *r);
+
 struct lio_cache_range_t {
     ex_off_t lo;
     ex_off_t hi;
@@ -69,6 +88,7 @@ struct lio_cache_counters_t {
 struct lio_cache_stats_get_t {
     lio_cache_counters_t user;
     lio_cache_counters_t system;
+    lio_cache_counters_t direct;
     ex_off_t dirty_bytes;
     ex_off_t hit_bytes;
     ex_off_t miss_bytes;
@@ -108,6 +128,7 @@ struct lio_cache_segment_t {
     tbx_stack_t *ppages_unused;
     tbx_stack_t *dio_pending;
     tbx_stack_t *dio_execing;
+    tbx_stack_t *pio_execing;
     char *qname;
     lio_cache_partial_page_t *ppage;
     char *ppages_buffer;
@@ -214,7 +235,7 @@ void cache_cond_free(void *arg, int size, void *data);
 gop_op_generic_t *cache_flush_range_gop(lio_segment_t *seg, data_attr_t *da, ex_off_t lo, ex_off_t hi, int timeout);
 int cache_release_pages(int n_pages, lio_page_handle_t *page, int rw_mode);
 void _cache_drain_writes(lio_segment_t *seg, lio_cache_page_t *p);
-void cache_advise(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, int rw_mode, ex_off_t lo, ex_off_t hi, lio_page_handle_t *page, int *n_pages, int force_load);
+void cache_advise(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, int rw_mode, ex_off_t lo, ex_off_t hi, lio_page_handle_t *page, int *n_pages, int force_load, dio_range_lock_t *dnrg);
 
 void *free_page_tables_new(void *arg, int size);
 void free_page_tables_free(void *arg, int size, void *data);
