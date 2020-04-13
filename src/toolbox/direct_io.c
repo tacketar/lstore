@@ -57,6 +57,19 @@ void tbx_dio_finish(FILE *fd, int flags)
 }
 
 //***********************************************************************
+// _is_seekable - checks if the fd is seekable
+//***********************************************************************
+
+int _is_seekable(int fd, ssize_t offset)
+{
+    struct stat sbuf;
+
+    if (offset == -1) return(0);  //** Accessing it in streaming mode
+
+    fstat(fd, &sbuf);
+    return(((sbuf.st_mode & S_IFREG) > 0) ? 1 : 0);
+}
+//***********************************************************************
 // tbx_dio_read - Uses O_DIRECT if possible to read data
 //    if offset == -1 then command act like fread
 //***********************************************************************
@@ -65,11 +78,9 @@ ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
     ssize_t n, ntotal, nleft;
     int nfd, flags, old_flags, is_seekable;
-    struct stat sbuf;
 
     nfd = fileno(fd);
-    fstat(nfd, &sbuf);
-    is_seekable = (((sbuf.st_mode & S_IFREG) > 0) && (offset != -1)) ? 1 : 0;
+    is_seekable = _is_seekable(nfd, offset);
 
     ntotal = 0;
     nleft = nbytes;
@@ -109,11 +120,9 @@ ssize_t tbx_dio_write(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
     ssize_t n, ntotal, nleft;
     int nfd, flags, old_flags, is_seekable;
-    struct stat sbuf;
 
     nfd = fileno(fd);
-    fstat(nfd, &sbuf);
-    is_seekable = (((sbuf.st_mode & S_IFREG) > 0) && (offset != -1)) ? 1 : 0;
+    is_seekable = _is_seekable(nfd, offset);
 
     ntotal = 0;
     nleft = nbytes;
