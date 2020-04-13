@@ -60,30 +60,38 @@ void tbx_dio_finish(FILE *fd, int flags)
 
 ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
-    ssize_t n;
+    ssize_t n, ntotal, nleft;
     int nfd, flags, old_flags;
 
     nfd = fileno(fd);
-    //** Move the file pointer
-    if (offset != -1) {
-        lseek(nfd, offset, SEEK_SET);
-    }
 
-    //** Try and do the I/O with direct I/O
-    n = read(nfd, buf, nbytes);
-    log_printf(5, "nfd=%d nbytes=" SST " got=" SST " lseek=" SST " errno=%d\n", nfd, nbytes, n, lseek(nfd, 0L, SEEK_CUR), errno);
-    if (n == -1) {  //** Got an error so try without Direct I/O
-        old_flags = fcntl(nfd, F_GETFL);
-        flags = old_flags ^ O_DIRECT;
-        fcntl(nfd, F_SETFL, flags);
+    ntotal = 0;
+    nleft = nbytes;
+    do {
+        //** Try and do the I/O with direct I/O
+        n = pread(nfd, buf + ntotal, nleft, offset + ntotal);
+        log_printf(5, "nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
+        if (n == -1) {  //** Got an error so try without Direct I/O
+            old_flags = fcntl(nfd, F_GETFL);
+            flags = old_flags ^ O_DIRECT;
+            fcntl(nfd, F_SETFL, flags);
 
-        n = read(nfd, buf, nbytes);
-        log_printf(5, "RETRY nfd=%d nbytes=" SST " got=" SST " lseek=" SST " errno=%d\n", nfd, nbytes, n, lseek(nfd, 0L, SEEK_CUR), errno);
+            n = pread(nfd, buf + ntotal, nleft, offset + ntotal);
+            log_printf(5, "RETRY nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
 
-        fcntl(nfd, F_SETFL, old_flags);
-    }
+            fcntl(nfd, F_SETFL, old_flags);
+        }
 
-    return(n);
+        if (n > 0) {
+            ntotal += n;
+            nleft -=n;
+        }
+    } while ((n > 0) && (nleft > 0));
+
+    if (ntotal == 0) ntotal = n;  //** Got an error
+
+    log_printf(5, "END nfd=%d ntotal=" SST "\n", nfd, ntotal);
+    return(ntotal);
 }
 
 //***********************************************************************
@@ -93,28 +101,36 @@ ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 
 ssize_t tbx_dio_write(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
-    ssize_t n;
+    ssize_t n, ntotal, nleft;
     int nfd, flags, old_flags;
 
     nfd = fileno(fd);
-    //** Move the file pointer
-    if (offset != -1) {
-        lseek(nfd, offset, SEEK_SET);
-    }
 
-    //** Try and do the I/O with direct I/O
-    n = write(nfd, buf, nbytes);
-    log_printf(5, "nfd=%d nbytes=" SST " got=" SST " lseek=" SST " errno=%d\n", nfd, nbytes, n, lseek(nfd, 0L, SEEK_CUR), errno);
-    if (n == -1) {  //** Got an error so try without Direct I/O
-        old_flags = fcntl(nfd, F_GETFL);
-        flags = old_flags ^ O_DIRECT;
-        fcntl(nfd, F_SETFL, flags);
+    ntotal = 0;
+    nleft = nbytes;
+    do {
+        //** Try and do the I/O with direct I/O
+        n = pwrite(nfd, buf + ntotal, nleft, offset + ntotal);
+        log_printf(5, "nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
+        if (n == -1) {  //** Got an error so try without Direct I/O
+            old_flags = fcntl(nfd, F_GETFL);
+            flags = old_flags ^ O_DIRECT;
+            fcntl(nfd, F_SETFL, flags);
 
-        n = write(nfd, buf, nbytes);
-        log_printf(5, "RETRY nfd=%d nbytes=" SST " got=" SST " lseek=" SST " errno=%d\n", nfd, nbytes, n, lseek(nfd, 0L, SEEK_CUR), errno);
+            n = pwrite(nfd, buf + ntotal, nleft, offset + ntotal);
+            log_printf(5, "RETRY nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
 
-        fcntl(nfd, F_SETFL, old_flags);
-    }
+            fcntl(nfd, F_SETFL, old_flags);
+        }
 
-    return(n);
+        if (n > 0) {
+            ntotal += n;
+            nleft -=n;
+        }
+    } while ((n > 0) && (nleft > 0));
+
+    if (ntotal == 0) ntotal = n;  //** Got an error
+
+    log_printf(5, "END nfd=%d ntotal=" SST "\n", nfd, ntotal);
+    return(ntotal);
 }
