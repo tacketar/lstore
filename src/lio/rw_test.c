@@ -23,6 +23,7 @@
 #include <apr_time.h>
 
 #include <gop/opque.h>
+#include <tbx/direct_io.h>
 #include <tbx/log.h>
 #include <tbx/iniparse.h>
 #include <tbx/string_token.h>
@@ -39,6 +40,7 @@ typedef struct {
     char *lio_fname;
     char *local_fname;
     int n_parallel;
+    int o_direct;
     int preallocate;
     ex_off_t buffer_size;
     ex_off_t file_size;
@@ -48,8 +50,9 @@ typedef struct {
     int do_flush_check;
     int timeout;
     double read_fraction;
-    double min_size;
-    double max_size;
+    ex_off_t min_size;
+    ex_off_t max_size;
+    ex_off_t delta_size;
     double ln_min;
     double ln_max;
     int read_sigma;
@@ -198,7 +201,7 @@ gop_op_status_t local_flush_fn(void *arg, int id)
     int err;
 
     local_op_t *op = (local_op_t *)arg;
-    err = fflush(op->fd);
+    err = (rwc.o_direct == 0) ? fflush(op->fd) : 0;
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
 
@@ -220,7 +223,11 @@ gop_op_status_t local_read_fn(void *arg, int id)
     int n;
 
     local_op_t *op = (local_op_t *)arg;
-    n = pread(fileno(op->fd), op->buffer, op->len, op->offset);
+    if (rwc.o_direct) {
+        n = tbx_dio_read(op->fd, op->buffer, op->len, op->offset);
+    } else {
+        n = pread(fileno(op->fd), op->buffer, op->len, op->offset);
+    }
     return((n == op->len) ? gop_success_status : gop_failure_status);
 }
 
@@ -231,7 +238,11 @@ gop_op_status_t local_write_fn(void *arg, int id)
     int n;
 
     local_op_t *op = (local_op_t *)arg;
-    n = pwrite(fileno(op->fd), op->buffer, op->len, op->offset);
+    if (rwc.o_direct) {
+        n = tbx_dio_write(op->fd, op->buffer, op->len, op->offset);
+    } else {
+        n = pwrite(fileno(op->fd), op->buffer, op->len, op->offset);
+    }
     return((n == op->len) ? gop_success_status : gop_failure_status);
 }
 
@@ -423,6 +434,8 @@ printf("fname=%s local=%s\n", fname, rwc->local_fname);
                 fflush(stdout);
                 abort();
             }
+
+            if (rwc->o_direct) tbx_dio_init(t->fd_local);
             return;
     }
 }
@@ -454,6 +467,7 @@ void io_close(target_t *t, rw_config_t *rwc)
             lio_path_release(&t->tuple);
             break;
         case RW_LOCAL:
+            if (rwc->o_direct) tbx_dio_finish(t->fd_local, 0);
             fclose(t->fd_local);
             break;
     }
@@ -470,12 +484,13 @@ void generate_task_list()
 {
     int inc_size = 100;
     int i, max_size, loops;
-    ex_off_t offset, len, last_offset;
+    ex_off_t offset, len, last_offset, n, m, dm2;
     double d;
 
     max_size = inc_size;
     base_tile = (tile_t *)malloc(sizeof(tile_t)*max_size);
 
+    dm2 = (rwc.delta_size > 1) ? rwc.delta_size / 2 : 1;
     last_offset = rwc.file_size % rwc.buffer_size;
     last_tile_index = -1;
     max_task_bytes = -1;
@@ -492,6 +507,11 @@ void generate_task_list()
         } else {
             d = my_random_double(rwc.ln_min, rwc.ln_max);
             len = exp(d);
+            n = len / rwc.delta_size;
+            m = len % rwc.delta_size;
+log_printf(1, "initial len=" XOT " n=" XOT " m=" XOT "\n", len, n, m);
+            len = (n + (m/dm2)) * rwc.delta_size;
+log_printf(1, "final len=" XOT "\n", len);
         }
         base_tile[i].len = len;
 
@@ -504,9 +524,9 @@ void generate_task_list()
     } while (offset < rwc.buffer_size);
 
     //** If it's to big truncate the size
-    if (offset > 1.01*rwc.buffer_size) {
+    if (offset > rwc.buffer_size) {
         offset -= len;
-        len = 1.01*rwc.buffer_size - offset;
+        len = rwc.buffer_size - offset;
         base_tile[i-1].len = len;
         offset += len;
     }
@@ -528,7 +548,11 @@ void generate_task_list()
     base_tile = (tile_t *)realloc(base_tile, sizeof(tile_t)*tile_size);
 
     //** Make the actual buffer and fill it with random data
-    tbx_type_malloc_clear(tile_data, char, tile_bytes);
+    //** Make the buffer. This makes sure it's page aligned for both R and W buffers
+    n = tile_bytes;
+    tbx_fudge_align_size(n, getpagesize());
+    if (n<tile_bytes) n += getpagesize();
+    tbx_malloc_align(tile_data, getpagesize(), n);
     my_get_random(tile_data, tile_bytes);
 
     //** Want to do the reading after thew write phase completes
@@ -558,6 +582,7 @@ void generate_task_list()
 void make_test_indices(target_t *t)
 {
     int i;
+    ex_off_t bsize;
 
     if (rwc.read_sigma > total_scan_size) rwc.read_sigma = total_scan_size;
     if (rwc.write_sigma > total_scan_size) rwc.write_sigma = total_scan_size;
@@ -580,8 +605,12 @@ void make_test_indices(target_t *t)
     t->write_index.curr = 0;
 
     tbx_type_malloc_clear(t->task_list, task_slot_t, rwc.n_parallel);
+
+    bsize = max_task_bytes;
+    tbx_fudge_align_size(bsize, getpagesize());
+    if (bsize<max_task_bytes) bsize += getpagesize();
     for (i=0; i<rwc.n_parallel; i++) {
-        tbx_type_malloc_clear(t->task_list[i].buffer, char, max_task_bytes);
+        tbx_malloc_align(t->task_list[i].buffer, getpagesize(), bsize);
     }
 }
 
@@ -1158,6 +1187,7 @@ void rw_load_options(tbx_inip_file_t *fd, char *group)
     rwc.n_parallel = tbx_inip_get_integer(fd, group, "parallel", 1);
     rwc.n_targets = tbx_inip_get_integer(fd, group, "n_targets", 1);
     rwc.preallocate = tbx_inip_get_integer(fd, group, "preallocate", 0);
+    rwc.o_direct = tbx_inip_get_integer(fd, group, "o_direct", 0);
     rwc.buffer_size = tbx_inip_get_integer(fd, group, "buffer_size", 10*1024*1024);
     rwc.file_size = tbx_inip_get_integer(fd, group, "file_size", 10*1024*1024);
     rwc.do_final_check = tbx_inip_get_integer(fd, group, "do_final_check", 1);
@@ -1174,13 +1204,19 @@ void rw_load_options(tbx_inip_file_t *fd, char *group)
 
     my_random_seed(rwc.seed);
 
-    rwc.min_size = tbx_inip_get_double(fd, group, "min_size", 1024*1024);
+    rwc.min_size = tbx_inip_get_integer(fd, group, "min_size", 4*1024);
     if (rwc.min_size == 0) rwc.min_size = 1;
-    rwc.max_size = tbx_inip_get_double(fd, group, "max_size", 10*1024*1024);
+    rwc.max_size = tbx_inip_get_integer(fd, group, "max_size", 10*1024*1024);
     if (rwc.max_size == 0) rwc.max_size = 1;
-    rwc.ln_min = log(rwc.min_size);
-    rwc.ln_max = log(rwc.max_size);
+    rwc.delta_size = tbx_inip_get_integer(fd, group, "delta_size", 1);
+    if (rwc.delta_size == 0) rwc.delta_size = 1;
+    rwc.ln_min = log((double)rwc.min_size);
+    rwc.ln_max = log((double)rwc.max_size);
 
+    //** Tweak the buffer size if using a delta != 1
+    if (rwc.delta_size > 1) {
+        tbx_fudge_align_size(rwc.buffer_size, rwc.delta_size);
+    }
     rwc.read_sigma = tbx_inip_get_integer(fd, group, "read_sigma", 50);
     rwc.write_sigma = tbx_inip_get_integer(fd, group, "write_sigma", 50);
 }
@@ -1196,6 +1232,7 @@ void rw_print_options(FILE *fd, char *group)
     fprintf(fd, "[%s]\n", group);
     fprintf(fd, "rw_mode=%d\n", rwc.rw_mode);
     fprintf(fd, "preallocate=%d\n", rwc.preallocate);
+    fprintf(fd, "o_direct=%d\n", rwc.o_direct);
     fprintf(fd, "parallel=%d\n", rwc.n_parallel*rwc.n_targets);
     fprintf(fd, "n_targets=%d\n", rwc.n_targets);
     fprintf(fd, "buffer_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.buffer_size, ppbuf));
@@ -1210,8 +1247,9 @@ void rw_print_options(FILE *fd, char *group)
     fprintf(fd, "seed=%d\n", rwc.seed);
     fprintf(fd, "read_lag=%d\n", rwc.read_lag);
     fprintf(fd, "read_fraction=%lf\n", rwc.read_fraction);
-    fprintf(fd, "min_size=%s\n", tbx_stk_pretty_print_double_with_scale(1024, rwc.min_size, ppbuf));
-    fprintf(fd, "max_size=%s\n", tbx_stk_pretty_print_double_with_scale(1024, rwc.max_size, ppbuf));
+    fprintf(fd, "min_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.min_size, ppbuf));
+    fprintf(fd, "max_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.max_size, ppbuf));
+    fprintf(fd, "delta_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.delta_size, ppbuf));
     fprintf(fd, "read_sigma=%d\n", rwc.read_sigma);
     fprintf(fd, "write_sigma=%d\n", rwc.write_sigma);
 
