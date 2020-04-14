@@ -57,43 +57,29 @@ void tbx_dio_finish(FILE *fd, int flags)
 }
 
 //***********************************************************************
-// _is_seekable - checks if the fd is seekable
-//***********************************************************************
-
-int _is_seekable(int fd, ssize_t offset)
-{
-    struct stat sbuf;
-
-    if (offset == -1) return(0);  //** Accessing it in streaming mode
-
-    fstat(fd, &sbuf);
-    return(((sbuf.st_mode & S_IFREG) > 0) ? 1 : 0);
-}
-//***********************************************************************
 // tbx_dio_read - Uses O_DIRECT if possible to read data
-//    if offset == -1 then command act like fread
+//    if offset == -1 then command acts like fread
 //***********************************************************************
 
 ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
     ssize_t n, ntotal, nleft;
-    int nfd, flags, old_flags, is_seekable;
+    int nfd, flags, old_flags;
 
     nfd = fileno(fd);
-    is_seekable = _is_seekable(nfd, offset);
 
     ntotal = 0;
     nleft = nbytes;
     do {
         //** Try and do the I/O with direct I/O
-        n = (is_seekable) ? pread(nfd, buf + ntotal, nleft, offset + ntotal) : read(nfd, buf + ntotal, nleft);
+        n = (offset != -1) ? pread(nfd, buf + ntotal, nleft, offset + ntotal) : read(nfd, buf + ntotal, nleft);
         log_printf(5, "nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
         if (n == -1) {  //** Got an error so try without Direct I/O
             old_flags = fcntl(nfd, F_GETFL);
             flags = old_flags ^ O_DIRECT;
             fcntl(nfd, F_SETFL, flags);
 
-            n = (is_seekable) ? pread(nfd, buf + ntotal, nleft, offset + ntotal) : read(nfd, buf + ntotal, nleft);
+            n = (offset != -1) ? pread(nfd, buf + ntotal, nleft, offset + ntotal) : read(nfd, buf + ntotal, nleft);
             log_printf(5, "RETRY nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
 
             fcntl(nfd, F_SETFL, old_flags);
@@ -113,29 +99,28 @@ ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 
 //***********************************************************************
 // tbx_dio_write - Uses O_DIRECT if possible to write data
-//    if offset == -1 then command act like fwrite
+//    if offset == -1 then command acts like fwrite
 //***********************************************************************
 
 ssize_t tbx_dio_write(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset)
 {
     ssize_t n, ntotal, nleft;
-    int nfd, flags, old_flags, is_seekable;
+    int nfd, flags, old_flags;
 
     nfd = fileno(fd);
-    is_seekable = _is_seekable(nfd, offset);
 
     ntotal = 0;
     nleft = nbytes;
     do {
         //** Try and do the I/O with direct I/O
-        n = (is_seekable) ? pwrite(nfd, buf + ntotal, nleft, offset + ntotal) : write(nfd, buf + ntotal, nleft);
+        n = (offset != -1) ? pwrite(nfd, buf + ntotal, nleft, offset + ntotal) : write(nfd, buf + ntotal, nleft);
         log_printf(5, "nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
         if (n == -1) {  //** Got an error so try without Direct I/O
             old_flags = fcntl(nfd, F_GETFL);
             flags = old_flags ^ O_DIRECT;
             fcntl(nfd, F_SETFL, flags);
 
-            n = (is_seekable) ? pwrite(nfd, buf + ntotal, nleft, offset + ntotal) : write(nfd, buf + ntotal, nleft);
+            n = (offset != -1) ? pwrite(nfd, buf + ntotal, nleft, offset + ntotal) : write(nfd, buf + ntotal, nleft);
             log_printf(5, "RETRY nfd=%d nleft=" SST " got=" SST " ntotal=" SST " lseek=" SST " offset=" SST " errno=%d\n", nfd, nleft, n, ntotal, lseek(nfd, 0L, SEEK_CUR), offset, errno);
 
             fcntl(nfd, F_SETFL, old_flags);
