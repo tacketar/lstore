@@ -950,6 +950,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     segjerase_inspect_t *si = (segjerase_inspect_t *)arg;
     segjerase_priv_t *s = (segjerase_priv_t *)si->seg->priv;
     segjerase_full_t *sf;
+    char *rng_str;
     ex_off_t *rng;
     ex_off_t lo, hi, lo_stripe, hi_stripe;
     gop_op_status_t status;
@@ -1027,7 +1028,11 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
         do {
             lo_stripe = lo / s->data_size; hi_stripe = hi / s->data_size;
             info_printf(si->fd, 1, XIDT ": Performing full check on stripe range: (" XOT ", " XOT ")\n", segment_id(si->seg), lo_stripe, hi_stripe);
-
+            if (tbx_stack_count(ranges) > 0) {
+                rng_str = tbx_range_stack_range2string(ranges, ";");
+                info_printf(si->fd, 1, XIDT ": Pending ranges: %s\n", segment_id(si->seg), rng_str);
+                free(rng_str);
+            }
             gop =  segjerase_inspect_full(si, 1, lo, hi);
             gop_waitall(gop);
             status = gop_get_status(gop);
