@@ -1236,10 +1236,20 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
                     tbx_type_realloc(rw_buf[i].ex_iov, ex_tbx_iovec_t, k);
                 }
             }
-            rw_buf[i].ex_iov[j].offset = offset[i];
-            rw_buf[i].ex_iov[j].len = len[i];
-            rw_buf[i].len += len[i];
-            rw_buf[i].n_ex++;
+            k = 0;  //** Flag used to see if we grew an existing op
+            if (j > 0) {  //** Already have a op so see if we can grow it
+                if (offset[i] == (rw_buf[i].ex_iov[j-1].offset+rw_buf[i].ex_iov[j-1].len)) {
+                    rw_buf[i].ex_iov[j-1].len += len[i];
+                    k = 1;
+                }
+            }
+            if (k == 0) { //** new op
+                rw_buf[i].ex_iov[j].offset = offset[i];
+                rw_buf[i].ex_iov[j].len = len[i];
+                rw_buf[i].n_ex++;
+            }
+
+            rw_buf[i].len += len[i];  //** Accumulate the total length
         }
     }
 
