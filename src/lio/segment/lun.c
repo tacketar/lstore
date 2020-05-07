@@ -140,6 +140,7 @@ typedef struct {
     int c_ex;
     int n_iov;
     int c_iov;
+    int retries;
     ex_off_t len;
 } lun_rw_row_t;
 
@@ -1480,6 +1481,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     lun_rw_row_t *rwb_table = rwb_table_ptr;
 
     seglun_row_t *b;
+    seglun_block_t *block;
     tbx_isl_iter_t it;
     ex_off_t lo, hi, start, end, blen, bpos;
     int i, j, maxerr, nerr, slot, n_bslots, bl_count, dev, bl_rid;
@@ -1659,7 +1661,8 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             dt /= (APR_USEC_PER_SEC*1.0);
             dt_status = gop_get_status(gop);
             if (dt_status.op_status != OP_STATE_SUCCESS) bad_count++;
-            dev = gop_get_myid(gop) % s->n_devices;
+            j = gop_get_myid(gop);
+            dev = j % s->n_devices;
             log_printf(1, "device=%d slot=%d time: %lf op_status=%d error_code=%d gid=%d\n", dev, gop_get_myid(gop), dt, dt_status.op_status, dt_status.error_code, gop_id(gop));
             log_printf(5, "bl=%p\n", bl);
             //** Check if we need to do any blacklisting
@@ -1674,6 +1677,38 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                         blacklist_add(bl, rwb_table[gop_get_myid(gop)].block->data->rid_key, 0, 1);
                     }
                 }
+            }
+
+            //** See if we should retry a failed op
+            if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries == 0)) {
+                log_printf(5, "RETRY gop=%d task=%d dev=%d\n", gop_get_id(gop), j, i);
+
+                gop_free(gop, OP_DESTROY);  //** Free the old slot
+                //** Make the new GOP
+                block = rwb_table[j].block;
+                if (rw_mode== 0) {
+                    if (rwb_table[j].n_iov == 1) {
+                        gop = ds_read(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
+                                      rwb_table[j].ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                    } else {
+                        gop = ds_readv(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
+                                       rwb_table[j].n_ex, rwb_table[j].ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                    }
+                } else {
+                    if (rwb_table[j].n_iov == 1) {
+                        gop = ds_write(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE),
+                                       rwb_table[j].ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                    } else {
+                        gop = ds_writev(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE),
+                                        rwb_table[j].n_ex, rwb_table[j].ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                    }
+                }
+
+                rwb_table[j].retries++;
+                rwb_table[j].gop = gop;
+                gop_opque_add(q, rwb_table[j].gop);
+                gop_set_myid(rwb_table[j].gop, j);
+                gop_set_private(gop, block->data->rid_key);
             }
         }
         dt = apr_time_now() - tstart2;
