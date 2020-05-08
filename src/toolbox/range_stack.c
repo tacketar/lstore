@@ -25,11 +25,13 @@
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
 
+void _range_stack_merge(tbx_stack_t **range_stack_ptr, int overlap_only, int64_t *new_rng);
+
 //*******************************************************************************
 // tbx_range_stack_string2range - Converts a string containing a range to a list
 //*******************************************************************************
 
-tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter)
+tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter, int overlap_only)
 {
     tbx_stack_t *range_stack = NULL;
     char *token, *bstate;
@@ -45,7 +47,7 @@ tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter)
         good = 1;
         if (sscanf(tbx_stk_escape_string_token((bstate==NULL) ? token : NULL, ":", '\\', 0, &bstate, &fin), I64T, &rng[0]) != 1) { good = 0; break; }
         if (sscanf(tbx_stk_escape_string_token(NULL, range_delimiter, '\\', 0, &bstate, &fin), I64T, &rng[1]) != 1) { good = 0; break; }
-        tbx_range_stack_merge(&range_stack, rng);
+        _range_stack_merge(&range_stack, overlap_only, rng);
     } while (fin == 0);
 
     free(token);
@@ -113,10 +115,10 @@ void _range_collapse(tbx_stack_t *range_stack)
 }
 
 //*******************************************************************************
-// tbx_range_stack_merge - Adds and merges the range w/ existing ranges
+// _range_stack_merge_only - Adds and merges the range w/ existing ranges.
 //*******************************************************************************
 
-void tbx_range_stack_merge(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
+void _range_stack_merge_only(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
 {
     int64_t *rng, *prng, trng[2];
     int64_t lo, hi;
@@ -177,8 +179,71 @@ void tbx_range_stack_merge(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
 }
 
 //*******************************************************************************
-// tbx_range_stack_merge2 - Adds and merges the range w/ existing ranges
+// _range_stack_overlap_only - Adds and merges fully overlapping ranges.
+//     Adjacent ranges are not merged together and are
+//     instead kept as separate entries. Entries are only merged if they fully
+//     overelap an existing entry. Partial overlaps are treated as separate ranges
+//     in this case.
 //*******************************************************************************
+
+void _range_stack_overlap_only(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
+{
+    int64_t *rng;
+    int64_t lo, hi;
+    tbx_stack_t *range_stack;
+
+    if (!(*range_stack_ptr)) *range_stack_ptr = tbx_stack_new();
+    range_stack = *range_stack_ptr;
+
+    //** If an empty stack can handle it quickly
+    if (tbx_stack_count(range_stack) == 0) {
+        tbx_stack_push(range_stack, new_rng);
+        return;
+    }
+
+    //** Find the insertion point
+    lo = new_rng[0]; hi = new_rng[1];
+    tbx_stack_move_to_top(range_stack);
+    while ((rng = tbx_stack_get_current_data(range_stack)) != NULL) {
+        if ((lo >= rng[0]) && (hi <= rng[1])) { //** Complete overlap so kick out
+            free(new_rng);
+            return;
+        }
+        if (lo <= rng[0]) { //** Insert here
+            tbx_stack_insert_above(range_stack, new_rng);
+            return;
+        }
+        tbx_stack_move_down(range_stack);
+    }
+
+    if (rng == NULL) tbx_stack_move_to_bottom(range_stack);
+    tbx_stack_insert_below(range_stack, new_rng);
+
+    return;
+}
+
+//*******************************************************************************
+// _range_stack_merge - Lightweight wrapper
+//*******************************************************************************
+
+void _range_stack_merge(tbx_stack_t **range_stack_ptr, int overlap_only, int64_t *new_rng)
+{
+    if (overlap_only) {
+        _range_stack_overlap_only(range_stack_ptr, new_rng);
+    } else {
+        _range_stack_merge_only(range_stack_ptr, new_rng);
+    }
+}
+
+//*******************************************************************************
+// tbx_range_stack_merge - Adds and merges the range w/ existing ranges
+//*******************************************************************************
+
+void tbx_range_stack_merge(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
+{
+    _range_stack_merge(range_stack_ptr, 0, new_rng);
+}
+
 
 void tbx_range_stack_merge2(tbx_stack_t **range_stack_ptr, int64_t lo, int64_t hi)
 {
@@ -186,57 +251,27 @@ void tbx_range_stack_merge2(tbx_stack_t **range_stack_ptr, int64_t lo, int64_t h
 
     tbx_type_malloc(rng, int64_t, 2);
     rng[0] = lo; rng[1] = hi;
-    tbx_range_stack_merge(range_stack_ptr, rng);
+    _range_stack_merge(range_stack_ptr, 0, rng);
     return;
 }
 
 //*******************************************************************************
-//  _do_test
+// tbx__range_stack_overlap - Adds and possiblly merges the range w/ existing ranges
+//    if the the new range fully overlaps with an existing range. PArtial overlaps
+//    are treated as separate ranges.
 //*******************************************************************************
 
-int _do_test(int i, char *in, char *out)
+void tbx_range_stack_overlap(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
 {
-    int err;
-    char *final;
-    tbx_stack_t *r;
-
-    err = 0;
-    r = tbx_range_stack_string2range(in, ";");
-    final = tbx_range_stack_range2string(r, ";");
-    if (strcmp(final, out) != 0) {
-        err = 1;
-        fprintf(stderr, "ERROR: i=%d input  =%s\n", i, in);
-        fprintf(stderr, "ERROR: i=%d output =%s\n", i, final);
-        fprintf(stderr, "ERROR: i=%d correct=%s\n", i, out);
-    }
-
-    free(final);
-    tbx_stack_free(r, 1);
-
-    return(err);
+    _range_stack_merge(range_stack_ptr, 1, new_rng);
 }
 
-//*******************************************************************************
-// tbx_range_stack_test - Test the range stack routines
-//*******************************************************************************
-
-int tbx_range_stack_test()
+void tbx_range_stack_overlap2(tbx_stack_t **range_stack_ptr, int64_t lo, int64_t hi)
 {
-    int err;
+    int64_t *rng;
 
-    err = 0;
-    err += _do_test(0, "100:200;", "100:200;");
-    err += _do_test(1, "100:200;150:200;", "100:200;");
-    err += _do_test(2, "100:200;150:210;", "100:210;");
-    err += _do_test(3, "100:200;50:101;", "50:200;");
-    err += _do_test(4, "100:200;50:99;", "50:200;");
-    err += _do_test(5, "100:200;50:98;", "50:98;100:200;");
-    err += _do_test(6, "100:200;50:98;95:101;", "50:200;");
-    err += _do_test(7, "100:200;50:98;99:99;", "50:200;");
-    err += _do_test(8, "101:200;50:98;99:99;", "50:99;101:200;");
-    err += _do_test(9, "101:200;50:75;20:100;", "20:200;");
-    err += _do_test(10, "100:200;50:75;77:98", "50:75;77:98;100:200;");
-    err += _do_test(11, "100:200;50:75;77:98;76:99", "50:200;");
-
-    return(err);
+    tbx_type_malloc(rng, int64_t, 2);
+    rng[0] = lo; rng[1] = hi;
+    _range_stack_merge(range_stack_ptr, 1, rng);
+    return;
 }

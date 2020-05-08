@@ -33,10 +33,12 @@ extern "C" {
 #endif
 
 //** Functions
-TBX_API tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter);
+TBX_API tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter, int overlap_only);
 TBX_API char *tbx_range_stack_range2string(tbx_stack_t *range_stack, char *range_delimiter);
 TBX_API void tbx_range_stack_merge(tbx_stack_t **range_stack_ptr, int64_t *new_rng);
 TBX_API void tbx_range_stack_merge2(tbx_stack_t **range_stack_ptr, int64_t lo, int64_t hi);
+TBX_API void tbx_range_stack_overlap(tbx_stack_t **range_stack_ptr, int64_t *new_rng);
+TBX_API void tbx_range_stack_overlap2(tbx_stack_t **range_stack_ptr, int64_t lo, int64_t hi);
 
 TBX_API int tbx_range_stack_test();
 

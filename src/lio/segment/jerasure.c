@@ -934,7 +934,7 @@ void _segjerase_remap_add_ranges(segjerase_priv_t *s, tbx_stack_t *ranges, tbx_s
         rng[0] = rng[0] / s->stripe_size_with_magic; rng[0] = rng[0] * s->data_size;
         rng[1] = rng[1] / s->stripe_size_with_magic; rng[1] = (rng[1]+1) * s->data_size - 1;
         log_printf(1, "Adding range: " XOT " - " XOT "\n", rng[0], rng[1]);
-        tbx_range_stack_merge(&ranges, rng);
+        tbx_range_stack_overlap(&ranges, rng);
     }
     return;
 }

@@ -2180,7 +2180,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
             } while ((err > 0) && (j<5));
 
             //** Add the range as repaired
-            tbx_range_stack_merge2(&(si->args->bad_ranges), b->seg_offset, b->seg_end);
+            tbx_range_stack_overlap2(&(si->args->bad_ranges), b->seg_offset, b->seg_end);
 
             nrepaired = nlost - err;
         }
@@ -2254,7 +2254,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
                 } while ((err > 0) && (j<5));
 
                 //** Add the range as repaired
-                tbx_range_stack_merge2(&(si->args->bad_ranges), b->seg_offset, b->seg_end);
+                tbx_range_stack_overlap2(&(si->args->bad_ranges), b->seg_offset, b->seg_end);
 
                 nmigrated += nforce - err;
             }
