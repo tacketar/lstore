@@ -1681,7 +1681,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
 
             //** See if we should retry a failed op
             if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries == 0)) {
-                log_printf(5, "RETRY gop=%d task=%d dev=%d\n", gop_get_id(gop), j, i);
+                log_printf(1, "RETRY sid=" XIDT " gop=%d task=%d dev=%d\n", segment_id(seg), gop_get_id(gop), j, i);
 
                 gop_free(gop, OP_DESTROY);  //** Free the old slot
                 //** Make the new GOP
