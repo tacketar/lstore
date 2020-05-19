@@ -4,7 +4,7 @@
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
-   
+
        http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
@@ -12,7 +12,7 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/ 
+*/
 
 #include <string.h>
 #include <stdio.h>
@@ -39,58 +39,66 @@
 
 int main(int argc, char **argv)
 {
-  int bufsize = 1024*1024;
-  char buffer[bufsize], *bstate;
-  int i, port, duration, trash_type, timeout;
-  tbx_ns_timeout_t dt;
-  tbx_ns_t *ns;
-  char *host, *trash_id, *rid;
+    int bufsize = 1024 * 1024;
+    char buffer[bufsize], *bstate;
+    int i, port, duration, trash_type, timeout;
+    tbx_ns_timeout_t dt;
+    tbx_ns_t *ns;
+    char *host, *trash_id, *rid;
 
-  if (argc < 7) {
-     printf("ibp_undelete host port RID trash_type trash_id duration [timeout]\n");
-     printf("   where trash_type is 'expired' or 'deleted'.\n");
-     printf("\n");
-     return(0);
-  }
+    if (argc < 7) {
+        printf("ibp_undelete host port RID trash_type trash_id duration [timeout]\n");
+        printf("   where trash_type is 'expired' or 'deleted'.\n");
+        printf("\n");
+        return (0);
+    }
 
-  i = 1;
-  host = argv[i]; i++;
-  port = atoi(argv[i]); i++;
-  rid = argv[i]; i++;
+    i = 1;
+    host = argv[i];
+    i++;
+    port = atoi(argv[i]);
+    i++;
+    rid = argv[i];
+    i++;
 
-  if (strcmp(argv[i], "deleted") == 0) {
-     trash_type = 0;
-  } else if (strcmp(argv[i], "expired") == 0) {
-     trash_type = 1;
-  } else {
-     printf("Invalid trash_type!  Should be 'expired' or 'deleted'.\n");
-     return(-1);
-  }
-  i++;
+    if (strcmp(argv[i], "deleted") == 0) {
+        trash_type = 0;
+    } else if (strcmp(argv[i], "expired") == 0) {
+        trash_type = 1;
+    } else {
+        printf("Invalid trash_type!  Should be 'expired' or 'deleted'.\n");
+        return (-1);
+    }
+    i++;
 
-  trash_id = argv[i]; i++;
-  duration = atoi(argv[i]); i++;
-  
-  timeout = 15;
+    trash_id = argv[i];
+    i++;
+    duration = atoi(argv[i]);
+    i++;
 
-  if (argc < i) timeout = atoi(argv[i]);
+    timeout = 15;
 
-  sprintf(buffer, "1 96 %s %d %s %d %d\n", rid, trash_type, trash_id, duration, timeout);  // IBP_INTERNAL_UNDELETE command
+    if (argc < i)
+        timeout = atoi(argv[i]);
 
-  assert(apr_initialize() == APR_SUCCESS);
+    sprintf(buffer, "1 96 %s %d %s %d %d\n", rid, trash_type, trash_id, duration, timeout);     // IBP_INTERNAL_UNDELETE command
 
-  tbx_dnsc_startup_sized(10);
+    assert(apr_initialize() == APR_SUCCESS);
 
-  ns = cmd_send(host, port, buffer, &bstate, timeout);
-  if (ns == NULL) return(-1);
-  if (bstate != NULL) free(bstate);
+    tbx_dnsc_startup_sized(10);
 
-  tbx_ns_timeout_set(&dt, 5, 0);
+    ns = cmd_send(host, port, buffer, &bstate, timeout);
+    if (ns == NULL)
+        return (-1);
+    if (bstate != NULL)
+        free(bstate);
 
-  //** Close the connection
-  tbx_ns_close(ns);
+    tbx_ns_timeout_set(&dt, 5, 0);
 
-  apr_terminate();
+    //** Close the connection
+    tbx_ns_close(ns);
 
-  return(0);
+    apr_terminate();
+
+    return (0);
 }

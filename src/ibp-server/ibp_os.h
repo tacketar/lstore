@@ -28,19 +28,20 @@
  * that both the copyright notice and this permission notice appear in
  * supporting documentation.
  *
- * Neither the Institution (University of Tennessee) nor the Authors 
- * make any representations about the suitability of this software for 
+ * Neither the Institution (University of Tennessee) nor the Authors
+ * make any representations about the suitability of this software for
  * any purpose. This software is provided ``as is'' without express or
  * implied warranty.
  *
  */
 
-# ifndef _IBP_OS_H
-# define _IBP_OS_H
+#ifndef _IBP_OS_H
+#define _IBP_OS_H
 
 /* if you want to compile and build library on Windows OS, define definition IBP_WIN32 */
 /* define IBP_WIN32 */
 
 /* if you want to compile and build library on unix-like OS, include "config.h" */
 
-# endif
+#endif /* 
+ */

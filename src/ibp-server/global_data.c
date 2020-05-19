@@ -19,8 +19,7 @@
 //**************Global control Variables*****************
 apr_thread_mutex_t *shutdown_lock = NULL;
 apr_thread_cond_t *shutdown_cond = NULL;
-apr_pool_t         *global_pool = NULL;
+apr_pool_t *global_pool = NULL;
 int shutdown_now;
 Config_t *global_config;
 ibp_task_t *global_task;
-

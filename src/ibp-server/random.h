@@ -26,6 +26,3 @@ int destroy_random();
 int tbx_random_get_bytes(void *buf, int nbytes);
 
 #endif
-
-
-

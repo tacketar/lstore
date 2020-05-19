@@ -28,8 +28,8 @@
  * that both the copyright notice and this permission notice appear in
  * supporting documentation.
  *
- * Neither the Institution (University of Tennessee) nor the Authors 
- * make any representations about the suitability of this software for 
+ * Neither the Institution (University of Tennessee) nor the Authors
+ * make any representations about the suitability of this software for
  * any purpose. This software is provided ``as is'' without express or
  * implied warranty.
  *
@@ -38,46 +38,55 @@
 /*
  * ibp_errno.h
  *
- * Definition of errno handling function and/or variable 
+ * Definition of errno handling function and/or variable
  */
 
 
-# ifndef _IBP_ERRNO_H
-# define _IBP_ERRNO_H
+#ifndef _IBP_ERRNO_H
+#define _IBP_ERRNO_H
 
-# include "ibp_os.h"
+#include "ibp_os.h"
 
-# ifdef __cplusplus 
+#ifdef __cplusplus
 extern "C" {
-# endif
- 
+
+#endif                          /* 
+ */
+
 
 
 /*********************************************************
  * Global variable definition
  *********************************************************/
 
- /*
+/*
  * definition of errno code
  */
-# define PTHREAD_SUPPORTED 1
-#if PTHREAD_SUPPORTED 
-	extern int *_IBP_errno();
-    #define IBP_errno ( *_IBP_errno())
-#else
-	extern int	IBP_errno;
-#endif
+#define PTHREAD_SUPPORTED 1
+#if PTHREAD_SUPPORTED
+extern int *_IBP_errno();
+
+#define IBP_errno ( *_IBP_errno())
+#else                           /* 
+ */
+extern int IBP_errno;
+
+#endif                          /* 
+ */
 
 
 /***********************************************************
  * Subroutines definition
  ***********************************************************/
 
-void _set_errno( int errno);
-int	 _get_errno();
+void _set_errno(int errno);
 
-# ifdef __cplusplus
+int _get_errno();
+
+
+#ifdef __cplusplus
 }
-# endif
+#endif                          /* 
+ */
 
-# endif /* _IBP_ERRNO_H */
+#endif  /* _IBP_ERRNO_H */

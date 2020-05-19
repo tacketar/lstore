@@ -4,7 +4,7 @@
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
-   
+
        http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
@@ -12,7 +12,7 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/ 
+*/
 
 //****************************************************************
 //****************************************************************
@@ -29,13 +29,13 @@
 
 int resource_list_n_used(Resource_list_t *rl)
 {
-  int n;
+    int n;
 
-  apr_thread_mutex_lock(rl->lock);
-  n = rl->n;
-  apr_thread_mutex_unlock(rl->lock);
-  
-  return(n);
+    apr_thread_mutex_lock(rl->lock);
+    n = rl->n;
+    apr_thread_mutex_unlock(rl->lock);
+
+    return (n);
 }
 
 //****************************************************************
@@ -44,7 +44,7 @@ int resource_list_n_used(Resource_list_t *rl)
 
 resource_list_iterator_t resource_list_iterator(Resource_list_t *rl)
 {
-  return(0);
+    return (0);
 }
 
 //****************************************************************
@@ -53,7 +53,7 @@ resource_list_iterator_t resource_list_iterator(Resource_list_t *rl)
 
 void resource_list_iterator_destroy(Resource_list_t *rl, resource_list_iterator_t *it)
 {
-  return;
+    return;
 }
 
 //****************************************************************
@@ -62,27 +62,31 @@ void resource_list_iterator_destroy(Resource_list_t *rl, resource_list_iterator_
 
 Resource_t *resource_list_iterator_next(Resource_list_t *rl, resource_list_iterator_t *it)
 {
-  int i;
-  Resource_t *r;
+    int i;
+    Resource_t *r;
 
-log_printf(15, "resource_list_iterator_next: start it=%d max=%d n=%d\n", *it, rl->max_res, rl->n); tbx_log_flush();
+    log_printf(15, "resource_list_iterator_next: start it=%d max=%d n=%d\n", *it, rl->max_res,
+               rl->n);
+    tbx_log_flush();
 
-  apr_thread_mutex_lock(rl->lock);
+    apr_thread_mutex_lock(rl->lock);
 
-  for (i=*it; i<rl->max_res; i++) {
-     if (rl->res[i].used == 1) {
-        *it = i + 1;
-        r = rl->res[i].r;
-        apr_thread_mutex_unlock(rl->lock);
-log_printf(15, "resource_list_iterator_next: i=%d r=%s\n", i, r->name); tbx_log_flush();
-        return(r);
-     }
-  }
-log_printf(15, "resource_list_iterator_next: r=NULL\n"); tbx_log_flush();
+    for (i = (*it); i < rl->max_res; i++) {
+        if (rl->res[i].used == 1) {
+            *it = i + 1;
+            r = rl->res[i].r;
+            apr_thread_mutex_unlock(rl->lock);
+            log_printf(15, "resource_list_iterator_next: i=%d r=%s\n", i, r->name);
+            tbx_log_flush();
+            return (r);
+        }
+    }
+    log_printf(15, "resource_list_iterator_next: r=NULL\n");
+    tbx_log_flush();
 
-  apr_thread_mutex_unlock(rl->lock);
+    apr_thread_mutex_unlock(rl->lock);
 
-  return(NULL);
+    return (NULL);
 }
 
 //****************************************************************
@@ -93,34 +97,36 @@ log_printf(15, "resource_list_iterator_next: r=NULL\n"); tbx_log_flush();
 
 int _resource_list_insert(Resource_list_t *rl, Resource_t *r)
 {
-  int i, n;
-  char *crid = NULL;
-  char str[RID_LEN];
+    int i, n;
+    char *crid = NULL;
+    char str[RID_LEN];
 
-  n = 0;
-  if (rl->n == rl->max_res) {  //** See if we need to grow the array
-     n = rl->max_res + 1;
-     assert_result_not_null(rl->res = (rl_ele_t *)realloc(rl->res, sizeof(rl_ele_t)*n));
-     for (i=rl->max_res; i<n; i++) { rl->res[i].used = 0; }
-     rl->max_res = n;
-  }
+    n = 0;
+    if (rl->n == rl->max_res) { //** See if we need to grow the array
+        n = rl->max_res + 1;
+        assert_result_not_null(rl->res = (rl_ele_t *) realloc(rl->res, sizeof(rl_ele_t) * n));
+        for (i = rl->max_res; i < n; i++) {
+            rl->res[i].used = 0;
+        }
+        rl->max_res = n;
+    }
+    //** Find a slot
+    for (i = 0; i < rl->max_res; i++) {
+        n = (rl->n + i) % rl->max_res;
+        if (rl->res[n].used == 0)
+            break;
+    }
 
-  //** Find a slot
-  for (i=0; i<rl->max_res; i++) {
-     n = (rl->n+i) % rl->max_res;
-     if (rl->res[n].used == 0) break;
-  }
+    //** Finally add it
+    ibp_rid2str(r->rid, str);
+    assert_result_not_null(crid = strdup(str));
+    rl->res[n].crid = crid;
+    rl->res[n].r = r;
+    rl->res[n].used = 1;
+    apr_hash_set(rl->table, crid, APR_HASH_KEY_STRING, r);
+    rl->n++;
 
-  //** Finally add it
-  ibp_rid2str(r->rid, str);
-  assert_result_not_null(crid = strdup(str));
-  rl->res[n].crid = crid;
-  rl->res[n].r = r;
-  rl->res[n].used = 1;
-  apr_hash_set(rl->table, crid, APR_HASH_KEY_STRING, r);
-  rl->n++;
-
-  return(n);
+    return (n);
 }
 
 //****************************************************************
@@ -130,13 +136,13 @@ int _resource_list_insert(Resource_list_t *rl, Resource_t *r)
 
 int resource_list_insert(Resource_list_t *rl, Resource_t *r)
 {
-  int err;
+    int err;
 
-  apr_thread_mutex_lock(rl->lock);
-  err = _resource_list_insert(rl, r);
-  apr_thread_mutex_unlock(rl->lock);
+    apr_thread_mutex_lock(rl->lock);
+    err = _resource_list_insert(rl, r);
+    apr_thread_mutex_unlock(rl->lock);
 
-  return(err);
+    return (err);
 }
 
 //****************************************************************
@@ -145,30 +151,30 @@ int resource_list_insert(Resource_list_t *rl, Resource_t *r)
 
 int resource_list_delete(Resource_list_t *rl, Resource_t *r)
 {
-  int i, notfound;
+    int i, notfound;
 
-  apr_thread_mutex_lock(rl->lock);
-  notfound = 1;
+    apr_thread_mutex_lock(rl->lock);
+    notfound = 1;
 
-  for (i=0; i<rl->max_res; i++) {
-     if (rl->res[i].used == 1) {
-        log_printf(15, "checking res[%d]=%s for %s\n", i, rl->res[i].r->name, r->name);
-        if (rl->res[i].r == r) {  //** Found it
-           log_printf(15, "REMOVING res[%d]=%s for %s\n", i, rl->res[i].r->name, r->name);
-           rl->n--;
-           rl->res[i].r = NULL;
-           rl->res[i].used = 0;
-           apr_hash_set(rl->table, rl->res[i].crid, APR_HASH_KEY_STRING, NULL);
-           free(rl->res[i].crid);
-           notfound = 0;
-           break;
+    for (i = 0; i < rl->max_res; i++) {
+        if (rl->res[i].used == 1) {
+            log_printf(15, "checking res[%d]=%s for %s\n", i, rl->res[i].r->name, r->name);
+            if (rl->res[i].r == r) {    //** Found it
+                log_printf(15, "REMOVING res[%d]=%s for %s\n", i, rl->res[i].r->name, r->name);
+                rl->n--;
+                rl->res[i].r = NULL;
+                rl->res[i].used = 0;
+                apr_hash_set(rl->table, rl->res[i].crid, APR_HASH_KEY_STRING, NULL);
+                free(rl->res[i].crid);
+                notfound = 0;
+                break;
+            }
         }
-     }
-  }
+    }
 
-  apr_thread_mutex_unlock(rl->lock);
+    apr_thread_mutex_unlock(rl->lock);
 
-  return(notfound);
+    return (notfound);
 }
 
 
@@ -180,27 +186,27 @@ int resource_list_delete(Resource_list_t *rl, Resource_t *r)
 
 Resource_list_t *create_resource_list(int n)
 {
-  int i;
-  Resource_list_t *rl;
+    int i;
+    Resource_list_t *rl;
 
-  tbx_type_malloc_clear(rl, Resource_list_t, 1);
-  tbx_type_malloc_clear(rl->res, rl_ele_t, n);
-  assert_result(apr_pool_create(&(rl->mpool), NULL), APR_SUCCESS);
-  assert_result_not_null(rl->table = apr_hash_make(rl->mpool));
-  apr_thread_mutex_create(&(rl->lock), APR_THREAD_MUTEX_DEFAULT, rl->mpool);
-  rl->pending = tbx_stack_new();
+    tbx_type_malloc_clear(rl, Resource_list_t, 1);
+    tbx_type_malloc_clear(rl->res, rl_ele_t, n);
+    assert_result(apr_pool_create(&(rl->mpool), NULL), APR_SUCCESS);
+    assert_result_not_null(rl->table = apr_hash_make(rl->mpool));
+    apr_thread_mutex_create(&(rl->lock), APR_THREAD_MUTEX_DEFAULT, rl->mpool);
+    rl->pending = tbx_stack_new();
 
-  rl->n = 0;
-  rl->max_res = n;
-  rl->pick_index = 0;
-  resource_set_pick_policy(rl, RL_PICK_ROUND_ROBIN);
+    rl->n = 0;
+    rl->max_res = n;
+    rl->pick_index = 0;
+    resource_set_pick_policy(rl, RL_PICK_ROUND_ROBIN);
 
-  for (i=0; i<n; i++) {
-    rl->res[i].used = 0;
-    rl->res[i].r = NULL;
-  }
+    for (i = 0; i < n; i++) {
+        rl->res[i].used = 0;
+        rl->res[i].r = NULL;
+    }
 
-  return(rl);
+    return (rl);
 }
 
 //****************************************************************
@@ -209,18 +215,19 @@ Resource_list_t *create_resource_list(int n)
 
 void free_resource_list(Resource_list_t *rl)
 {
-  int i;
+    int i;
 
-  apr_thread_mutex_destroy(rl->lock);
-  apr_pool_destroy(rl->mpool);
+    apr_thread_mutex_destroy(rl->lock);
+    apr_pool_destroy(rl->mpool);
 
-  for (i=0; i<rl->max_res; i++) {
-     if (rl->res[i].used == 1)  free(rl->res[i].crid);
-  }
+    for (i = 0; i < rl->max_res; i++) {
+        if (rl->res[i].used == 1)
+            free(rl->res[i].crid);
+    }
 
-  tbx_stack_free(rl->pending, 0);
-  free(rl->res);
-  free(rl);
+    tbx_stack_free(rl->pending, 0);
+    free(rl->res);
+    free(rl);
 }
 
 //****************************************************************
@@ -229,15 +236,15 @@ void free_resource_list(Resource_list_t *rl)
 
 Resource_t *resource_lookup(Resource_list_t *rl, char *rid)
 {
-  Resource_t *r;
+    Resource_t *r;
 
 //log_printf(15, "resource_lookup: looking up rid=!%s! len=%lu\n", rid, strlen(rid));
 
-  apr_thread_mutex_lock(rl->lock);
-  r = (Resource_t *)apr_hash_get(rl->table, rid, APR_HASH_KEY_STRING);
-  apr_thread_mutex_unlock(rl->lock);
+    apr_thread_mutex_lock(rl->lock);
+    r = (Resource_t *) apr_hash_get(rl->table, rid, APR_HASH_KEY_STRING);
+    apr_thread_mutex_unlock(rl->lock);
 
-  return(r);
+    return (r);
 }
 
 //****************************************************************
@@ -246,29 +253,29 @@ Resource_t *resource_lookup(Resource_list_t *rl, char *rid)
 
 int resource_list_pending_insert(Resource_list_t *rl, char *rid)
 {
-  int err;
-  char *prid;
+    int err;
+    char *prid;
 
-  apr_thread_mutex_lock(rl->lock);
-  tbx_stack_move_to_top(rl->pending);
-  err = 0;
-  while ((prid = tbx_stack_get_current_data(rl->pending)) != NULL) {
-log_printf(0, "rid=%s prid=%s\n", rid, prid);
-    if (strcmp(rid, prid) == 0) {
-       log_printf(0, "Attempting to insert an already pending RID=%s!\n", rid);
-       err = 1;
-       break;
+    apr_thread_mutex_lock(rl->lock);
+    tbx_stack_move_to_top(rl->pending);
+    err = 0;
+    while ((prid = tbx_stack_get_current_data(rl->pending)) != NULL) {
+        log_printf(0, "rid=%s prid=%s\n", rid, prid);
+        if (strcmp(rid, prid) == 0) {
+            log_printf(0, "Attempting to insert an already pending RID=%s!\n", rid);
+            err = 1;
+            break;
+        }
+
+        tbx_stack_move_down(rl->pending);
     }
 
-    tbx_stack_move_down(rl->pending);
-  }
+    if (err == 0) {             //** Safe to insert it
+        tbx_stack_push(rl->pending, rid);
+    }
+    apr_thread_mutex_unlock(rl->lock);
 
-  if (err == 0) {  //** Safe to insert it
-    tbx_stack_push(rl->pending, rid);
-  }
-  apr_thread_mutex_unlock(rl->lock);
-
-  return(err);
+    return (err);
 }
 
 //****************************************************************
@@ -277,29 +284,29 @@ log_printf(0, "rid=%s prid=%s\n", rid, prid);
 
 int resource_list_pending_activate(Resource_list_t *rl, char *rid, Resource_t *r)
 {
-  int slot;
-  char *prid;
+    int slot;
+    char *prid;
 
-  apr_thread_mutex_lock(rl->lock);
-  tbx_stack_move_to_top(rl->pending);
-  slot = -1;
-  while ((prid = tbx_stack_get_current_data(rl->pending)) != NULL) {
-log_printf(0, "rid=%s prid=%s\n", rid, prid);
-    if (strcmp(rid, prid) == 0) {
-       tbx_stack_delete_current(rl->pending, 0, 0);
-       slot = _resource_list_insert(rl, r);
-       break;
+    apr_thread_mutex_lock(rl->lock);
+    tbx_stack_move_to_top(rl->pending);
+    slot = -1;
+    while ((prid = tbx_stack_get_current_data(rl->pending)) != NULL) {
+        log_printf(0, "rid=%s prid=%s\n", rid, prid);
+        if (strcmp(rid, prid) == 0) {
+            tbx_stack_delete_current(rl->pending, 0, 0);
+            slot = _resource_list_insert(rl, r);
+            break;
+        }
+
+        tbx_stack_move_down(rl->pending);
+    }
+    apr_thread_mutex_unlock(rl->lock);
+
+    if (slot == -1) {
+        log_printf(0, "No pending RID matches %s\n", rid);
     }
 
-    tbx_stack_move_down(rl->pending);
-  }
-  apr_thread_mutex_unlock(rl->lock);
-
-  if (slot == -1) {
-     log_printf(0, "No pending RID matches %s\n", rid);
-  }
-
-  return(slot);
+    return (slot);
 }
 
 //****************************************************************
@@ -308,25 +315,27 @@ log_printf(0, "rid=%s prid=%s\n", rid, prid);
 
 Resource_t *resource_pick_random(Resource_list_t *rl, rid_t *rid)
 {
-  unsigned int ui;
-  int slot, i, k, mode;
+    unsigned int ui;
+    int slot, i, k, mode;
 
-  tbx_random_get_bytes(&ui, sizeof(ui));
-  double d = (1.0 * ui) / (UINT_MAX + 1.0);
+    tbx_random_get_bytes(&ui, sizeof(ui));
+    double d = (1.0 * ui) / (UINT_MAX + 1.0);
 
-  slot = rl->n * d;
+    slot = rl->n * d;
 
-  k = slot;
-  for (i=0; i<rl->max_res; i++) {
-     slot = (k + i) % rl->max_res;
-     if (rl->res[slot].used == 1) {
-        mode = resource_get_mode(rl->res[slot].r);
-        if ((mode & RES_MODE_WRITE) > 0) break;  //** Found a match
-     }
-  }
+    k = slot;
+    for (i = 0; i < rl->max_res; i++) {
+        slot = (k + i) % rl->max_res;
+        if (rl->res[slot].used == 1) {
+            mode = resource_get_mode(rl->res[slot].r);
+            if ((mode & RES_MODE_WRITE) > 0)
+                break;          //** Found a match
+        }
+    }
 
-  if (rid != NULL) *rid = rl->res[slot].r->rid;
-  return(rl->res[slot].r);
+    if (rid != NULL)
+        *rid = rl->res[slot].r->rid;
+    return (rl->res[slot].r);
 }
 
 //****************************************************************
@@ -335,25 +344,28 @@ Resource_t *resource_pick_random(Resource_list_t *rl, rid_t *rid)
 
 Resource_t *resource_pick_round_robin(Resource_list_t *rl, rid_t *rid)
 {
-  int i, k, mode;
-  int slot;
+    int i, k, mode;
+    int slot;
 
-  slot = rl->pick_index % rl->max_res;
+    slot = rl->pick_index % rl->max_res;
 
-  k = slot;
-  for (i=0; i<rl->max_res; i++) {
-     slot = (k + i) % rl->max_res;
-log_printf(15, "resource_pick_round_robin: i=%d slot=%d used=%d n=%d max=%d\n", i, slot, rl->res[slot].used, rl->n, rl->max_res);
-     if (rl->res[slot].used == 1) {
-        mode = resource_get_mode(rl->res[slot].r);
-        if ((mode & RES_MODE_WRITE) > 0) break;  //** Found a match
-     }
-  }
+    k = slot;
+    for (i = 0; i < rl->max_res; i++) {
+        slot = (k + i) % rl->max_res;
+        log_printf(15, "resource_pick_round_robin: i=%d slot=%d used=%d n=%d max=%d\n", i, slot,
+                   rl->res[slot].used, rl->n, rl->max_res);
+        if (rl->res[slot].used == 1) {
+            mode = resource_get_mode(rl->res[slot].r);
+            if ((mode & RES_MODE_WRITE) > 0)
+                break;          //** Found a match
+        }
+    }
 
-  rl->pick_index = (slot + 1) % rl->max_res;
+    rl->pick_index = (slot + 1) % rl->max_res;
 
-  if (rid != NULL) *rid = rl->res[slot].r->rid;
-  return(rl->res[slot].r);
+    if (rid != NULL)
+        *rid = rl->res[slot].r->rid;
+    return (rl->res[slot].r);
 }
 
 //****************************************************************
@@ -362,27 +374,28 @@ log_printf(15, "resource_pick_round_robin: i=%d slot=%d used=%d n=%d max=%d\n", 
 
 Resource_t *resource_pick_most_free(Resource_list_t *rl, rid_t *rid)
 {
-  int i, free_index, mode;
-  int64_t free_space, space;
+    int i, free_index, mode;
+    int64_t free_space, space;
 
-  free_space = -1;
-  free_index = -1;
+    free_space = -1;
+    free_index = -1;
 
-  for (i=0; i<rl->max_res; i++) {
-    if (rl->res[i].used == 1) {
-       mode = resource_get_mode(rl->res[i].r);
-       if ((mode & RES_MODE_WRITE) > 0) {
-          space = resource_allocable(rl->res[i].r, 0);
-          if (space > free_space) {
-             free_space = space;
-             free_index = i;
-          }
-       }
+    for (i = 0; i < rl->max_res; i++) {
+        if (rl->res[i].used == 1) {
+            mode = resource_get_mode(rl->res[i].r);
+            if ((mode & RES_MODE_WRITE) > 0) {
+                space = resource_allocable(rl->res[i].r, 0);
+                if (space > free_space) {
+                    free_space = space;
+                    free_index = i;
+                }
+            }
+        }
     }
-  }
 
-  if (rid != NULL) *rid = rl->res[free_index].r->rid;
-  return(rl->res[free_index].r);
+    if (rid != NULL)
+        *rid = rl->res[free_index].r->rid;
+    return (rl->res[free_index].r);
 }
 
 //****************************************************************
@@ -391,20 +404,20 @@ Resource_t *resource_pick_most_free(Resource_list_t *rl, rid_t *rid)
 
 Resource_t *resource_pick(Resource_list_t *rl, rid_t *rid)
 {
-  Resource_t *r;
+    Resource_t *r;
 
-  apr_thread_mutex_lock(rl->lock);
+    apr_thread_mutex_lock(rl->lock);
 
-  if (rl->n > 0) {
-     r = rl->pick_routine(rl, rid);
-  } else {
-     ibp_empty_rid(rid);
-     apr_thread_mutex_unlock(rl->lock);
-     return(NULL);
-  }
-  apr_thread_mutex_unlock(rl->lock);
+    if (rl->n > 0) {
+        r = rl->pick_routine(rl, rid);
+    } else {
+        ibp_empty_rid(rid);
+        apr_thread_mutex_unlock(rl->lock);
+        return (NULL);
+    }
+    apr_thread_mutex_unlock(rl->lock);
 
-  return(r);
+    return (r);
 }
 
 //****************************************************************
@@ -413,11 +426,18 @@ Resource_t *resource_pick(Resource_list_t *rl, rid_t *rid)
 
 void resource_set_pick_policy(Resource_list_t *rl, int policy)
 {
-  switch (policy) {
-    case RL_PICK_RANDOM:      rl->pick_routine = resource_pick_random;  break; 
-    case RL_PICK_ROUND_ROBIN: rl->pick_routine = resource_pick_round_robin;  break; 
-    case RL_PICK_MOST_FREE:   rl->pick_routine = resource_pick_most_free;  break; 
+    switch (policy) {
+    case RL_PICK_RANDOM:
+        rl->pick_routine = resource_pick_random;
+        break;
+    case RL_PICK_ROUND_ROBIN:
+        rl->pick_routine = resource_pick_round_robin;
+        break;
+    case RL_PICK_MOST_FREE:
+        rl->pick_routine = resource_pick_most_free;
+        break;
     default:
-     rl->pick_routine = resource_pick_round_robin;  break; 
-  }
+        rl->pick_routine = resource_pick_round_robin;
+        break;
+    }
 }

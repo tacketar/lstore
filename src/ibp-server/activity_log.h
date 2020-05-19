@@ -28,44 +28,44 @@
 #define ALOG_APPEND 1
 
 //*** Record types ****
-#define ALOG_REC_VALIDATE_GET_CHKSUM   207    //** IBP_VALIDATE_CHKSUM and IBP_GET_CHKSUM
-#define ALOG_REC_INT_GET_CONFIG        208    //** Get config command
-#define ALOG_REC_IBP_MERGE             209    //** Merge allocate command
-#define ALOG_REC_IBP_SPLIT_ALLOCATE64  210    //** 64 bit split allocate
-#define ALOG_REC_IBP_SPLIT_ALLOCATE32  211    //** 32 bit split allocate
-#define ALOG_REC_INT_EXPIRE_LIST      212    //** Internal_expire_list
-#define ALOG_REC_INT_DATE_FREE        213    //** Internal_date_free
-#define ALOG_REC_ALIAS_COPY64         214    //** IBP_SEND/PUSH/PULL
-#define ALOG_REC_ALIAS_COPY32         215    //**    ""
-#define ALOG_REC_COPY64               216    //**    ""
-#define ALOG_REC_COPY32               217    //**    ""
-#define ALOG_REC_ALIAS_READ64         218    //** IBP_READ
-#define ALOG_REC_ALIAS_READ32         219    //** IBP_READ
-#define ALOG_REC_READ64               220    //** IBP_READ
-#define ALOG_REC_READ32               221    //** IBP_READ
-#define ALOG_REC_ALIAS_WRITE_APPEND64 222    //** IBP_STORE
-#define ALOG_REC_ALIAS_WRITE_APPEND32 223    //** IBP_STORE
-#define ALOG_REC_ALIAS_WRITE64        224    //** IBP_WRITE
-#define ALOG_REC_ALIAS_WRITE32        225    //** IBP_WRITE
-#define ALOG_REC_WRITE_APPEND64       226    //** IBP_STORE
-#define ALOG_REC_WRITE_APPEND32       227    //** IBP_STORE
-#define ALOG_REC_WRITE64              228    //** IBP_WRITE
-#define ALOG_REC_WRITE32              229    //** IBP_WRITE
-#define ALOG_REC_ALIAS_MANAGE_PROBE   230    //** IBP_ALIAS_MANAGE/IBP_PROBE
-#define ALOG_REC_MANAGE_PROBE         231    //** IBP_MANAGE/IBP_PROBE
-#define ALOG_REC_MANAGE_CHANGE        232    //** IBP_MANAGE/IBP_CHNG
-#define ALOG_REC_ALIAS_MANAGE_CHANGE  233    //** IBP_ALIAS_MANAGE/IBP_CHNG
-#define ALOG_REC_MANAGE_INCDEC        234    //** IBP_MANAGE IBP_INCR/IBP_DECR
-#define ALOG_REC_ALIAS_MANAGE_INCDEC  235    //** IBP_ALIAS_MANAGE IBP_INCR/IBP_DECR
-#define ALOG_REC_MANAGE_BAD          236    //** Handles generic IBP_ALIAS_MANAGE/IBP_MANAGE errors
-#define ALOG_REC_STATUS_CHANGE       237    //** IBP_STATUS/IBP_ST_CHANGE
-#define ALOG_REC_STATUS_INQ          238    //** IBP_STATUS/IBP_ST_INQ
-#define ALOG_REC_STATUS_STATS        239    //** IBP_STATUS/IBP_ST_STATS
-#define ALOG_REC_STATUS_RES          240    //** IBP_STATUS/IBP_ST_RES
-#define ALOG_REC_STATUS_VERSION      241    //** IBP_STATUS/IBP_ST_VERSION
-#define ALOG_REC_ALIAS_ALLOC32       242    //** ALIAS allocation
-#define ALOG_REC_ALIAS_ALLOC64       243    //** ALIAS allocation
-#define ALOG_REC_INTERNAL_GET_ALLOC  244    //** Internal get_alloc command
+#define ALOG_REC_VALIDATE_GET_CHKSUM   207      //** IBP_VALIDATE_CHKSUM and IBP_GET_CHKSUM
+#define ALOG_REC_INT_GET_CONFIG        208      //** Get config command
+#define ALOG_REC_IBP_MERGE             209      //** Merge allocate command
+#define ALOG_REC_IBP_SPLIT_ALLOCATE64  210      //** 64 bit split allocate
+#define ALOG_REC_IBP_SPLIT_ALLOCATE32  211      //** 32 bit split allocate
+#define ALOG_REC_INT_EXPIRE_LIST      212       //** Internal_expire_list
+#define ALOG_REC_INT_DATE_FREE        213       //** Internal_date_free
+#define ALOG_REC_ALIAS_COPY64         214       //** IBP_SEND/PUSH/PULL
+#define ALOG_REC_ALIAS_COPY32         215       //**    ""
+#define ALOG_REC_COPY64               216       //**    ""
+#define ALOG_REC_COPY32               217       //**    ""
+#define ALOG_REC_ALIAS_READ64         218       //** IBP_READ
+#define ALOG_REC_ALIAS_READ32         219       //** IBP_READ
+#define ALOG_REC_READ64               220       //** IBP_READ
+#define ALOG_REC_READ32               221       //** IBP_READ
+#define ALOG_REC_ALIAS_WRITE_APPEND64 222       //** IBP_STORE
+#define ALOG_REC_ALIAS_WRITE_APPEND32 223       //** IBP_STORE
+#define ALOG_REC_ALIAS_WRITE64        224       //** IBP_WRITE
+#define ALOG_REC_ALIAS_WRITE32        225       //** IBP_WRITE
+#define ALOG_REC_WRITE_APPEND64       226       //** IBP_STORE
+#define ALOG_REC_WRITE_APPEND32       227       //** IBP_STORE
+#define ALOG_REC_WRITE64              228       //** IBP_WRITE
+#define ALOG_REC_WRITE32              229       //** IBP_WRITE
+#define ALOG_REC_ALIAS_MANAGE_PROBE   230       //** IBP_ALIAS_MANAGE/IBP_PROBE
+#define ALOG_REC_MANAGE_PROBE         231       //** IBP_MANAGE/IBP_PROBE
+#define ALOG_REC_MANAGE_CHANGE        232       //** IBP_MANAGE/IBP_CHNG
+#define ALOG_REC_ALIAS_MANAGE_CHANGE  233       //** IBP_ALIAS_MANAGE/IBP_CHNG
+#define ALOG_REC_MANAGE_INCDEC        234       //** IBP_MANAGE IBP_INCR/IBP_DECR
+#define ALOG_REC_ALIAS_MANAGE_INCDEC  235       //** IBP_ALIAS_MANAGE IBP_INCR/IBP_DECR
+#define ALOG_REC_MANAGE_BAD          236        //** Handles generic IBP_ALIAS_MANAGE/IBP_MANAGE errors
+#define ALOG_REC_STATUS_CHANGE       237        //** IBP_STATUS/IBP_ST_CHANGE
+#define ALOG_REC_STATUS_INQ          238        //** IBP_STATUS/IBP_ST_INQ
+#define ALOG_REC_STATUS_STATS        239        //** IBP_STATUS/IBP_ST_STATS
+#define ALOG_REC_STATUS_RES          240        //** IBP_STATUS/IBP_ST_RES
+#define ALOG_REC_STATUS_VERSION      241        //** IBP_STATUS/IBP_ST_VERSION
+#define ALOG_REC_ALIAS_ALLOC32       242        //** ALIAS allocation
+#define ALOG_REC_ALIAS_ALLOC64       243        //** ALIAS allocation
+#define ALOG_REC_INTERNAL_GET_ALLOC  244        //** Internal get_alloc command
 #define ALOG_REC_IBP_RENAME      245    //** Rename command
 #define ALOG_REC_OSD_ID          246    //** Prints an osd_id
 #define ALOG_REC_IBP_ALLOCATE64  247    //** 64 bit allocate
@@ -78,58 +78,58 @@
 #define ALOG_REC_CLOSE           254    //** Written automatically upon close
 #define ALOG_REC_OPEN            255    //** Written automatically upon open
 
-typedef struct {  //*** Main file header
-  uint64_t version;
-  uint64_t start_time;
-  uint64_t end_time;
-  uint64_t state;
-} __attribute__((__packed__)) alog_file_header_t;
+typedef struct {                //*** Main file header
+    uint64_t version;
+    uint64_t start_time;
+    uint64_t end_time;
+    uint64_t state;
+} __attribute__ ((__packed__)) alog_file_header_t;
 
-typedef struct {  //** Activity log record header - 1 byte ID
-   uint64_t time;             //** Command time stamp
-   uint8_t  command;          //** Primary command
-   uint8_t thread_id;         //** Thread ID.  Used to link with NS id
-} __attribute__((__packed__)) alog_header1_t;
+typedef struct {                //** Activity log record header - 1 byte ID
+    uint64_t time;              //** Command time stamp
+    uint8_t command;            //** Primary command
+    uint8_t thread_id;          //** Thread ID.  Used to link with NS id
+} __attribute__ ((__packed__)) alog_header1_t;
 
-typedef struct {  //** Activity log record header - 2 byte ID
-   uint64_t time;             //** Command time stamp
-   uint8_t command;           //** Primary command
-   uint16_t thread_id;        //** Thread ID.  Used to link with NS id
-} __attribute__((__packed__)) alog_header2_t;
+typedef struct {                //** Activity log record header - 2 byte ID
+    uint64_t time;              //** Command time stamp
+    uint8_t command;            //** Primary command
+    uint16_t thread_id;         //** Thread ID.  Used to link with NS id
+} __attribute__ ((__packed__)) alog_header2_t;
 
 
 typedef struct {
-   char name[256];
+    char name[256];
 } rl_map_t;
 
 typedef struct {
-   int id;
-   int family;
-   int used;
-   char address[16];
+    int id;
+    int family;
+    int used;
+    char address[16];
 } ns_map_t;
 
 struct alog_entry_s;
 typedef struct alog_entry_s alog_entry_t;
 typedef struct activity_log_s {
-  alog_file_header_t header;
-  alog_entry_t *table;
-  char *name;
-  size_t max_size;
-  size_t curr_size;
-  int max_id;
-  int mode;
-  ns_map_t *ns_map;
-  rl_map_t *rl_map;
-  int nres;
-  int (*append_header)(FILE *fd, int id, int command);
-  int (*read_header)(FILE *fd, apr_time_t *time, int *id, int *command);
-  void(*print_header)(FILE *fd, apr_time_t t, int id);
-  FILE *fd;
+    alog_file_header_t header;
+    alog_entry_t *table;
+    char *name;
+    size_t max_size;
+    size_t curr_size;
+    int max_id;
+    int mode;
+    ns_map_t *ns_map;
+    rl_map_t *rl_map;
+    int nres;
+    int (*append_header) (FILE *fd, int id, int command);
+    int (*read_header) (FILE *fd, apr_time_t *time, int *id, int *command);
+    void (*print_header) (FILE *fd, apr_time_t t, int id);
+    FILE *fd;
 } activity_log_t;
 
-struct alog_entry_s {   //** Activity log vector table for command decoding
-   int (*process_entry)(activity_log_t *alog, int cmd, FILE *outfd);
+struct alog_entry_s {           //** Activity log vector table for command decoding
+    int (*process_entry) (activity_log_t *alog, int cmd, FILE *outfd);
 };
 
 
@@ -139,15 +139,19 @@ int alog_append_internal_get_config(int tid);
 int alog_append_internal_expire_list(int tid, int ri, apr_time_t start_time, int max_rec);
 int alog_append_internal_date_free(int tid, int ri, uint64_t size);
 int alog_append_dd_copy(int cmd, int tid, int ri, osd_id_t pid, osd_id_t id,
-        uint64_t size, uint64_t offset, uint64_t offset2, int write_mode, int ctype, char *path, int port, 
-        int family, const char *address, const char *key, const char *typekey);
+                        uint64_t size, uint64_t offset, uint64_t offset2, int write_mode,
+                        int ctype, char *path, int port, int family, const char *address,
+                        const char *key, const char *typekey);
 int alog_append_read(int tid, int ri, osd_id_t pid, osd_id_t id, uint64_t offset, uint64_t size);
-int alog_append_write(int tid, int cmd, int ri, osd_id_t pid, osd_id_t id, uint64_t offset, uint64_t size);
+int alog_append_write(int tid, int cmd, int ri, osd_id_t pid, osd_id_t id, uint64_t offset,
+                      uint64_t size);
 int alog_append_alias_manage_probe(int tid, int ri, osd_id_t pid, osd_id_t id);
 int alog_append_manage_probe(int tid, int ri, osd_id_t id);
 int alog_append_manage_change(int tid, int ri, osd_id_t id, uint64_t size, int rel, apr_time_t t);
-int alog_append_alias_manage_change(int tid, int ri, osd_id_t id, uint64_t offset, uint64_t size, apr_time_t t);
-int alog_append_manage_incdec(int tid, int cmd, int subcmd, int ri, osd_id_t pid, osd_id_t id, int cap_type);
+int alog_append_alias_manage_change(int tid, int ri, osd_id_t id, uint64_t offset, uint64_t size,
+                                    apr_time_t t);
+int alog_append_manage_incdec(int tid, int cmd, int subcmd, int ri, osd_id_t pid, osd_id_t id,
+                              int cap_type);
 int alog_append_manage_bad(int tid, int command, int subcmd);
 int alog_append_subcmd(int tid, int command, int subcmd);
 int alog_append_status_inq(int tid, int ri);
@@ -156,11 +160,14 @@ int alog_append_status_change(int tid);
 int alog_append_status_version(int tid);
 int alog_append_status_res(int tid);
 int alog_append_osd_id(int tid, osd_id_t id);
-int alog_append_alias_alloc(int tid, int ri, osd_id_t id, uint64_t offset, uint64_t size, apr_time_t expire);
+int alog_append_alias_alloc(int tid, int ri, osd_id_t id, uint64_t offset, uint64_t size,
+                            apr_time_t expire);
 int alog_append_internal_get_alloc(int tid, int rindex, osd_id_t id);
 int alog_append_ibp_rename(int tid, int rindex, osd_id_t id);
-int alog_append_ibp_allocate(int tid, int rindex, uint64_t max_size, int atype, int rel, apr_time_t expiration);
-int alog_append_ibp_split_allocate(int tid, int rindex, osd_id_t id, uint64_t max_size, int atype, int rel, apr_time_t expiration);
+int alog_append_ibp_allocate(int tid, int rindex, uint64_t max_size, int atype, int rel,
+                             apr_time_t expiration);
+int alog_append_ibp_split_allocate(int tid, int rindex, osd_id_t id, uint64_t max_size, int atype,
+                                   int rel, apr_time_t expiration);
 int alog_append_cmd_result(int tid, int status);
 int alog_append_thread_open(int tid, int ns_id, int family, char *address);
 int alog_append_thread_close(int tid, int ncmds);
@@ -191,16 +198,5 @@ IBPS_API alog_file_header_t get_alog_header(activity_log_t *alog);
 int write_file_header(activity_log_t *alog);
 int read_file_header(activity_log_t *alog);
 int update_file_header(activity_log_t *alog, int state);
-IBPS_API activity_log_t * activity_log_open(const char *logname, int max_id, int mode);
+IBPS_API activity_log_t *activity_log_open(const char *logname, int max_id, int mode);
 IBPS_API void activity_log_close(activity_log_t *alog);
-
-
-
-
-
-
-
-
- 
-
-   

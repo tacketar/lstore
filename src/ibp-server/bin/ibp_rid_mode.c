@@ -4,7 +4,7 @@
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
-   
+
        http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
@@ -12,7 +12,7 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/ 
+*/
 
 #include <string.h>
 #include <stdio.h>
@@ -43,53 +43,58 @@
 
 int main(int argc, char **argv)
 {
-  int bufsize = 1024*1024;
-  char buffer[bufsize], *bstate;
-  int i, port, mode, timeout;
-  char *host, *rid;
-  tbx_ns_t *ns;
+    int bufsize = 1024 * 1024;
+    char buffer[bufsize], *bstate;
+    int i, port, mode, timeout;
+    char *host, *rid;
+    tbx_ns_t *ns;
 
-  if (argc < 4) {
-     printf("ibp_rid_mode host port RID [read] [write] [manage]\n");
-     printf("\n");
-     return(0);
-  }
-
-  timeout = 20;
-
-  i = 1;
-
-  host = argv[i]; i++;
-  port = atoi(argv[i]); i++;
-  rid = argv[i]; i++;
-
-  mode = 0;
-  while (i < argc) {
-    if (strcasecmp(argv[i], "read") == 0) {
-       mode |= RES_MODE_READ;
-    } else if (strcasecmp(argv[i], "write") == 0) {
-       mode |= RES_MODE_WRITE;
-    } else if (strcasecmp(argv[i], "manage") == 0) {
-       mode |= RES_MODE_MANAGE;
+    if (argc < 4) {
+        printf("ibp_rid_mode host port RID [read] [write] [manage]\n");
+        printf("\n");
+        return (0);
     }
 
+    timeout = 20;
+
+    i = 1;
+
+    host = argv[i];
     i++;
-  }
+    port = atoi(argv[i]);
+    i++;
+    rid = argv[i];
+    i++;
 
-  sprintf(buffer, "1 90 %s %d %d\n", rid, mode, timeout);  // IBP_INTERNAL_SET_MODE command
+    mode = 0;
+    while (i < argc) {
+        if (strcasecmp(argv[i], "read") == 0) {
+            mode |= RES_MODE_READ;
+        } else if (strcasecmp(argv[i], "write") == 0) {
+            mode |= RES_MODE_WRITE;
+        } else if (strcasecmp(argv[i], "manage") == 0) {
+            mode |= RES_MODE_MANAGE;
+        }
 
-  assert(apr_initialize() == APR_SUCCESS);
+        i++;
+    }
 
-  tbx_dnsc_startup_sized(10);
+    sprintf(buffer, "1 90 %s %d %d\n", rid, mode, timeout);     // IBP_INTERNAL_SET_MODE command
 
-  ns = cmd_send(host, port, buffer, &bstate, timeout);
-  if (ns == NULL) return(-1);
-  if (bstate != NULL) free(bstate);
+    assert(apr_initialize() == APR_SUCCESS);
 
-  //** Close the connection
-  tbx_ns_close(ns);
+    tbx_dnsc_startup_sized(10);
 
-  apr_terminate();
+    ns = cmd_send(host, port, buffer, &bstate, timeout);
+    if (ns == NULL)
+        return (-1);
+    if (bstate != NULL)
+        free(bstate);
 
-  return(0);
+    //** Close the connection
+    tbx_ns_close(ns);
+
+    apr_terminate();
+
+    return (0);
 }

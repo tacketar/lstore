@@ -30,20 +30,19 @@
 
 int main(int argc, char *argv[])
 {
-  uint64_t llu;
- 
-  tbx_random_startup();
+    uint64_t llu;
 
-  tbx_random_get_bytes(&llu, sizeof(llu));
+    tbx_random_startup();
 
-  printf("%lu\n", llu);  
+    tbx_random_get_bytes(&llu, sizeof(llu));
 
-  char addr[16], name[256];
+    printf("%lu\n", llu);
 
-  tbx_random_get_bytes(addr, sizeof(addr));
-  
-  name[0] = '\0';
-  inet_ntop(AF_INET6, addr, name, 256);
-  printf("ipv6:%s\n", name);
+    char addr[16], name[256];
+
+    tbx_random_get_bytes(addr, sizeof(addr));
+
+    name[0] = '\0';
+    inet_ntop(AF_INET6, addr, name, 256);
+    printf("ipv6:%s\n", name);
 }
-

@@ -22,9 +22,22 @@
 
 tbx_ph_t *_ph;
 
-void release_thread_slot(int slot) { tbx_ph_release(_ph, slot); }
-int reserve_thread_slot() { return(tbx_ph_reserve(_ph)); }
-void destroy_thread_slots() { tbx_ph_destroy(_ph); }
-void init_thread_slots(int size) { _ph = tbx_ph_new("thread_slots", size); }
+void release_thread_slot(int slot)
+{
+    tbx_ph_release(_ph, slot);
+}
 
+int reserve_thread_slot()
+{
+    return (tbx_ph_reserve(_ph));
+}
 
+void destroy_thread_slots()
+{
+    tbx_ph_destroy(_ph);
+}
+
+void init_thread_slots(int size)
+{
+    _ph = tbx_ph_new("thread_slots", size);
+}

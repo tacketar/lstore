@@ -37,7 +37,7 @@
 #define id_slot(id) (id & LOCK_BITMASK)
 
 apr_thread_mutex_t *_lock_table[LOCK_MAX];
-apr_pool_t  *_lock_pool;
+apr_pool_t *_lock_pool;
 
 //******************************************************************
 //  lock_osd_id - Locks the ID.  Blocks until a lock can be acquired
@@ -45,7 +45,7 @@ apr_pool_t  *_lock_pool;
 
 void lock_osd_id(osd_id_t id)
 {
-   apr_thread_mutex_lock(_lock_table[id_slot(id)]);
+    apr_thread_mutex_lock(_lock_table[id_slot(id)]);
 }
 
 //******************************************************************
@@ -54,7 +54,7 @@ void lock_osd_id(osd_id_t id)
 
 void unlock_osd_id(osd_id_t id)
 {
-   apr_thread_mutex_unlock(_lock_table[id_slot(id)]);
+    apr_thread_mutex_unlock(_lock_table[id_slot(id)]);
 }
 
 //******************************************************************
@@ -63,18 +63,18 @@ void unlock_osd_id(osd_id_t id)
 
 void lock_osd_id_pair(osd_id_t id1, osd_id_t id2)
 {
-   int slot1 = id_slot(id1);
-   int slot2 = id_slot(id2);
+    int slot1 = id_slot(id1);
+    int slot2 = id_slot(id2);
 
-   if (slot1 == slot2) {
-      apr_thread_mutex_lock(_lock_table[slot1]);
-   } else if (slot1 > slot2) {
-      apr_thread_mutex_lock(_lock_table[slot1]);
-      apr_thread_mutex_lock(_lock_table[slot2]);
-   } else {
-      apr_thread_mutex_lock(_lock_table[slot2]);
-      apr_thread_mutex_lock(_lock_table[slot1]);
-   }
+    if (slot1 == slot2) {
+        apr_thread_mutex_lock(_lock_table[slot1]);
+    } else if (slot1 > slot2) {
+        apr_thread_mutex_lock(_lock_table[slot1]);
+        apr_thread_mutex_lock(_lock_table[slot2]);
+    } else {
+        apr_thread_mutex_lock(_lock_table[slot2]);
+        apr_thread_mutex_lock(_lock_table[slot1]);
+    }
 }
 
 //******************************************************************
@@ -83,18 +83,18 @@ void lock_osd_id_pair(osd_id_t id1, osd_id_t id2)
 
 void unlock_osd_id_pair(osd_id_t id1, osd_id_t id2)
 {
-   int slot1 = id_slot(id1);
-   int slot2 = id_slot(id2);
+    int slot1 = id_slot(id1);
+    int slot2 = id_slot(id2);
 
-   if (slot1 == slot2) {
-      apr_thread_mutex_unlock(_lock_table[slot1]);
-   } else if (slot1 > slot2) {
-      apr_thread_mutex_unlock(_lock_table[slot2]);
-      apr_thread_mutex_unlock(_lock_table[slot1]);
-   } else {
-      apr_thread_mutex_unlock(_lock_table[slot1]);
-      apr_thread_mutex_unlock(_lock_table[slot2]);
-   }
+    if (slot1 == slot2) {
+        apr_thread_mutex_unlock(_lock_table[slot1]);
+    } else if (slot1 > slot2) {
+        apr_thread_mutex_unlock(_lock_table[slot2]);
+        apr_thread_mutex_unlock(_lock_table[slot1]);
+    } else {
+        apr_thread_mutex_unlock(_lock_table[slot1]);
+        apr_thread_mutex_unlock(_lock_table[slot2]);
+    }
 }
 
 //******************************************************************
@@ -103,13 +103,13 @@ void unlock_osd_id_pair(osd_id_t id1, osd_id_t id2)
 
 void lock_alloc_init()
 {
-  int i;
+    int i;
 
-  apr_pool_create(&_lock_pool, NULL);
+    apr_pool_create(&_lock_pool, NULL);
 
-  for (i=0; i<LOCK_MAX; i++) {
-     apr_thread_mutex_create(&(_lock_table[i]), APR_THREAD_MUTEX_DEFAULT, _lock_pool);
-  }
+    for (i = 0; i < LOCK_MAX; i++) {
+        apr_thread_mutex_create(&(_lock_table[i]), APR_THREAD_MUTEX_DEFAULT, _lock_pool);
+    }
 }
 
 //******************************************************************
@@ -118,13 +118,11 @@ void lock_alloc_init()
 
 void lock_alloc_destroy()
 {
-  int i;
+    int i;
 
-  for (i=0; i<LOCK_MAX; i++) {
-     apr_thread_mutex_destroy(_lock_table[i]);
-  }
+    for (i = 0; i < LOCK_MAX; i++) {
+        apr_thread_mutex_destroy(_lock_table[i]);
+    }
 
-  apr_pool_destroy(_lock_pool);
+    apr_pool_destroy(_lock_pool);
 }
-
-

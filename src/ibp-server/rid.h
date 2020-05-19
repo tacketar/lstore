@@ -24,8 +24,8 @@ extern "C" {
 
 #define RID_LEN          128
 
-typedef struct {      //**IBP resource ID data type
-  char name[RID_LEN];
+typedef struct {            //**IBP resource ID data type
+    char name[RID_LEN];
 } rid_t;
 
 
@@ -38,5 +38,4 @@ int ibp_compare_rid(rid_t rid1, rid_t rid2);
 #ifdef __cplusplus
 }
 #endif
-
 #endif

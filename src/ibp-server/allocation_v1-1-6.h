@@ -41,19 +41,18 @@
 //    char v[CAP_SIZE+1];
 //} Cap_t;
 
-typedef struct {    // IBP Allocation
-  uint32_t   expiration;
-  osd_id_t id;
-  uint64_t size;
-  uint64_t max_size;
-  uint64_t r_pos;
-  uint64_t w_pos;
-  int32_t  type; /* BYTE_ARRAY, QUEUE, etc */
-  int32_t  reliability; /* SOFT/HARD */
-  int32_t  read_refcount;
-  int32_t  write_refcount;
-  Cap_t    caps[3];
+typedef struct {                // IBP Allocation
+    uint32_t expiration;
+    osd_id_t id;
+    uint64_t size;
+    uint64_t max_size;
+    uint64_t r_pos;
+    uint64_t w_pos;
+    int32_t type;               /* BYTE_ARRAY, QUEUE, etc */
+    int32_t reliability;        /* SOFT/HARD */
+    int32_t read_refcount;
+    int32_t write_refcount;
+    Cap_t caps[3];
 } Allocation_v116_t;
 
 #endif
-

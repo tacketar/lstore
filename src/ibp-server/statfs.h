@@ -17,9 +17,8 @@
 //*** Handles statfs header mangling
 
 #ifdef _DARWIN
-#include <sys/param.h>     
-#include <sys/mount.h>     
+#include <sys/param.h>
+#include <sys/mount.h>
 #else
 #include <sys/vfs.h>
 #endif
-

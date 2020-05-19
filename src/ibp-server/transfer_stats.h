@@ -18,19 +18,17 @@
 // Definition for gathering depot statistics
 //************************************************************
 
-#define IP_LEN 24  //Just store the decimal form
+#define IP_LEN 24               //Just store the decimal form
 
 #define DIR_IN  0
 #define DIR_OUT 1
 #define DEPOT_COPY_OUT 2
 
 typedef struct {
-  int          id;                 //** Command id
-  int          start;              //** Command start time
-  int          end;                //** Command start time
-  int          nbytes;             //** Amount of data transfered
-  int          dir;               //** Direction of traffic
-  char         address[IP_LEN];    //** IP address of command
+    int id;                     //** Command id
+    int start;                  //** Command start time
+    int end;                    //** Command start time
+    int nbytes;                 //** Amount of data transfered
+    int dir;                    //** Direction of traffic
+    char address[IP_LEN];       //** IP address of command
 } Transfer_stat_t;
-
-

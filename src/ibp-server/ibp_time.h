@@ -31,6 +31,3 @@ typedef time_t ibp_time_t;
 
 
 #endif
-
-
-

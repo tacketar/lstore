@@ -27,15 +27,15 @@ extern "C" {
 #define ENVELOPE_SIZE 8
 
 typedef struct {
-  union {
-    unsigned char byte[4];
-    uint32_t n;
-  } u32;
+    union {
+        unsigned char byte[4];
+        uint32_t n;
+    } u32;
 } env_command_t;
 
 typedef struct {
-  env_command_t cmd;
-  uint32_t size;
+    env_command_t cmd;
+    uint32_t size;
 } envelope_t;
 
 void envelope_clear(envelope_t *env);
@@ -56,7 +56,4 @@ int env_cmd_compare(env_command_t *cmd1, env_command_t *cmd2);
 #ifdef __cplusplus
 }
 #endif
-
 #endif
-
-

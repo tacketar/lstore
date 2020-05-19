@@ -15,4 +15,3 @@
 */
 
 char *server_version();
-
