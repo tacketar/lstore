@@ -11,5 +11,5 @@ fi
 echo "****************************************************"
 echo
 
-grep err: /tmp/os.fsck | awk '{print $3}' | cut -f2 -d: | os_fsck -c /etc/lio/lio-warmer.cfg -i 20 ${OPT} -
+grep err: /tmp/os.fsck | awk '{print $3}' | cut -f2 -d: | os_fsck -c /etc/lio/warmer.cfg -i 20 ${OPT} -
 
