@@ -2143,7 +2143,7 @@ int handle_read(ibp_task_t *task)
 //     if rem_offset < 0 then the data is appended
 //*****************************************************************
 
-int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rpid)
+int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offset, osd_id_t rpid)
 {
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_read_t *r = &(cmd->cargs.read);
@@ -2159,7 +2159,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
     char dcrid[128];
     char *bstate;
     rid_t drid;
-    Cap_t dcap;
+    cap_id_t dcap;
 
     log_printf(10, "same_depot_copy: Starting to process command ns=%d rem_cap=%s\n",
                tbx_ns_getid(task->ns), rem_cap);
@@ -2178,10 +2178,18 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
     ibp_rid2str(drid, dcrid);
 
     //** Get the write key
-    dcap.v[sizeof(dcap.v) - 1] = '\0';
-    strncpy(dcap.v, tbx_stk_string_token(NULL, " ", &bstate, &finished), sizeof(dcap.v) - 1);
-    debug_printf(10, "same_depot_copy: remote_cap=%s\n", dcap.v);
+    dcap.cap.v[sizeof(dcap.cap.v) - 1] = '\0';
+    strncpy(dcap.cap.v, tbx_stk_string_token(NULL, " ", &bstate, &finished), sizeof(dcap.cap.v) - 1);
 
+    //** Now get the allocation ID
+    if (sscanf(rem_id, LU , &(dcap.id)) != 1) {
+        log_printf(10, "ERROR parsing ID!\n");
+        send_cmd_result(task, IBP_E_WRONG_CAP_FORMAT);
+        cmd->state = CMD_STATE_FINISHED;
+        return (0);
+    }
+
+    debug_printf(10, "same_depot_copy: remote_cap=%s\n", dcap.cap.v);
     debug_printf(10, "same_depot_copy: RID=%s\n", dcrid);
 
     rem_r = resource_lookup(global_config->rl, dcrid);
@@ -2195,8 +2203,8 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
     if ((cmd->command == IBP_PULL) || (cmd->command == IBP_PULL_CHKSUM))
         cmode = READ_CAP;
 
-    if ((err = get_allocation_by_cap_resource(rem_r, cmode, &(dcap), &rem_a)) != 0) {
-        log_printf(10, "same_depot_copy: Invalid destcap: %s for resource = %s\n", dcap.v,
+    if ((err = get_allocation_by_cap_id_resource(rem_r, cmode, &(dcap), &rem_a)) != 0) {
+        log_printf(10, "same_depot_copy: Invalid destcap: %s for resource = %s\n", dcap.cap.v,
                    rem_r->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (0);
@@ -2210,7 +2218,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
         if ((rem_a.alias_offset > 0) && (rem_offset < 0)) {     //** This is an append but the alias can't do it
             log_printf(10,
                        "same_depot_copy: destcap: %s on resource = %s is a alias with offset=" LU
-                       "\n", dcap.v, rem_r->name, rem_a.alias_offset);
+                       "\n", dcap.cap.v, rem_r->name, rem_a.alias_offset);
             send_cmd_result(task, IBP_E_CAP_ACCESS_DENIED);
             return (0);
         }
@@ -2223,7 +2231,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
 
     //*** Now get the true allocation ***
     if ((err = get_allocation_resource(rem_r, did, &rem_a)) != 0) {
-        log_printf(10, "same_depot_copy: Invalid destcap: %s for resource = %s\n", dcap.v,
+        log_printf(10, "same_depot_copy: Invalid destcap: %s for resource = %s\n", dcap.cap.v,
                    rem_r->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(did);
@@ -2240,7 +2248,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
         if (((rem_offset + r->iovec.vec[0].len) > alias_end) && (rem_a.type == IBP_BYTEARRAY)) {
             log_printf(10,
                        "same_depot_copy: Attempt to write beyond end of alias allocation! cap: %s r = %s off=%d len="
-                       LU "\n", dcap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
+                       LU "\n", dcap.cap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             unlock_osd_id(did);
             return (0);
@@ -2252,7 +2260,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, int rem_offset, osd_id_t rp
         && (rem_a.type == IBP_BYTEARRAY)) {
         log_printf(10,
                    "same_depot_copy: Attempt to write beyond end of allocation! cap: %s r = %s off=%d len="
-                   LU "\n", dcap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
+                   LU "\n", dcap.cap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         unlock_osd_id(did);
         return (0);
@@ -2542,7 +2550,7 @@ int handle_copy(ibp_task_t *task)
     for (i = 0; i < global_config->server.n_iface; i++) {
         if ((strcmp(rhost, global_config->server.iface[i].hostname) == 0)
             && (rport == global_config->server.iface[i].port)) {
-            err = same_depot_copy(task, key, r->remote_offset, rpid);
+            err = same_depot_copy(task, key, typekey, r->remote_offset, rpid);
             free(temp);
             return (err);
         }
