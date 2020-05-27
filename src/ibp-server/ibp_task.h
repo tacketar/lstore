@@ -88,8 +88,8 @@ typedef struct {                //**Allocate args
 
 typedef struct {                //**merge allocation args
     rid_t rid;                  //RID for both allocations
-    Cap_t mkey;                 //Master cap
-    Cap_t ckey;                 //Child cap
+    cap_id_t mkey;              //Master cap
+    cap_id_t ckey;              //Child cap
     char crid[128];             //** Character version of the RID for querying
 } Cmd_merge_t;
 

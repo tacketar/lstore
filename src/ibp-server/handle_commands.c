@@ -230,15 +230,15 @@ int handle_merge(ibp_task_t *task)
         return (global_config->soft_fail);
     }
     //** Get the master allocation ***
-    if ((err = get_allocation_by_cap_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
-        log_printf(10, "handle_merge: Invalid mcap: %s rid=%s\n", op->mkey.v, r->name);
+    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
+        log_printf(10, "handle_merge: Invalid mcap: %s " LU " rid=%s\n", op->mkey.cap.v, op->mkey.id, r->name);
         alog_append_ibp_merge(task->myid, 0, 0, r->rl_index);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
     }
     //** and the child allocation
-    if ((err = get_allocation_by_cap_resource(r, MANAGE_CAP, &(op->ckey), &ca)) != 0) {
-        log_printf(10, "handle_merge: Invalid childcap: %s rid=%s\n", op->ckey.v, r->name);
+    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->ckey), &ca)) != 0) {
+        log_printf(10, "handle_merge: Invalid childcap: %s rid=%s\n", op->ckey.cap.v, r->name);
         alog_append_ibp_merge(task->myid, ma.id, 0, r->rl_index);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
@@ -250,16 +250,16 @@ int handle_merge(ibp_task_t *task)
     lock_osd_id_pair(ma.id, ca.id);
 
     //** Get the master allocation ***
-    if ((err = get_allocation_by_cap_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
-        log_printf(10, "handle_merge: Invalid mcap: %s rid=%s\n", op->mkey.v, r->name);
+    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
+        log_printf(10, "handle_merge: Invalid mcap: %s" LU " rid=%s\n", op->mkey.cap.v, op->mkey.id, r->name);
         alog_append_ibp_merge(task->myid, 0, 0, r->rl_index);
         unlock_osd_id_pair(ma.id, ca.id);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
     }
     //** and the child allocation
-    if ((err = get_allocation_by_cap_resource(r, MANAGE_CAP, &(op->ckey), &ca)) != 0) {
-        log_printf(10, "handle_merge: Invalid childcap: %s rid=%s\n", op->ckey.v, r->name);
+    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->ckey), &ca)) != 0) {
+        log_printf(10, "handle_merge: Invalid childcap: %s " LU "  rid=%s\n", op->ckey.cap.v, op->ckey.id, r->name);
         alog_append_ibp_merge(task->myid, ma.id, 0, r->rl_index);
         unlock_osd_id_pair(ma.id, ca.id);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);

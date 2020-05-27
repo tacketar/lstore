@@ -311,30 +311,25 @@ int read_allocate(ibp_task_t *task, char **bstate)
 
 int read_merge_allocate(ibp_task_t *task, char **bstate)
 {
-    int fin;
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_merge_t *op = &(cmd->cargs.merge);
     rid_t child_rid;
 
-    fin = 0;
-
     debug_printf(1, "read_merge_allocate:  Starting to process buffer\n");
 
     //** Parse the master key
-    if (parse_key(bstate, &(op->mkey), &(op->rid), op->crid, sizeof(op->crid)) != 0) {
+    if (parse_key2(bstate, &(op->mkey), &(op->rid), op->crid, sizeof(op->crid)) != 0) {
         log_printf(10, "read_merge_allocate: Bad RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    tbx_stk_string_token(NULL, " ", bstate, &fin);      //** Drop the WRMkey
 
     //** Parse the child key
-    if (parse_key(bstate, &(op->ckey), &child_rid, NULL, 0) != 0) {
+    if (parse_key2(bstate, &(op->ckey), &child_rid, NULL, 0) != 0) {
         log_printf(10, "read_merge_allocate: Child RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    tbx_stk_string_token(NULL, " ", bstate, &fin);      //** Drop the WRMkey
 
     //** Now compare the rid's to make sure they are the same
     if (ibp_compare_rid(op->rid, child_rid) != 0) {
