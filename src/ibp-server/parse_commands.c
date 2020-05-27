@@ -970,7 +970,7 @@ int read_write(ibp_task_t *task, char **bstate)
 int read_read(ibp_task_t *task, char **bstate)
 {
     int finished, ctype, get_remote_cap, i;
-    char *path;
+    char *path, *tmp;
     unsigned long int lu;
     long long int ll;
     long long unsigned int llu;
@@ -1046,21 +1046,15 @@ int read_read(ibp_task_t *task, char **bstate)
         strncpy(r->path, path, sizeof(r->path) - 1);
         debug_printf(10, "read_read: phoebus_path=%s\n", r->path);
     }
-    //** Get the RID and key...... the format is RID#key
-    char *tmp;
-    tmp = tbx_stk_string_token(NULL, " #", bstate, &finished);
-//log_printf(15, "read_read: RID tmp=!%s! len=%lu c[0]=%d\n", tmp, strlen(tmp), tmp[0]);
-    if (ibp_str2rid(tmp, &(r->rid)) != 0) {
-        log_printf(1, "read_read: Bad RID: %s\n", tmp);
+
+    //** Get the cap/rid info
+    if (parse_key(bstate, &(r->cap.cap), &(r->rid), r->crid, sizeof(r->crid)) != 0) {
+        log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    ibp_rid2str(r->rid, r->crid);
 
-    //** Get the read key
-    r->cap.v[sizeof(r->cap.v) - 1] = '\0';
-    strncpy(r->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(r->cap.v) - 1);
-    debug_printf(10, "read_read: cap=%s\n", r->cap.v);
+    debug_printf(10, "read_read: cap=%s " LU "\n", r->cap.cap.v, r->cap.id);
 
     if (get_remote_cap == 1) {  //** For send/tbx_stack_push/pull commands get the remote cap
         task->child = NULL;
@@ -1071,7 +1065,14 @@ int read_read(ibp_task_t *task, char **bstate)
     }
 
     debug_printf(10, "read_read: RID=%s\n", r->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
+
+    //** Now get the allocation ID.. For some reason this isn't with the cap --PROTOCOL CHANGE????
+    tmp = tbx_stk_string_token(NULL, " ", bstate, &finished);
+    if (sscanf(tmp, LU , &(r->cap.id)) != 1) {
+        log_printf(10, "ERROR parsing ID!\n");
+        send_cmd_result(task, IBP_E_INVALID_READ_CAP);
+        return(-1);
+    }
 
     if ((cmd->command == IBP_VEC_READ_CHKSUM) || (cmd->command == IBP_VEC_READ)) {
         llu = 0;

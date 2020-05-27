@@ -1974,16 +1974,17 @@ int handle_read(ibp_task_t *task)
     }
     //** Resource is not mounted with read access
     if ((resource_get_mode(r->r) & RES_MODE_READ) == 0) {
-        log_printf(10, "handle_read: Read access is disabled cap: %s RID=%s\n", r->cap.v,
-                   r->r->name);
+        log_printf(10, "handle_read: Read access is disabled cap: %s " LU " RID=%s\n", r->cap.cap.v,
+                   r->cap.id, r->r->name);
         alog_append_read(task->myid, r->r->rl_index, 0, 0, r->iovec.vec[0].off,
                          r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_FILE_READ);
         return (0);
     }
 
-    if ((err = get_allocation_by_cap_resource(r->r, READ_CAP, &(r->cap), a)) != 0) {
-        log_printf(10, "handle_read: Invalid cap: %s for resource = %s\n", r->cap.v, r->r->name);
+    if ((err = get_allocation_by_cap_id_resource(r->r, READ_CAP, &(r->cap), a)) != 0) {
+        log_printf(10, "handle_read: Invalid cap: %s " LU " for resource = %s\n", r->cap.cap.v,
+                   r->cap.id, r->r->name);
         alog_append_read(task->myid, r->r->rl_index, 0, 0, r->iovec.vec[0].off,
                          r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
@@ -2031,8 +2032,8 @@ int handle_read(ibp_task_t *task)
 
         if (((off + len) > (int64_t) a->max_size) && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_read: Attempt to read beyond end of allocation! cap: %s r = %s i=%d off="
-                       LU " len=" LU "\n", r->cap.v, r->r->name, i, off, len);
+                       "handle_read: Attempt to read beyond end of allocation! cap: %s " LU " r = %s i=%d off="
+                       LU " len=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, i, off, len);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             return (0);
         }
@@ -2040,17 +2041,17 @@ int handle_read(ibp_task_t *task)
         alias_end = alias_offset + alias_len;
         if (((off + len) > alias_end) && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_read: Attempt to write beyond end of alias range! cap: %s r = %s i=%d off="
-                       I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", r->cap.v,
-                       r->r->name, i, off, len, alias_offset, alias_len, task->tid);
+                       "handle_read: Attempt to write beyond end of alias range! cap: %s " LU " r = %s i=%d off="
+                       I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", r->cap.cap.v,
+                       r->cap.id, r->r->name, i, off, len, alias_offset, alias_len, task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             return (global_config->soft_fail);
         }
         //*** and make sure there is data ***
         if (((off + len) > (int64_t) a->size) && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_read: Not enough data! cap: %s r = %s i=%d off=" LU " alen=" LU
-                       " curr_size=" LU "\n", r->cap.v, r->r->name, i, off, len, a->size);
+                       "handle_read: Not enough data! cap: %s " LU " r = %s i=%d off=" LU " alen=" LU
+                       " curr_size=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, i, off, len, a->size);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             return (0);
         }
@@ -2430,8 +2431,8 @@ int handle_copy(ibp_task_t *task)
     if ((cmd->command == IBP_PULL) || (cmd->command == IBP_PULL_CHKSUM))
         cmode = WRITE_CAP;
 
-    if ((err = get_allocation_by_cap_resource(r->r, cmode, &(r->cap), a)) != 0) {
-        log_printf(10, "handle_copy: Invalid cap: %s for resource = %s\n", r->cap.v, r->r->name);
+    if ((err = get_allocation_by_cap_id_resource(r->r, cmode, &(r->cap), a)) != 0) {
+        log_printf(10, "handle_copy: Invalid cap: %s " LU " for resource = %s\n", r->cap.cap.v, r->cap.id, r->r->name);
         alog_append_dd_copy(cmd->command, task->myid, r->r->rl_index, 0, 0, r->iovec.vec[0].len, 0,
                             0, r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap,
                             "");
@@ -2473,8 +2474,8 @@ int handle_copy(ibp_task_t *task)
     if (((r->iovec.vec[0].off + r->iovec.vec[0].len) > (int64_t) a->max_size)
         && (a->type == IBP_BYTEARRAY)) {
         log_printf(10,
-                   "handle_copy: Attempt to read beyond end of allocation! cap: %s r = %s off=" LU
-                   " len=" LU "\n", r->cap.v, r->r->name, r->iovec.vec[0].off, r->iovec.vec[0].len);
+                   "handle_copy: Attempt to read beyond end of allocation! cap: %s " LU " r = %s off=" LU
+                   " len=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, r->iovec.vec[0].off, r->iovec.vec[0].len);
         alog_append_dd_copy(cmd->command, task->myid, r->r->rl_index, apid, aid,
                             r->iovec.vec[0].len, r->iovec.vec[0].off, r->remote_offset,
                             r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap, "");
@@ -2485,8 +2486,8 @@ int handle_copy(ibp_task_t *task)
     alias_end = alias_offset + alias_len;
     if (((r->iovec.vec[0].off + r->iovec.vec[0].len) > alias_end) && (a->type == IBP_BYTEARRAY)) {
         log_printf(10,
-                   "handle_copy: Attempt to write beyond end of alias range! cap: %s r = %s off="
-                   I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", r->cap.v,
+                   "handle_copy: Attempt to write beyond end of alias range! cap: %s " LU " r = %s off="
+                   I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", r->cap.cap.v, r->cap.id,
                    r->r->name, r->iovec.vec[0].off, r->iovec.vec[0].len, alias_offset, alias_len,
                    task->tid);
         alog_append_dd_copy(cmd->command, task->myid, r->r->rl_index, apid, aid,
@@ -2500,8 +2501,8 @@ int handle_copy(ibp_task_t *task)
         if (((r->iovec.vec[0].off + r->iovec.vec[0].len) > (int64_t) a->size)
             && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_copy: Not enough data! cap: %s r = %s off=" LU " alen=" LU
-                       " curr_size=" LU "\n", r->cap.v, r->r->name, r->iovec.vec[0].off,
+                       "handle_copy: Not enough data! cap: %s " LU " r = %s off=" LU " alen=" LU
+                       " curr_size=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, r->iovec.vec[0].off,
                        r->iovec.vec[0].len, a->size);
             alog_append_dd_copy(cmd->command, task->myid, r->r->rl_index, apid, aid,
                                 r->iovec.vec[0].len, r->iovec.vec[0].off, r->remote_offset,

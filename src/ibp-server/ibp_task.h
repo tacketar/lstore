@@ -153,12 +153,8 @@ typedef struct {
     char cid[64];               //** Character version of the ID for querying
     char path[4096];            //** command path for phoebus transfers
     Resource_t *r;              //** Resource being used
-    Cap_t cap;                  //** Key
+    cap_id_t cap;               //** Key
     ibp_off_t remote_offset;    //** Offset into allocation to start writing
-//  ibp_off_t   offset;          //** Offset into allocation to start writing
-//  ibp_off_t   len;             //** Length of write
-//  ibp_off_t   pos;             //** Current buf pos
-//  ibp_off_t   left;            //** Bytes left to copy
     int valid_conn;             //** Determines if I need to make a new depot connection
     apr_time_t remote_sto;      //** REmote commands server timeout
     apr_time_t remote_cto;      //** Remote commands client timeout
