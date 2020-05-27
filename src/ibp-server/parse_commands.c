@@ -70,10 +70,13 @@ int parse_key(char **bstate, Cap_t *cap, rid_t *rid, char *crid, int ncrid)
         strncpy(crid, tmp, ncrid - 1);
     }
     //** Check the validity of the RID
-    if (ibp_str2rid(tmp, rid) != 0) {
-        log_printf(5, "parse_key: Bad RID: %s\n", tmp);
-        return (-1);
+    if (rid) {
+        if (ibp_str2rid(tmp, rid) != 0) {
+            log_printf(5, "parse_key: Bad RID: %s\n", tmp);
+            return (-1);
+        }
     }
+
     //** Lastly Get the key
     cap->v[sizeof(Cap_t) - 1] = '\0';
     strncpy(cap->v, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(Cap_t) - 1);
@@ -537,23 +540,15 @@ int read_manage(ibp_task_t *task, char **bstate)
 
     debug_printf(1, "read_manage:  Starting to process buffer\n");
 
-    //** Get the RID for the key
-    manage->crid[sizeof(manage->crid) - 1] = '\0';
-    strncpy(manage->crid, tbx_stk_string_token(NULL, " #", bstate, &finished),
-            sizeof(manage->crid) - 1);
-    if (ibp_str2rid(manage->crid, &(manage->rid)) != 0) {
-        log_printf(1, "read_manage: Bad RID: %s\n", manage->crid);
+    //** Parse the RID/key info
+    if (parse_key2(bstate, &(manage->cap), &(manage->rid), manage->crid, sizeof(manage->crid)) != 0) {
+        log_printf(10, "read_merge_allocate: Bad RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (global_config->soft_fail);
     }
-    //** Get the key
-    manage->cap.v[sizeof(manage->cap.v) - 1] = '\0';
-    strncpy(manage->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished),
-            sizeof(manage->cap.v) - 1);
-    debug_printf(10, "read_manage: cap=%s\n", manage->cap.v);
 
+    debug_printf(10, "read_manage: cap=%s " LU "\n", manage->cap.cap.v, manage->cap.cap.id);
     debug_printf(10, "read_mange: RID=%s\n", manage->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
 
     //*** Get the subcommand ***
     d = -1;
@@ -593,15 +588,14 @@ int read_manage(ibp_task_t *task, char **bstate)
     case IBP_INCR:
     case IBP_DECR:
         if (cmd->command == IBP_ALIAS_MANAGE) { //** Get the "master" key if this is a alias command
-            tbx_stk_string_token(NULL, " #", bstate, &finished);        //** Strip the RID.  We only keep it for the alias
+            //** Strip the RID.  We only keep it for the alias
+            if (parse_key2(bstate, &(manage->master_cap), NULL, NULL, 0) != 0) {
+                log_printf(10, "read_merge_allocate: Bad RID/master_cap!\n");
+                send_cmd_result(task, IBP_E_INVALID_RID);
+                return (global_config->soft_fail);
+            }
 
-            //** Get the master key
-            manage->master_cap.v[sizeof(manage->master_cap.v) - 1] = '\0';
-            strncpy(manage->master_cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished),
-                    sizeof(manage->master_cap.v) - 1);
-            log_printf(10, "read_manage: master cap=%s\n", manage->cap.v);
-
-            tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
+            log_printf(10, "read_manage: master cap=%s " LU "\n", manage->cap.cap.v, manage->cap.id);
         }
 
         get_command_timeout(task, bstate);
@@ -678,15 +672,12 @@ int read_manage(ibp_task_t *task, char **bstate)
         }
 
         if (cmd->command == IBP_ALIAS_MANAGE) { //** Get the "master" key if this is a alias command
-            tbx_stk_string_token(NULL, " #", bstate, &finished);        //** Strip the RID.  We only keep it for the alias
-
-            //** Get the master key
-            manage->master_cap.v[sizeof(manage->master_cap.v) - 1] = '\0';
-            strncpy(manage->master_cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished),
-                    sizeof(manage->master_cap.v) - 1);
-            log_printf(10, "read_manage: master cap=%s\n", manage->cap.v);
-
-            tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
+            //** Strip the RID.  We only keep it for the alias
+            if (parse_key2(bstate, &(manage->master_cap), NULL, NULL, 0) != 0) {
+                log_printf(10, "read_merge_allocate: Bad RID/master_cap!\n");
+                send_cmd_result(task, IBP_E_INVALID_RID);
+                return (global_config->soft_fail);
+            }
         }
 
         get_command_timeout(task, bstate);
@@ -711,32 +702,18 @@ int read_manage(ibp_task_t *task, char **bstate)
 
 int read_rename(ibp_task_t *task, char **bstate)
 {
-    int finished;
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_manage_t *manage = &(cmd->cargs.manage);
 
-    finished = 0;
-
     debug_printf(1, "read_rename:  Starting to process buffer\n");
 
-    //** Get the RID, uh I mean the key...... the format is RID#key
-    manage->crid[sizeof(manage->crid) - 1] = '\0';
-    strncpy(manage->crid, tbx_stk_string_token(NULL, " #", bstate, &finished),
-            sizeof(manage->crid) - 1);
-    if (ibp_str2rid(manage->crid, &(manage->rid)) != 0) {
-        log_printf(1, "read_manage: Bad RID: %s\n", manage->crid);
+    if (parse_key2(bstate, &(manage->cap), &(manage->rid), manage->crid, sizeof(manage->crid)) != 0) {
+        log_printf(10, "read_rename_allocate: Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
-        return (-1);
+        return (global_config->soft_fail);
     }
-    //** Get the key
-    manage->cap.v[sizeof(manage->cap.v) - 1] = '\0';
-    strncpy(manage->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished),
-            sizeof(manage->cap.v) - 1);
-    debug_printf(10, "read_manage: cap=%s\n", manage->cap.v);
 
     debug_printf(10, "read_mange: RID=%s\n", manage->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
-
 
     get_command_timeout(task, bstate);
     return (0);

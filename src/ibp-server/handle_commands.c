@@ -324,21 +324,14 @@ int handle_rename(ibp_task_t *task)
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (global_config->soft_fail);
     }
-    //** Get the allocation ***
-    if ((err = get_allocation_by_cap_resource(res, MANAGE_CAP, &(manage->cap), &a)) != 0) {
-        log_printf(10, "handle_rename: Invalid cap: %s rid=%s\n", manage->cap.v, res->name);
-        alog_append_ibp_rename(task->myid, -1, 0);
-        send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
-        return (global_config->soft_fail);
-    }
 
-    alog_append_ibp_rename(task->myid, res->rl_index, a.id);
+    alog_append_ibp_rename(task->myid, res->rl_index, manage->cap.id);
 
-    lock_osd_id(a.id);
+    lock_osd_id(manage->cap.id);
 
-    //** Get the allocation again with the lock enabled ***
-    if ((err = get_allocation_by_cap_resource(res, MANAGE_CAP, &(manage->cap), &a)) != 0) {
-        log_printf(10, "handle_rename: Invalid cap: %s rid=%s\n", manage->cap.v, res->name);
+    //** Get the allocation with the lock enabled ***
+    if ((err = get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(manage->cap), &a)) != 0) {
+        log_printf(10, "handle_rename: Invalid cap: %s " LU " rid=%s\n", manage->cap.cap.v, manage->cap.id, res->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(a.id);
         return (global_config->soft_fail);
@@ -1179,16 +1172,17 @@ int handle_manage(ibp_task_t *task)
     }
     //** Resource is not mounted with manage access
     if ((resource_get_mode(r) & RES_MODE_MANAGE) == 0) {
-        log_printf(10, "handle_manage: Manage access is disabled cap: %s RID=%s\n", manage->cap.v,
-                   r->name);
+        log_printf(10, "handle_manage: Manage access is disabled cap: %s " LU " RID=%s\n", manage->cap.cap.v,
+                   manage->cap.id, r->name);
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_FILE_ACCESS);
         return (0);
     }
 
 
-    if ((err = get_allocation_by_cap_resource(r, MANAGE_CAP, &(manage->cap), a)) != 0) {
-        log_printf(10, "handle_manage: Invalid cap: %s rid=%s\n", manage->cap.v, r->name);
+    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(manage->cap), a)) != 0) {
+        log_printf(10, "handle_manage: Invalid cap: %s " LU " rid=%s\n", manage->cap.cap.v,
+                   manage->cap.id, r->name);
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
@@ -1238,10 +1232,10 @@ int handle_manage(ibp_task_t *task)
             return (global_config->soft_fail);
         }
 
-        if (strcmp(ma.caps[MANAGE_CAP].v, manage->master_cap.v) != 0) {
+        if (strcmp(ma.caps[MANAGE_CAP].v, manage->master_cap.cap.v) != 0) {
             log_printf(10,
                        "handle_manage: Master cap doesn't match with alias read: %s actual: %s  rid=%s ns=%d\n",
-                       manage->master_cap.v, ma.caps[MANAGE_CAP].v, r->name,
+                       manage->master_cap.cap.v, ma.caps[MANAGE_CAP].v, r->name,
                        tbx_ns_getid(task->ns));
             alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
             send_cmd_result(task, IBP_E_INVALID_MANAGE_CAP);

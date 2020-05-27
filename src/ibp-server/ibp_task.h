@@ -118,8 +118,8 @@ typedef struct {
     rid_t rid;                  //** RID for querying
     char crid[128];             //** Character version of the RID for querying
     char cid[64];               //** Character version of the ID for querying
-    Cap_t cap;                  //** Key
-    Cap_t master_cap;           //** Master manage key for ALIAS_MANAGE
+    cap_id_t cap;               //** Key
+    cap_id_t master_cap;        //** Master manage key for ALIAS_MANAGE
     ibp_off_t new_size;         //** New size
     ibp_off_t offset;
     int subcmd;                 //** Subcommand
