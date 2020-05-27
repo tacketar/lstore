@@ -91,10 +91,10 @@ int handle_allocate(ibp_task_t *task)
     if ((cmd->command == IBP_SPLIT_ALLOCATE) || (cmd->command == IBP_SPLIT_ALLOCATE_CHKSUM)) {
         //** Get the Master allocation ***
         if ((err =
-                 get_allocation_by_cap_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
+                 get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
                                                 &ma)) != 0) {
-            log_printf(10, "handle_split_allocate: Invalid master cap: %s rid=%s\n",
-                       cmd->cargs.allocate.master_cap.v, res->name);
+            log_printf(10, "handle_split_allocate: Invalid master cap: %s " LU " rid=%s\n",
+                       cmd->cargs.allocate.master_cap.cap.v, cmd->cargs.allocate.master_cap.id, res->name);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
             return (global_config->soft_fail);
         }
@@ -105,10 +105,10 @@ int handle_allocate(ibp_task_t *task)
         lock_osd_id(ma.id);     //** Redo the get allocation again with the lock enabled ***
         got_lock = 1;
         if ((err =
-                 get_allocation_by_cap_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
+                 get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
                                                 &ma)) != 0) {
-            log_printf(10, "handle_split_allocate: Invalid master cap: %s rid=%s\n",
-                       cmd->cargs.allocate.master_cap.v, res->name);
+            log_printf(10, "handle_split_allocate: Invalid master cap: %s " LU " rid=%s\n",
+                       cmd->cargs.allocate.master_cap.cap.v, cmd->cargs.allocate.master_cap.id, res->name);
             unlock_osd_id(ma.id);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
             return (global_config->soft_fail);

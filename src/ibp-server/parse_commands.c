@@ -84,6 +84,32 @@ int parse_key(char **bstate, Cap_t *cap, rid_t *rid, char *crid, int ncrid)
 }
 
 //*****************************************************************
+//  parse_key2 - Assumes bstate is at the start of the string with
+//    the next fields being of the form: "rid#key id". It advances
+//    bstate and parse the fields and stores it in the capid.
+//*****************************************************************
+
+int parse_key2(char **bstate, cap_id_t * cap_id, rid_t * rid, char *crid, int ncrid)
+{
+    int err, fin;
+    char *tmp;
+
+    //** Parse the RID%key
+    err = parse_key(bstate, &(cap_id->cap), rid, crid, ncrid);
+    if (err != 0) return(err);
+
+    //** Now get the allocation ID
+    tmp = tbx_stk_string_token(NULL, " ", bstate, &fin);
+    err = sscanf(tmp, LU , &(cap_id->id));
+    if (err != 1) {
+        log_printf(10, "ERROR parsing ID!\n");
+        return(-1);
+    }
+
+    return(0);
+}
+
+//*****************************************************************
 // parse_chksum - Parses and stores the chksum.  Upon success
 //     0 is returned.
 //*****************************************************************
@@ -191,12 +217,11 @@ int read_allocate(ibp_task_t *task, char **bstate)
                 return (-1);
             }
         } else {                //** IBP_SPLIT_ALLOCATE/IBP_SPLIT_ALLOCATE_CHKSUM
-            if (parse_key(bstate, &(cmd->cargs.allocate.master_cap), rid, NULL, 0) != 0) {
+            if (parse_key2(bstate, &(cmd->cargs.allocate.master_cap), rid, NULL, 0) != 0) {
                 log_printf(10, "read_allocate: Bad RID/mcap!\n");
                 send_cmd_result(task, IBP_E_INVALID_RID);
                 return (-1);
             }
-            tbx_stk_string_token(NULL, " ", bstate, &fin);      //** Drop the WRMkey
         }
     } else {
         ibp_empty_rid(rid);     //** Don't care which resource we use

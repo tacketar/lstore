@@ -2039,6 +2039,19 @@ int get_allocation_by_cap_resource(Resource_t *r, int cap_type, Cap_t *cap, Allo
 }
 
 //***************************************************************************
+// get_allocation_by_cap_id_resource - Returns the allocations data structure
+//***************************************************************************
+
+int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap_id, Allocation_t * a)
+{
+    int err;
+
+    err = get_alloc_with_cap_db(&(r->db), cap_type, &(cap_id->cap), a);
+
+    return (err);
+}
+
+//***************************************************************************
 // get_allocation_resource - Returns the allocations data structure
 //***************************************************************************
 

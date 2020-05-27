@@ -167,13 +167,15 @@ IBPS_API int validate_allocation(Resource_t *r, osd_id_t id, int correct_errors)
 IBPS_API int get_allocation_chksum_info(Resource_t *r, osd_id_t id, int *cs_type,
                                         ibp_off_t *header_blocksize, ibp_off_t *blocksize);
 IBPS_API ibp_off_t get_allocation_chksum(Resource_t *r, osd_id_t id, char *disk_buffer,
-        char *calc_buffer, ibp_off_t buffer_size,
-        osd_off_t *block_len, char *good_block,
-        ibp_off_t start_block, ibp_off_t end_block);
+                                         char *calc_buffer, ibp_off_t buffer_size,
+                                         osd_off_t *block_len, char *good_block,
+                                         ibp_off_t start_block, ibp_off_t end_block);
 IBPS_API int rename_allocation_resource(Resource_t *r, Allocation_t *a);
 IBPS_API int merge_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a);
 IBPS_API int get_allocation_by_cap_resource(Resource_t *r, int cap_type, Cap_t *cap,
-        Allocation_t *a);
+                                            Allocation_t *a);
+IBPS_API int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap,
+                                               Allocation_t * a);
 IBPS_API int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
 IBPS_API int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
 IBPS_API int get_manage_allocation_resource(Resource_t *r, Cap_t *mcap, Allocation_t *a);
@@ -189,7 +191,7 @@ IBPS_API walk_expire_iterator_t *walk_expire_iterator_begin(Resource_t *r);
 IBPS_API void walk_expire_iterator_end(walk_expire_iterator_t *wei);
 IBPS_API int set_walk_expire_iterator(walk_expire_iterator_t *wei, time_t t);
 IBPS_API int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction,
-        Allocation_t *a);
+                                           Allocation_t *a);
 IBPS_API void resource_rescan(Resource_t *r);
 IBPS_API void launch_resource_cleanup_thread(Resource_t *r);
 

@@ -92,11 +92,15 @@ typedef struct {                //** Allocation Timestamp information
     int32_t write_slot;
 } Allocation_history_t;
 
-
 typedef struct {                //** Timekey for expiration indices
     osd_id_t id;
     uint32_t time;
 } DB_timekey_t;
+
+typedef struct {  //** Helper struct to encompass the ID and Cap which is required to access allocations
+    osd_id_t id;
+    Cap_t cap;
+} cap_id_t;
 
 typedef struct {                // IBP Allocation
     osd_id_t id;

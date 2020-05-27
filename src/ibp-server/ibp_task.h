@@ -79,7 +79,7 @@ typedef struct {                // expire_log args
 
 typedef struct {                //**Allocate args
     rid_t rid;                  //RID to use (0=don't care)
-    Cap_t master_cap;           //Master cap for IBP_SPLIT_ALLOCATE
+    cap_id_t master_cap;        //Master cap for IBP_SPLIT_ALLOCATE
     char crid[128];             //** Character version of the RID for querying
     int cs_type;                //** disk Chksum type
     ibp_off_t cs_blocksize;     //** disk Chksum blocksize
