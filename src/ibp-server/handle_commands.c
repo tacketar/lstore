@@ -55,8 +55,8 @@
 
 int handle_allocate(ibp_task_t *task)
 {
+    osd_id_t cid;
     int d, err, got_lock = 0;
-    osd_id_t cid = 3862277;
     Resource_t *res;
     char token[4096];
     Allocation_t a, ma;
@@ -326,13 +326,13 @@ int handle_rename(ibp_task_t *task)
     //** Send the result back **
     //** Send the result back **
     tbx_ns_monitor_t *nm = tbx_ns_monitor_get(task->ns);
-    snprintf(token, sizeof(token), "%d ibp://%s:%d/%s#%s/3862277/READ "
-             "ibp://%s:%d/%s#%s/3862277/WRITE "
-             "ibp://%s:%d/%s#%s/3862277/MANAGE \n",
+    snprintf(token, sizeof(token), "%d ibp://%s:%d/%s#%s/" LU "/READ "
+             "ibp://%s:%d/%s#%s/" LU "/WRITE "
+             "ibp://%s:%d/%s#%s/" LU "/MANAGE \n",
              IBP_OK,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[READ_CAP].v,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[WRITE_CAP].v,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[MANAGE_CAP].v);
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[READ_CAP].v, a.id,
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[WRITE_CAP].v, a.id,
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, a.caps[MANAGE_CAP].v, a.id);
 
     debug_code(time_t tt = ibp_time_now();)
     debug_printf(1, "handle_rename: before sending result time: %s\n", ctime(&tt));
@@ -667,13 +667,13 @@ int handle_alias_allocate(ibp_task_t *task)
 
     //** Send the result back **
     tbx_ns_monitor_t *nm = tbx_ns_monitor_get(task->ns);
-    snprintf(token, sizeof(token), "%d ibp://%s:%d/%s#%s/3862277/READ "
-             "ibp://%s:%d/%s#%s/3862277/WRITE "
-             "ibp://%s:%d/%s#%s/3862277/MANAGE \n",
+    snprintf(token, sizeof(token), "%d ibp://%s:%d/%s#%s/" LU "/READ "
+             "ibp://%s:%d/%s#%s/" LU "/WRITE "
+             "ibp://%s:%d/%s#%s/" LU "/MANAGE \n",
              IBP_OK,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[READ_CAP].v,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[WRITE_CAP].v,
-             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[MANAGE_CAP].v);
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[READ_CAP].v, alias_alloc.id,
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[WRITE_CAP].v, alias_alloc.id,
+             tbx_nm_host_get(nm), tbx_nm_port_get(nm), res->name, alias_alloc.caps[MANAGE_CAP].v, alias_alloc.id);
 
     debug_code(time_t tt = ibp_time_now();)
     debug_printf(1, "handle_alias_allocate: before sending result time: %s\n", ctime(&tt));

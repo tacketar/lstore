@@ -99,56 +99,6 @@ void dbr_unlock(DB_resource_t *dbr)
 }
 
 //***************************************************************************
-// get_rcap_key - Returns the read cap key for the 2ndary DB
-//***************************************************************************
-
-int get_rcap_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey)
-{
-    Allocation_t *a = (Allocation_t *) pdata->data;
-
-    memset((void *) skey, 0, sizeof(DBT));
-    skey->data = a->caps[READ_CAP].v;
-    skey->size = CAP_SIZE + 1;
-
-//log_printf(10, "get_rcap_key: key=%s\n", (char *)skey->data);
-    return (0);
-}
-
-//***************************************************************************
-// get_wcap_key - Returns the write cap key for the 2ndary DB
-//***************************************************************************
-
-int get_wcap_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey)
-{
-    Allocation_t *a = (Allocation_t *) pdata->data;
-
-    memset(skey, 0, sizeof(DBT));
-    skey->data = a->caps[WRITE_CAP].v;
-    skey->size = CAP_SIZE + 1;
-
-//log_printf(10, "get_wcap_key: key=%s\n", (char *)skey->data);
-
-    return (0);
-}
-
-//***************************************************************************
-// get_mcap_key - Returns the manage cap key for the 2ndary DB
-//***************************************************************************
-
-int get_mcap_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey)
-{
-    Allocation_t *a = (Allocation_t *) pdata->data;
-
-    memset(skey, 0, sizeof(DBT));
-    skey->data = a->caps[MANAGE_CAP].v;
-    skey->size = CAP_SIZE + 1;
-
-//log_printf(10, "get_mcap_key: key=%s\n", (char *)skey->data);
-
-    return (0);
-}
-
-//***************************************************************************
 // get_expire_key - Returns the expire key for the 2ndary DB
 //***************************************************************************
 
@@ -270,32 +220,6 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
         printf("mkfs_db: %s\n", db_strerror(err));
         abort();
     }
-    //*** Create/Open DB containing the READ_CAPs ***
-    assert_result(db_create(&(dbres->cap[READ_CAP]), NULL, 0), 0);
-    snprintf(fname, sizeof(fname), "%s/read.db", loc);
-    remove(fname);
-    if (dbres->cap[READ_CAP]->open(dbres->cap[READ_CAP], NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
-        printf("mkfs_db: Can't create read DB: %s\n", fname);
-        abort();
-    }
-    //*** Create/Open DB containing the WRITE_CAPs ***
-    assert_result(db_create(&(dbres->cap[WRITE_CAP]), NULL, 0), 0);
-    snprintf(fname, sizeof(fname), "%s/write.db", loc);
-    remove(fname);
-    if (dbres->cap[WRITE_CAP]->open(dbres->cap[WRITE_CAP], NULL, fname, NULL, DB_HASH, flags, 0) !=
-        0) {
-        printf("mkfs_db: Can't create read DB: %s\n", fname);
-        abort();
-    }
-    //*** Create/Open DB containing the MANAGE_CAPs ***
-    assert_result(db_create(&(dbres->cap[MANAGE_CAP]), NULL, 0), 0);
-    snprintf(fname, sizeof(fname), "%s/manage.db", loc);
-    remove(fname);
-    if (dbres->
-        cap[MANAGE_CAP]->open(dbres->cap[MANAGE_CAP], NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
-        printf("mkfs_db: Can't create manage DB: %s\n", fname);
-        abort();
-    }
     //*** Create/Open DB containing the expirationss ***
     assert_result(db_create(&(dbres->expire), NULL, 0), 0);
     assert_result(dbres->expire->set_bt_compare(dbres->expire, compare_expiration), 0);
@@ -316,11 +240,6 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
         printf("mkfs_db: %s\n", db_strerror(err));
         abort();
     }
-    //*** Now we can close everything ***
-//   for (i=0; i<3; i++) dbres->cap[i]->close(dbres->cap[i], 0);
-//   dbres->expire->close(dbres->expire, 0);
-//   dbres->soft->close(dbres->soft, 0);
-//   dbres->pdb->close(dbres.pdb, 0);
 
     //*** Lastly add the group to the Key file ***
     dbres->loc = strdup(loc);
@@ -397,55 +316,6 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
         flags = flags | DB_CREATE;
     bflags = flags;
 
-    //*** Create/Open DB containing the READ_CAPs ***
-    assert_result(db_create(&db, dbres->dbenv, 0), 0);
-    if (db == NULL) {
-        printf("mount_db: Can't create read DB: %s\n", fname);
-        abort();
-    }
-    dbres->cap[READ_CAP] = db;
-    snprintf(fname, sizeof(fname), "%s/read.db", dbres->loc);
-    if (wipe_clean == 2) {
-        err = remove(fname);
-        log_printf(0, "mount_db_generic: fname=%s remove=%d\n", fname, err);
-    }
-    if (db->open(db, NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
-        printf("mount_db: Can't open read DB: %s\n", fname);
-        abort();
-    }
-    if (dbres->pdb->associate(dbres->pdb, NULL, db, get_rcap_key, 0) != 0) {
-        printf("mount_db: Can't associate read DB: %s\n", fname);
-        abort();
-    }
-    //*** Create/Open DB containing the WRITE_CAPs ***
-
-    assert_result(db_create(&db, dbres->dbenv, 0), 0);
-    dbres->cap[WRITE_CAP] = db;
-    snprintf(fname, sizeof(fname), "%s/write.db", dbres->loc);
-    if (wipe_clean == 2)
-        remove(fname);
-    if (db->open(db, NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
-        printf("mount_db: Can't open write DB: %s\n", fname);
-        abort();
-    }
-    if (dbres->pdb->associate(dbres->pdb, NULL, db, get_wcap_key, 0) != 0) {
-        printf("mount_db: Can't associate write DB: %s\n", fname);
-        abort();
-    }
-    //*** Create/Open DB containing the MANAGE_CAPs ***
-    assert_result(db_create(&db, dbres->dbenv, 0), 0);
-    dbres->cap[MANAGE_CAP] = db;
-    snprintf(fname, sizeof(fname), "%s/manage.db", dbres->loc);
-    if (wipe_clean == 2)
-        remove(fname);
-    if (db->open(db, NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
-        printf("mount_db: Can't open manage DB: %s\n", fname);
-        abort();
-    }
-    if (dbres->pdb->associate(dbres->pdb, NULL, db, get_mcap_key, 0) != 0) {
-        printf("mount_db: Can't associate manage DB: %s\n", fname);
-        abort();
-    }
     //*** Create/Open DB containing the expirationss ***
     assert_result(db_create(&db, dbres->dbenv, 0), 0);
     dbres->expire = db;
@@ -504,15 +374,6 @@ int umount_db(DB_resource_t *dbres)
 
     err = 0;
 
-    for (i = 0; i < 3; i++) {
-        val = dbres->cap[i]->close(dbres->cap[i], 0);
-        if (val != 0) {
-            err++;
-            log_printf(0, "ERROR closing DB cap[%d]=%d\n", i, val);
-        }
-    }
-
-//dbres->cap_read->close(dbres->cap_read, 0);
     val = dbres->expire->close(dbres->expire, 0);
     if (val != 0) {
         err++;
@@ -811,14 +672,6 @@ int put_alloc_db(DB_resource_t *dbr, Allocation_t *a)
     err = _put_alloc_db(dbr, a);
     dbr_unlock(dbr);
 
-//Allocation_t a2;
-//err=get_alloc_with_cap_db(dbr, MANAGE_CAP, &(a->caps[MANAGE_CAP]), &a2);
-
-//apr_time_t t = ibp2apr_time(a2.expiration);
-//debug_printf(10, "put_alloc_db: READ err=%d  id=" LU ", r=%s w=%s m=%s a.size=" LU " a.max_size=" LU " expireation=" TT "\n",
-//      err, a2.id, a2.caps[READ_CAP].v, a2.caps[WRITE_CAP].v, a2.caps[MANAGE_CAP].v, a2.size, a2.max_size, t);
-
-
     return (err);
 }
 
@@ -913,80 +766,6 @@ int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a)
 }
 
 //***************************************************************************
-// _lookup_id_with_cap_db - Looks to see if the cap is stored
-//***************************************************************************
-
-int _lookup_id_with_cap_db(DB_resource_t *dbr, Cap_t *cap, int cap_type, osd_id_t *id,
-                           int *is_alias)
-{
-    DBT key, data;
-    Allocation_t a;
-
-    memset(&key, 0, sizeof(DBT));
-    memset(&data, 0, sizeof(DBT));
-
-    key.data = cap->v;
-    key.size = CAP_SIZE + 1;
-
-    data.data = &a;
-    data.ulen = sizeof(Allocation_t);
-    data.flags = DB_DBT_USERMEM;
-
-    int err = dbr->cap[cap_type]->get(dbr->cap[cap_type], NULL, &key, &data, 0);
-    if (err != 0) {
-        log_printf(10, "lookup_id_with_cap_db: cap=%s err = %s\n", cap->v, db_strerror(err));
-        if (err != DB_NOTFOUND) {
-            raise(SIGQUIT);
-        }
-    }
-
-    if (err == 0) {
-        *id = a.id;
-        *is_alias = a.is_alias;
-    }
-
-    return (err);
-}
-
-//***************************************************************************
-// get_alloc_with_cap_db - Returns the allocation with the given cap
-//***************************************************************************
-
-int get_alloc_with_cap_db(DB_resource_t *dbr, int cap_type, Cap_t *cap, Allocation_t *alloc)
-{
-    DBT key, data;
-
-    memset(&key, 0, sizeof(DBT));
-    memset(&data, 0, sizeof(DBT));
-
-    log_printf(10, "get_alloc_with_cap_db: cap_type=%d cap=%s\n", cap_type, cap->v);
-
-    key.data = cap->v;
-    key.size = CAP_SIZE + 1;
-
-    data.data = alloc;
-    data.ulen = sizeof(Allocation_t);
-    data.flags = DB_DBT_USERMEM;
-
-    dbr_lock(dbr);
-
-    log_printf(10, "get_alloc_with_cap_db:  After lock\n");
-    int err = dbr->cap[cap_type]->get(dbr->cap[cap_type], NULL, &key, &data, 0);
-    if (err != 0) {
-        log_printf(0, "get_alloc_with_cap_db: cap=%s err = %s\n", cap->v, db_strerror(err));
-        dbr_unlock(dbr);
-        return (err);
-    }
-//apr_time_t t = ibp2apr_time(alloc->expiration);
-//debug_printf(10, "get_alloc_db: err=%d  id=" LU ", r=%s w=%s m=%s a.size=" LU " a.max_size=" LU " expireation=" TT "\n",
-//      err, alloc->id, alloc->caps[READ_CAP].v, alloc->caps[WRITE_CAP].v, alloc->caps[MANAGE_CAP].v, alloc->size, alloc->max_size, t);
-
-    dbr_unlock(dbr);
-
-    return (err);
-}
-
-//***************************************************************************
 // create_alloc_db - Creates the different unique caps and uses the existing
 //      info already stored in the prefilled allocation to add an entry into
 //      the DB for the resource
@@ -996,15 +775,12 @@ int create_alloc_db(DB_resource_t *dbr, Allocation_t *a)
 {
     int i, j, err;
     char key[CAP_SIZE], b64[CAP_SIZE + 1];
-//   osd_id_t id;
 
     dbr_lock(dbr);
 
     for (i = 0; i < 3; i++) {   //** Get the differnt caps
-//==      do {
         tbx_random_get_bytes((void *) key, CAP_BITS / 8);
         err = apr_base64_encode(b64, key, CAP_BITS / 8);
-//         debug_printf(10, "create_alloc_db: i=%d b64 cap=%s len=" ST "\n",i, b64, strlen(b64));
         for (j = 0; j < CAP_SIZE; j++) {
             if (b64[j] == '/') {
                 a->caps[i].v[j] = '-';  //**IBP splits using a "/" so need to change it
@@ -1013,12 +789,8 @@ int create_alloc_db(DB_resource_t *dbr, Allocation_t *a)
             }
         }
         a->caps[i].v[CAP_SIZE] = '\0';
-//         free(b64);
-//===      } while (_lookup_id_with_cap_db(dbr, &(a->caps[i]), i, &id) != DB_NOTFOUND);
     }
 
-
-//printf("create_alloc_db: Before put\n");
     if ((err = _put_alloc_db(dbr, a)) != 0) {   //** Now store it in the DB
         log_printf(0, "create_alloc_db:  Error in DB put - %s\n", db_strerror(err));
     }
@@ -1193,15 +965,6 @@ DB_iterator_t *soft_iterator(DB_resource_t *dbr)
 DB_iterator_t *id_iterator(DB_resource_t *dbr)
 {
     return (db_iterator_begin(dbr, dbr->pdb, dbr->dbenv, DB_INDEX_ID));
-}
-
-//***************************************************************************
-// cap_iterator - Returns a handle to iterate through the given cp index
-//***************************************************************************
-
-DB_iterator_t *cap_iterator(DB_resource_t *dbr, int cap_type)
-{
-    return (db_iterator_begin(dbr, dbr->cap[cap_type], dbr->dbenv, DB_INDEX_READ + cap_type));
 }
 
 //***************************************************************************

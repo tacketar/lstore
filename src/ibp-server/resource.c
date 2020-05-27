@@ -1975,7 +1975,6 @@ int split_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a, 
         _new_allocation_resource(r, a, size, type, reliability, length, is_alias, cs_type,
                                  cs_blocksize);
     if (err == 0) {
-//      r->used_space[ma->reliability] = r->used_space[ma->reliability] + size;
         if (osd_size(r->dev, ma->id) > (ibp_off_t) ma->max_size)
             osd_truncate(r->dev, ma->id, ma->max_size + ALLOC_HEADER);
         if (ma->size > ma->max_size)
@@ -2026,19 +2025,6 @@ int rename_allocation_resource(Resource_t *r, Allocation_t *a)
 }
 
 //***************************************************************************
-// get_allocation_by_cap_id_resource - Returns the allocations data structure
-//***************************************************************************
-
-int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap_id, Allocation_t * a)
-{
-    int err;
-
-    err = get_alloc_with_cap_db(&(r->db), cap_type, &(cap_id->cap), a);
-
-    return (err);
-}
-
-//***************************************************************************
 // get_allocation_resource - Returns the allocations data structure
 //***************************************************************************
 
@@ -2048,6 +2034,21 @@ int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
 
     err = get_alloc_with_id_db(&(r->db), id, a);
 
+    return (err);
+}
+
+//***************************************************************************
+// get_allocation_by_cap_id_resource - Returns the allocations data structure
+//***************************************************************************
+
+int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap_id, Allocation_t * a)
+{
+    int err;
+
+    err = get_allocation_resource(r, cap_id->id, a);
+    if (err == 0) { //** Now validate the CAP
+        err = memcmp(a->caps[cap_type].v, cap_id->cap.v, CAP_SIZE);
+    }
     return (err);
 }
 
