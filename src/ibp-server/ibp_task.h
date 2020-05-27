@@ -136,11 +136,7 @@ typedef struct {
     char crid[128];             //** Character version of the RID for querying
     char cid[64];               //** Character version of the ID for querying
     Resource_t *r;              //** Resource being used
-    Cap_t cap;                  //** Key
-//  ibp_off_t   offset;          //** Offset into allocation to start writing
-//  ibp_off_t   len;             //** Length of write
-//  ibp_off_t   pos;             //** Current buf pos
-//  ibp_off_t   left;            //** Bytes left to copy
+    cap_id_t cap;               //** Key
     Allocation_t a;             //** Allocation for command
     ibp_iovec_t iovec;          //** USed only for iovec operations > 1
 } Cmd_write_t;

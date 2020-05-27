@@ -1469,9 +1469,9 @@ int handle_validate_chksum(ibp_task_t *task)
         return (global_config->soft_fail);
     }
 
-    if ((err = get_allocation_by_cap_resource(w->r, MANAGE_CAP, &(w->cap), a)) != 0) {
-        log_printf(10, "handle_validate_chksum: Invalid cap: %s for resource = %s  tid=" LU "\n",
-                   w->cap.v, w->r->name, task->tid);
+    if ((err = get_allocation_by_cap_id_resource(w->r, MANAGE_CAP, &(w->cap), a)) != 0) {
+        log_printf(10, "handle_validate_chksum: Invalid cap: %s " LU " for resource = %s  tid=" LU "\n",
+                   w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         alog_append_validate_get_chksum(task->myid, cmd->command, w->r->rl_index, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
@@ -1510,8 +1510,8 @@ int handle_validate_chksum(ibp_task_t *task)
     //** Can only chksum  alias allocation is for the whole allocation
     if ((alias_offset != 0) && (alias_len != 0)) {
         log_printf(10,
-                   "handle_validate_chksum: Attempt to validate an alias allocation without full access! cap: %s r = %s  tid="
-                   LU "\n", w->cap.v, w->r->name, task->tid);
+                   "handle_validate_chksum: Attempt to validate an alias allocation without full access! cap: %s " LU " r = %s  tid="
+                   LU "\n", w->cap.cap.v, w->cap.id,  w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         return (global_config->soft_fail);
     }
@@ -1569,9 +1569,9 @@ int handle_get_chksum(ibp_task_t *task)
         return (global_config->soft_fail);
     }
 
-    if ((err = get_allocation_by_cap_resource(w->r, MANAGE_CAP, &(w->cap), a)) != 0) {
-        log_printf(10, "handle_get_chksum: Invalid cap: %s for resource = %s  tid=" LU "\n",
-                   w->cap.v, w->r->name, task->tid);
+    if ((err = get_allocation_by_cap_id_resource(w->r, MANAGE_CAP, &(w->cap), a)) != 0) {
+        log_printf(10, "handle_get_chksum: Invalid cap: %s " LU " for resource = %s  tid=" LU "\n",
+                   w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         alog_append_validate_get_chksum(task->myid, cmd->command, w->r->rl_index, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         return (global_config->soft_fail);
@@ -1611,15 +1611,15 @@ int handle_get_chksum(ibp_task_t *task)
     //** Can only chksum  alias allocation is for the whole allocation
     if ((alias_offset != 0) && (alias_len != 0)) {
         log_printf(10,
-                   "handle_get_chksum: Attempt to validate an alias allocation without full access! cap: %s r = %s  tid="
-                   LU "\n", w->cap.v, w->r->name, task->tid);
+                   "handle_get_chksum: Attempt to validate an alias allocation without full access! cap: %s " LU " r = %s  tid="
+                   LU "\n", w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         return (global_config->soft_fail);
     }
     //** Get the chksum information
     err = get_allocation_chksum_info(w->r, a->id, &cs_type, &nblocks, &blocksize);
     if (err != 0) {             //** No chksum stored
-        log_printf(10, "handle_get_chksum: No chksum info. cap: %s r = %s tid=" LU "\n", w->cap.v,
+        log_printf(10, "handle_get_chksum: No chksum info. cap: %s " LU " r = %s tid=" LU "\n", w->cap.cap.v, w->cap.id,
                    w->r->name, task->tid);
         send_cmd_result(task, IBP_E_CHKSUM);
         return (global_config->soft_fail);
@@ -1728,17 +1728,17 @@ int handle_write(ibp_task_t *task)
     }
     //** Resource is not mounted with write access
     if ((resource_get_mode(w->r) & RES_MODE_WRITE) == 0) {
-        log_printf(10, "handle_write: Write access is disabled cap: %s RID=%s\n", w->cap.v,
-                   w->r->name);
+        log_printf(10, "handle_write: Write access is disabled cap: %s " LU " RID=%s\n", w->cap.cap.v,
+                   w->cap.id, w->r->name);
         alog_append_write(task->myid, cmd->command, w->r->rl_index, 0, 0, w->iovec.vec[0].off,
                           w->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_FILE_WRITE);
         return (0);
     }
 
-    if ((err = get_allocation_by_cap_resource(w->r, WRITE_CAP, &(w->cap), a)) != 0) {
-        log_printf(10, "handle_write: Invalid cap: %s for resource = %s  tid=" LU "\n", w->cap.v,
-                   w->r->name, task->tid);
+    if ((err = get_allocation_by_cap_id_resource(w->r, WRITE_CAP, &(w->cap), a)) != 0) {
+        log_printf(10, "handle_write: Invalid cap: %s " LU " for resource = %s  tid=" LU "\n", w->cap.cap.v,
+                   w->cap.id, w->r->name, task->tid);
         alog_append_write(task->myid, cmd->command, w->r->rl_index, 0, 0, w->iovec.vec[0].off,
                           w->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
@@ -1791,8 +1791,8 @@ int handle_write(ibp_task_t *task)
     //** Can only append if the alias allocation is for the whole allocation
     if ((append_mode == 1) && (alias_offset != 0) && (alias_len != 0)) {
         log_printf(10,
-                   "handle_write: Attempt to append to an allocation with a alias cap without full access! cap: %s r = %s tid="
-                   LU "\n", w->cap.v, w->r->name, task->tid);
+                   "handle_write: Attempt to append to an allocation with a alias cap without full access! cap: %s " LU " r = %s tid="
+                   LU "\n", w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         return (global_config->soft_fail);
 
@@ -1805,8 +1805,8 @@ int handle_write(ibp_task_t *task)
 
         if (((off + len) > (int64_t) a->max_size) && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_write: Attempt to write beyond end of allocation! cap: %s r = %s i=%d off="
-                       LU " len=" LU "  tid=" LU "\n", w->cap.v, w->r->name, i, off, len,
+                       "handle_write: Attempt to write beyond end of allocation! cap: %s " LU " r = %s i=%d off="
+                       LU " len=" LU "  tid=" LU "\n", w->cap.cap.v, w->cap.id, w->r->name, i, off, len,
                        task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             return (global_config->soft_fail);
@@ -1815,9 +1815,9 @@ int handle_write(ibp_task_t *task)
         alias_end = alias_offset + alias_len;
         if (((off + len) > alias_end) && (a->type == IBP_BYTEARRAY)) {
             log_printf(10,
-                       "handle_write: Attempt to write beyond end of alias range! cap: %s r = %s  i=%d off="
-                       I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", w->cap.v,
-                       w->r->name, i, off, len, alias_offset, alias_len, task->tid);
+                       "handle_write: Attempt to write beyond end of alias range! cap: %s " LU " r = %s  i=%d off="
+                       I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", w->cap.cap.v,
+                       w->cap.id, w->r->name, i, off, len, alias_offset, alias_len, task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             return (global_config->soft_fail);
         }

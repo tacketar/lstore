@@ -794,24 +794,15 @@ int read_validate_get_chksum(ibp_task_t *task, char **bstate)
     debug_printf(1, "read_validate_get_chksum:  Starting to process buffer: cmd=%d\n",
                  cmd->command);
 
-
-    //** Get the RID, uh I mean the key...... the format is RID#key
-    char *tmp;
-    w->crid[sizeof(w->crid) - 1] = '\0';
-    tmp = tbx_stk_string_token(NULL, " #", bstate, &finished);
-    if (ibp_str2rid(tmp, &(w->rid)) != 0) {
-        log_printf(1, "read_validate_get_chksum: Bad RID: %s\n", tmp);
+    //** Get the cap/rid info
+    if (parse_key2(bstate, &(w->cap), &(w->rid), w->crid, sizeof(w->crid)) != 0) {
+        log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    ibp_rid2str(w->rid, w->crid);
 
-    //** Get the write key
-    w->cap.v[sizeof(w->cap.v) - 1] = '\0';
-    strncpy(w->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(w->cap.v) - 1);
-    debug_printf(10, "read_validate_get_chksum: cap=%s\n", w->cap.v);
-
-    debug_printf(10, "read_validate_get_chksum: RID=%s\n", w->crid);
+    debug_printf(10, "cap=%s " LU "\n", w->cap.cap.v, w->cap.id);
+    debug_printf(10, "RID=%s\n", w->crid);
     tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
 
     //** Get the "correct_errors" or "chksum_info_only" field
@@ -875,24 +866,15 @@ int read_write(ibp_task_t *task, char **bstate)
     }
 
 
-    //** Get the RID, uh I mean the key...... the format is RID#key
-    char *tmp;
-    w->crid[sizeof(w->crid) - 1] = '\0';
-    tmp = tbx_stk_string_token(NULL, " #", bstate, &finished);
-    if (ibp_str2rid(tmp, &(w->rid)) != 0) {
-        log_printf(1, "read_write: Bad RID: %s\n", tmp);
+    //** Get the cap/rid info
+    if (parse_key2(bstate, &(w->cap), &(w->rid), w->crid, sizeof(w->crid)) != 0) {
+        log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    ibp_rid2str(w->rid, w->crid);
 
-    //** Get the write key
-    w->cap.v[sizeof(w->cap.v) - 1] = '\0';
-    strncpy(w->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(w->cap.v) - 1);
-    debug_printf(10, "read_write: cap=%s\n", w->cap.v);
-
+    debug_printf(10, "read_write: cap=%s " LU "\n", w->cap.cap.v, w->cap.id);
     debug_printf(10, "read_write: RID=%s\n", w->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
 
     if ((cmd->command == IBP_VEC_WRITE_CHKSUM) || (cmd->command == IBP_VEC_WRITE)) {
         llu = 0;
