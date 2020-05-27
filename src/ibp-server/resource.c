@@ -2026,19 +2026,6 @@ int rename_allocation_resource(Resource_t *r, Allocation_t *a)
 }
 
 //***************************************************************************
-// get_allocation_resource - Returns the allocations data structure
-//***************************************************************************
-
-int get_allocation_by_cap_resource(Resource_t *r, int cap_type, Cap_t *cap, Allocation_t *a)
-{
-    int err;
-
-    err = get_alloc_with_cap_db(&(r->db), cap_type, cap, a);
-
-    return (err);
-}
-
-//***************************************************************************
 // get_allocation_by_cap_id_resource - Returns the allocations data structure
 //***************************************************************************
 
@@ -2145,15 +2132,6 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
 }
 
 //---------------------------------------------------------------------------
-
-//***************************************************************************
-// get_manage_allocation_resource - Gets an allocation usign the manage key
-//***************************************************************************
-
-int get_manage_allocation_resource(Resource_t *r, Cap_t *mcap, Allocation_t *a)
-{
-    return (get_allocation_by_cap_resource(r, MANAGE_CAP, mcap, a));
-}
 
 //***************************************************************************
 // validate_allocation - Validates (and optionally corrects) an allocation

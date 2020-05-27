@@ -172,13 +172,10 @@ IBPS_API ibp_off_t get_allocation_chksum(Resource_t *r, osd_id_t id, char *disk_
                                          ibp_off_t start_block, ibp_off_t end_block);
 IBPS_API int rename_allocation_resource(Resource_t *r, Allocation_t *a);
 IBPS_API int merge_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a);
-IBPS_API int get_allocation_by_cap_resource(Resource_t *r, int cap_type, Cap_t *cap,
-                                            Allocation_t *a);
 IBPS_API int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap,
                                                Allocation_t * a);
 IBPS_API int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
 IBPS_API int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
-IBPS_API int get_manage_allocation_resource(Resource_t *r, Cap_t *mcap, Allocation_t *a);
 IBPS_API int write_allocation_header(Resource_t *r, Allocation_t *a, int do_blank);
 IBPS_API int read_allocation_header(Resource_t *r, osd_id_t id, Allocation_t *a);
 IBPS_API ibp_off_t write_allocation(Resource_t *r, osd_fd_t *fd, ibp_off_t offset, ibp_off_t len,
