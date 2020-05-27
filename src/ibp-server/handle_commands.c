@@ -89,20 +89,10 @@ int handle_allocate(ibp_task_t *task)
     }
 
     if ((cmd->command == IBP_SPLIT_ALLOCATE) || (cmd->command == IBP_SPLIT_ALLOCATE_CHKSUM)) {
-        //** Get the Master allocation ***
-        if ((err =
-                 get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
-                                                &ma)) != 0) {
-            log_printf(10, "handle_split_allocate: Invalid master cap: %s " LU " rid=%s\n",
-                       cmd->cargs.allocate.master_cap.cap.v, cmd->cargs.allocate.master_cap.id, res->name);
-            send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
-            return (global_config->soft_fail);
-        }
-
-        alog_append_ibp_split_allocate(task->myid, res->rl_index, ma.id, alloc->max_size,
+        alog_append_ibp_split_allocate(task->myid, res->rl_index, cmd->cargs.allocate.master_cap.id, alloc->max_size,
                                        alloc->type, alloc->reliability, alloc->expiration);
 
-        lock_osd_id(ma.id);     //** Redo the get allocation again with the lock enabled ***
+        lock_osd_id(cmd->cargs.allocate.master_cap.id);     //** Get allocation again with the lock enabled ***
         got_lock = 1;
         if ((err =
                  get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(cmd->cargs.allocate.master_cap),
@@ -169,7 +159,6 @@ int handle_allocate(ibp_task_t *task)
     }
     //** Store the creation timestamp **
     set_alloc_timestamp(&(a.creation_ts), &(task->ipadd));
-//log_printf(15, "handle_allocate: create time =" TT " ns=%d\n", a.creation_ts.time, tbx_ns_getid(task->ns));
     err = modify_allocation_resource(res, a.id, &a);
     if (err != 0) {
         log_printf(0,
@@ -200,11 +189,8 @@ int handle_allocate(ibp_task_t *task)
     debug_printf(1, "handle_allocate: Allocation: %s", token);
 
     debug_code(if (debug_level() > 5) print_allocation_resource(res, log_fd(), &a);)
-//Allocation_history_t h1;
-//get_history_table(res, a.id, &h1);
-//log_printf(0, "handle_allocate history: r=%s id=" LU " h.id=" LU " write_slot=%d\n", res->name, a.id, h1.id, h1.write_slot);
 
-        return (err);
+    return (err);
 }
 
 //*****************************************************************
@@ -229,25 +215,11 @@ int handle_merge(ibp_task_t *task)
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (global_config->soft_fail);
     }
-    //** Get the master allocation ***
-    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
-        log_printf(10, "handle_merge: Invalid mcap: %s " LU " rid=%s\n", op->mkey.cap.v, op->mkey.id, r->name);
-        alog_append_ibp_merge(task->myid, 0, 0, r->rl_index);
-        send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
-        return (global_config->soft_fail);
-    }
-    //** and the child allocation
-    if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->ckey), &ca)) != 0) {
-        log_printf(10, "handle_merge: Invalid childcap: %s rid=%s\n", op->ckey.cap.v, r->name);
-        alog_append_ibp_merge(task->myid, ma.id, 0, r->rl_index);
-        send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
-        return (global_config->soft_fail);
-    }
 
-    alog_append_ibp_merge(task->myid, ma.id, ca.id, r->rl_index);
+    alog_append_ibp_merge(task->myid, op->mkey.id, op->ckey.id, r->rl_index);
 
     //** Now do the same thing with locks enabled
-    lock_osd_id_pair(ma.id, ca.id);
+    lock_osd_id_pair(op->mkey.id, op->ckey.id);
 
     //** Get the master allocation ***
     if ((err = get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(op->mkey), &ma)) != 0) {
@@ -637,26 +609,19 @@ int handle_alias_allocate(ibp_task_t *task)
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (global_config->soft_fail);
     }
-    //** Get the original allocation ***
-    if ((err = get_allocation_by_cap_resource(res, MANAGE_CAP, &(pa->cap), &a)) != 0) {
-        log_printf(10, "handle_alias_allocate: Invalid cap: %s rid=%s\n", pa->cap.v, res->name);
-        alog_append_alias_alloc(task->myid, -1, 0, 0, 0, 0);
-        send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
-        return (global_config->soft_fail);
-    }
 
-    lock_osd_id(a.id);
+    lock_osd_id(pa->cap.id);
 
-    //** Get the original allocation again with the lock ***
-    if ((err = get_allocation_by_cap_resource(res, MANAGE_CAP, &(pa->cap), &a)) != 0) {
-        log_printf(10, "handle_alias_allocate: Invalid cap: %s rid=%s\n", pa->cap.v, res->name);
+    //** Get the original allocation with the lock ***
+    if ((err = get_allocation_by_cap_id_resource(res, MANAGE_CAP, &(pa->cap), &a)) != 0) {
+        log_printf(10, "handle_alias_allocate: Invalid cap: %s " LU " rid=%s\n", pa->cap.cap.v, pa->cap.id, res->name);
         alog_append_alias_alloc(task->myid, -1, 0, 0, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(a.id);
         return (global_config->soft_fail);
     }
+
     //** Validate the range and duration **
-//   log_printf(1, "handle_alias_alloc:  pa->duration= %u\n", pa->expiration);
     if (pa->expiration == 0)
         pa->expiration = a.expiration;
 

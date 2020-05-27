@@ -108,7 +108,7 @@ typedef struct {
     rid_t rid;                  //** RID for querying
     char crid[128];             //** Character version of the RID for querying
     char cid[64];               //** Character version of the ID for querying
-    Cap_t cap;                  //** Manage cap of original allocation
+    cap_id_t cap;               //** Manage cap of original allocation
     ibp_off_t offset;           //** Offset into original allocation
     ibp_off_t len;              //** Length in original alloc if offset=len=0 then full range is given
     uint32_t expiration;        //** Duration of alias allocation

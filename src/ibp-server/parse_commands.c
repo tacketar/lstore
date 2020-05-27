@@ -740,21 +740,15 @@ int read_alias_allocate(ibp_task_t *task, char **bstate)
 
     debug_printf(1, "read_alias_allocate:  Starting to process buffer\n");
 
-    //** Get the RID and key the format is RID#key
-    cmd->crid[sizeof(cmd->crid) - 1] = '\0';
-    strncpy(cmd->crid, tbx_stk_string_token(NULL, " #", bstate, &finished), sizeof(cmd->crid) - 1);
-    if (ibp_str2rid(cmd->crid, &(cmd->rid)) != 0) {
-        log_printf(5, "read_alias_allocate: Bad RID: %s\n", cmd->crid);
+    //** Get the cap/rid info
+    if (parse_key2(bstate, &(cmd->cap), &(cmd->rid), cmd->crid, sizeof(cmd->crid)) != 0) {
+        log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
-        return (-1);
+        return (global_config->soft_fail);
     }
-    //** Get the key
-    cmd->cap.v[sizeof(cmd->cap.v) - 1] = '\0';
-    strncpy(cmd->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(cmd->cap.v) - 1);
-    log_printf(10, "read_alias_allocate: cap=%s\n", cmd->cap.v);
 
+    log_printf(10, "read_alias_allocate: cap=%s " LU "\n", cmd->cap.cap.v, cmd->cap.id);
     log_printf(10, "read_alias_allocate: RID=%s\n", cmd->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
 
     cmd->offset = cmd->len = cmd->expiration == 0;
 
@@ -777,9 +771,7 @@ int read_alias_allocate(ibp_task_t *task, char **bstate)
         return (-1);
     }
     cmd->expiration = 0;
-//   log_printf(15, "read_alias_allocate: cmp->expire=%lu\n", lu);
-    if (lu != 0)
-        cmd->expiration = lu + ibp_time_now();
+    if (lu != 0) cmd->expiration = lu + ibp_time_now();
 
     get_command_timeout(task, bstate);
     return (0);
