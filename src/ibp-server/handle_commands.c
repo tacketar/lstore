@@ -380,7 +380,6 @@ int handle_internal_get_corrupt(ibp_task_t *task)
     if (res == NULL) {          //**Can't find the resource
         log_printf(1, "handle_internal_get_corrupt: Invalid resource: %s\n",
                    ibp_rid2str(arg->rid, buffer));
-//      alog_append_internal_get_corrupt(task->myid, -1, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (global_config->soft_fail);
     }
@@ -453,23 +452,8 @@ int handle_internal_get_alloc(ibp_task_t *task)
         return (global_config->soft_fail);
     }
 
-    err = -1;
     a.id = 0;
-    switch (arg->key_type) {
-    case IBP_READCAP:
-        err = get_allocation_by_cap_resource(res, READ_CAP, &(arg->cap), &a);
-        break;
-    case IBP_WRITECAP:
-        err = get_allocation_by_cap_resource(res, WRITE_CAP, &(arg->cap), &a);
-        break;
-    case IBP_MANAGECAP:
-        err = get_allocation_by_cap_resource(res, MANAGE_CAP, &(arg->cap), &a);
-        break;
-    case INTERNAL_ID:
-        err = get_allocation_resource(res, arg->id, &a);
-        break;
-    }
-
+    err = get_allocation_resource(res, arg->id, &a);
     alog_append_internal_get_alloc(task->myid, res->rl_index, a.id);
 
     if (err != 0) {

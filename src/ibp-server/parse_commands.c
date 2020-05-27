@@ -1239,9 +1239,8 @@ int read_internal_get_corrupt(ibp_task_t *task, char **bstate)
 //    allocation.
 //
 // PRIVATE command
-//    version INTERNAL_GET_ALLOC RID key_type key print_blocks offset len timeout\n
+//    version INTERNAL_GET_ALLOC RID id print_blocks offset len timeout\n
 //
-// key_type = IBP_READCAP|IBP_WRITECAP|IBP_MANAGECAP|INTERNAL_ID
 // print_blocks = 0 no block chksum information is transferred
 // offset   = -1 No allocation data is transferred. Otherwsie alloc offset
 // len      = 0  All available data is returned otherwise len bytes are returned if available
@@ -1266,27 +1265,12 @@ int read_internal_get_alloc(ibp_task_t *task, char **bstate)
         send_cmd_result(task, IBP_E_INVALID_RID);
         return (-1);
     }
-    //*** Get the key type ***
-    arg->key_type = atoi(tbx_stk_string_token(NULL, " ", bstate, &finished));
-
-    //** Get the key ***
-    switch (arg->key_type) {
-    case IBP_READCAP:
-    case IBP_WRITECAP:
-    case IBP_MANAGECAP:
-        arg->cap.v[sizeof(arg->cap.v) - 1] = '\0';
-        strncpy(arg->cap.v, tbx_stk_string_token(NULL, " ", bstate, &finished),
-                sizeof(arg->cap.v) - 1);
-        debug_printf(10, "read_internal_get_alloc: cap=%s\n", arg->cap.v);
-        break;
-    case INTERNAL_ID:
-        sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), LU, &(arg->id));
-        debug_printf(10, "read_internal_get_alloc: id=" LU "\n", arg->id);
-        break;
-    default:
-        log_printf(10, "read_internal_get_alloc: Invalid key type!  type=%d\n", arg->key_type);
-        task->cmd.state = CMD_STATE_FINISHED;
-        return (send_cmd_result(task, IBP_E_INVALID_PARAMETER));
+    //*** Get the id ***
+    str = tbx_stk_string_token(NULL, " ", bstate, &finished);
+    if (sscanf(str, LU, &(arg->id)) != 1) {
+        log_printf(10, "ERROR parsing ID!\n");
+        send_cmd_result(task, IBP_E_INVALID_RID);
+        return(-1);
     }
 
     //** Determine if we print the block information

@@ -169,8 +169,6 @@ typedef struct {
     char crid[128];             //** Character version of the RID for querying
     char cid[64];               //** Character version of the ID for querying
     Resource_t *r;              //** Resource being used
-    int key_type;
-    Cap_t cap;
     int print_blocks;
     int64_t offset;             //** Offset into allocation to start reading
     uint64_t len;               //** Length of read

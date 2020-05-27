@@ -39,9 +39,9 @@
 #include "cmd_send.h"
 
 
-int parse_cap(char *cap, char **host, int *port, char **rid, char **key, int *ktype)
+int parse_cap(char *cap, char **host, int *port, char **rid, char **key, char **kid)
 {
-    char *bstate, *temp;
+    char *bstate;
     int finished = 0;
 
     char *ptr;
@@ -55,21 +55,10 @@ int parse_cap(char *cap, char **host, int *port, char **rid, char **key, int *kt
 
     *rid = tbx_stk_string_token(NULL, "#", &bstate, &finished);
     *key = tbx_stk_string_token(NULL, "/", &bstate, &finished);
-    tbx_stk_string_token(NULL, "/", &bstate, &finished);
-    temp = tbx_stk_string_token(NULL, "/", &bstate, &finished);
-    if (strcmp("READ", temp) == 0) {
-        *ktype = IBP_READCAP;
-    } else if (strcmp("WRITE", temp) == 0) {
-        *ktype = IBP_WRITECAP;
-    } else if (strcmp("MANAGE", temp) == 0) {
-        *ktype = IBP_MANAGECAP;
-    } else {
-        printf("invalid type_key = %s\n", temp);
-        abort();
-    }
+    *kid = tbx_stk_string_token(NULL, "/", &bstate, &finished);
 
-    log_printf(15, "parse_cap: CAP=%s * parsed=%s:%d/%s#%s/dummy/%d\n", cap, *host, *port, *rid,
-               *key, *ktype);
+    log_printf(15, "parse_cap: CAP=%s * parsed=%s:%d/%s#%s/%s\n", cap, *host, *port, *rid,
+               *key, *kid);
 
     if (finished == 1)
         log_printf(0, "parse_cap:  Error parsing cap %s\n", cap);
@@ -87,7 +76,7 @@ int main(int argc, char **argv)
     Allocation_t a;
     Allocation_history_t h;
     int used, start_option, print_blocks;
-    int err, type_key, npos, state;
+    int err, npos, state;
     int n, offset, len, ndata, i, k;
     int max_wait = 10;
     ibp_off_t header_bs, bs;
@@ -96,7 +85,7 @@ int main(int argc, char **argv)
     tbx_ns_timeout_t dt;
     char *fname = NULL;
     FILE *fd;
-    char *host, *rid, *key;
+    char *host, *rid, *key, *kid;
     int port;
     tbx_ns_t *ns;
 
@@ -107,14 +96,10 @@ int main(int argc, char **argv)
 
     if (argc < 3) {
         printf
-        ("get_alloc [-d debug_level] [--print_blocks] [--file fname offset len] [--cap full_ibp_capability]|[host port RID key_type key] [--file fname offset len]\n");
-        printf("where key_type is read|write|manage|id\n");
-        printf
-        ("      --file stores a portion of the allocation to fname based on the given offset and length\n");
-        printf
-        ("          fname - Filename of where to store data. If stdout or stderr redirects to that device\n");
-        printf
-        ("          data_offset is the offset relative to the start of data, after the header.\n");
+        ("get_alloc [-d debug_level] [--print_blocks] [--file fname offset len] [--cap full_ibp_capability]|[host port RID ID] [--file fname offset len]\n");
+        printf("      --file stores a portion of the allocation to fname based on the given offset and length\n");
+        printf("          fname - Filename of where to store data. If stdout or stderr redirects to that device\n");
+        printf("          data_offset is the offset relative to the start of data, after the header.\n");
         printf("          len of 0 means return all data available starting from offset\n");
         printf("      --print_blocks  Prints the chksum block information if available\n");
         printf("      -d debug_level  Sets the debug level.  Default is 0.\n");
@@ -131,15 +116,13 @@ int main(int argc, char **argv)
     len = 0;
     ndata = 0;
     print_blocks = 0;
-//printf("argc=%d i=%d\n", argc,i);
     do {
-//log_printf(0, "get_alloc: argv[%d]=%s\n", i, argv[i]);
         start_option = i;
         if (strcmp("--cap", argv[i]) == 0) {
             i++;
-            parse_cap(argv[i], &host, &port, &rid, &key, &type_key);
-            log_printf(15, "get_alloc: parsed=%s:%d/%s#%s/dummy/%d\n", host, port, rid, key,
-                       type_key);
+            parse_cap(argv[i], &host, &port, &rid, &key, &kid);
+            log_printf(15, "get_alloc: parsed=%s:%d/%s#%s/%s\n", host, port, rid, key,
+                       kid);
             i++;
         } else if (strcmp("--print_blocks", argv[i]) == 0) {
             i++;
@@ -152,7 +135,6 @@ int main(int argc, char **argv)
             i++;
             len = atoi(argv[i]);
             i++;
-//printf("fname=%s offset=%d len=%d\n", fname, offset, len);
         } else if (strcmp("-d", argv[i]) == 0) {
             i++;
             k = atoi(argv[i]);
@@ -172,28 +154,13 @@ int main(int argc, char **argv)
         i++;
         rid = argv[i];
         i++;
-
-        if (strcmp("read", argv[i]) == 0) {
-            type_key = IBP_READCAP;
-        } else if (strcmp("write", argv[i]) == 0) {
-            type_key = IBP_WRITECAP;
-        } else if (strcmp("manage", argv[i]) == 0) {
-            type_key = IBP_MANAGECAP;
-        } else if (strcmp("id", argv[i]) == 0) {
-            type_key = INTERNAL_ID;
-        } else {
-            printf("invalid type_key = %s\n", argv[3]);
-            return (1);
-        }
-        i++;
-
-        key = argv[i];
+        kid = argv[i];
         i++;
     }
 
     tbx_dnsc_startup_sized(10);
 
-    sprintf(buffer, "2 %d %s %d %s %d %d %d 10\n", INTERNAL_GET_ALLOC, rid, type_key, key,
+    sprintf(buffer, "2 %d %s %s %d %d %d 10\n", INTERNAL_GET_ALLOC, rid, kid,
             print_blocks, offset, len);
 
     ns = cmd_send(host, port, buffer, &bstate, max_wait);
@@ -232,12 +199,6 @@ int main(int argc, char **argv)
         printf("-------  ----------  -----   -----------------------------------------\n");
         for (i = 0; i < nblocks; i++) {
             n = server_ns_readline(ns, buffer, bufsize, dt);
-//         if (n != NS_OK) {
-//             printf("Error reading netstream %d returned!\n", n);
-//             tbx_ns_close(ns);
-//             return(n);
-//         }
-
             printf("%s\n", buffer);
         }
     }
