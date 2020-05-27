@@ -312,11 +312,10 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
         abort();
     }
     //** Wipe all other DB's **
-    if (wipe_clean != 0)
-        flags = flags | DB_CREATE;
+    if (wipe_clean != 0) flags = flags | DB_CREATE;
     bflags = flags;
 
-    //*** Create/Open DB containing the expirationss ***
+    //*** Create/Open DB containing the expirations ***
     assert_result(db_create(&db, dbres->dbenv, 0), 0);
     dbres->expire = db;
     assert_result(db->set_bt_compare(db, compare_expiration), 0);
