@@ -803,7 +803,6 @@ int read_validate_get_chksum(ibp_task_t *task, char **bstate)
 
     debug_printf(10, "cap=%s " LU "\n", w->cap.cap.v, w->cap.id);
     debug_printf(10, "RID=%s\n", w->crid);
-    tbx_stk_string_token(NULL, " ", bstate, &finished); //** Drop the WRMkey
 
     //** Get the "correct_errors" or "chksum_info_only" field
     i = 0;
