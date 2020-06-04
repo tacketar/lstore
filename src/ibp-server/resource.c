@@ -48,6 +48,7 @@ char _blanks[_RESOURCE_BUF_SIZE];
 
 #define _RES_USAGE_ID 1
 
+const int alloc_lru_size = sizeof(Allocation_t);
 const char *_res_types[] = { DEVICE_UNKNOWN, DEVICE_DIR };
 
 typedef struct {                //** Internal resource iterator
@@ -62,6 +63,35 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data);
 int _remove_allocation_for_make_free(Resource_t *r, int rmode, Allocation_t *alloc,
                                      DB_iterator_t *it);
 
+//***************************************************************************
+// fetch_idkey - Routine to fetch the ID key for the allocation LRU
+//***************************************************************************
+
+void fetch_idkey(void *global, void *object, void **key, int *len)
+{
+    Allocation_t *a = (Allocation_t *)object;
+
+    *key = &(a->id);
+    *len = sizeof(osd_id_t);
+}
+
+//***************************************************************************
+//  alru_put - Updates/adds the allocation to the LRU
+//***************************************************************************
+
+void alru_put(Resource_t *r, Allocation_t *a)
+{
+    tbx_lru_put(r->id_lru, a);
+}
+
+//***************************************************************************
+//  alru_remove - Removes the allocation from the LRU
+//***************************************************************************
+
+void alru_remove(Resource_t *r, osd_id_t id)
+{
+    tbx_lru_delete(r->id_lru, &id, sizeof(id));
+}
 
 //***************************************************************************
 //  fname2dev - Maps the file or directory to the physical device
@@ -396,6 +426,7 @@ int rebuild_modify_iter(res_iterator_t *ri, Allocation_t *a)
     int err = 0;
 
     if (ri->mode == 1) {
+        alru_put(ri->r, a);
         err = modify_alloc_iter_db(ri->dbi, a);
     }
 
@@ -418,6 +449,7 @@ int rebuild_put_iter(res_iterator_t *ri, Allocation_t *a)
         a->size = osd_size(ri->r->dev, a->id) - ALLOC_HEADER;
         log_printf(10, "rebuild_put_iter: id=" LU " size=" LU "\n", a->id, a->size);
         err = _put_alloc_db(&(ri->r->db), a);
+        alru_put(ri->r, a);  //** Add it to the LRU
     }
 
     return (err);
@@ -792,6 +824,7 @@ int perform_truncate(Resource_t *r)
                            "perform_truncate(rid=%s): Error modifying id " LU
                            " to primary DB Error=%d\n", r->name, a->id, err);
             }
+            alru_put(r, a);
 
             if (nbuff >= (a_size - 1)) {
                 log_printf(5, "perform_truncate(rid=%s): Dumping buffer=%d\n", r->name, nbuff);
@@ -988,6 +1021,10 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     }
     free(str);
 
+    //** Setup the LRU table
+    res->n_lru = tbx_inip_get_integer(keyfile, group, "n_lru", 100000);
+    res->id_lru = tbx_lru_create(res->n_lru, fetch_idkey, tbx_lru_clone_default, tbx_lru_copy_default, tbx_lru_free_default, (void *)(&alloc_lru_size));
+
     return (0);
 }
 
@@ -1120,8 +1157,9 @@ int umount_resource(Resource_t *res)
     if (err == 0)
         write_usage_file(res, _RESOURCE_STATE_GOOD);
 
-
     osd_umount(res->dev);
+
+    tbx_lru_destroy(res->id_lru);
 
     apr_thread_mutex_destroy(res->cleanup_lock);
     apr_thread_mutex_destroy(res->mutex);
@@ -1159,6 +1197,7 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
     tbx_append_printf(buffer, used, nbytes, "device = %s\n", res->device);
 //   tbx_append_printf(buffer, used, nbytes, "db_location = %s\n", res->location);
     tbx_append_printf(buffer, used, nbytes, "update_alloc = %d\n", res->update_alloc);
+    tbx_append_printf(buffer, used, nbytes, "n_lru = %d\n", res->n_lru);
 
     string[0] = '\0';
     strcat(string, "mode = ");
@@ -1332,6 +1371,8 @@ int _remove_allocation(Resource_t *r, int rmode, Allocation_t *alloc, int dolock
     }
     log_printf(10, "_remove_allocation:  Removed db entry\n");
 
+    alru_remove(r, alloc->id); //** Update the LRU copy
+
     if (dolock)
         apr_thread_mutex_lock(r->mutex);
 
@@ -1404,6 +1445,7 @@ int merge_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a)
         if (r->update_alloc == 1)
             write_allocation_header(r, ma, 0);
         err = modify_alloc_db(&(r->db), ma);
+        alru_put(r, ma); //** Update the LRU copy
     }
     apr_thread_mutex_unlock(r->mutex);
 
@@ -1791,6 +1833,7 @@ int _new_allocation_resource(Resource_t *r, Allocation_t *a, ibp_off_t size, int
         return (1);;
     }
 
+    alru_put(r, a); //** Add it to the LRU copy
     create_alloc_db(&(r->db), a);
 
     //** Always store the initial alloc in the file header
@@ -1925,6 +1968,7 @@ int resource_undelete(Resource_t *r, int trash_type, const char *trash_id, ibp_t
     }
     //** Add it to the DB
     err = _put_alloc_db(&(r->db), &a);
+    alru_put(r, &a); //** and the LRU copy
 
     //** Adjust the space
     r->n_allocs++;
@@ -1981,6 +2025,7 @@ int split_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a, 
             ma->size = ma->max_size;
         if (r->update_alloc == 1)
             write_allocation_header(r, ma, 0);
+        alru_put(r, ma); //** Update the LRU copy
         err = modify_alloc_db(&(r->db), ma);    //** Store the master back with updated size
     } else {                    //** Problem so undo size tweaks
         log_printf(15, "Error with _new_allocation!\n");
@@ -2011,10 +2056,16 @@ int split_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a, 
 int rename_allocation_resource(Resource_t *r, Allocation_t *a)
 {
     int err;
+
     apr_thread_mutex_lock(r->mutex);
     err = remove_alloc_db(&(r->db), a);
-    if (err == 0)
+    if (err == 0) {
+        //** Replace the caps
         create_alloc_db(&(r->db), a);
+
+        //** Update the LRU entry
+        alru_put(r, a);
+    }
     if (a->is_alias == 0)
         write_allocation_header(r, a, 0);
     apr_thread_mutex_unlock(r->mutex);
@@ -2032,6 +2083,12 @@ int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
 {
     int err;
 
+    //** See if we can find it in the LRU
+    if (tbx_lru_get(r->id_lru, &id, sizeof(osd_id_t), a) == 0) { //** Got it
+        return(0);
+    }
+
+    //** Not in the LRU so look it up
     err = get_alloc_with_id_db(&(r->db), id, a);
 
     return (err);
@@ -2128,6 +2185,8 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
         }
     }
 
+    //** Update the LRU entry
+    alru_put(r, a);
 
     return (modify_alloc_db(&(r->db), a));
 }

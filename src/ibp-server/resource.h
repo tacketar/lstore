@@ -32,6 +32,7 @@
 #include <apr_pools.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/iniparse.h>
+#include <tbx/lru.h>
 
 #define _RESOURCE_VERSION 100000
 
@@ -106,6 +107,8 @@ typedef struct {                //Resource structure
     DB_resource_t db;           //DB for maintaining the resource's caps
     osd_t *dev;                 //Actual Device information
     int rl_index;               //** Index in global resource array
+    int n_lru;                  //** Max size of the ID LRU
+    tbx_lru_t *id_lru;          //** ID Least Recently Used table
     apr_thread_mutex_t *mutex;  //Lock for creates
     int cleanup_shutdown;
     apr_thread_mutex_t *cleanup_lock;   //Used to shutdown cleanup thread
