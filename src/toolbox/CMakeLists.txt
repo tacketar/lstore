@@ -37,6 +37,7 @@ set(TOOL_OBJS
     iniparse.c
     interval_skiplist.c
     log.c
+    lru.c
     packer.c
     pigeon_coop.c
     pigeon_hole.c
@@ -69,6 +70,7 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/interval_skiplist.h
     tbx/list.h
     tbx/log.h
+    tbx/lru.h
     tbx/net_sock.h
     tbx/network.h
     tbx/object.h
