@@ -174,6 +174,34 @@ int compare_expiration(DB *db, const DBT *k1, const DBT *k2)
 }
 
 //***************************************************************************
+// compare_idmod - Compares the allocation IDs using the modulo for fast rebuilds
+//***************************************************************************
+
+#if (DB_VERSION_MAJOR > 5)
+int compare_idmod(DB *db, const DBT *k1, const DBT *k2, size_t *locp)
+#else
+int compare_idmod(DB *db, const DBT *k1, const DBT *k2)
+#endif
+{
+    osd_id_t id1, id2;
+    int mod1, mod2;
+
+    memcpy(&id1, k1->data, sizeof(osd_id_t));
+    memcpy(&id2, k2->data, sizeof(osd_id_t));
+
+    mod1 = id1 % 256;  //** DIR_MAX=256 and this is a hack that will get properly
+    mod2 = id2 % 256;  //** in subsequent commits
+
+    if (mod1 < mod2) return(-1);
+    if (mod1 > mod2) return(1);
+
+    if (id1 < id2) return(-1);
+    if (id1 > id2) return(1);
+
+    return(0);
+}
+
+//***************************************************************************
 // print_db_resource - Prints the DB resource
 //***************************************************************************
 
@@ -212,10 +240,11 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
 
     //*** Create/Open the primary DB containing the ID's ***
     assert_result(db_create(&(dbres->pdb), NULL, 0), 0);
+    assert_result(dbres->pdb->set_bt_compare(dbres->pdb, compare_idmod), 0);
     assert_result(dbres->pdb->set_pagesize(dbres->pdb, 32 * 1024), 0);
     snprintf(fname, sizeof(fname), "%s/id.db", loc);
     remove(fname);
-    if ((err = dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_HASH, flags, 0)) != 0) {
+    if ((err = dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
         printf("mkfs_db: Can't create primary DB: %s\n", fname);
         printf("mkfs_db: %s\n", db_strerror(err));
         abort();
@@ -307,7 +336,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
     snprintf(fname, sizeof(fname), "%s/id.db", dbres->loc);
     if (wipe_clean == 2)
         remove(fname);
-    if (dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_HASH, flags, 0) != 0) {
+    if (dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_BTREE, flags, 0) != 0) {
         printf("mount_db: Can't open primary DB: %s\n", fname);
         abort();
     }
@@ -553,9 +582,8 @@ int print_db(DB_resource_t *db, FILE *fd)
 int get_num_allocations_db(DB_resource_t *db)
 {
     int n, err;
-    DB_HASH_STAT *dstat;
-//  u_int32_t flags = DB_FAST_STAT;
-    u_int32_t flags = DB_READ_COMMITTED;
+    DB_BTREE_STAT *dstat;
+    u_int32_t flags = 0;
 
 
     dbr_lock(db);
@@ -567,7 +595,7 @@ int get_num_allocations_db(DB_resource_t *db)
 
     n = -1;
     if (err == 0) {
-        n = dstat->hash_nkeys;
+        n = dstat->bt_nkeys;
         free(dstat);
         log_printf(10, "get_allocations_db: nkeys=%d\n", n);
     }
