@@ -68,11 +68,93 @@ void *parallel_mount_resource(apr_thread_t *th, void *data)
     //** Launch the garbage collection threads
 //   launch_resource_cleanup_thread(r);  *** Not safe to do this here due to fork() becing called after mount
 
-
     apr_thread_exit(th, 0);
     return (0);                 //** Never gets here but suppresses compiler warnings
 }
 
+
+//*****************************************************************************
+// check_rid - tries to create an allocation and read it back to
+//    detect drive issues
+//*****************************************************************************
+
+#define _CHECK_VALUE 12345
+
+int rid_check_write(Resource_t *r)
+{
+    osd_fd_t *fd;
+    osd_id_t id = RES_CHECK_ID;
+    int n;
+    int val = _CHECK_VALUE;
+
+    //** Create the ID
+    osd_create_id(r->dev, CHKSUM_NONE, 0, 0, id);
+
+    //** Now try and open it
+    fd = osd_open(r->dev, id, OSD_WRITE_MODE);
+    if (fd == NULL) {
+        log_printf(0, "ERROR:  Can't open check file! rid=%s\n", r->name);
+        return (1);
+    }
+
+    //** Dump the data
+    n = osd_write(r->dev, fd, 0, sizeof(val), &val);
+    if (n != sizeof(val)) {
+        log_printf(10, "ERROR: Can't write whole record! r: %s\n", r->name);
+        osd_close(r->dev, fd);
+        return (1);
+    }
+    osd_close(r->dev, fd);
+
+    return(0);
+}
+
+//-------------------------------------------------
+
+int rid_check_read(Resource_t *r)
+{
+    osd_fd_t *fd;
+    osd_id_t id = RES_CHECK_ID;
+    int n, val;
+
+    //** TRy and open it
+    fd = osd_open(r->dev, id, OSD_READ_MODE);
+    if (fd == NULL) {
+        log_printf(0, "ERROR:  Can't open check file! rid=%s\n", r->name);
+        return (1);
+    }
+
+    //** Get the data
+    n = osd_read(r->dev, fd, 0, sizeof(val), &val);
+    if (n != sizeof(val)) {
+        log_printf(10, "ERROR: Can't read whole record! r: %s\n", r->name);
+        osd_close(r->dev, fd);
+        return (1);
+    }
+    osd_close(r->dev, fd);
+
+    //** Verify it
+    if (val != _CHECK_VALUE) {
+        log_printf(10, "ERROR: Can't read whole record! r: %s\n", r->name);
+        return(1);
+    }
+
+    return(0);
+}
+
+//-------------------------------------------------
+
+int resource_check(Resource_t *r)
+{
+    int err = 1;
+    if (rid_check_write(r) == 0) {
+        if (rid_check_read(r) == 0) err = 0;
+    }
+
+    //** Always clean up
+    osd_remove(r->dev, OSD_PHYSICAL_ID, RES_CHECK_ID);
+    return(err);
+}
 
 //*****************************************************************************
 // resource_health_check - Does periodic health checks on the RIDs
@@ -86,14 +168,12 @@ void *resource_health_check(apr_thread_t *th, void *data)
     ibp_task_t task;
     apr_time_t dt, dt_wait;
     Cmd_internal_mount_t *cmd;
-    resource_usage_file_t usage;
     tbx_stack_t *eject;
     FILE *fd;
     char *rname, *rid_name, *data_dir, *data_device;
     int i, j;
     pid_t pid;
     int err;
-//int junk = 0;
 
     eject = tbx_stack_new();
 
@@ -108,11 +188,9 @@ void *resource_health_check(apr_thread_t *th, void *data)
         if (apr_time_now() > next_check) {
             log_printf(5, "Running RID check\n");
             it = resource_list_iterator(global_config->rl);
-//junk++;
             j = 0;
             while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
-                err = read_usage_file(r, &usage);
-//if ((junk > 1) && (it == 1)) { err= 1; log_printf(0,"Forcing a failure\n"); }
+                err = resource_check(r);
                 if (err == 0) {
                     r->last_good_check = apr_time_now();        //** this should be done in resource.c But I'm the only one that ever touches the routine
                 } else if (apr_time_now() > (r->last_good_check + dt)) {
@@ -548,7 +626,9 @@ int main(int argc, const char **argv)
 
     if (argc < 1) {
         printf("ibp_server [-d] [-r] config_file\n\n");
-        printf("-r          - Rebuild RID databases. Same as force_rebuild=2 in config file\n");
+        printf("-r          - Rebuild RID databases. Same as force_rebuild=1 in config file.\n");
+        printf("              This takes signifcantly longer to start the IBP server and should\n");
+        printf("              not be required unless the DB itself is corrupt\n");
         printf("-d          - Run as a daemon\n");
         printf("config_file - Configuration file\n");
         return (0);
@@ -560,7 +640,7 @@ int main(int argc, const char **argv)
         if (strcmp(argv[i], "-d") == 0) {
             daemon = 1;
         } else if (strcmp(argv[i], "-r") == 0) {
-            force_rebuild = 2;
+            force_rebuild = 1;
         }
     }
 

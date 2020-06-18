@@ -419,11 +419,9 @@ osd_id_t _generate_key()
 
 char *id2fname_normal(osd_fs_t *fs, osd_id_t id, char *fname, int len)
 {
-    int dir = (id & DIR_BITMASK);
+    int dir = (id % fs->n_partitions);
 
     snprintf(fname, len, "%s/%d/" LU "", fs->devicename, dir, id);
-
-//   printf("_id2fname: fname=%s\n", fname);
 
     return (fname);
 }
@@ -628,8 +626,6 @@ int fs_mapping(osd_fs_fd_t *fsfd, osd_off_t offset, osd_off_t len,
         n = n - fcs->header_blocksize;  //** Do things relative to the 1st data block
         *end_block = (n / fcs->blocksize) + 1;  //** +1 is for the offset block 0
         *end_size = (n % fcs->blocksize) + 1;   //** The +1 converts the modulo offset to a len
-//     if (*end_size == 0) { (*end_block)--; *end_size = fcs->blocksize; }
-//log_printf(10, "fs_mapping: fsfd=%p hbs=" I64T " bs=" I64T " n=" I64T "\n", fsfd, fcs->header_blocksize, fcs->blocksize, n);
     }
 
     return (0);
@@ -2926,22 +2922,23 @@ int fs_opendir(osd_fs_iter_t *iter)
 
 //*************************************************************
 //  new_iterator - Creates a new iterator to walk through the files
+//    If partition is negative all files are returned.  Otherwise
+//    just the objects in the partition.
 //*************************************************************
 
-osd_iter_t *fs_new_iterator(osd_t *d)
+osd_iter_t *fs_new_iterator(osd_t *d, int partition)
 {
     osd_iter_t *oi = (osd_iter_t *) malloc(sizeof(osd_iter_t));
     osd_fs_iter_t *iter = (osd_fs_iter_t *) malloc(sizeof(osd_fs_iter_t));
 
-    if (oi == NULL)
-        return (NULL);
-    if (iter == NULL)
-        return (NULL);
+    if (oi == NULL) return (NULL);
+    if (iter == NULL) return (NULL);
 
     oi->d = d;
     oi->arg = (void *) iter;
+    oi->partition = partition;
 
-    iter->n = 0;
+    iter->n = (oi->partition > -1) ? oi->partition : 0;
     iter->fs = (osd_fs_t *) (d->private);
 
     if (fs_opendir(iter) != 0) {
@@ -2961,14 +2958,11 @@ void fs_destroy_iterator(osd_iter_t *oi)
 {
     osd_fs_iter_t *iter;
 
-    if (oi == NULL)
-        return;
+    if (oi == NULL) return;
 
     iter = (osd_fs_iter_t *) oi->arg;
 
-
-    if (iter->cdir != NULL)
-        closedir(iter->cdir);
+    if (iter->cdir != NULL) closedir(iter->cdir);
 
     free(iter);
     free(oi);
@@ -2984,12 +2978,13 @@ int fs_iterator_next(osd_iter_t *oi, osd_id_t *id)
     struct dirent *result;
     int finished, n;
 
-    if (oi == NULL)
-        return (1);
+    if (oi == NULL) return (1);
     iter = (osd_fs_iter_t *) oi->arg;
 
-    if (iter->n >= DIR_MAX)
-        return (1);
+    if (iter->n >= iter->fs->n_partitions) return (1);
+    if (oi->partition > -1) {
+        if (oi->partition != iter->n) return(1);
+    }
 
     finished = 0;
     do {
@@ -2997,19 +2992,15 @@ int fs_iterator_next(osd_iter_t *oi, osd_id_t *id)
 
         if ((result == NULL) || (n != 0)) {     //** Change dir or we're finished
             iter->n++;
-            if (iter->n == DIR_MAX)
-                return (1);     //** Finished
+            if (iter->n == iter->fs->n_partitions) return (1);     //** Finished
+            if (oi->partition > -1) {   //** Just iterating over a partition
+                if (oi->partition != iter->n) return(1);
+            }
             closedir(iter->cdir);
-            if (fs_opendir(iter) != 0)
-                return (1);     //*** Error opening the directory
+            if (fs_opendir(iter) != 0) return (1);     //*** Error opening the directory
         } else if ((strcmp(result->d_name, ".") != 0) && (strcmp(result->d_name, "..") != 0)) {
             finished = 1;       //** Found a valid file
         }
-//if (result==NULL) {
-//  log_printf(15, "osd_fs:iterator_next: result=NULL n=%d\n", iter->n); tbx_log_flush();
-//} else {
-//  log_printf(15, "osd_fs:iterator_next: d_name=%s\n", result->d_name); tbx_log_flush();
-//}
     } while (finished == 0);
 
     sscanf(result->d_name, LU, id);
@@ -3271,7 +3262,7 @@ void fs_shelf_object_free(void *arg, int size, void *data)
 // osd_mount_fs - Mounts the device
 //*************************************************************
 
-osd_t *osd_mount_fs(const char *device, int n_cache, apr_time_t expire_time)
+osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_t expire_time)
 {
     int i;
     osd_t *d;
@@ -3285,6 +3276,7 @@ osd_t *osd_mount_fs(const char *device, int n_cache, apr_time_t expire_time)
     d->private = (void *) fs;
     fs->devicename = strdup(device);
     fs->pathlen = strlen(fs->devicename) + 100;
+    fs->n_partitions = n_partitions;
 
     if (strcmp(device, FS_LOOPBACK_DEVICE) != 0) {
         DIR *dir;
@@ -3297,7 +3289,7 @@ osd_t *osd_mount_fs(const char *device, int n_cache, apr_time_t expire_time)
         //*** Check and make sure all the directories exist ***
         int i;
         char fname[fs->pathlen];
-        for (i = 0; i < DIR_MAX; i++) {
+        for (i = 0; i < fs->n_partitions; i++) {
             snprintf(fname, sizeof(fname), "%s/%d", fs->devicename, i);
             if (mkdir(fname, S_IRUSR | S_IWUSR | S_IXUSR) != 0) {
                 if (errno != EEXIST) {

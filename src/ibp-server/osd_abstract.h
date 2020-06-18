@@ -52,6 +52,7 @@ typedef struct osd_s osd_t;
 
 typedef struct {
     osd_t *d;
+    int partition;
     void *arg;
 } osd_iter_t;
 
@@ -104,7 +105,7 @@ typedef struct {
 #define osd_close(d, fd) (d)->close(d, fd)
 #define osd_id_exists(d, id) (d)->id_exists(d, id)
 #define osd_statfs(d, buf) (d)->statfs(d, buf)
-#define osd_new_iterator(d) (d)->new_iterator(d)
+#define osd_new_iterator(d, partition) (d)->new_iterator(d, partition)
 #define osd_new_trash_iterator(d, trash_type) (d)->new_trash_iterator(d, trash_type)
 #define osd_destroy_iterator(oi) (oi)->d->destroy_iterator(oi)
 #define osd_iterator_next(oi, id) (oi)->d->iterator_next(oi, id)
@@ -144,7 +145,7 @@ struct osd_s {
     int (*close) (osd_t *d, osd_fd_t *fd);      // Close the object
     int (*id_exists) (osd_t *d, osd_id_t id);   //Determine if the id currently exists
     int (*statfs) (osd_t *d, struct statfs *buf);       // Get File system stats
-    osd_iter_t *(*new_iterator) (osd_t *d);
+    osd_iter_t *(*new_iterator) (osd_t *d, int partition);
     osd_iter_t *(*new_trash_iterator) (osd_t *d, int trash_type);
     void (*destroy_iterator) (osd_iter_t *oi);
     int (*iterator_next) (osd_iter_t *oi, osd_id_t *id);

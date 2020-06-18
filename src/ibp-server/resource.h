@@ -35,6 +35,7 @@
 #include <tbx/lru.h>
 
 #define _RESOURCE_VERSION 100000
+#define RES_CHECK_ID 1   //** Special ID for checking resource health
 
 //**** Mode states
 #define RES_MODE_WRITE  1
@@ -86,10 +87,12 @@ typedef struct {                //Resource structure
     int enable_alias_history;
     int cleanup_interval;       //Time to wait between cleanup iterations
     int trash_grace_period[2];  //Trash grace period before cleanup
-    int preexpire_grace_period; //Time to wait beofre moving an expired alloc to the trash bin
+    int preexpire_grace_period; //Time to wait before moving an expired alloc to the trash bin
+    int restart_grace_period;   //Time to add to the duration for any allocation directly read from the allocation on restart to keep it from expiring
     int rescan_interval;        //Wait time between trash scan
     int n_cache;                //Number of cache entries
     int rwm_mode;               //Read/Write/Manage mode
+    int n_partitions;           //Number of data partitions in the underlying OSD
     ibp_time_t start_time;      //Time the resource ws added.  USed to keep expired allocations from bering removed at start.
     tbx_atomic_int_t counter;   //Activity counter
     apr_time_t cache_expire;    //Time before cache expires

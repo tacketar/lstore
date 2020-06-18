@@ -95,7 +95,7 @@ int main(int argc, char **argv)
         afile = buffer;
     }
     //** Read the Allocation ***
-    dev = osd_mount_fs("loopback", 10, 1000);   //** Mount the file via loopback
+    dev = osd_mount_fs("loopback", 10, 256, 1000);   //** Mount the file via loopback
     fs_associate_id(dev, 0, afile);     //** Associate the loopback id with the actual file
 
     afd = osd_open(dev, 0, OSD_READ_MODE);

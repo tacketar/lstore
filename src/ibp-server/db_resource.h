@@ -53,6 +53,7 @@ typedef struct {                //Resource DB interface
     DB_ENV *dbenv;              //Common DB enviroment to use
     apr_thread_mutex_t *mutex;  // Lock used for creates
     apr_pool_t *pool;           //** Memory pool
+    int n_partitions;           //** Number of load balancing splits for keys
 } DB_resource_t;
 
 typedef struct {                //Container for cursor
@@ -94,5 +95,6 @@ DB_iterator_t *expire_iterator(DB_resource_t *dbr);
 DB_iterator_t *soft_iterator(DB_resource_t *dbr);
 DB_iterator_t *id_iterator(DB_resource_t *dbr);
 int set_expire_iterator(DB_iterator_t *dbi, ibp_time_t t, Allocation_t *a);
+int set_id_iterator(DB_iterator_t *dbi, osd_id_t i, Allocation_t *a);
 
 #endif

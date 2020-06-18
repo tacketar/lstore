@@ -40,11 +40,6 @@
 #include <tbx/chksum.h>
 #include "pigeon_coop.h"
 
-//******** These are for the directory splitting ****
-#define DIR_BITS    8
-#define DIR_BITMASK 0x00FF
-#define DIR_MAX     256
-
 #define FS_MAX_LOOPBACK 100
 
 #define CHKSUM_MAGIC  ".CHKSUM1."
@@ -128,9 +123,7 @@ struct osd_fs_object_s {
     osd_fs_chksum_t fd_chksum;
     fs_header_t header;         //** Object header
     tbx_pch_t my_slot;
-//  osd_off_t *read_range_list;  //** List of host Read block ranges
     tbx_pc_t *read_range_list;
-//  osd_off_t *write_range_list;  //** List of host Write block ranges
     tbx_pc_t *write_range_list;
     osd_off_t(*read) (osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_off_t len, buffer_t buffer);     //Read data
     osd_off_t(*write) (osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_off_t len, buffer_t buffer);    //Store data to disk
@@ -145,9 +138,8 @@ struct osd_fs_s {
     int mount_type;
     int max_objs;
     int max_fd_per_obj;
-//    osd_fs_object_t *obj_list;
+    int n_partitions;
     tbx_pc_t *obj_list;
-//    osd_fs_fd_t     *fd_list;
     tbx_pc_t *fd_list;
     apr_hash_t *obj_hash;
     apr_hash_t *corrupt_hash;
@@ -175,7 +167,7 @@ typedef struct {
     int first_time;
 } osd_fs_corrupt_iter_t;
 
-IBPS_API osd_t *osd_mount_fs(const char *device, int n_cache, apr_time_t expire_time);
+IBPS_API osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_t expire_time);
 IBPS_API int fs_associate_id(osd_t *d, int id, char *fname);
 
 #endif

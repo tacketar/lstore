@@ -43,13 +43,20 @@
 #define _RESOURCE_BUF_SIZE 1048576
 char _blanks[_RESOURCE_BUF_SIZE];
 
-#define _RESOURCE_STATE_GOOD 0
-#define _RESOURCE_STATE_BAD  1
-
-#define _RES_USAGE_ID 1
-
 const int alloc_lru_size = sizeof(Allocation_t);
 const char *_res_types[] = { DEVICE_UNKNOWN, DEVICE_DIR };
+
+
+//** Structures used for rebuilding the resource
+#define REBUILD_FOUND_OSD 1
+#define REBUILD_FOUND_DB  2
+#define REBUILD_FOUND_ALL 3
+
+typedef struct {
+    osd_id_t id;
+    int found;
+    Allocation_t a;
+} rebuild_lut_t;
 
 typedef struct {                //** Internal resource iterator
     int mode;
@@ -163,108 +170,6 @@ void _trash_adjust(Resource_t *r, int rmode, osd_id_t id)
 
 
 //***************************************************************************
-// write_usage_file - Writes the usage file
-//***************************************************************************
-
-int write_usage_file(Resource_t *r, int state)
-{
-    osd_fd_t *fd;
-    osd_id_t id = _RES_USAGE_ID;
-    resource_usage_file_t usage;
-    log_printf(10, "write_usage_file: resource=%s\n", r->name);
-
-    usage.version = _RESOURCE_VERSION;
-    usage.used_space[0] = r->used_space[0];
-    usage.used_space[1] = r->used_space[1];
-    usage.n_allocs = r->n_allocs;
-    usage.n_alias = r->n_alias;
-    usage.state = state;
-
-    fd = osd_open(r->dev, id, OSD_WRITE_MODE);
-    if (fd == NULL) {           //** Usage doesn't exist so create it
-        osd_create_id(r->dev, CHKSUM_NONE, 0, 0, id);
-
-        fd = osd_open(r->dev, id, OSD_WRITE_MODE);
-        if (fd == NULL) {
-            log_printf(0, "ERROR:  Can't open usage file! rid=%s\n", r->name);
-            return (1);
-        }
-    }
-    osd_write(r->dev, fd, 0, sizeof(usage), &usage);
-    osd_close(r->dev, fd);
-
-    ibp_off_t mb;
-    log_printf(10, "write_usage_file: rid=%s\n", r->name);
-    mb = r->used_space[ALLOC_SOFT] / 1024 / 1024;
-    log_printf(10, "\n#soft_used = " LU " mb\n", mb);
-    mb = r->used_space[ALLOC_HARD] / 1024 / 1024;
-    log_printf(10, "#hard_used = " LU " mb\n", mb);
-    mb = r->used_space[ALLOC_SOFT];
-    log_printf(10, "#soft_used = " LU " b\n", mb);
-    mb = r->used_space[ALLOC_HARD];
-    log_printf(10, "#hard_used = " LU " b\n", mb);
-    log_printf(10, "#n_allocations = " LU "\n", r->n_allocs);
-    log_printf(10, "#n_alias = " LU "\n", r->n_alias);
-
-    return (0);
-}
-
-//***************************************************************************
-// read_usage_file - reads the usage file
-//***************************************************************************
-
-int read_usage_file(Resource_t *r, resource_usage_file_t *u)
-{
-    osd_fd_t *fd;
-    osd_id_t id = _RES_USAGE_ID;
-    resource_usage_file_t usage;
-    int n;
-    int docalc = 1;
-
-    log_printf(10, "read_usage_file: resource=%s\n", r->name);
-
-    fd = osd_open(r->dev, id, OSD_READ_MODE);
-    if (fd == NULL) {
-        log_printf(0, "ERROR:  Can't open usage file! rid=%s\n", r->name);
-        return (1);
-    }
-
-    n = osd_read(r->dev, fd, 0, sizeof(usage), &usage);
-    if (n != sizeof(usage)) {
-        log_printf(10, "read_usage_file: Can't read whole record! r: %s\n", r->name);
-        osd_close(r->dev, fd);
-        return (docalc);
-    }
-    osd_close(r->dev, fd);
-
-    if (u != NULL) {            //** Check if a system probe is requested. If so then don;t update the resource
-        *u = usage;
-        return (0);
-    }
-
-    if (usage.version == _RESOURCE_VERSION) {
-        if (usage.state == _RESOURCE_STATE_GOOD) {
-            docalc = 0;
-            r->used_space[0] = usage.used_space[0];
-            r->used_space[1] = usage.used_space[1];
-            r->n_allocs = usage.n_allocs;
-            r->n_alias = usage.n_alias;
-
-            ibp_off_t mb;
-            log_printf(10, "read_usage_file: rid=%s\n", r->name);
-            mb = r->used_space[ALLOC_SOFT] / 1024 / 1024;
-            log_printf(10, "\n#soft_used = " LU "\n", mb);
-            mb = r->used_space[ALLOC_HARD] / 1024 / 1024;
-            log_printf(10, "#hard_used = " LU "\n", mb);
-            log_printf(10, "#n_allocations = " LU "\n", r->n_allocs);
-            log_printf(10, "#n_alias = " LU "\n", r->n_alias);
-        }
-    }
-//docalc=1;
-    return (docalc);
-}
-
-//***************************************************************************
 // print_resource_usage - Prints the usage stats to the fd
 //***************************************************************************
 
@@ -336,6 +241,8 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.trash_grace_period[RES_DELETE_INDEX] = 2 * 3600;
     res.trash_grace_period[RES_EXPIRE_INDEX] = 14 * 24 * 3600;
     res.preexpire_grace_period = 24 * 3600;
+    res.restart_grace_period = 2 * 24 * 3600;
+    res.n_partitions = 256;
     res.rescan_interval = 24 * 3600;
     res.chksum_blocksize = 64 * 1024;
     res.enable_chksum = 1;
@@ -356,7 +263,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     //**Create the device
     if (strcmp("dir", dev_type) == 0) {
         res.res_type = RES_TYPE_DIR;
-        assert_result_not_null(res.dev = osd_mount_fs(res.device, n_cache, expire_time));
+        assert_result_not_null(res.dev = osd_mount_fs(res.device, n_cache, res.n_partitions, expire_time));
 
         if (max_bytes == 0) {
             statfs(device_name, &stat);
@@ -383,8 +290,6 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     print_resource(buffer, &used, sizeof(buffer), &res);
     printf("%s", buffer);
 
-    //** print the usage as well
-    write_usage_file(&res, _RESOURCE_STATE_GOOD);
     umount_db(&(res.db));
     umount_history_table(&res);
     osd_umount(res.dev);
@@ -393,226 +298,206 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
 }
 
 //***************************************************************************
-// rebuild_remove_iter - Removes the current record
+// rebuild_populate_partition_lut_with_osd - Populates the LUT for the partition
+//     using OSD data
 //***************************************************************************
 
-int rebuild_remove_iter(res_iterator_t *ri)
+void rebuild_populate_partition_lut_with_osd(Resource_t *r, int partition, apr_hash_t *lut, apr_pool_t *mpool)
 {
-    int err = 0;
-
-    if (ri->mode == 1) {
-        err = remove_alloc_iter_db(ri->dbi);
-    }
-
-    if (err == 0) {
-        _trash_adjust(ri->r, RES_EXPIRE_INDEX, ri->a.id);
-
-        err = osd_expire_remove(ri->r->dev, ri->a.id);
-//log_printf(10, "rebuild_put_iter: id=" LU " is_alias=%d\n", ri->a.id, ri->a.is_alias);
-//     if (ri->a.is_alias == 0) err = ri->r->dev->expire_remove(ri->r->dev, ri->a.id);
-    }
-
-    return (err);
-}
-
-//***************************************************************************
-// rebuild_modify_iter - Modifies the current record
-//    IF the mode == 2 then the rebuild app buffers the allocations and writes
-//    them in bulk using rebuild_put_alloc.  In this case I do nothing
-//***************************************************************************
-
-int rebuild_modify_iter(res_iterator_t *ri, Allocation_t *a)
-{
-    int err = 0;
-
-    if (ri->mode == 1) {
-        alru_put(ri->r, a);
-        err = modify_alloc_iter_db(ri->dbi, a);
-    }
-
-    return (err);
-}
-
-
-//***************************************************************************
-// rebuild_put_iter - Stores the current record
-//    If mode == 1 then nothing needs to be done.  Otherwise if mode == 2/3 then
-//    I need to 1st set the a.size to the size of the file minus the header
-//    before storing it in the DB
-//***************************************************************************
-
-int rebuild_put_iter(res_iterator_t *ri, Allocation_t *a)
-{
-    int err = 0;
-
-    if (ri->mode != 1) {
-        a->size = osd_size(ri->r->dev, a->id) - ALLOC_HEADER;
-        log_printf(10, "rebuild_put_iter: id=" LU " size=" LU "\n", a->id, a->size);
-        err = _put_alloc_db(&(ri->r->db), a);
-        alru_put(ri->r, a);  //** Add it to the LRU
-    }
-
-    return (err);
-}
-
-
-//***************************************************************************
-// rebuild_begin - Creates the rebuild iterator
-//***************************************************************************
-
-res_iterator_t *rebuild_begin(Resource_t *r, int wipe_clean)
-{
-    res_iterator_t *ri;
-    tbx_type_malloc_clear(ri, res_iterator_t, 1);
-
-    dbr_lock(&(r->db));
-
-    ri->mode = wipe_clean;
-    ri->fsi = NULL;
-    ri->dbi = NULL;
-    ri->r = r;
-
-    if (wipe_clean == 1) {
-        ri->dbi = id_iterator(&(r->db));
-        assert_result_not_null(ri->dbi);
-    } else {
-        ri->fsi = osd_new_iterator(r->dev);
-        assert_result_not_null(ri->fsi);
-    }
-
-    return (ri);
-}
-
-//***************************************************************************
-// rebuild_end - Destroys the rebuild iterator
-//***************************************************************************
-
-void rebuild_end(res_iterator_t *ri)
-{
-    if (ri->mode == 1) {
-        db_iterator_end(ri->dbi);
-    } else {
-        osd_destroy_iterator(ri->fsi);
-    }
-
-    dbr_unlock(&(ri->r->db));
-
-    free(ri);
-}
-
-//***************************************************************************
-// rebuild_get_next - Retreives the next record for rebuilding
-//***************************************************************************
-
-int rebuild_get_next(res_iterator_t *ri, Allocation_t *a)
-{
+    osd_iter_t *it;
+    rebuild_lut_t *d;
     int err;
     osd_id_t id;
-    osd_fd_t *fd;
-    osd_t *d = ri->r->dev;
 
-    if (ri->mode != 1) {
-        err = osd_iterator_next(ri->fsi, &id);
-        while (err == 0) {
-//         log_printf(15, "rebuild_get_next: r=%s id=" LU " err=%d\n", ri->r->name, id, err);
-            if (id == _RES_USAGE_ID) {  //** SKip the special files
-                log_printf(0,
-                           "rebuild_get_next: rid=%s skipping special ID!!!! fs entry id=" LU "\n",
-                           ri->r->name, id);
-                tbx_log_flush();
-                err = osd_iterator_next(ri->fsi, &id);
-            } else {
+    it = osd_new_iterator(r->dev, partition);
 
-                fd = osd_open(d, id, OSD_READ_MODE);
-                if (fd == NULL) {
-                    log_printf(0, "ERROR:  Can't open id=" LU "! rid=%s.  SKIPPING\n", id,
-                               ri->r->name);
-                    err = 1;
-                } else {
-                    err = osd_read(d, fd, 0, sizeof(Allocation_t), a);
-                    osd_close(d, fd);
-                }
-
-//         log_printf(15, "rebuild_get_next: r=%s id=" LU " read err=%d sizeof(a)=%d\n", ri->r->name, id, err, sizeof(Allocation_t));
-                if (err == 0) { //** Nothing there so delete the filename
-                    log_printf(0,
-                               "rebuild_get_next: rid=%s Empty allocation id=" LU
-                               ".  Removing it....\n", ri->r->name, id);
-                    tbx_log_flush();
-                    err = osd_expire_remove(d, id);
-                    err = osd_iterator_next(ri->fsi, &id);
-                } else if (err != sizeof(Allocation_t)) {
-                    log_printf(0,
-                               "rebuild_get_next: rid=%s Can't read id=" LU
-                               ".  Skipping...nbytes=%d\n", ri->r->name, id, err);
-                    tbx_log_flush();
-                    err = osd_iterator_next(ri->fsi, &id);
-                } else if (id != a->id) {       //** ID mismatch.. throw warning and skip
-                    log_printf(0,
-                               "rebuild_get_next: rid=%s ID mismatch so skipping!!!! fs entry id="
-                               LU ".  a.id=" LU "\n", ri->r->name, id, a->id);
-                    tbx_log_flush();
-                    err = osd_iterator_next(ri->fsi, &id);
-                }
-            }
+    while ((err = osd_iterator_next(it, &id)) == 0) {
+        if (id == RES_CHECK_ID) continue;   //** Skip the check allocation
+        d = apr_hash_get(lut, &id, sizeof(id));
+        if (!d) {
+            d = apr_palloc(mpool, sizeof(rebuild_lut_t));
+            d->id = id;
+            d->found = 0;
         }
-    } else {
-        err = db_iterator_next(ri->dbi, DB_NEXT, a);
-//     log_printf(15, "rebuild_get_next: DB r=%s id=" LU " err=%d\n", ri->r->name, a->id, err);
+
+        d->found |= REBUILD_FOUND_OSD;
+        apr_hash_set(lut, &(d->id), sizeof(id), d);
+    }
+    osd_destroy_iterator(it);
+}
+
+//***************************************************************************
+// rebuild_populate_partition_lut_with_db - Populates the LUT for the partition
+//     using DB data
+//***************************************************************************
+
+void rebuild_populate_partition_lut_with_db(Resource_t *r, int partition, apr_hash_t *lut, apr_pool_t *mpool)
+{
+    DB_iterator_t *it;
+    rebuild_lut_t *d;
+    Allocation_t a;
+    int err;
+
+    it = id_iterator(&(r->db));
+    if (set_id_iterator(it, partition, &a) != 0) goto finished;
+
+    do {
+        //** Kick out if changed partition.
+        if ((a.id % r->n_partitions) != (unsigned int)partition) goto finished;
+
+        d = apr_hash_get(lut, &(a.id), sizeof(osd_id_t));
+        if (!d) {
+            d = apr_palloc(mpool, sizeof(rebuild_lut_t));
+            d->id = a.id;
+            d->found = 0;
+        }
+
+        d->a = a;  //** We get the allocation header from the DB and only get the ID from the OSD
+
+        d->found |= REBUILD_FOUND_DB;
+        apr_hash_set(lut, &(d->id), sizeof(osd_id_t), d);
+    } while ((err = db_iterator_next(it, DB_NEXT, &a)) == 0);
+
+finished:
+    db_iterator_end(it);
+}
+
+//***************************************************************************
+// rebuild_remove - Removes an allocation during the rebuild process
+//***************************************************************************
+
+void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
+{
+
+    log_printf(1, "rid=%s Removing id=" LU " found=%d\n", r->name, d->id, d->found);
+
+    if (d->found & REBUILD_FOUND_OSD) {
+        _trash_adjust(r, OSD_EXPIRE_ID, d->id);
+        osd_remove(r->dev, OSD_EXPIRE_ID, d->id);
     }
 
-    ri->a = *a;                 //** Keep my copy for mods
+    if (d->found & REBUILD_FOUND_DB) {
+       remove_alloc_db(&(r->db), &(d->a));
+    }
+}
 
-    if (err == sizeof(Allocation_t))
-        err = 0;
-    return (err);
+//***************************************************************************
+// rebuild_add - Adds an allocation during the rebuild process
+//***************************************************************************
+
+void rebuild_add(Resource_t *r, rebuild_lut_t *d)
+{
+    if (!(d->found & REBUILD_FOUND_DB)) _put_alloc_db(&(r->db), &(d->a));
+
+    alru_put(r, &(d->a)); //** and the LRU copy
+
+    //** Adjust the space
+    r->n_allocs++;
+    if (d->a.is_alias == 0) {
+        r->used_space[d->a.reliability] += d->a.max_size;
+    } else {
+        r->n_alias++;
+    }
+}
+
+//***************************************************************************
+// rebuild_modify - Adds an allocation and and tweaks the expiration during the rebuild process
+//***************************************************************************
+
+void rebuild_modify(Resource_t *r, rebuild_lut_t *d, ibp_time_t new_expiration)
+{
+    //** BDB has the 2ndary indices coupled to the ID so this will remove the old expiration entries
+    //** We'll have to change this for LevelDB/RockDB
+    d->a.expiration = new_expiration;
+    if (d->found & REBUILD_FOUND_DB) modify_alloc_db(&(r->db), &(d->a));
+
+    if (r->update_alloc == 1) {
+        write_allocation_header(r, &(d->a), 0);
+    }
+
+    alru_put(r, &(d->a)); //** and the LRU copy
+
+    //** Adjust the space
+    r->n_allocs++;
+    if (d->a.is_alias == 0) {
+        r->used_space[d->a.reliability] += d->a.max_size;
+    } else {
+        r->n_alias++;
+    }
+}
+
+//***************************************************************************
+// rebuild_populate_partition_lut_process - Processes the LUT
+//***************************************************************************
+
+void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int remove_expired, int truncate_expiration)
+{
+    apr_hash_index_t *hi;
+    apr_ssize_t hlen;
+    rebuild_lut_t *d;
+    ibp_time_t max_expiration, now, t1, t2;
+
+    now = ibp_time_now();
+    max_expiration = now + r->max_duration;
+
+    //** Cycle over all the id's
+    for (hi=apr_hash_first(NULL, lut); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, NULL, &hlen, (void **)&d);
+
+        //** Fetch the record or cleanup
+        if ((d->found & REBUILD_FOUND_ALL) == REBUILD_FOUND_ALL) goto got_it;
+
+        if (d->found & REBUILD_FOUND_OSD)  {  //** It's in the OSD but not the DB
+            if (read_allocation_header(r, d->id, &(d->a)) != 0) { //** Failed reading the header
+                rebuild_remove(r, d);
+                continue;
+            }
+
+            if (d->a.expiration < now) d->a.expiration = now + r->restart_grace_period;
+        } else { //** Missing from the OSD so delete it from the DB
+            rebuild_remove(r, d);
+            continue;  //** Move on to the next one
+        }
+
+got_it:  //** Got a valid allocation so see if we add it
+        if ((d->a.expiration < now) && (remove_expired == 1)) {
+            log_printf(1,
+                       "(rid=%s) Removing expired record with id: " LU "\n", r->name, d->a.id);
+            rebuild_remove(r, d);
+        } else {                //*** Adding the record
+            if ((d->a.expiration > max_expiration) && (truncate_expiration == 1)) {
+                t1 = d->a.expiration;
+                t2 = max_expiration;
+                log_printf(1,
+                           "(rid=%s) Adding record " LU " with id: " LU
+                           " but truncating expiration curr:" TT " * new:" TT "\n",
+                           r->name, r->n_allocs,d->a.id, ibp2apr_time(t1), ibp2apr_time(t2));
+                rebuild_modify(r, d, max_expiration);
+            } else {
+                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU "\n", r->name, r->n_allocs, d->a.id);
+                rebuild_add(r, d);
+            }
+        }
+    }
+
 }
 
 //***************************************************************************
 // rebuild_resource - Rebuilds the resource
-//
-//  if wipe_clean=1 the ID database is not wiped. Instead it is iterated
-//    through to create the secondary indices and also verify the allocation
-//    exists on the resource if the size > 0.  This method preserves
-//    any blank or unused allocations unlike the next method.
-//  If wipe_clean=2 the resource is walked to generate the new DB.  This is
-//    significantly slower than wipe_clean=1 for a full depot.
-//  if wipe_clean=3 the resource is walked to generate the new DB and all
-//    allocations duration are extended to the max.  Even for expired allocations.
-//
-//    --NOTE:  Any blank allocations will be lost!!! --
 //***************************************************************************
 
 int rebuild_resource(Resource_t *r, DB_env_t *env, tbx_inip_file_t *kfd, int remove_expired,
                      int wipe_clean, int truncate_expiration)
 {
-    char db_group[2048];
-    int i, nbuff, cnt, ecnt, pcnt, err, estate;
-    res_iterator_t *iter;
-    Allocation_t *a;
-    const int a_size = 1024;
-    Allocation_t alist[a_size];
-    ibp_time_t t, max_expiration, t1, t2;
-    osd_id_t id;
-    char print_time[128];
+    char ppbuf[128];
+    apr_pool_t *mpool;
+    apr_hash_t *lut;
+    int i;
 
-    t = apr_time_now();
-    apr_ctime(print_time, t);
+    apr_ctime(ppbuf, apr_time_now());
     log_printf(0,
-               "rebuild_resource(rid=%s):  Rebuilding Resource rid=%s.  Starting at %s  remove_expired=%d wipe_clean=%d truncate_expiration=%d\n",
-               r->name, r->name, print_time, remove_expired, wipe_clean, truncate_expiration);
-
-
-    if (wipe_clean == 1) {
-        log_printf(0, "rebuild_resource(rid=%s):  wipe_clean == 1 so exiting\n", r->name);
-        return (0);
-    }
-    //** Mount it
-    i = wipe_clean;
-    if (wipe_clean == 3)
-        i = 2;
-    snprintf(db_group, sizeof(db_group), "db %s", r->name);
-    mount_db_generic(kfd, db_group, env, &(r->db), i);  //**Mount the DBes
+               "(rid=%s) Rebuilding Resource rid=%s.  Starting at %s  remove_expired=%d wipe_clean=%d truncate_expiration=%d\n",
+               r->name, r->name, ppbuf, remove_expired, wipe_clean, truncate_expiration);
 
     //*** Now we have to fill it ***
     r->used_space[0] = 0;
@@ -620,270 +505,37 @@ int rebuild_resource(Resource_t *r, DB_env_t *env, tbx_inip_file_t *kfd, int rem
     r->n_allocs = 0;
     r->n_alias = 0;
 
-    t = ibp_time_now();
-    if (wipe_clean == 3)
-        t = 0;                  //** Nothing gets deleted in this mode
+    for (i=0; i<r->n_partitions; i++) {  //** Iterate over the partitions
+        //** Create the LUT
+        apr_pool_create(&mpool, NULL);
+        lut = apr_hash_make(mpool);
 
-    cnt = 0;
-    pcnt = 0;
-    ecnt = 0;
-    nbuff = 0;
+        //** Populate the LUT
+        rebuild_populate_partition_lut_with_osd(r, i, lut, mpool);
+        rebuild_populate_partition_lut_with_db(r, i, lut, mpool);
 
-    max_expiration = ibp_time_now() + r->max_duration;
+        //** Process it
+        rebuild_populate_partition_lut_process(r, lut, remove_expired, truncate_expiration);
 
-    a = &(alist[nbuff]);
-
-    iter = rebuild_begin(r, wipe_clean);
-    err = rebuild_get_next(iter, a);
-    while (err == 0) {
-        id = a->id;
-        if (a->expiration < ibp_time_now()) {
-            estate = -1;
-        } else {
-            estate = (a->expiration > max_expiration) ? 1 : 0;
-        }
-
-        if ((a->expiration < t) && (remove_expired == 1)) {
-            ecnt++;
-            log_printf(1,
-                       "rebuild_resource(rid=%s): Removing expired record with id: " LU
-                       " * estate: %d (remove count:%d)\n", r->name, id, estate, ecnt);
-            if ((err = rebuild_remove_iter(iter)) != 0) {
-                log_printf(0,
-                           "rebuild_resource(rid=%s): Error Removing id " LU
-                           "  from DB Error=%d\n", r->name, id, err);
-            }
-        } else {                //*** Adding the record
-            if (((a->expiration > max_expiration) && (truncate_expiration == 1))
-                || (wipe_clean == 3)) {
-                t1 = a->expiration;
-                t2 = max_expiration;
-                log_printf(1,
-                           "rebuild_resource(rid=%s, wc=%d): Adding record %d with id: " LU
-                           " but truncating expiration curr:" TT " * new:" TT " * estate: %d\n",
-                           r->name, wipe_clean, cnt, id, ibp2apr_time(t1), ibp2apr_time(t2),
-                           estate);
-                a->expiration = max_expiration;
-                if ((err = rebuild_modify_iter(iter, a)) != 0) {
-                    log_printf(0,
-                               "rebuild_resource(rid=%s): Error Adding id " LU
-                               " to primary DB Error=%d\n", r->name, a->id, err);
-                }
-            } else {
-                log_printf(1,
-                           "rebuild_resource(rid=%s): Adding record %d with id: " LU
-                           " * estate: %d\n", r->name, cnt, id, estate);
-            }
-
-            r->used_space[a->reliability] += a->max_size;
-
-            nbuff++;
-            cnt++;
-            if (a->is_alias)
-                pcnt++;
-        }
-
-        //**** Buffer is full so update the DB ****
-        if (nbuff >= a_size) {
-            for (i = 0; i < nbuff; i++) {
-                if ((err = rebuild_put_iter(iter, &(alist[i]))) != 0) {
-                    log_printf(0,
-                               "rebuild_resource(rid=%s): Error Adding id " LU " to DB Error=%d\n",
-                               r->name, alist[i].id, err);
-                }
-            }
-
-            nbuff = 0;
-        }
-
-        a = &(alist[nbuff]);
-        err = rebuild_get_next(iter, a);        //** Get the next record
+        //** Destroy the LUT
+        apr_pool_destroy(mpool);
     }
 
-    //**** Push whatever is left into the DB ****
-    for (i = 0; i < nbuff; i++) {
-        if ((err = rebuild_put_iter(iter, &(alist[i]))) != 0) {
-            log_printf(0, "rebuild_resource(rid=%s): Error Adding id " LU " to DB Error=%d\n",
-                       r->name, alist[i].id, err);
-        }
-    }
 
-    rebuild_end(iter);
-
-    r->n_allocs = cnt;
-    r->n_alias = pcnt;
-
-    log_printf(0, "\nrebuild_resource(rid=%s): %d allocations added\n", r->name, cnt);
-    log_printf(0, "rebuild_resource(rid=%s): %d alias allocations added\n", r->name, pcnt);
-    log_printf(0, "rebuild_resource(rid=%s): %d allocations removed\n", r->name, ecnt);
-    ibp_off_t mb;
-    mb = r->used_space[ALLOC_SOFT] / 1024 / 1024;
-    log_printf(0, "#(rid=%s) soft_used = " LU "\n", r->name, mb);
-    mb = r->used_space[ALLOC_HARD] / 1024 / 1024;
-    log_printf(0, "#(rid=%s) hard_used = " LU "\n", r->name, mb);
-    apr_ctime(print_time, apr_time_now());
-    log_printf(0, "\nrebuild_resource(rid=%s): Finished Rebuilding RID %s at %s\n", r->name,
-               r->name, print_time);
+    //** Print the summary
+    log_printf(0, "\n(rid=%s) " LU " allocations added\n", r->name, r->n_allocs);
+    log_printf(0, "(rid=%s) " LU " alias allocations added\n", r->name, r->n_alias);
+    log_printf(0, "#(rid=%s) soft_used = %s\n", r->name, tbx_stk_pretty_print_double_with_scale(1000, r->used_space[ALLOC_SOFT], ppbuf));
+    log_printf(0, "#(rid=%s) hard_used = %s\n", r->name, tbx_stk_pretty_print_double_with_scale(1000, r->used_space[ALLOC_HARD], ppbuf));
+    apr_ctime(ppbuf, apr_time_now());
+    log_printf(0, "\n(rid=%s) Finished Rebuilding RID %s at %s\n", r->name,
+               r->name, ppbuf);
     tbx_log_flush();
 
-    return (0);
+    return(0);
 }
 
 //---------------------------------------------------------------------------
-
-//***************************************************************************
-// calc_usage - Cycles through all the records to calcualte the used hard
-//    and soft space.  This should only be used if the resource was not
-//    unmounted cleanly.
-//***************************************************************************
-
-int calc_usage(Resource_t *r)
-{
-    DB_iterator_t *dbi;
-    Allocation_t a;
-
-    log_printf(15, "calc_usage(rid=%s):  Recalculating usage form scratch\n", r->name);
-
-    r->used_space[0] = 0;
-    r->used_space[1] = 0;
-    r->n_allocs = 0;
-    r->n_alias = 0;
-
-    dbi = id_iterator(&(r->db));
-    while (db_iterator_next(dbi, DB_NEXT, &a) == 0) {
-        log_printf(10, "calc_usage(rid=%s): n=" LU " ------------- id=" LU "\n", r->name,
-                   r->n_allocs, a.id);
-//print_allocation_resource(r, stdout, &a);
-        r->used_space[a.reliability] += a.max_size;
-        r->n_allocs++;
-        if (a.is_alias == 1)
-            r->n_alias++;
-    }
-    db_iterator_end(dbi);
-
-    log_printf(15, "calc_usage(rid=%s): finished... n_allocs= " LU " n_alias=" LU "\n", r->name,
-               r->n_allocs, r->n_alias);
-
-    return (0);
-}
-
-//***************************************************************************
-// perform_truncate - Adjusts all allocations to the given max
-//    duration.  It will also remove any expired allocations.
-//***************************************************************************
-
-int perform_truncate(Resource_t *r)
-{
-    DB_iterator_t *dbi;
-    Allocation_t *a;
-    const int a_size = 1024;
-    Allocation_t alist[a_size];
-    ibp_time_t max_expiration, t1, t2;
-    int estate, err, cnt, ecnt, nbuff, i;
-    osd_fd_t *fd;
-
-    log_printf(15, "calc_usage(rid=%s):  Recalculating usage form scratch\n", r->name);
-
-    max_expiration = ibp_time_now() + r->max_duration;
-
-    cnt = 0;
-    ecnt = 0;
-    nbuff = 0;
-    dbi = id_iterator(&(r->db));
-    a = &(alist[nbuff]);
-    while (db_iterator_next(dbi, DB_NEXT, a) == 0) {
-        if (a->expiration < ibp_time_now()) {
-            estate = -1;
-        } else {
-            estate = (a->expiration > max_expiration) ? 1 : 0;
-        }
-
-        switch (estate) {
-        case -1:               //** Expired allocation
-            ecnt++;
-            log_printf(5, "perform_truncate(rid=%s): Remove cnt=%d  id=" LU " * estate: %d\n",
-                       r->name, cnt, a->id, estate);
-            err = _remove_allocation_for_make_free(r, OSD_EXPIRE_ID, a, dbi);
-            break;
-        case 0:                //** Ok allocation
-            cnt++;
-            log_printf(5, "perform_truncate(rid=%s): cnt=%d  id=" LU " * estate: %d\n", r->name,
-                       cnt, a->id, estate);
-            break;
-        case 1:                //** Truncate expiration
-            cnt++;
-            t1 = a->expiration;
-            a->expiration = ibp_time_now() + r->max_duration;
-            t2 = a->expiration;
-            log_printf(5,
-                       "perform_truncate(rid=%s): Truncating duration for record %d with id: " LU
-                       " expiration curr:" TT " * new:" TT " * estate: %d\n", r->name, cnt, a->id,
-                       ibp2apr_time(t1), ibp2apr_time(t2), estate);
-            if ((err = modify_alloc_iter_db(dbi, a)) != 0) {
-                log_printf(0,
-                           "perform_truncate(rid=%s): Error modifying id " LU
-                           " to primary DB Error=%d\n", r->name, a->id, err);
-            }
-            alru_put(r, a);
-
-            if (nbuff >= (a_size - 1)) {
-                log_printf(5, "perform_truncate(rid=%s): Dumping buffer=%d\n", r->name, nbuff);
-                if (r->update_alloc == 1) {
-                    for (i = 0; i <= nbuff; i++) {
-                        a = &(alist[i]);
-                        fd = osd_open(r->dev, a->id, OSD_WRITE_MODE);
-                        if (fd == NULL) {
-                            log_printf(0,
-                                       "perform_truncate(rid=%s): Error updating id " LU
-                                       " header\n", r->name, a->id);
-                        } else {
-                            if (a->is_alias == 0) {
-                                osd_write(r->dev, fd, 0, sizeof(Allocation_t), a);
-                            } else if (r->enable_alias_history) {
-                                osd_write(r->dev, fd, 0, sizeof(Allocation_t), a);
-                            }
-                            osd_close(r->dev, fd);
-                        }
-                    }
-                }
-
-                nbuff = 0;
-            } else {
-                nbuff++;
-            }
-
-            a = &(alist[nbuff]);
-            break;
-        }
-    }
-    db_iterator_end(dbi);
-
-    if (nbuff > 0) {
-        log_printf(5, "perform_truncate(rid=%s): Dumping buffer=%d\n", r->name, nbuff);
-        if (r->update_alloc == 1) {
-            for (i = 0; i < nbuff; i++) {
-                a = &(alist[i]);
-                fd = osd_open(r->dev, a->id, OSD_WRITE_MODE);
-                if (fd == NULL) {
-                    log_printf(0, "perform_truncate(rid=%s): Error updating id " LU " header\n",
-                               r->name, a->id);
-                } else {
-                    if (a->is_alias == 0) {
-                        osd_write(r->dev, fd, 0, sizeof(Allocation_t), a);
-                    } else if (r->enable_alias_history) {
-                        osd_write(r->dev, fd, 0, sizeof(Allocation_t), a);
-                    }
-                    osd_close(r->dev, fd);
-                }
-            }
-        }
-    }
-
-    log_printf(15, "perform_truncate(rid=%s): finished... n_allocs=%d  n_removed=%d\n", r->name,
-               cnt, ecnt);
-
-    return (0);
-}
 
 //***************************************************************************
 // parse_resource - Parses the resource Keyfile
@@ -918,6 +570,11 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
         tbx_inip_get_integer(keyfile, group, "expire_grace_period", 7 * 24 * 3600);
     res->preexpire_grace_period =
         tbx_inip_get_integer(keyfile, group, "preexpire_grace_period", 24 * 3600);
+
+    res->restart_grace_period =
+        tbx_inip_get_integer(keyfile, group, "restart_grace_period", 2 * 24 * 3600);
+
+    res->n_partitions = tbx_inip_get_integer(keyfile, group, "n_partitions", 256);
 
     res->max_duration = tbx_inip_get_integer(keyfile, group, "max_duration", 0);
     if (res->max_duration == 0) {
@@ -1064,7 +721,7 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
 
         res->res_type = RES_TYPE_DIR;
         assert_result_not_null(res->dev =
-                                   osd_mount_fs(res->device, res->n_cache, res->cache_expire));
+                                   osd_mount_fs(res->device, res->n_cache, res->n_partitions, res->cache_expire));
     }
     //** Init the lock **
     apr_pool_create(&(res->pool), NULL);
@@ -1077,37 +734,20 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
     //** Rebuild the DB or mount it here **
     snprintf(db_group, sizeof(db_group), "db %s", res->name);
 
-    if (force_rebuild) {
-        switch (force_rebuild) {
-        case 1:
-            err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), 1);
-            if (err == 0) {
-                calc_usage(res);
-                if (truncate_expiration == 1)
-                    perform_truncate(res);
-            }
-            break;
-        default:
-            err =
-                rebuild_resource(res, dbenv, keyfile, wipe_expired, force_rebuild,
-                                 truncate_expiration);
-        }
-    } else if (read_usage_file(res, NULL) == 1) {
-        log_printf(0, "RID %s not cleanly unmounted!  Forcing a rebuild!\n", res->name);
-        printf("RID %s not cleanly unmounted!  Forcing a rebuild!\n", res->name);
-        err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), 1);
-//      calc_usage(res);
-        err = rebuild_resource(res, dbenv, keyfile, wipe_expired, 2, truncate_expiration);
-    } else {
-        err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), 0);
+    err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), force_rebuild);
+    if (err != 0) {
+        log_printf(0, "mount_resource:  Error mounting DB force_rebuild=%d! res=%s err=%d\n", force_rebuild, res->name, err);
+        return (err);
     }
 
-    log_printf(15, "mount_resource: mount_db_generic=%d  res=%s cleanup_shutdown=%d\n", err,
+    //** Construct the interal tables and fix any issues
+    err = rebuild_resource(res, dbenv, keyfile, wipe_expired, force_rebuild, truncate_expiration);
+
+    log_printf(15, "mount_resource: err=%d  res=%s cleanup_shutdown=%d\n", err,
                res->name, res->cleanup_shutdown);
     tbx_log_flush();
 
-    if (err != 0)
-        return (err);
+    if (err != 0) return (err);
 
     err = mount_history_table(res);
     if (err != 0) {
@@ -1118,9 +758,6 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
 
     if (err != 0)
         return (err);
-
-    //** Update the usage **
-    write_usage_file(res, _RESOURCE_STATE_BAD); //**Mark it as dirty
 
     log_printf(15, "mount_resource: END res=%s cleanup_shutdown=%d\n", res->name,
                res->cleanup_shutdown);
@@ -1136,7 +773,6 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
 int umount_resource(Resource_t *res)
 {
     apr_status_t dummy;
-    int err;
     log_printf(15, "umount_resource:  Unmounting resource %s cleanup_shutdown=%d\n", res->name,
                res->cleanup_shutdown);
     tbx_log_flush();
@@ -1150,12 +786,8 @@ int umount_resource(Resource_t *res)
         apr_thread_join(&dummy, res->cleanup_thread);
     }
 
-    err = umount_db(&(res->db));
+    umount_db(&(res->db));
     umount_history_table(res);
-
-    //** Only update the usage file if the DB closed properly.
-    if (err == 0)
-        write_usage_file(res, _RESOURCE_STATE_GOOD);
 
     osd_umount(res->dev);
 
@@ -1170,10 +802,8 @@ int umount_resource(Resource_t *res)
     free(res->name);
     free(res->keygroup);
     free(res->device);
-    if (res->data_pdev)
-        free(res->data_pdev);
-    if (res->device_type != NULL)
-        free(res->device_type);
+    if (res->data_pdev) free(res->data_pdev);
+    if (res->device_type != NULL) free(res->device_type);
 
     return (0);
 }
@@ -1195,9 +825,9 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
     tbx_append_printf(buffer, used, nbytes, "max_duration = %d\n", res->max_duration);
     tbx_append_printf(buffer, used, nbytes, "resource_type = %s\n", res->device_type);
     tbx_append_printf(buffer, used, nbytes, "device = %s\n", res->device);
-//   tbx_append_printf(buffer, used, nbytes, "db_location = %s\n", res->location);
     tbx_append_printf(buffer, used, nbytes, "update_alloc = %d\n", res->update_alloc);
     tbx_append_printf(buffer, used, nbytes, "n_lru = %d\n", res->n_lru);
+    tbx_append_printf(buffer, used, nbytes, "n_partitions = %d\n", res->n_partitions);
 
     string[0] = '\0';
     strcat(string, "mode = ");
@@ -1237,6 +867,8 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
                       res->trash_grace_period[RES_EXPIRE_INDEX]);
     tbx_append_printf(buffer, used, nbytes, "preexpire_grace_period = %d\n",
                       res->preexpire_grace_period);
+    tbx_append_printf(buffer, used, nbytes, "restart_grace_period = %d\n",
+                      res->restart_grace_period);
 
     n = res->max_size[ALLOC_TOTAL] / 1024 / 1024;
     tbx_append_printf(buffer, used, nbytes, "max_size = " I64T "\n", n);

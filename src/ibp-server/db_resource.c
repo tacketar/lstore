@@ -39,11 +39,8 @@
 #include <signal.h>
 
 #define DB_INDEX_ID     0
-#define DB_INDEX_READ   1
-#define DB_INDEX_WRITE  2
-#define DB_INDEX_MANAGE 3
-#define DB_INDEX_EXPIRE 4
-#define DB_INDEX_SOFT   5
+#define DB_INDEX_EXPIRE 1
+#define DB_INDEX_SOFT   2
 
 apr_thread_mutex_t *dbr_mutex = NULL;   //** Only used if testing a common lock
 
@@ -295,7 +292,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
                      DB_resource_t *dbres, int wipe_clean)
 {
     char fname[2048];
-    u_int32_t flags, bflags;
+    u_int32_t flags;
     int err;
     DB *db = NULL;
     DB_env_t *lenv;
@@ -326,32 +323,27 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
         abort();
     }
 
-    flags = DB_AUTO_COMMIT | DB_THREAD | DB_CREATE;     //** Inheriting most from the environment
-//   flags = DB_AUTO_COMMIT | DB_THREAD | DB_CREATE;  //** Inheriting most from the environment
-//   if (wipe_clean == 2)  flags = flags | DB_CREATE; //**Only wipe the id DB if wipe_clean=2
+    flags = DB_AUTO_COMMIT | DB_THREAD;
+    if (wipe_clean != 0) flags |= DB_CREATE;  //** Only wipe if needed
 
     //*** Create/Open the primary DB containing the ID's ***
     assert_result(db_create(&(dbres->pdb), dbres->dbenv, 0), 0);
     assert_result(dbres->pdb->set_pagesize(dbres->pdb, 32 * 1024), 0);
+    assert_result(dbres->pdb->set_bt_compare(dbres->pdb, compare_idmod), 0);
     snprintf(fname, sizeof(fname), "%s/id.db", dbres->loc);
-    if (wipe_clean == 2)
-        remove(fname);
+    if (wipe_clean) remove(fname);
     if (dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_BTREE, flags, 0) != 0) {
         printf("mount_db: Can't open primary DB: %s\n", fname);
         abort();
     }
-    //** Wipe all other DB's **
-    if (wipe_clean != 0) flags = flags | DB_CREATE;
-    bflags = flags;
 
     //*** Create/Open DB containing the expirations ***
     assert_result(db_create(&db, dbres->dbenv, 0), 0);
     dbres->expire = db;
     assert_result(db->set_bt_compare(db, compare_expiration), 0);
     snprintf(fname, sizeof(fname), "%s/expire.db", dbres->loc);
-    if (wipe_clean == 2)
-        remove(fname);
-    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, bflags, 0)) != 0) {
+    if (wipe_clean) remove(fname);
+    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
         printf("mount_db: Can't open expire DB: %s\n", fname);
         printf("mount_db: %s\n", db_strerror(err));
         abort();
@@ -365,9 +357,8 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
     dbres->soft = db;
     assert_result(db->set_bt_compare(db, compare_expiration), 0);
     snprintf(fname, sizeof(fname), "%s/soft.db", dbres->loc);
-    if (wipe_clean == 2)
-        remove(fname);
-    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, bflags, 0)) != 0) {
+    if (wipe_clean) remove(fname);
+    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
         printf("mount_db: Can't open soft DB: %s\n", fname);
         printf("mount_db: %s\n", db_strerror(err));
         abort();
@@ -509,8 +500,7 @@ DB_env_t *create_db_env(const char *loc, int db_mem, int wipe_clean)
     if (strcmp(loc, "local") == 0)
         return (env);
 
-    if (wipe_clean > 0)
-        wipe_db_env(loc);       //** Wipe if requested
+    if (wipe_clean) wipe_db_env(loc);       //** Wipe if requested
 
     flags = DB_CREATE | DB_INIT_LOCK | DB_INIT_LOG | DB_INIT_MPOOL |
             DB_INIT_TXN | DB_THREAD | DB_AUTO_COMMIT | DB_RECOVER;
@@ -522,7 +512,6 @@ DB_env_t *create_db_env(const char *loc, int db_mem, int wipe_clean)
     u_int32_t bytes = (db_mem % 1024) * 1024 * 1024;
     log_printf(10, "create_db_env: gbytes=%u bytes=%u\n", gbytes, bytes);
     assert_result(dbenv->set_cachesize(dbenv, gbytes, bytes, 1), 0);
-//   assert_result(dbenv->set_flags(dbenv, DB_TXN_NOSYNC | DB_TXN_NOWAIT, 1), 0);
     assert_result(dbenv->log_set_config(dbenv, DB_LOG_AUTO_REMOVE, 1), 0);
     if ((err = dbenv->open(dbenv, loc, flags, 0)) != 0) {
         printf("create_db_env: Warning!  No environment located in %s\n", loc);
@@ -551,6 +540,7 @@ int close_db_env(DB_env_t *env)
 {
     int err = 0;
 
+log_printf(0, "CLOSING\n");
     if (env->dbenv != NULL) {
         err = env->dbenv->close(env->dbenv, 0);
     }
@@ -621,6 +611,7 @@ int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
 
     key.data = &id;
     key.size = sizeof(osd_id_t);
+    key.flags = DB_DBT_USERMEM;
 
     data.data = alloc;
     data.ulen = sizeof(Allocation_t);
@@ -906,7 +897,6 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
     int err;
     osd_id_t id;
     DB_timekey_t tkey;
-    Cap_t cap;
 
     err = -1234;
 
@@ -930,19 +920,6 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
                        db_strerror(err));
         }
         return (err);
-        break;
-    case (DB_INDEX_READ):
-    case (DB_INDEX_WRITE):
-    case (DB_INDEX_MANAGE):
-        key.data = cap.v;
-        key.ulen = sizeof(Cap_t);
-
-        err = it->cursor->get(it->cursor, &key, &data, direction);      //** Read the 1st
-        if (err != 0) {
-            log_printf(10, "db_iterator_next: key_index=%d err = %s\n", it->db_index,
-                       db_strerror(err));
-            return (err);
-        }
         break;
     case DB_INDEX_EXPIRE:
     case DB_INDEX_SOFT:
@@ -992,6 +969,34 @@ DB_iterator_t *soft_iterator(DB_resource_t *dbr)
 DB_iterator_t *id_iterator(DB_resource_t *dbr)
 {
     return (db_iterator_begin(dbr, dbr->pdb, dbr->dbenv, DB_INDEX_ID));
+}
+
+//***************************************************************************
+// set_id_iterator - Sets the position for the ID iterator
+//***************************************************************************
+
+int set_id_iterator(DB_iterator_t *dbi, osd_id_t id, Allocation_t *a)
+{
+    int err;
+    DBT key, data;
+
+    memset(&key, 0, sizeof(DBT));
+    memset(&data, 0, sizeof(DBT));
+
+    key.flags = DB_DBT_USERMEM;
+    data.flags = DB_DBT_USERMEM;
+
+    key.ulen = sizeof(osd_id_t);
+    key.data = &id;
+    data.ulen = sizeof(Allocation_t);
+    data.data = a;
+
+    if ((err = dbi->cursor->get(dbi->cursor, &key, &data, DB_SET_RANGE)) != 0) {
+        log_printf(5, "Error with get!  error=%d\n", err);
+        return (err);
+    }
+
+    return (0);
 }
 
 //***************************************************************************
