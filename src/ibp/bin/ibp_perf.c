@@ -90,13 +90,14 @@ void init_buffer(char *buffer, char c, int size)
 //   among them
 //*************************************************************************
 
-ibp_capset_t *create_proxy_allocs(int nallocs, ibp_capset_t *base_caps, int n_base)
+ibp_capset_t *create_proxy_allocs(int n, ibp_capset_t *base_caps, int n_base)
 {
-    int i, err;
+    int i, err, nallocs;
     gop_opque_t *q;
     gop_op_generic_t *op;
     ibp_capset_t *bcap;
 
+    nallocs = n;
     ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
 
     q = gop_opque_new();
@@ -113,6 +114,14 @@ ibp_capset_t *create_proxy_allocs(int nallocs, ibp_capset_t *base_caps, int n_ba
         printf("create_proxy_allocs: At least 1 error occured! * ibp_errno=%d * nfailed=%d\n", err, gop_opque_tasks_failed(q));
     }
     gop_opque_free(q, OP_DESTROY);
+
+    if (n < 0) { //** Dump the allocactions
+        for (i=0; i<nallocs; i++) {
+            printf("PA=%d rcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_READCAP));
+            printf("PA=%d wcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_WRITECAP));
+            printf("PA=%d mcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_MANAGECAP));
+        }
+    }
 
     return(caps);
 }
@@ -159,14 +168,15 @@ void proxy_remove_allocs(ibp_capset_t *caps_list, ibp_capset_t *mcaps_list, int 
 //  create_allocs - Creates a group of allocations in parallel
 //*************************************************************************
 
-ibp_capset_t *create_allocs(int nallocs, int asize)
+ibp_capset_t *create_allocs(int n, int asize)
 {
-    int i, err;
+    int i, err, nallocs;
     ibp_attributes_t attr;
     ibp_depot_t *depot;
     gop_opque_t *q;
     gop_op_generic_t *op;
 
+    nallocs = abs(n);
     ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
 
     ibp_attributes_set(&attr, time(NULL) + a_duration, IBP_HARD, IBP_BYTEARRAY);
@@ -186,6 +196,13 @@ ibp_capset_t *create_allocs(int nallocs, int asize)
     }
     gop_opque_free(q, OP_DESTROY);
 
+    if (n < 0) { //** Dump the allocactions
+        for (i=0; i<nallocs; i++) {
+            printf("CA=%d rcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_READCAP));
+            printf("CA=%d wcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_WRITECAP));
+            printf("CA=%d mcap=%s\n", i, ibp_cap_get(&(caps[i]), IBP_MANAGECAP));
+        }
+    }
     return(caps);
 }
 
@@ -650,7 +667,7 @@ double small_random_allocs(ibp_capset_t *caps, int n, int asize, double readfrac
 int main(int argc, char **argv)
 {
     double r1, r2, r3;
-    int i, start_option, tcpsize, cs_type;
+    int i, start_option, tcpsize, cs_type, n;
     ibp_capset_t *caps_list, *base_caps;
     ibp_rid_t rid;
     int port, fd_special;
@@ -706,8 +723,8 @@ int main(int argc, char **argv)
         printf("resource_id         - Resource ID to use on depot\n");
         printf("nthreads            - Max Number of simultaneous threads to use.  Use -1 for defaults or value in ibp.cfg\n");
         printf("ibp_timeout         - Timeout(sec) for each IBP copmmand\n");
-        printf("proxy_createremove_count* - Number of 0 byte files to create and remove using proxy allocations\n");
-        printf("createremove_count* - Number of 0 byte files to create and remove to test metadata performance\n");
+        printf("proxy_createremove_count*^ - Number of 0 byte files to create and remove using proxy allocations\n");
+        printf("createremove_count*^ - Number of 0 byte files to create and remove to test metadata performance\n");
         printf("readwrite_count*    - Number of files to write sequentially then read sequentially\n");
         printf("readwrite_alloc_size  - Size of each allocation in KB for sequential and random tests\n");
         printf("rw_block_size       - Size of each R/W operation in KB for sequential and random tests\n");
@@ -718,6 +735,8 @@ int main(int argc, char **argv)
         printf("small_read_fraction - Fraction of small random I/O operations that are READS\n");
         printf("\n");
         printf("*If the variable is set to 0 then the test is skipped\n");
+        printf("^If the variable is negative then the allocations are NOT removed\n");
+        printf(" It also causes the IBP allocations to be printed to stdout\n");
         printf("\n");
 
         return(-1);
@@ -985,23 +1004,28 @@ int main(int argc, char **argv)
     ibp_io_mode_set(sync_transfer, print_progress, nthreads);
 
     //**************** Create/Remove tests ***************************
-    if (proxycreateremove_count > 0) {
-        i = proxycreateremove_count/nthreads;
-        printf("Starting Proxy create test (total files: %d, approx per thread: %d)\n",proxycreateremove_count, i);
+    if (proxycreateremove_count != 0) {
+        n = abs(proxycreateremove_count);
+        i = n/nthreads;
+        printf("Starting Proxy create test (total files: %d, approx per thread: %d)\n", n, i);
         base_caps = create_allocs(1, 1);
         stime = apr_time_now();
         caps_list = create_proxy_allocs(proxycreateremove_count, base_caps, 1);
         dtime = apr_time_now() - stime;
         dt = dtime / (1.0 * APR_USEC_PER_SEC);
-        r1 = 1.0*proxycreateremove_count/dt;
+        r1 = 1.0*n/dt;
         printf("Proxy create : %lf creates/sec (%.2lf sec total) \n", r1, dt);
 
-        stime = apr_time_now();
-        proxy_remove_allocs(caps_list, base_caps, proxycreateremove_count, 1);
-        dtime = apr_time_now() - stime;
-        dt = dtime / (1.0 * APR_USEC_PER_SEC);
-        r1 = 1.0*proxycreateremove_count/dt;
-        printf("Proxy remove : %lf removes/sec (%.2lf sec total) \n", r1, dt);
+        if (proxycreateremove_count > 0) {
+            stime = apr_time_now();
+            proxy_remove_allocs(caps_list, base_caps, proxycreateremove_count, 1);
+            dtime = apr_time_now() - stime;
+            dt = dtime / (1.0 * APR_USEC_PER_SEC);
+            r1 = 1.0*n/dt;
+            printf("Proxy remove : %lf removes/sec (%.2lf sec total) \n", r1, dt);
+        } else {
+            printf("Proxy Remove: Skipping and leaving allocations\n");
+        }
         printf("\n");
 
         printf("-----------------------------\n");
@@ -1012,23 +1036,28 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    if (createremove_count > 0) {
-        i = createremove_count/nthreads;
-        printf("Starting Create test (total files: %d, approx per thread: %d)\n",createremove_count, i);
+    if (createremove_count != 0) {
+        n = abs(createremove_count);
+        i = n/nthreads;
+        printf("Starting Create test (total files: %d, approx per thread: %d)\n",n, i);
 
         stime = apr_time_now();
         caps_list = create_allocs(createremove_count, 1);
         dtime = apr_time_now() - stime;
         dt = dtime / (1.0 * APR_USEC_PER_SEC);
-        r1 = 1.0*createremove_count/dt;
-        printf("Create : %lf creates/sec (%.2lf sec total) \n", r1, dt);
+        r1 = 1.0*n/dt;
+        printf("Create : %lf creates/sec (%.2lf sec total)\n", r1, dt);
 
-        stime = apr_time_now();
-        remove_allocs(caps_list, createremove_count);
-        dtime = apr_time_now() - stime;
-        dt = dtime / (1.0 * APR_USEC_PER_SEC);
-        r1 = 1.0*createremove_count/dt;
-        printf("Remove : %lf removes/sec (%.2lf sec total) \n", r1, dt);
+        if (createremove_count > 0) {
+            stime = apr_time_now();
+            remove_allocs(caps_list, createremove_count);
+            dtime = apr_time_now() - stime;
+            dt = dtime / (1.0 * APR_USEC_PER_SEC);
+            r1 = 1.0*n/dt;
+            printf("Remove : %lf removes/sec (%.2lf sec total)\n", r1, dt);
+        } else {
+            printf("Remove: Skipping and leaving allocations\n");
+        }
         printf("\n");
     }
 
