@@ -121,14 +121,6 @@ typedef struct {                //Resource structure
     apr_pool_t *pool;
 } Resource_t;
 
-typedef struct {                //*** Used to store usage info on a resource to keep from having to rescan the DB
-    int version;
-    int state;
-    ibp_off_t used_space[2];
-    ibp_off_t n_allocs;
-    ibp_off_t n_alias;
-} resource_usage_file_t;
-
 typedef struct {
     int reset;
     Allocation_t hard_a;
@@ -144,7 +136,6 @@ typedef struct {
 #define resource_get_type(d) (d)->res_type
 #define resource_get_counter(d) tbx_atomic_get((d)->counter)
 
-IBPS_API int read_usage_file(Resource_t *r, resource_usage_file_t *u);
 IBPS_API int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_location,
                            ibp_off_t max_bytes);
 IBPS_API int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,

@@ -81,7 +81,6 @@ set(LSTORE_PROJECT_EXECUTABLES
     get_alloc
     get_config
     get_corrupt
-    get_rid_status
     get_version
     ibp_attach_rid
     ibp_detach_rid
