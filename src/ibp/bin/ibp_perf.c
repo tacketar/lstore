@@ -97,7 +97,7 @@ ibp_capset_t *create_proxy_allocs(int n, ibp_capset_t *base_caps, int n_base)
     gop_op_generic_t *op;
     ibp_capset_t *bcap;
 
-    nallocs = n;
+    nallocs = abs(n);
     ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
 
     q = gop_opque_new();
@@ -726,6 +726,7 @@ int main(int argc, char **argv)
         printf("proxy_createremove_count*^ - Number of 0 byte files to create and remove using proxy allocations\n");
         printf("createremove_count*^ - Number of 0 byte files to create and remove to test metadata performance\n");
         printf("readwrite_count*    - Number of files to write sequentially then read sequentially\n");
+        printf("                      Use the -save option to keep the allocations and not delete them\n");
         printf("readwrite_alloc_size  - Size of each allocation in KB for sequential and random tests\n");
         printf("rw_block_size       - Size of each R/W operation in KB for sequential and random tests\n");
         printf("read_mix_fraction   - Fraction of Random I/O operations that are READS\n");
@@ -1048,9 +1049,9 @@ int main(int argc, char **argv)
         r1 = 1.0*n/dt;
         printf("Create : %lf creates/sec (%.2lf sec total)\n", r1, dt);
 
-        if (createremove_count > 0) {
+        if (createremove_count != 0) {
             stime = apr_time_now();
-            remove_allocs(caps_list, createremove_count);
+            remove_allocs(caps_list, abs(createremove_count));
             dtime = apr_time_now() - stime;
             dt = dtime / (1.0 * APR_USEC_PER_SEC);
             r1 = 1.0*n/dt;
@@ -1062,7 +1063,7 @@ int main(int argc, char **argv)
     }
 
     //**************** Read/Write tests ***************************
-    if (readwrite_count > 0) {
+    if (readwrite_count != 0) {
         i = readwrite_count/nthreads;
         printf("Starting Bulk tests (total files: %d, approx per thread: %d", readwrite_count, i);
         r1 = 1.0*readwrite_count*readwrite_size/1024.0/1024.0;
@@ -1177,7 +1178,7 @@ int main(int argc, char **argv)
             printf("\n");
         }
 
-        if (fd_out == NULL) {
+        if ((fd_out == NULL) && (readwrite_count > 0)) {
             printf("Removing allocations....");
             fflush(stdout);
             stime = apr_time_now();
