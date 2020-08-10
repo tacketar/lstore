@@ -82,7 +82,16 @@ typedef struct {                //** Manage ops
     Allocation_timestamp_t ts;
 } Allocation_manage_ts_t;
 
-typedef struct {                //** Allocation Timestamp information
+typedef struct { //** Allocation history variant for pulling from DB
+    int n_manage;
+    int n_read;
+    int n_write;
+    Allocation_manage_ts_t *manage_ts;
+    Allocation_rw_ts_t *read_ts;
+    Allocation_rw_ts_t *write_ts;
+} Allocation_history_db_t;
+
+typedef struct {                //** Allocation Timestamp information as stored in he OSD
     osd_id_t id;                //** This is the alias ID for a IBP_ALIAS_ALLOCATE call
     Allocation_manage_ts_t manage_ts[ALLOC_HISTORY];
     Allocation_rw_ts_t read_ts[ALLOC_HISTORY];

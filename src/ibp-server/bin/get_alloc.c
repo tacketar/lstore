@@ -34,6 +34,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/fmttypes.h>
+#include <tbx/type_malloc.h>
 #include "subnet.h"
 #include "print_alloc.h"
 #include "cmd_send.h"
@@ -72,9 +73,9 @@ int parse_cap(char *cap, char **host, int *port, char **rid, char **key, char **
 int main(int argc, char **argv)
 {
     int bufsize = 1024 * 1024;
-    char buffer[bufsize], *bstate;
+    char buffer[bufsize], *bstate, *result;
     Allocation_t a;
-    Allocation_history_t h;
+    Allocation_history_db_t h;
     int used, start_option, print_blocks;
     int err, npos, state;
     int n, offset, len, ndata, i, k;
@@ -168,6 +169,7 @@ int main(int argc, char **argv)
         return (-1);
     tbx_ns_timeout_set(&dt, max_wait, 0);
 
+    result = bstate;
     nblocks = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));
     state = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));
     cs_type = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));
@@ -176,6 +178,7 @@ int main(int argc, char **argv)
     ndata = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));
     log_printf(15, "parsed: nb=%d s=%d cs_type=%d hbs=" I64T " bs=" I64T " ndata=%d\n", nblocks,
                state, cs_type, header_bs, bs, ndata);
+    free(result);
 
     //** Read the Allocation ***
     to = apr_time_now() + apr_time_make(max_wait, 0);
@@ -184,9 +187,17 @@ int main(int argc, char **argv)
         printf("get_alloc:  Error reading allocation!  err=%d\n", err);
         abort();
     }
+
     //** and now the history
     to = apr_time_now() + apr_time_make(max_wait, 0);
-    n = server_ns_read_block(ns, to, (char *) &h, sizeof(h));
+    err = server_ns_readline(ns, buffer, sizeof(buffer), to);
+    h.n_read = atoi(tbx_stk_string_token(buffer, " ", &bstate, &err)); if (h.n_read > 0) {  tbx_type_malloc_clear(h.read_ts, Allocation_rw_ts_t, h.n_read); }
+    h.n_write = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));  if (h.n_write > 0) { tbx_type_malloc_clear(h.write_ts, Allocation_rw_ts_t, h.n_write); }
+    h.n_manage = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err)); if (h.n_manage > 0) { tbx_type_malloc_clear(h.manage_ts, Allocation_manage_ts_t, h.n_manage); }
+
+    n = server_ns_read_block(ns, to, (char *)(h.read_ts), sizeof(Allocation_rw_ts_t)*h.n_read);
+    n = server_ns_read_block(ns, to, (char *)(h.write_ts), sizeof(Allocation_rw_ts_t)*h.n_write);
+    n = server_ns_read_block(ns, to, (char *)(h.manage_ts), sizeof(Allocation_manage_ts_t)*h.n_manage);
 
     used = 0;
     print_allocation(buffer, &used, sizeof(buffer) - 1, &a, &h, state, cs_type, header_bs, bs);
@@ -233,7 +244,11 @@ int main(int argc, char **argv)
 
     printf("\n");
 
-    tbx_ns_close(ns);
+    tbx_ns_destroy(ns);
+
+    if (h.n_read > 0) free(h.read_ts);
+    if (h.n_write > 0) free(h.write_ts);
+    if (h.n_manage > 0) free(h.manage_ts);
 
     apr_terminate();
 

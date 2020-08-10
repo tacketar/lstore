@@ -30,7 +30,7 @@
 //****************************************************************************
 
 void print_manage_history(char *buffer, int *used, int nbytes, Allocation_manage_ts_t *ts_list,
-                          int start)
+                          int count)
 {
     char print_time[128];
     char print_time2[128];
@@ -40,11 +40,10 @@ void print_manage_history(char *buffer, int *used, int nbytes, Allocation_manage
     char relbuf[256];
     const char *cmd, *subcmd, *rel;
     apr_time_t t, t2;
-    int i, slot, n;
+    int slot, n;
     Allocation_manage_ts_t *ts;
 
-    for (i = 0; i < ALLOC_HISTORY; i++) {
-        slot = (i + start) % ALLOC_HISTORY;
+    for (slot = 0; slot < count; slot++) {
         ts = &(ts_list[slot]);
 
         t = ibp2apr_time(ts->ts.time);
@@ -129,16 +128,15 @@ void print_manage_history(char *buffer, int *used, int nbytes, Allocation_manage
 // print_rw_history - Prints the Read/Write history to the buffer
 //****************************************************************************
 
-void print_rw_history(char *buffer, int *used, int nbytes, Allocation_rw_ts_t *ts_list, int start)
+void print_rw_history(char *buffer, int *used, int nbytes, Allocation_rw_ts_t *ts_list, int count)
 {
     char print_time[128];
     char hostip[256];
     apr_time_t t;
-    int i, slot;
+    int slot;
     Allocation_rw_ts_t *ts;
 
-    for (i = 0; i < ALLOC_HISTORY; i++) {
-        slot = (i + start) % ALLOC_HISTORY;
+    for (slot = 0; slot < count; slot++) {
         ts = &(ts_list[slot]);
 
         t = ibp2apr_time(ts->ts.time);
@@ -157,7 +155,7 @@ void print_rw_history(char *buffer, int *used, int nbytes, Allocation_rw_ts_t *t
 //****************************************************************************
 
 void print_allocation(char *buffer, int *used, int nbytes, Allocation_t *a,
-                      Allocation_history_t *h, int state, int cs_type, osd_off_t hbs, osd_off_t bs)
+                      Allocation_history_db_t *h, int state, int cs_type, osd_off_t hbs, osd_off_t bs)
 {
     apr_time_t t;
     char print_time[128];
@@ -267,24 +265,21 @@ void print_allocation(char *buffer, int *used, int nbytes, Allocation_t *a,
 
     tbx_append_printf(buffer, used, nbytes, "\n");
     tbx_append_printf(buffer, used, nbytes,
-                      "Read history (slot=%d) (epoch, time, host, id, offset, size)\n",
-                      h->read_slot);
+                      "Read history (epoch, time, host, id, offset, size)\n");
     tbx_append_printf(buffer, used, nbytes, "---------------------------------------------\n");
-    print_rw_history(buffer, used, nbytes, h->read_ts, h->read_slot);
+    print_rw_history(buffer, used, nbytes, h->read_ts, h->n_read);
 
     tbx_append_printf(buffer, used, nbytes, "\n");
     tbx_append_printf(buffer, used, nbytes,
-                      "Write history (slot=%d) (epoch, time, host, id, offset, size)\n",
-                      h->write_slot);
+                      "Write history (epoch, time, host, id, offset, size)\n");
     tbx_append_printf(buffer, used, nbytes, "---------------------------------------------\n");
-    print_rw_history(buffer, used, nbytes, h->write_ts, h->write_slot);
+    print_rw_history(buffer, used, nbytes, h->write_ts, h->n_write);
 
     tbx_append_printf(buffer, used, nbytes, "\n");
     tbx_append_printf(buffer, used, nbytes,
-                      "Manage history (slot=%d) (epoch, time, host, id, cmd, subcmd, reliability, size, expiration_epoch, expiration)\n",
-                      h->manage_slot);
+                      "Manage history (epoch, time, host, id, cmd, subcmd, reliability, size, expiration_epoch, expiration)\n");
     tbx_append_printf(buffer, used, nbytes, "---------------------------------------------\n");
-    print_manage_history(buffer, used, nbytes, h->manage_ts, h->manage_slot);
+    print_manage_history(buffer, used, nbytes, h->manage_ts, h->n_manage);
 
     return;
 }

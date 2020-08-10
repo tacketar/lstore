@@ -37,6 +37,7 @@
 #include <tbx/append_printf.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
+#include <tbx/assert_result.h>
 #include "ibp_time.h"
 
 
@@ -50,7 +51,8 @@ const char *_res_types[] = { DEVICE_UNKNOWN, DEVICE_DIR };
 //** Structures used for rebuilding the resource
 #define REBUILD_FOUND_OSD 1
 #define REBUILD_FOUND_DB  2
-#define REBUILD_FOUND_ALL 3
+#define REBUILD_FOUND_HISTORY 4
+#define REBUILD_FOUND_ALL 3     //** This is the 2 locations it's critical
 
 typedef struct {
     osd_id_t id;
@@ -66,9 +68,22 @@ typedef struct {                //** Internal resource iterator
     Allocation_t a;
 } res_iterator_t;
 
+
 void *resource_cleanup_thread(apr_thread_t *th, void *data);
 int _remove_allocation_for_make_free(Resource_t *r, int rmode, Allocation_t *alloc,
                                      DB_iterator_t *it);
+
+//***************************************************************************
+//** fetch_historykey - returns the history key for the LRU
+//***************************************************************************
+
+void fetch_historykey(void *global, void *object, void **key, int *len)
+{
+    lru_history_t *h = (lru_history_t *)object;
+
+    *key = &(h->id);
+    *len = sizeof(osd_id_t);
+}
 
 //***************************************************************************
 // fetch_idkey - Routine to fetch the ID key for the allocation LRU
@@ -190,7 +205,7 @@ int print_resource_usage(Resource_t *r, FILE *fd)
 //***************************************************************************
 
 int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_location,
-                  ibp_off_t max_bytes)
+                  ibp_off_t max_bytes, int n_partitions)
 {
     int err;
     char rname[256];
@@ -237,12 +252,15 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.enable_write_history = 1;
     res.enable_manage_history = 1;
     res.enable_alias_history = 1;
+    res.enable_history_update_on_delete = 1;
     res.cleanup_interval = 600;
     res.trash_grace_period[RES_DELETE_INDEX] = 2 * 3600;
     res.trash_grace_period[RES_EXPIRE_INDEX] = 14 * 24 * 3600;
     res.preexpire_grace_period = 24 * 3600;
     res.restart_grace_period = 2 * 24 * 3600;
-    res.n_partitions = 256;
+    res.n_partitions = n_partitions;
+    res.n_history = 16;
+    res.lru_history_bytes = sizeof(lru_history_t) + 3*res.n_history*sizeof(apr_time_t);
     res.rescan_interval = 24 * 3600;
     res.chksum_blocksize = 64 * 1024;
     res.enable_chksum = 1;
@@ -258,7 +276,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
 
     //**Create the DB
     snprintf(fname, sizeof(fname), "db %s", ibp_rid2str(rid, rname));
-    assert_result(mkfs_db(&(res.db), dname, fname, NULL), 0);
+    assert_result(mkfs_db(&(res.db), dname, fname, NULL, res.n_partitions), 0);
 
     //**Create the device
     if (strcmp("dir", dev_type) == 0) {
@@ -363,6 +381,60 @@ finished:
 }
 
 //***************************************************************************
+// rebuild_populate_partition_lut_with_history - Populates the LUT for the partition
+//     using the history data
+//***************************************************************************
+
+void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, apr_hash_t *lut, apr_pool_t *mpool)
+{
+    leveldb_iterator_t *it;
+    char buf[r->lru_history_bytes];
+    lru_history_t *lh = (lru_history_t *)buf;
+    db_history_key_t *key;
+    db_history_key_t base_key;
+    rebuild_lut_t *d;
+    size_t nbytes;
+    osd_id_t id;
+    tbx_stack_t *stack = NULL;  //** This is used for anything we need to delete
+
+    //** Create the iterator
+    it = leveldb_create_iterator(r->db.history, r->db.ropts);
+    leveldb_iter_seek(it, db_fill_history_key(&base_key, partition, 0, 0), sizeof(base_key));
+
+    while (leveldb_iter_valid(it) > 0) {
+        nbytes = 0;
+        key = (db_history_key_t *)leveldb_iter_key(it, &nbytes);
+        if (nbytes == 0) break;
+        id = key->id; //** Snag the ID for later use. key gits overwritten below
+        if ((id % r->n_partitions) != (unsigned int)partition) {   //** Kick out if a different partition
+           break;
+        }
+
+        if (id == RES_CHECK_ID) continue;   //** Skip the check allocation
+
+        lru_history_populate_core(r, id, lh, &stack, it);  //** This uses the iterator and hence overwrites the iterator key
+
+        d = apr_hash_get(lut, &id, sizeof(key->id));
+        if (!d) {
+            d = apr_palloc(mpool, sizeof(rebuild_lut_t));
+            d->id = id;
+            d->found = 0;
+        }
+
+        //** Flag it as found.  If this isn't a viable ID then it will get removed in the merge process
+        d->found |= REBUILD_FOUND_HISTORY;
+        apr_hash_set(lut, &(d->id), sizeof(d->id), d);
+        if (leveldb_iter_valid(it)) leveldb_iter_next(it);  //** The populate_core call above can hit the iter end
+    }
+
+    //** Cleanup
+    leveldb_iter_destroy(it);
+
+    //** See if we have to delete something
+    if (stack) lru_history_populate_remove(r, stack);
+}
+
+//***************************************************************************
 // rebuild_remove - Removes an allocation during the rebuild process
 //***************************************************************************
 
@@ -379,6 +451,8 @@ void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
     if (d->found & REBUILD_FOUND_DB) {
        remove_alloc_db(&(r->db), &(d->a));
     }
+
+    if (d->found & REBUILD_FOUND_HISTORY) db_delete_history(r, d->a.id);  //** And the history
 }
 
 //***************************************************************************
@@ -447,6 +521,8 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
         //** Fetch the record or cleanup
         if ((d->found & REBUILD_FOUND_ALL) == REBUILD_FOUND_ALL) goto got_it;
 
+        //** If we made it here then in some combination of OSD|DB|History
+        //** If it's not in the OSD then we always delete it
         if (d->found & REBUILD_FOUND_OSD)  {  //** It's in the OSD but not the DB
             if (read_allocation_header(r, d->id, &(d->a)) != 0) { //** Failed reading the header
                 rebuild_remove(r, d);
@@ -513,6 +589,7 @@ int rebuild_resource(Resource_t *r, DB_env_t *env, tbx_inip_file_t *kfd, int rem
         //** Populate the LUT
         rebuild_populate_partition_lut_with_osd(r, i, lut, mpool);
         rebuild_populate_partition_lut_with_db(r, i, lut, mpool);
+        rebuild_populate_partition_lut_with_history(r, i, lut, mpool);
 
         //** Process it
         rebuild_populate_partition_lut_process(r, lut, remove_expired, truncate_expiration);
@@ -560,6 +637,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     res->enable_read_history = tbx_inip_get_integer(keyfile, group, "enable_read_history", 1);
     res->enable_manage_history = tbx_inip_get_integer(keyfile, group, "enable_manage_history", 1);
     res->enable_alias_history = tbx_inip_get_integer(keyfile, group, "enable_alias_history", 1);
+    res->enable_history_update_on_delete = tbx_inip_get_integer(keyfile, group, "enable_history_update_on_delete", 1);
 
     res->rescan_interval = tbx_inip_get_integer(keyfile, group, "rescan_interval", 86400);
     res->cleanup_interval = tbx_inip_get_integer(keyfile, group, "cleanup_interval", 500);
@@ -575,6 +653,8 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
         tbx_inip_get_integer(keyfile, group, "restart_grace_period", 2 * 24 * 3600);
 
     res->n_partitions = tbx_inip_get_integer(keyfile, group, "n_partitions", 256);
+    res->n_history = tbx_inip_get_integer(keyfile, group, "n_history", 16);
+    res->lru_history_bytes = sizeof(lru_history_t) + 3*res->n_history*sizeof(apr_time_t);
 
     res->max_duration = tbx_inip_get_integer(keyfile, group, "max_duration", 0);
     if (res->max_duration == 0) {
@@ -681,6 +761,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     //** Setup the LRU table
     res->n_lru = tbx_inip_get_integer(keyfile, group, "n_lru", 100000);
     res->id_lru = tbx_lru_create(res->n_lru, fetch_idkey, tbx_lru_clone_default, tbx_lru_copy_default, tbx_lru_free_default, (void *)(&alloc_lru_size));
+    res->history_lru = tbx_lru_create(res->n_lru, fetch_historykey, tbx_lru_clone_default, tbx_lru_copy_default, tbx_lru_free_default, (void *)&(res->lru_history_bytes));
 
     return (0);
 }
@@ -734,7 +815,7 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
     //** Rebuild the DB or mount it here **
     snprintf(db_group, sizeof(db_group), "db %s", res->name);
 
-    err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), force_rebuild);
+    err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), force_rebuild, res->n_partitions);
     if (err != 0) {
         log_printf(0, "mount_resource:  Error mounting DB force_rebuild=%d! res=%s err=%d\n", force_rebuild, res->name, err);
         return (err);
@@ -792,6 +873,7 @@ int umount_resource(Resource_t *res)
     osd_umount(res->dev);
 
     tbx_lru_destroy(res->id_lru);
+    tbx_lru_destroy(res->history_lru);
 
     apr_thread_mutex_destroy(res->cleanup_lock);
     apr_thread_mutex_destroy(res->mutex);
@@ -852,6 +934,8 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
     }
     tbx_append_printf(buffer, used, nbytes, "%s\n", string);
 
+    tbx_append_printf(buffer, used, nbytes, "n_history = %d\n", res->n_history);
+    tbx_append_printf(buffer, used, nbytes, "enable_history_update_on_delete = %d\n", res->enable_history_update_on_delete);
     tbx_append_printf(buffer, used, nbytes, "enable_read_history = %d\n", res->enable_read_history);
     tbx_append_printf(buffer, used, nbytes, "enable_write_history = %d\n",
                       res->enable_write_history);
@@ -1002,6 +1086,8 @@ int _remove_allocation(Resource_t *r, int rmode, Allocation_t *alloc, int dolock
 //      return(err);
     }
     log_printf(10, "_remove_allocation:  Removed db entry\n");
+
+    db_delete_history(r, alloc->id); //** Remove the history
 
     alru_remove(r, alloc->id); //** Update the LRU copy
 
@@ -1471,10 +1557,10 @@ int _new_allocation_resource(Resource_t *r, Allocation_t *a, ibp_off_t size, int
     //** Always store the initial alloc in the file header
     if (a->is_alias == 0) {
         write_allocation_header(r, a, 1);       //** Store the header
-        blank_history(r, a->id);        //** Also store the history
+        osd_blank_history(r, a->id);        //** Also store the history
     } else if (r->enable_alias_history) {
         write_allocation_header(r, a, 1);       //** Store the header
-        blank_history(r, a->id);        //** Also store the history
+        osd_blank_history(r, a->id);        //** Also store the history
     }
 
     r->n_allocs++;
@@ -1745,7 +1831,7 @@ int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * c
 // modify_allocation_resource - Stores the allocation data structure
 //***************************************************************************
 
-int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
+int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a, int mandatory_change)
 {
     Allocation_t old_a;
     int err;
@@ -1754,14 +1840,6 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
     err = 0;
 
     tbx_atomic_inc(r->counter);
-
-    if (r->update_alloc == 1) {
-        if (a->is_alias == 0) {
-            write_allocation_header(r, a, 0);
-        } else if (r->enable_alias_history) {
-            write_allocation_header(r, a, 0);
-        }
-    }
 
     if ((err = get_allocation_resource(r, a->id, &old_a)) != 0) {
         log_printf(0, "put_allocation_resource: Can't find id " LU "  db err = %d\n", a->id, err);
@@ -1814,6 +1892,14 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
                 r->pending -= size;
                 apr_thread_mutex_unlock(r->mutex);
             }
+        }
+    }
+
+    if ((r->update_alloc == 1) || (mandatory_change == 1)) {
+        if (a->is_alias == 0) {
+            write_allocation_header(r, a, 0);
+        } else if (r->enable_alias_history) {
+            write_allocation_header(r, a, 0);
         }
     }
 
@@ -2295,11 +2381,6 @@ time_t trash_cleanup(Resource_t *r, int tmode, ibp_time_t wipe_time, int enforce
     int rmode = (tmode == RES_DELETE_INDEX) ? OSD_DELETE_ID : OSD_EXPIRE_ID;
 
     //** Get the starting counts
-//  apr_thread_mutex_lock(r->mutex);
-//  start_nbytes = r->trash_size[tmode];
-//  start_nalloc = r->n_trash[tmode];
-//  apr_thread_mutex_unlock(r->mutex);
-
     oldest_time = 0;
     nbytes = 0;
     nwipe = 0;
@@ -2522,8 +2603,6 @@ void launch_resource_cleanup_thread(Resource_t *r)
     apr_size_t stacksize = 2 * 1024 * 1024;
     apr_threadattr_create(&(r->cleanup_attr), r->pool);
     apr_threadattr_stacksize_set(r->cleanup_attr, stacksize);
-//  log_printf(15, "launch_resource_cleanup_thread: default stacksize=" ST "\n", stacksize);
-
 
     apr_thread_create(&(r->cleanup_thread), r->cleanup_attr, resource_cleanup_thread, (void *) r,
                       r->pool);

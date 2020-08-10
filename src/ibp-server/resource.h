@@ -65,7 +65,12 @@ extern const char *_res_types[];
 
 #define ALLOC_TOTAL 2           //Used for determing the total depot size
 
-//typedef uint64_t ibp_off_t;    //Resource size
+
+typedef struct {  //** History LRU structure
+    osd_id_t id;           //** Allocation ID
+    int slot[3];           //** Slots
+    apr_time_t ts[];       //** Flexbile array placeholder for all the timestamps
+} lru_history_t;
 
 typedef struct {                //Resource structure
     char *keygroup;             //Keyfile group name
@@ -85,6 +90,7 @@ typedef struct {                //Resource structure
     int enable_write_history;
     int enable_manage_history;
     int enable_alias_history;
+    int enable_history_update_on_delete;  //**Copy hthe DB history information into the allocation header on delete
     int cleanup_interval;       //Time to wait between cleanup iterations
     int trash_grace_period[2];  //Trash grace period before cleanup
     int preexpire_grace_period; //Time to wait before moving an expired alloc to the trash bin
@@ -111,7 +117,10 @@ typedef struct {                //Resource structure
     osd_t *dev;                 //Actual Device information
     int rl_index;               //** Index in global resource array
     int n_lru;                  //** Max size of the ID LRU
+    int n_history;              //** Number of history records to keep per type
+    int lru_history_bytes;      //Number of bytes needed for a static lru_history_t structure
     tbx_lru_t *id_lru;          //** ID Least Recently Used table
+    tbx_lru_t *history_lru;     //** History Least Recently Used table
     apr_thread_mutex_t *mutex;  //Lock for creates
     int cleanup_shutdown;
     apr_thread_mutex_t *cleanup_lock;   //Used to shutdown cleanup thread
@@ -137,7 +146,7 @@ typedef struct {
 #define resource_get_counter(d) tbx_atomic_get((d)->counter)
 
 IBPS_API int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_location,
-                           ibp_off_t max_bytes);
+                           ibp_off_t max_bytes, int n_partitions);
 IBPS_API int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
                             DB_env_t *env, int force_rebuild, int lazy_allocate,
                             int truncate_expiration);
@@ -172,7 +181,7 @@ IBPS_API int merge_allocation_resource(Resource_t *r, Allocation_t *ma, Allocati
 IBPS_API int get_allocation_by_cap_id_resource(Resource_t * r, int cap_type, cap_id_t * cap,
                                                Allocation_t * a);
 IBPS_API int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
-IBPS_API int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a);
+IBPS_API int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a, int mandatory_change);
 IBPS_API int write_allocation_header(Resource_t *r, Allocation_t *a, int do_blank);
 IBPS_API int read_allocation_header(Resource_t *r, osd_id_t id, Allocation_t *a);
 IBPS_API ibp_off_t write_allocation(Resource_t *r, osd_fd_t *fd, ibp_off_t offset, ibp_off_t len,
@@ -195,9 +204,8 @@ IBPS_API int resource_set_mode(Resource_t *r, int mode);
 IBPS_API int create_history_table(Resource_t *r);
 IBPS_API int mount_history_table(Resource_t *r);
 IBPS_API void umount_history_table(Resource_t *r);
-IBPS_API int get_history_table(Resource_t *r, osd_id_t id, Allocation_history_t *h);
-IBPS_API int put_history_table(Resource_t *r, osd_id_t id, Allocation_history_t *h);
-IBPS_API int blank_history(Resource_t *r, osd_id_t id);
+IBPS_API int get_history_table(Resource_t *r, osd_id_t id, Allocation_history_db_t *h);
+IBPS_API int osd_blank_history(Resource_t *r, osd_id_t id);
 IBPS_API void update_read_history(Resource_t *r, osd_id_t id, int is_alias,
                                   Allocation_address_t *add, uint64_t offset, uint64_t size,
                                   osd_id_t pid);
@@ -208,5 +216,8 @@ IBPS_API void update_manage_history(Resource_t *r, osd_id_t id, int is_alias,
                                     Allocation_address_t *add, int cmd, int subcmd,
                                     int reliability, uint32_t expiration, uint64_t size,
                                     osd_id_t pid);
-
+IBPS_API const char *db_fill_history_key(db_history_key_t *key, osd_id_t id, int type, apr_time_t date);
+IBPS_API void db_delete_history(Resource_t *r, osd_id_t id);
+IBPS_API void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, leveldb_iterator_t *it);
+IBPS_API void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack);
 #endif

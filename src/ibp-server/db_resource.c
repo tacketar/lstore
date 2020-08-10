@@ -219,7 +219,7 @@ int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr)
 //      fd   - Key file to store any DB related keys in.
 //***************************************************************************
 
-int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
+int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n_partitions)
 {
     u_int32_t flags, bflags;
     int err;
@@ -235,12 +235,13 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
     flags = DB_CREATE | DB_THREAD;
     bflags = flags;
 
+    dbres->n_partitions = n_partitions;
+
     //*** Create/Open the primary DB containing the ID's ***
     assert_result(db_create(&(dbres->pdb), NULL, 0), 0);
     assert_result(dbres->pdb->set_bt_compare(dbres->pdb, compare_idmod), 0);
     assert_result(dbres->pdb->set_pagesize(dbres->pdb, 32 * 1024), 0);
-    snprintf(fname, sizeof(fname), "%s/id.db", loc);
-    remove(fname);
+    snprintf(fname, sizeof(fname), "%s/id.db", loc); remove(fname);
     if ((err = dbres->pdb->open(dbres->pdb, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
         printf("mkfs_db: Can't create primary DB: %s\n", fname);
         printf("mkfs_db: %s\n", db_strerror(err));
@@ -267,6 +268,26 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
         abort();
     }
 
+    //** And the history DB
+    char *errstr = NULL;
+    dbres->opts = leveldb_options_create();
+    leveldb_options_set_create_if_missing(dbres->opts, 1);
+    dbres->history_compare = leveldb_comparator_create(dbres, db_history_compare_destroy,
+        db_history_compare_op, db_history_compare_name);
+    leveldb_options_set_comparator(dbres->opts, dbres->history_compare);
+    snprintf(fname, sizeof(fname), "%s/history", loc);
+    dbres->history = leveldb_open(dbres->opts, fname, &errstr);
+    if (errstr != NULL) {
+        printf("mkfs_db: Error creating history DB: %s\n", fname);
+        printf("mkfs_db: Error: %s\n", errstr);
+        free(errstr);
+        abort();
+    }
+
+    //** And the generic RW opt
+    dbres->wopts = leveldb_writeoptions_create();
+    dbres->ropts = leveldb_readoptions_create();
+
     //*** Lastly add the group to the Key file ***
     dbres->loc = strdup(loc);
     dbres->kgroup = strdup(kgroup);
@@ -289,7 +310,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd)
 //***************************************************************************
 
 int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
-                     DB_resource_t *dbres, int wipe_clean)
+                     DB_resource_t *dbres, int wipe_clean, int n_partitions)
 {
     char fname[2048];
     u_int32_t flags;
@@ -302,6 +323,8 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
     log_printf(10, "mount_db_generic: kgroup=%s\n", kgroup);
     tbx_log_flush();
     assert_result_not_null(dbres->loc = tbx_inip_get_string(kf, kgroup, "loc", NULL));
+
+    dbres->n_partitions = (n_partitions <= 0) ? n_partitions : tbx_inip_get_integer(kf, kgroup, "n_partitions", 256);
 
     log_printf(15, "mound_db_generic: wipe_clean=%d\n", wipe_clean);
 
@@ -367,20 +390,32 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
         printf("mount_db: Can't associate soft DB: %s\n", fname);
         abort();
     }
+
+    //** And the history DB
+    char *errstr = NULL;
+    dbres->opts = leveldb_options_create();
+    leveldb_options_set_create_if_missing(dbres->opts, 1);
+    dbres->history_compare = leveldb_comparator_create(dbres, db_history_compare_destroy,
+        db_history_compare_op, db_history_compare_name);
+    leveldb_options_set_comparator(dbres->opts, dbres->history_compare);
+    snprintf(fname, sizeof(fname), "%s/history", dbres->loc);
+    dbres->history = leveldb_open(dbres->opts, fname, &errstr);
+    if (errstr != NULL) {
+        printf("mount_db: Error opening history DB: %s\n", fname);
+        printf("mount_db: Error: %s\n", errstr);
+        free(errstr);
+        abort();
+    }
+
+    //** And the generic RW opt
+    dbres->wopts = leveldb_writeoptions_create();
+    dbres->ropts = leveldb_readoptions_create();
+
     //** and make the mutex
     apr_pool_create(&(dbres->pool), NULL);
     apr_thread_mutex_create(&(dbres->mutex), APR_THREAD_MUTEX_DEFAULT, dbres->pool);
 
     return (0);
-}
-
-//***************************************************************************
-// mount_db - Mounts a DB for use using the keyfile for the location
-//***************************************************************************
-
-int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *dbenv, DB_resource_t *dbres)
-{
-    return (mount_db_generic(kf, kgroup, dbenv, dbres, 0));
 }
 
 //***************************************************************************
@@ -418,6 +453,13 @@ int umount_db(DB_resource_t *dbres)
             }
         }
     }
+
+    leveldb_close(dbres->history);
+
+    leveldb_comparator_destroy(dbres->history_compare);
+    leveldb_writeoptions_destroy(dbres->wopts);
+    leveldb_readoptions_destroy(dbres->ropts);
+    leveldb_options_destroy(dbres->opts);
 
     apr_thread_mutex_destroy(dbres->mutex);
     apr_pool_destroy(dbres->pool);

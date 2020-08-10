@@ -159,7 +159,7 @@ int handle_allocate(ibp_task_t *task)
     }
     //** Store the creation timestamp **
     set_alloc_timestamp(&(a.creation_ts), &(task->ipadd));
-    err = modify_allocation_resource(res, a.id, &a);
+    err = modify_allocation_resource(res, a.id, &a, 1);
     if (err != 0) {
         log_printf(0,
                    "handle_allocate:  Error with modify_allocation_resource for new queue allocation!  err=%d, type=%d\n",
@@ -434,7 +434,7 @@ int handle_internal_get_alloc(ibp_task_t *task)
     char hex_digest[CHKSUM_MAX_SIZE], hex_digest2[CHKSUM_MAX_SIZE];
     char token[4096];
     Allocation_t a;
-    Allocation_history_t h;
+    Allocation_history_db_t h;
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_internal_get_alloc_t *arg = &(cmd->cargs.get_alloc);
 
@@ -518,14 +518,20 @@ int handle_internal_get_alloc(ibp_task_t *task)
     err = server_ns_write_block(task->ns, task->cmd_timeout, (char *) &a, sizeof(a));
 
     //** ...and the history
-    err = server_ns_write_block(task->ns, task->cmd_timeout, (char *) &h, sizeof(h));
+    sprintf(buffer, "%d %d %d \n", h.n_read, h.n_write, h.n_manage);
+    err = server_ns_write_block(task->ns, task->cmd_timeout, buffer, strlen(buffer));
+    err = server_ns_write_block(task->ns, task->cmd_timeout, (char *)h.read_ts, sizeof(Allocation_rw_ts_t)*h.n_read);
+    err = server_ns_write_block(task->ns, task->cmd_timeout, (char *)h.write_ts, sizeof(Allocation_rw_ts_t)*h.n_write);
+    err = server_ns_write_block(task->ns, task->cmd_timeout, (char *)h.manage_ts, sizeof(Allocation_manage_ts_t)*h.n_manage);
+
+    //** Free the internal history structure
+    free(h.read_ts); free(h.write_ts); free(h.manage_ts);
 
     //** ..and the block information if needed
     log_printf(10, "handle_internal_get_alloc: ns=%d print_blocks=%d nblocks=" I64T "\n",
                tbx_ns_getid(task->ns), arg->print_blocks, nblocks);
     if (arg->print_blocks > 0) {
         for (i = 0; i < nblocks; i++) {
-//log_printf(10, "handle_internal_get_alloc: ns=%d i=%d\n", tbx_ns_getid(task->ns), i);
             osd_get_chksum(res->dev, a.id, block_chksum, calc_chksum, sizeof(block_chksum), &blen,
                            &good_block, i, i);
             bytes_used = blen;
@@ -650,7 +656,7 @@ int handle_alias_allocate(ibp_task_t *task)
     alias_alloc.alias_size = pa->len;
 
     //** and store it back in the DB only **
-    if ((d = modify_allocation_resource(res, alias_alloc.alias_id, &alias_alloc)) != 0) {
+    if ((d = modify_allocation_resource(res, alias_alloc.alias_id, &alias_alloc, 1)) != 0) {
         log_printf(1,
                    "handle_alias_allocate: modify_allocation_resource failed on RID %s!  Error=%d\n",
                    res->name, d);
@@ -1097,7 +1103,7 @@ int handle_manage(ibp_task_t *task)
     Allocation_t *a = &(manage->a);
     Allocation_t ma;
     osd_id_t id, pid;
-    int err, is_alias, status;
+    int err, is_alias, status, mandatory_change;
     uint64_t alias_offset, alias_len;
     char buf[1024];
     int rel = IBP_SOFT;
@@ -1234,7 +1240,7 @@ int handle_manage(ibp_task_t *task)
                               a->read_refcount, a->write_refcount, a->max_size, pid);
 
         if ((a->read_refcount > 0) || (a->write_refcount > 0)) {
-            if ((err = modify_allocation_resource(r, a->id, a)) == 0)
+            if ((err = modify_allocation_resource(r, a->id, a, 1)) == 0)
                 err = IBP_OK;
         }
         //** Check if we need to remove the allocation **
@@ -1272,7 +1278,7 @@ int handle_manage(ibp_task_t *task)
                                   manage->subcmd, a->reliability, a->expiration, a->max_size, pid);
         }
 
-        err = modify_allocation_resource(r, a->id, a);
+        err = modify_allocation_resource(r, a->id, a, 1);
 
         if (err == 0) {
             send_cmd_result(task, status);
@@ -1283,6 +1289,7 @@ int handle_manage(ibp_task_t *task)
 
     case IBP_CHNG:
         status = IBP_OK;
+        mandatory_change = 0;  //** Default that the change doesn't have to be reflected in the acclocation header
         if (is_alias == 1) {    //** If this is an IBP_ALIAS_MANAGE call we have different fields
             if (manage->new_size > 0) {
                 if ((int64_t) ma.max_size < (manage->offset + manage->new_size - 1)) {
@@ -1290,8 +1297,11 @@ int handle_manage(ibp_task_t *task)
                                r->name);
                     status = IBP_E_WOULD_EXCEED_POLICY;
                 } else {
-                    a->alias_size = manage->new_size;
-                    a->alias_offset = manage->offset;
+                    if (((int64_t)a->alias_size != manage->new_size) || ((int64_t)a->alias_offset != manage->offset)) {
+                        mandatory_change = 1;
+                        a->alias_size = manage->new_size;
+                        a->alias_offset = manage->offset;
+                    }
                 }
             }
 
@@ -1319,7 +1329,10 @@ int handle_manage(ibp_task_t *task)
                                r->name);
                     status = IBP_E_WOULD_DAMAGE_DATA;
                 } else {
-                    a->max_size = manage->new_size;
+                    if ((int64_t)a->max_size != manage->new_size) {
+                        mandatory_change = 1;
+                        a->max_size = manage->new_size;
+                    }
                 }
             }
             if (manage->new_reliability >= 0)
@@ -1350,7 +1363,7 @@ int handle_manage(ibp_task_t *task)
                                   manage->subcmd, a->reliability, a->expiration, a->max_size, pid);
         }
 
-        err = modify_allocation_resource(r, a->id, a);
+        err = modify_allocation_resource(r, a->id, a, mandatory_change);
 
         if (err == 0) {
             send_cmd_result(task, status);
@@ -1389,26 +1402,12 @@ int handle_manage(ibp_task_t *task)
         //** Update the manage timestamp
         update_manage_history(r, a->id, a->is_alias, &(task->ipadd), cmd->command, manage->subcmd,
                               a->reliability, a->expiration, a->max_size, pid);
-        err = modify_allocation_resource(r, a->id, a);
-        if (err != 0) {
-            log_printf(0,
-                       "handle_manage/probe:  Error with modify_allocation_resource for new queue allocation!  err=%d\n",
-                       err);
-        }
-
         log_printf(10, "handle_manage: probe results = %s\n", buf);
         server_ns_write_block(task->ns, task->cmd_timeout, buf, strlen(buf));
 
         alog_append_cmd_result(task->myid, IBP_OK);
         break;
     }
-
-//  //** Update the manage timestamp
-//  update_manage_history(r, a->id, a->is_alias, &(task->ipadd), cmd->command, manage->subcmd, a->reliability, a->expiration, a->max_size, pid);
-//  err = modify_allocation_resource(r, a->id, a);
-//  if (err != 0) {
-//     log_printf(0, "handle_manage/probe:  Error with modify_allocation_resource for new queue allocation!  err=%d\n", err);
-//  }
 
     cmd->state = CMD_STATE_FINISHED;
     log_printf(10, "handle_manage: Sucessfully processed manage command\n");
@@ -1765,12 +1764,8 @@ int handle_write(ibp_task_t *task)
         w->iovec.vec[0].off = a->size;
         append_mode = 1;
     }
-//  if ( w->iovec.n == 1) {
     alog_append_write(task->myid, cmd->command, w->r->rl_index, apid, aid, w->iovec.vec[0].off,
                       w->iovec.vec[0].len);
-//  } else {
-//     alog_append_write_iovec(task->myid, cmd->command, w->r->rl_index, apid, aid, &(w->iovec));
-//  }
 
     //** Can only append if the alias allocation is for the whole allocation
     if ((append_mode == 1) && (alias_offset != 0) && (alias_len != 0)) {
@@ -1880,7 +1875,7 @@ int handle_write(ibp_task_t *task)
                 if (a->type == IBP_BYTEARRAY)
                     a->size = a->w_pos;
 
-                err = modify_allocation_resource(w->r, a->id, &a_final);
+                err = modify_allocation_resource(w->r, a->id, &a_final, 1);
                 if (err != 0) {
                     log_printf(10,
                                "handle_write:  ns=%d ERROR with modify_allocation_resource(%s, " LU
@@ -2337,7 +2332,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
         if (doff > (int64_t) temp_a.size) {
             temp_a.size = doff;
             temp_a.w_pos = doff;
-            err = modify_allocation_resource(dest_r, dest_a->id, &temp_a);
+            err = modify_allocation_resource(dest_r, dest_a->id, &temp_a, 1);
             if (err != 0) {
                 log_printf(10,
                            "same_depot_copy:  ns=%d ERROR with modify_allocation_resource(%s, " LU
@@ -2852,7 +2847,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
                 if (a->size > a_final.size) {
                     a_final.size = a->size;
 
-                    err = modify_allocation_resource(r->r, a->id, &a_final);
+                    err = modify_allocation_resource(r->r, a->id, &a_final, 1);
                     if (err != 0) {
                         log_printf(10,
                                    "handle_transfer:  ns=%d ERROR with modify_allocation_resource(%s, "

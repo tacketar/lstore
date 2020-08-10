@@ -48,7 +48,8 @@ int main(int argc, char **argv)
     int bufsize = 1024 * 1024;
     char buffer[bufsize];
     Allocation_t a;
-    Allocation_history_t h;
+    Allocation_history_t h_osd;
+    Allocation_history_db_t h;
     osd_off_t fpos, npos, bs, hbs, n, nblocks, start_block, end_block;
     int err, cs_type;
     int used, print_blocks, state;
@@ -132,7 +133,12 @@ int main(int argc, char **argv)
 
     //** Read the header and history
     err = osd_read(dev, afd, 0, sizeof(a), &a);
-    err = osd_read(dev, afd, sizeof(a), sizeof(h), &h);
+    err = osd_read(dev, afd, sizeof(a), sizeof(h_osd), &h_osd);
+
+    //** Map the history to the more generic DB version
+    h.n_read   = ALLOC_HISTORY;  h.read_ts   = h_osd.read_ts;
+    h.n_write  = ALLOC_HISTORY;  h.write_ts  = h_osd.write_ts;
+    h.n_manage = ALLOC_HISTORY;  h.manage_ts = h_osd.manage_ts;
 
     state = osd_get_state(dev, afd);
     osd_chksum_info(dev, 0, &cs_type, &hbs, &bs);       //** Get the chksum info if available

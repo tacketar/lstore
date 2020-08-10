@@ -21,6 +21,7 @@
 #define _DB_RESOURCE_H_
 
 #include "visibility.h"
+#include <leveldb/c.h>
 #include <db.h>
 #include <apr_thread_mutex.h>
 #include <apr_pools.h>
@@ -42,6 +43,11 @@ typedef struct {
     int local;
 } DB_env_t;
 
+typedef struct { //** Key for the history DB
+    osd_id_t id;
+    char type;
+    apr_time_t date;
+} db_history_key_t;
 
 typedef struct {                //Resource DB interface
     char *kgroup;               //Ini file group
@@ -51,6 +57,11 @@ typedef struct {                //Resource DB interface
     DB *soft;                   //Expiration is used as the key but only soft allocs are stored in it
     DB_env_t *env;
     DB_ENV *dbenv;              //Common DB enviroment to use
+    leveldb_t *history;         //History DB
+    leveldb_writeoptions_t *wopts; //Generic option for Write
+    leveldb_readoptions_t *ropts; //Generic option for Read
+    leveldb_options_t *opts;      //Generic option for open
+    leveldb_comparator_t *history_compare;  //History comparator
     apr_thread_mutex_t *mutex;  // Lock used for creates
     apr_pool_t *pool;           //** Memory pool
     int n_partitions;           //** Number of load balancing splits for keys
@@ -67,10 +78,10 @@ typedef struct {                //Container for cursor
 void dbr_lock(DB_resource_t *dbr);
 void dbr_unlock(DB_resource_t *dbr);
 int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr);
-int mkfs_db(DB_resource_t *dbr, char *loc, const char *kgroup, FILE *fd);
+int mkfs_db(DB_resource_t *dbr, char *loc, const char *kgroup, FILE *fd, int n_partitions);
 int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *dbenv, DB_resource_t *dbres);
 int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *dbenv,
-                     DB_resource_t *dbres, int wipe_clean);
+                     DB_resource_t *dbres, int wipe_clean, int n_partitions);
 int umount_db(DB_resource_t *dbres);
 IBPS_API DB_env_t *create_db_env(const char *loc, int db_mem, int run_recover);
 IBPS_API int close_db_env(DB_env_t *env);
@@ -97,4 +108,8 @@ DB_iterator_t *id_iterator(DB_resource_t *dbr);
 int set_expire_iterator(DB_iterator_t *dbi, ibp_time_t t, Allocation_t *a);
 int set_id_iterator(DB_iterator_t *dbi, osd_id_t i, Allocation_t *a);
 
+//** History Comparator routines
+int db_history_compare_op(void *arg, const char *a, size_t alen, const char *b, size_t blen);
+void db_history_compare_destroy(void *arg);
+const char *db_history_compare_name(void *arg);
 #endif
