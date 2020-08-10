@@ -90,7 +90,9 @@ IBP_API gop_op_generic_t *ibp_version_gop(ibp_context_t *ic, ibp_depot_t *depot,
 IBP_API void ibp_write_cc_set(ibp_context_t *ic, ibp_connect_context_t *cc);
 IBP_API gop_op_generic_t *ibp_write_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_off_t offset, tbx_tbuf_t *buffer, ibp_off_t boff, ibp_off_t len, int timeout);
 IBP_API void ibp_set_sync_context(ibp_context_t *ic);
-
+IBP_API gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap, int chksum_info_only,
+        int *cs_type, int *cs_size, ibp_off_t *blocksize, ibp_off_t *nblocks, ibp_off_t *n_chksumbytes, char *buffer, ibp_off_t bufsize,
+        int timeout);
 // Config accessor functions
 IBP_API int ibp_context_chksum_set(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
 IBP_API void ibp_context_chksum_get(ibp_context_t *ic, tbx_ns_chksum_t *ncs);

@@ -119,13 +119,6 @@ void finalize_ibp_op(ibp_op_t *iop);
 int ibp_op_status(ibp_op_t *op);
 int ibp_op_id(ibp_op_t *op);
 
-//** IBP_VALDIATE_CHKSUM
-
-//** IBP_GET_CHKSUM
-gop_op_generic_t *ibp_context_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap, int chksum_info_only,
-        int *cs_type, int *cs_size, ibp_off_t *blocksize, ibp_off_t *nblocks, ibp_off_t *n_chksumbytes, char *buffer, ibp_off_t bufsize,
-        int timeout);
-
 //** ibp_config.c **
 int ibp_rw_submit_coalesce(tbx_stack_t *stack, tbx_stack_ele_t *ele);
 int ibp_rw_coalesce(gop_op_generic_t *gop);

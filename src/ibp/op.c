@@ -494,13 +494,12 @@ gop_op_generic_t *ibp_validate_chksum_gop(ibp_context_t *ic, ibp_cap_t *mcap, in
     return(ibp_get_gop(op));
 }
 
-gop_op_generic_t *ibp_context_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap,
+gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap,
         int chksum_info_only, int *cs_type, int *cs_size, ibp_off_t *blocksize,
         ibp_off_t *nblocks, ibp_off_t *nbytes, char *buffer, ibp_off_t bufsize,
         int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
     ibp_op_get_chksum_t *cmd;

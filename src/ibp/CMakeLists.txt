@@ -60,6 +60,7 @@ set(LSTORE_PROJECT_INCLUDES
 set(LSTORE_PROJECT_EXECUTABLES
     ibp_copyperf
     ibp_perf
+    ibp_tool
 )
 
 # Common functionality is stored here
