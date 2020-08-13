@@ -3806,6 +3806,9 @@ void activity_log_close(activity_log_t *alog)
     if (alog->ns_map != NULL)
         free(alog->ns_map);
 
+    if (alog->rl_map != NULL)
+        free(alog->rl_map);
+
     fclose(alog->fd);
     free(alog->table);
     free(alog->name);
