@@ -162,7 +162,7 @@ int main(int argc, char **argv)
         }
     }
 
-    tbx_ns_close(ns);
+    tbx_ns_destroy(ns);
 
     printf("\n");
 
