@@ -461,7 +461,11 @@ void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
 
 void rebuild_add(Resource_t *r, rebuild_lut_t *d)
 {
-    if (!(d->found & REBUILD_FOUND_DB)) _put_alloc_db(&(r->db), &(d->a));
+    if (!(d->found & REBUILD_FOUND_DB)) {
+        _put_alloc_db(&(r->db), &(d->a), 0);
+    } else {
+        rebuild_add_expiration_db(&(r->db), &(d->a));
+    }
 
     alru_put(r, &(d->a)); //** and the LRU copy
 
@@ -483,7 +487,7 @@ void rebuild_modify(Resource_t *r, rebuild_lut_t *d, ibp_time_t new_expiration)
     //** BDB has the 2ndary indices coupled to the ID so this will remove the old expiration entries
     //** We'll have to change this for LevelDB/RockDB
     d->a.expiration = new_expiration;
-    if (d->found & REBUILD_FOUND_DB) modify_alloc_db(&(r->db), &(d->a));
+    if (d->found & REBUILD_FOUND_DB) modify_alloc_db(&(r->db), &(d->a), 0);
 
     if (r->update_alloc == 1) {
         write_allocation_header(r, &(d->a), 0);
@@ -1162,7 +1166,7 @@ int merge_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a)
         ma->max_size += a->max_size;
         if (r->update_alloc == 1)
             write_allocation_header(r, ma, 0);
-        err = modify_alloc_db(&(r->db), ma);
+        err = modify_alloc_db(&(r->db), ma, ma->expiration);
         alru_put(r, ma); //** Update the LRU copy
     }
     apr_thread_mutex_unlock(r->mutex);
@@ -1279,9 +1283,6 @@ int make_free_space_iterator(Resource_t *r, DB_iterator_t *dbi, ibp_off_t *nbyte
     finished = 0;
     do {
         if ((err = db_iterator_next(dbi, DB_NEXT, &a)) == 0) {
-            if (a.is_alias == 0)
-                err = read_allocation_header(r, a.id, &a);
-
             if (a.expiration < timestamp) {
                 if (nleft < (ibp_off_t) a.max_size) {   //** for alias allocations max_size == 0
                     nleft = 0;  //
@@ -1685,7 +1686,7 @@ int resource_undelete(Resource_t *r, int trash_type, const char *trash_id, ibp_t
         return (-2);
     }
     //** Add it to the DB
-    err = _put_alloc_db(&(r->db), &a);
+    err = _put_alloc_db(&(r->db), &a, 0);
     alru_put(r, &a); //** and the LRU copy
 
     //** Adjust the space
@@ -1744,7 +1745,7 @@ int split_allocation_resource(Resource_t *r, Allocation_t *ma, Allocation_t *a, 
         if (r->update_alloc == 1)
             write_allocation_header(r, ma, 0);
         alru_put(r, ma); //** Update the LRU copy
-        err = modify_alloc_db(&(r->db), ma);    //** Store the master back with updated size
+        err = modify_alloc_db(&(r->db), ma, ma->expiration);    //** Store the master back with updated size
     } else {                    //** Problem so undo size tweaks
         log_printf(15, "Error with _new_allocation!\n");
         r->used_space[ma->reliability] = r->used_space[ma->reliability] + size;
@@ -1808,6 +1809,9 @@ int get_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a)
 
     //** Not in the LRU so look it up
     err = get_alloc_with_id_db(&(r->db), id, a);
+
+    //** and add it to the LRU
+    if (err == 0) alru_put(r, a);
 
     return (err);
 }
@@ -1906,7 +1910,7 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a, int 
     //** Update the LRU entry
     alru_put(r, a);
 
-    return (modify_alloc_db(&(r->db), a));
+    return (modify_alloc_db(&(r->db), a, old_a.expiration));
 }
 
 //---------------------------------------------------------------------------
@@ -2189,10 +2193,6 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
             log_printf(10, "get_next_walk_expire_iterator: Error or end with next_hard: %d \n",
                        err);
             wei->hard_a.expiration = 0;
-        } else if (wei->hard_a.is_alias == 0) {
-            err = read_allocation_header(wei->r, wei->hard_a.id, &(wei->hard_a));
-            if (err != 0)
-                memset(&(wei->hard_a), 0, sizeof(wei->hard_a)); //** Flag the error
         }
 
         err = db_iterator_next(wei->soft, direction, &(wei->soft_a));
@@ -2200,10 +2200,6 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
             log_printf(10, "get_next_walk_expire_iterator: Error or end with next_soft: %d \n",
                        err);
             wei->soft_a.expiration = 0;
-        } else if (wei->soft_a.is_alias == 0) {
-            err = read_allocation_header(wei->r, wei->soft_a.id, &(wei->soft_a));
-            if (err != 0)
-                memset(&(wei->soft_a), 0, sizeof(wei->soft_a)); //** Flag the error
         }
     }
 
@@ -2221,10 +2217,6 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
                 log_printf(10, "get_next_walk_expire_iterator: Error or end with next_soft: %d \n",
                            err);
                 wei->soft_a.expiration = 0;
-            } else if (wei->soft_a.is_alias == 0) {
-                err = read_allocation_header(wei->r, wei->soft_a.id, &(wei->soft_a));
-                if (err != 0)
-                    memset(&(wei->soft_a), 0, sizeof(wei->soft_a));     //** Flag the error
             }
 
             log_printf(15, "get_next_walk_expire_iterator: 1 expire= %u\n", a->expiration);
@@ -2237,15 +2229,12 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
             log_printf(10, "get_next_walk_expire_iterator: Error or end with next_hard: %d \n",
                        err);
             wei->hard_a.expiration = 0;
-        } else if (wei->hard_a.is_alias == 0) {
-            err = read_allocation_header(wei->r, wei->hard_a.id, &(wei->hard_a));
-            if (err != 0)
-                memset(&(wei->hard_a), 0, sizeof(wei->hard_a)); //** Flag the error
         }
 
         log_printf(15, "get_next_walk_expire_iterator: 2 expire= %u\n", a->expiration);
         return (0);
     }
+
     //** If I make it here that means both the hard and soft allocations are valid
 
     //** Fancy way to unify DBR_PREV/DBR_NEXT into a single set **
@@ -2261,10 +2250,6 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
             log_printf(10, "get_next_walk_expire_iterator: Error or end with next_soft: %d \n",
                        err);
             wei->soft_a.expiration = 0;
-        } else if (wei->soft_a.is_alias == 0) {
-            err = read_allocation_header(wei->r, wei->soft_a.id, &(wei->soft_a));
-            if (err != 0)
-                memset(&(wei->soft_a), 0, sizeof(wei->soft_a)); //** Flag the error
         }
     } else {                    //** hard < soft so return the hard a
         *a = wei->hard_a;
@@ -2273,10 +2258,6 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
             log_printf(10, "get_next_walk_expire_iterator: Error or end with next_hard: %d \n",
                        err);
             wei->hard_a.expiration = 0;
-        } else if (wei->hard_a.is_alias == 0) {
-            err = read_allocation_header(wei->r, wei->hard_a.id, &(wei->hard_a));
-            if (err != 0)
-                memset(&(wei->hard_a), 0, sizeof(wei->hard_a)); //** Flag the error
         }
     }
 

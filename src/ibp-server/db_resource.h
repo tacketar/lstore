@@ -53,8 +53,8 @@ typedef struct {                //Resource DB interface
     char *kgroup;               //Ini file group
     char *loc;                  //Directory with all the DB's in it
     DB *pdb;                    //Primary DB (key=object id)
-    DB *expire;                 //DB with expiration as the key
-    DB *soft;                   //Expiration is used as the key but only soft allocs are stored in it
+    leveldb_t *expire;          //DB with expiration as the key
+    leveldb_t *soft;            //Expiration is used as the key but only soft allocs are stored in it
     DB_env_t *env;
     DB_ENV *dbenv;              //Common DB enviroment to use
     leveldb_t *history;         //History DB
@@ -62,6 +62,8 @@ typedef struct {                //Resource DB interface
     leveldb_readoptions_t *ropts; //Generic option for Read
     leveldb_options_t *opts;      //Generic option for open
     leveldb_comparator_t *history_compare;  //History comparator
+    leveldb_comparator_t *expire_compare;   //Expiriration comparator
+    leveldb_comparator_t *soft_compare;     //Soft expireation comparator
     apr_thread_mutex_t *mutex;  // Lock used for creates
     apr_pool_t *pool;           //** Memory pool
     int n_partitions;           //** Number of load balancing splits for keys
@@ -71,6 +73,7 @@ typedef struct {                //Container for cursor
     DBC *cursor;
     DB_TXN *transaction;
     DB_resource_t *dbr;
+    leveldb_iterator_t *it;
     int db_index;
     int id;
 } DB_iterator_t;
@@ -89,14 +92,15 @@ int print_db(DB_resource_t *db, FILE *fd);
 int get_num_allocations_db(DB_resource_t *db);
 int get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc);
 int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc);
-int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a);
-int put_alloc_db(DB_resource_t *dbr, Allocation_t *alloc);
+int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration);
+int put_alloc_db(DB_resource_t *dbr, Allocation_t *alloc, uint32_t old_expiration);
 int remove_id_only_db(DB_resource_t *dbr, osd_id_t id);
 int remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc);
 int remove_alloc_iter_db(DB_iterator_t *it);
 int modify_alloc_iter_db(DB_iterator_t *it, Allocation_t *a);
-int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a);
+int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration);
 int create_alloc_db(DB_resource_t *dbr, Allocation_t *alloc);
+int rebuild_add_expiration_db(DB_resource_t *dbr, Allocation_t *a);
 
 //DB_iterator_t *db_iterator_begin(DB *db);
 int _id_iter_put_alloc_db(DB_iterator_t *it, Allocation_t *a);

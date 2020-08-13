@@ -464,7 +464,6 @@ int handle_internal_get_alloc(ibp_task_t *task)
     }
 
     err = get_history_table(res, a.id, &h);
-
     if (err != 0) {
         log_printf(10, "handle_internal_get_alloc: Cant read the history! rid=%s ns=%d\n",
                    res->name, tbx_ns_getid(task->ns));

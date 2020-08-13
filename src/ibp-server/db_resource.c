@@ -63,19 +63,6 @@ apr_thread_mutex_t *dbr_mutex = NULL;   //** Only used if testing a common lock
     txn->abort(txn);             \
   }
 
-//***************************************************************************
-// fill_timekey - Fills a DB_timekey_t strcuture
-//***************************************************************************
-
-DB_timekey_t *fill_timekey(DB_timekey_t *tk, ibp_time_t t, osd_id_t id)
-{
-    memset(tk, 0, sizeof(DB_timekey_t));
-
-    tk->time = t;
-    tk->id = id;
-
-    return (tk);
-}
 
 //***************************************************************************
 //  dbr_lock - Locks the DB
@@ -96,78 +83,114 @@ void dbr_unlock(DB_resource_t *dbr)
 }
 
 //***************************************************************************
-// get_expire_key - Returns the expire key for the 2ndary DB
+// fill_timekey - Fills a DB_timekey_t strcuture
 //***************************************************************************
 
-int get_expire_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey)
+const char *fill_timekey(DB_timekey_t *tk, ibp_time_t t, osd_id_t id)
 {
-    Allocation_t *a = (Allocation_t *) pdata->data;
+    memset(tk, 0, sizeof(DB_timekey_t));
 
-//   return(DB_DONOTINDEX);
+    tk->time = t;
+    tk->id = id;
 
-    memset(skey, 0, sizeof(DBT));
-    skey->data = &(a->expirekey);
-    skey->size = sizeof(DB_timekey_t);
-
-//apr_time_t t = ibp2apr_time(a->expirekey.time);
-//log_printf(10, "get_expire_key: key=" LU " * " TT "\n", a->expirekey.id, t);
-
-    return (0);
+    return ((const char *)tk);
 }
 
-//***************************************************************************
-// get_soft_key - Returns the expire key for the 2ndary DB
-//***************************************************************************
+//****************************************************************************
+// db_expire_comparator - these are the comparator routines
+//****************************************************************************
 
-int get_soft_key(DB *sdb, const DBT *pkey, const DBT *pdata, DBT *skey)
+int db_expire_compare_op(void *arg, const char *a, size_t alen, const char *b, size_t blen)
 {
-    Allocation_t *a = (Allocation_t *) pdata->data;
+    DB_timekey_t *akey = (DB_timekey_t *)a;
+    DB_timekey_t *bkey = (DB_timekey_t *)b;
 
-    memset(skey, 0, sizeof(DBT));
 
-    if (a->reliability == ALLOC_SOFT) {
-        skey->data = &(a->softkey);
-        skey->size = sizeof(DB_timekey_t);
-        return (0);
-    } else {
-//log_printf(10, "get_soft_key: NOT indexed\n");
-        return (DB_DONOTINDEX);
+    //** Types are the same so compare based on the time
+    if (akey->time > bkey->time) {
+        return(1);
+    } else if (akey->time < bkey->time) {
+        return(-1);
     }
+
+    //** If made it here then the times are the same so sort by the ID
+    if (akey->id > bkey->id) {
+        return(1);
+    } else if (akey->id < bkey->id) {
+        return(-1);
+    }
+
+    //** If made it here then the keys are identical
+    return(0);
 }
 
-//***************************************************************************
-// compare_expiration - Compares the expiration of 2 times for BTREE sorting
-//***************************************************************************
+//****************************************************************************
 
-#if (DB_VERSION_MAJOR > 5)
-int compare_expiration(DB *db, const DBT *k1, const DBT *k2, size_t *locp)
-#else
-int compare_expiration(DB *db, const DBT *k1, const DBT *k2)
-#endif
+void db_expire_compare_destroy(void *arg) { return; }
+const char *db_expire_compare_name(void *arg) { return("expire"); }
+
+
+//*************************************************************************
+// update_expiresoft_db - Updates the expiration entry for the DB
+//*************************************************************************
+
+char *update_expiresoft_db(leveldb_t *db, leveldb_writeoptions_t *opts, osd_id_t id, uint32_t new_time, uint32_t old_time)
 {
-    DB_timekey_t tk1, tk2;
+    DB_timekey_t key;
+    char *errstr = NULL;
 
-    memcpy(&tk1, k1->data, sizeof(DB_timekey_t));
-    memcpy(&tk2, k2->data, sizeof(DB_timekey_t));
+    //** Delete the old key if needed
+    if ((old_time > 0) && (old_time != new_time)) {
+        leveldb_delete(db, opts, fill_timekey(&key, old_time, id), sizeof(key), &errstr);
+        if (errstr != NULL) { free(errstr); errstr = NULL; }
+    }
 
+    //** Add the entry
+    leveldb_put(db, opts, fill_timekey(&key, new_time, id), sizeof(key), (const char *)NULL, 0, &errstr);
 
-//   log_printf(15, "compare_expiration: k1=" LU " * " TT " --- k2= " LU " * " TT "\n",
-//        tk1.id, tk1.time, tk2.id, tk2.time);
+    return(errstr);
+}
 
-    if (tk1.time < tk2.time) {
-        return (-1);
-    } else if (tk1.time == tk2.time) {
-        if (tk1.id < tk2.id) {
-            return (-1);
-        } else if (tk1.id == tk2.id) {
-            return (0);
-        } else {
-            return (1);
+//*************************************************************************
+// create_expiresoft_db - Creates  a LevelDB database using the given path
+//*************************************************************************
+
+leveldb_t *create_expiresoft_db(char *db_path, leveldb_comparator_t *cmp)
+{
+    leveldb_t *db;
+    leveldb_options_t *opt_exists, *opt_create, *opt_none;
+    char *errstr = NULL;
+
+    opt_exists = leveldb_options_create(); leveldb_options_set_error_if_exists(opt_exists, 1);
+    opt_create = leveldb_options_create(); leveldb_options_set_create_if_missing(opt_create, 1);
+    leveldb_options_set_comparator(opt_create, cmp);
+    opt_none = leveldb_options_create();
+
+    db = leveldb_open(opt_exists, db_path, &errstr);
+    if (errstr != NULL) {  //** It already exists so need to remove it first
+        free(errstr);
+        errstr = NULL;
+
+        //** Remove it
+        leveldb_destroy_db(opt_none, db_path, &errstr);
+        if (errstr != NULL) {  //** Got an error so just kick out
+            fprintf(stderr, "ERROR: Failed removing %s for fresh DB. ERROR:%s\n", db_path, errstr);
+            exit(1);
         }
-    } else {
-        return (1);
+
+        //** Try opening it again
+        db = leveldb_open(opt_create, db_path, &errstr);
+        if (errstr != NULL) {  //** An ERror occured
+            fprintf(stderr, "ERROR: Failed creating %s. ERROR:%s\n", db_path, errstr);
+            exit(1);
+        }
     }
 
+    leveldb_options_destroy(opt_none);
+    leveldb_options_destroy(opt_exists);
+    leveldb_options_destroy(opt_create);
+
+    return(db);
 }
 
 //***************************************************************************
@@ -221,11 +244,12 @@ int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr)
 
 int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n_partitions)
 {
-    u_int32_t flags, bflags;
+    u_int32_t flags;
     int err;
     char fname[2048];
     char buffer[10 * 1024];
     int used;
+    char *errstr = NULL;
 
     if (strlen(loc) > 2000) {
         printf("mkfs_db:  Need to increase fname size.  strlen(loc)=" ST "\n", strlen(loc));
@@ -233,7 +257,6 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     }
 
     flags = DB_CREATE | DB_THREAD;
-    bflags = flags;
 
     dbres->n_partitions = n_partitions;
 
@@ -247,29 +270,27 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
         printf("mkfs_db: %s\n", db_strerror(err));
         abort();
     }
-    //*** Create/Open DB containing the expirationss ***
-    assert_result(db_create(&(dbres->expire), NULL, 0), 0);
-    assert_result(dbres->expire->set_bt_compare(dbres->expire, compare_expiration), 0);
-    snprintf(fname, sizeof(fname), "%s/expire.db", loc);
-    remove(fname);
-    if ((err = dbres->expire->open(dbres->expire, NULL, fname, NULL, DB_BTREE, bflags, 0)) != 0) {
-        printf("mkfs_db: Can't create expire DB: %s\n", fname);
-        printf("mkfs_db: %s\n", db_strerror(err));
+
+    //*** Make the expire and soft DBs.  These are always a full wipe
+    dbres->expire_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+        db_expire_compare_op, db_expire_compare_name);
+    snprintf(fname, sizeof(fname), "%s/history", loc);
+    dbres->expire = create_expiresoft_db(fname, dbres->expire_compare);
+    if (dbres->expire != NULL) {
+        printf("mkfs_db: Error creating expire DB: %s\n", fname);
         abort();
     }
-    //*** Create/Open DB containing the soft allocations ***
-    assert_result(db_create(&(dbres->soft), NULL, 0), 0);
-    assert_result(dbres->soft->set_bt_compare(dbres->soft, compare_expiration), 0);
-    snprintf(fname, sizeof(fname), "%s/soft.db", loc);
-    remove(fname);
-    if ((err = dbres->soft->open(dbres->soft, NULL, fname, NULL, DB_BTREE, bflags, 0)) != 0) {
-        printf("mkfs_db: Can't create soft DB: %s\n", fname);
-        printf("mkfs_db: %s\n", db_strerror(err));
+
+    dbres->soft_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+        db_expire_compare_op, db_expire_compare_name);
+    snprintf(fname, sizeof(fname), "%s/soft", loc);
+    dbres->soft = create_expiresoft_db(fname, dbres->expire_compare);
+    if (dbres->expire != NULL) {
+        printf("mkfs_db: Error creating soft DB: %s\n", fname);
         abort();
     }
 
     //** And the history DB
-    char *errstr = NULL;
     dbres->opts = leveldb_options_create();
     leveldb_options_set_create_if_missing(dbres->opts, 1);
     dbres->history_compare = leveldb_comparator_create(dbres, db_history_compare_destroy,
@@ -314,8 +335,6 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
 {
     char fname[2048];
     u_int32_t flags;
-    int err;
-    DB *db = NULL;
     DB_env_t *lenv;
 
     //** Get the directory containing everything **
@@ -360,34 +379,22 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *env,
         abort();
     }
 
-    //*** Create/Open DB containing the expirations ***
-    assert_result(db_create(&db, dbres->dbenv, 0), 0);
-    dbres->expire = db;
-    assert_result(db->set_bt_compare(db, compare_expiration), 0);
-    snprintf(fname, sizeof(fname), "%s/expire.db", dbres->loc);
-    if (wipe_clean) remove(fname);
-    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
-        printf("mount_db: Can't open expire DB: %s\n", fname);
-        printf("mount_db: %s\n", db_strerror(err));
+    //*** Make the expire and soft DBs.  These are always a full wipe
+    dbres->expire_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+        db_expire_compare_op, db_expire_compare_name);
+    snprintf(fname, sizeof(fname), "%s/expire", dbres->loc);
+    dbres->expire = create_expiresoft_db(fname, dbres->expire_compare);
+    if (dbres->expire == NULL) {
+        printf("mount_db: Error creating expire DB: %s\n", fname);
         abort();
     }
-    if (dbres->pdb->associate(dbres->pdb, NULL, db, get_expire_key, 0) != 0) {
-        printf("mount_db: Can't associate expire DB: %s\n", fname);
-        abort();
-    }
-    //*** Create/Open DB containing the soft allocations ***
-    assert_result(db_create(&db, dbres->dbenv, 0), 0);
-    dbres->soft = db;
-    assert_result(db->set_bt_compare(db, compare_expiration), 0);
-    snprintf(fname, sizeof(fname), "%s/soft.db", dbres->loc);
-    if (wipe_clean) remove(fname);
-    if ((err = db->open(db, NULL, fname, NULL, DB_BTREE, flags, 0)) != 0) {
-        printf("mount_db: Can't open soft DB: %s\n", fname);
-        printf("mount_db: %s\n", db_strerror(err));
-        abort();
-    }
-    if (dbres->pdb->associate(dbres->pdb, NULL, db, get_soft_key, 0) != 0) {
-        printf("mount_db: Can't associate soft DB: %s\n", fname);
+
+    dbres->soft_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+        db_expire_compare_op, db_expire_compare_name);
+    snprintf(fname, sizeof(fname), "%s/soft", dbres->loc);
+    dbres->soft = create_expiresoft_db(fname, dbres->expire_compare);
+    if (dbres->expire == NULL) {
+        printf("mount_db: Error creating soft DB: %s\n", fname);
         abort();
     }
 
@@ -428,16 +435,6 @@ int umount_db(DB_resource_t *dbres)
 
     err = 0;
 
-    val = dbres->expire->close(dbres->expire, 0);
-    if (val != 0) {
-        err++;
-        log_printf(0, "ERROR closing expire DB err=%d\n", val);
-    }
-    val = dbres->soft->close(dbres->soft, 0);
-    if (val != 0) {
-        err++;
-        log_printf(0, "ERROR closing soft DB err=%d\n", val);
-    }
     val = dbres->pdb->close(dbres->pdb, 0);
     if (val != 0) {
         err++;
@@ -454,8 +451,12 @@ int umount_db(DB_resource_t *dbres)
         }
     }
 
+    leveldb_close(dbres->expire);
+    leveldb_close(dbres->soft);
     leveldb_close(dbres->history);
 
+    leveldb_comparator_destroy(dbres->expire_compare);
+    leveldb_comparator_destroy(dbres->soft_compare);
     leveldb_comparator_destroy(dbres->history_compare);
     leveldb_writeoptions_destroy(dbres->wopts);
     leveldb_readoptions_destroy(dbres->ropts);
@@ -652,7 +653,7 @@ int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
     memset(&data, 0, sizeof(DBT));
 
     key.data = &id;
-    key.size = sizeof(osd_id_t);
+    key.ulen = sizeof(osd_id_t);
     key.flags = DB_DBT_USERMEM;
 
     data.data = alloc;
@@ -681,15 +682,40 @@ int get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
 }
 
 //***************************************************************************
+// rebuild_add_expiration_db - Adds the expiration index
+//***************************************************************************
+
+int rebuild_add_expiration_db(DB_resource_t *dbr, Allocation_t *a)
+{
+    char *errstr;
+
+    errstr = update_expiresoft_db(dbr->expire, dbr->wopts, a->id, a->expiration, 0);
+    if (errstr) {
+        log_printf(1, "ERROR: Failed updating expiration: id=" LU " error: %s\n", a->id, errstr);
+        free(errstr);
+    }
+
+    if (a->reliability == ALLOC_SOFT) {
+        errstr = update_expiresoft_db(dbr->soft, dbr->wopts, a->id, a->expiration, 0);
+        if (errstr) {
+            log_printf(1, "ERROR: Failed updating soft expiration: id=" LU " error: %s\n", a->id, errstr);
+            free(errstr);
+        }
+    }
+
+    return(0);
+}
+
+//***************************************************************************
 // _put_alloc_db - Stores the allocation in the DB
 //    Internal routine that performs no locking
 //***************************************************************************
 
-int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a)
+int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
 {
     int err;
+    char *errstr;
     DBT key, data;
-
 
     fill_timekey(&(a->expirekey), a->expiration, a->id);
     if (a->reliability == ALLOC_SOFT)
@@ -704,12 +730,29 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a)
     data.data = a;
     data.size = sizeof(Allocation_t);
 
-//db_txn("_put_alloc_db", err);
+    //** Update the DB
     if ((err = dbr->pdb->put(dbr->pdb, NULL, &key, &data, 0)) != 0) {
         log_printf(10, "put_alloc_db: Error storing primary key: %d id=" LU "\n", err, a->id);
         return (err);
     }
-//db_commit("_put_alloc_db", err)
+
+    //** And the expiration
+    if (a->expiration != old_expiration) {
+        errstr = update_expiresoft_db(dbr->expire, dbr->wopts, a->id, a->expiration, old_expiration);
+        if (errstr) {
+            log_printf(1, "ERROR: Failed updating expiration: id=" LU " error: %s\n", a->id, errstr);
+            free(errstr);
+        }
+
+        if (a->reliability == ALLOC_SOFT) {
+            errstr = update_expiresoft_db(dbr->soft, dbr->wopts, a->id, a->expiration, old_expiration);
+            if (errstr) {
+                log_printf(1, "ERROR: Failed updating soft expiration: id=" LU " error: %s\n", a->id, errstr);
+                free(errstr);
+            }
+
+        }
+    }
 
     apr_time_t t = ibp2apr_time(a->expiration);
     log_printf(10,
@@ -724,12 +767,12 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a)
 // put_alloc_db - Stores the allocation in the DB
 //***************************************************************************
 
-int put_alloc_db(DB_resource_t *dbr, Allocation_t *a)
+int put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
 {
     int err;
 
     dbr_lock(dbr);
-    err = _put_alloc_db(dbr, a);
+    err = _put_alloc_db(dbr, a, old_expiration);
     dbr_unlock(dbr);
 
     return (err);
@@ -788,6 +831,8 @@ int _remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc)
 {
     DBT key;
     int err;
+    char *errstr;
+    DB_timekey_t tkey;
 
     memset(&key, 0, sizeof(DBT));
     key.data = &(alloc->id);
@@ -798,6 +843,14 @@ int _remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc)
         log_printf(0, "remove_alloc_db: %s\n", db_strerror(err));
     }
 
+    errstr = NULL;
+    leveldb_delete(dbr->expire, dbr->wopts, fill_timekey(&tkey, alloc->expiration, alloc->id), sizeof(tkey), &errstr);
+    if (errstr != NULL) { free(errstr); errstr = NULL; }
+    if (alloc->reliability == ALLOC_SOFT) {
+        errstr = NULL;
+        leveldb_delete(dbr->soft, dbr->wopts, (const char *)&tkey, sizeof(tkey), &errstr);
+        if (errstr != NULL) { free(errstr); errstr = NULL; }
+    }
     return (err);
 }
 
@@ -820,9 +873,9 @@ int remove_alloc_db(DB_resource_t *dbr, Allocation_t *a)
 // modify_alloc_record_db - Stores the modified allocation in the DB
 //***************************************************************************
 
-int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a)
+int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
 {
-    return (put_alloc_db(dbr, a));
+    return (put_alloc_db(dbr, a, old_expiration));
 }
 
 //***************************************************************************
@@ -851,7 +904,7 @@ int create_alloc_db(DB_resource_t *dbr, Allocation_t *a)
         a->caps[i].v[CAP_SIZE] = '\0';
     }
 
-    if ((err = _put_alloc_db(dbr, a)) != 0) {   //** Now store it in the DB
+    if ((err = _put_alloc_db(dbr, a, 0)) != 0) {   //** Now store it in the DB
         log_printf(0, "create_alloc_db:  Error in DB put - %s\n", db_strerror(err));
     }
 
@@ -868,8 +921,6 @@ DB_iterator_t *db_iterator_begin(DB_resource_t *dbr, DB *db, DB_ENV *dbenv, int 
 {
     DB_iterator_t *it;
     int err;
-
-//   dbr_lock(dbr);
 
     tbx_type_malloc_clear(it, DB_iterator_t, 1);
     err = dbenv->txn_begin(dbenv, NULL, &(it->transaction), 0);
@@ -906,9 +957,13 @@ int db_iterator_end(DB_iterator_t *it)
 
     debug_printf(10, "db_iterator_end:  id=%d\n", it->id);
 
-    it->cursor->c_close(it->cursor);
+    if (it->it) {
+        leveldb_iter_destroy(it->it);
+        free(it);
+        return(0);
+    }
 
-//  dbr_unlock(it->dbr);
+    it->cursor->c_close(it->cursor);
 
     err = it->transaction->commit(it->transaction, DB_TXN_SYNC);
     if (err != 0) {
@@ -938,7 +993,8 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
     DBT key, data;
     int err;
     osd_id_t id;
-    DB_timekey_t tkey;
+    DB_timekey_t *tkey;
+    size_t nbytes;
 
     err = -1234;
 
@@ -958,25 +1014,26 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
 
         err = it->cursor->get(it->cursor, &key, &data, direction);      //** Read the 1st
         if (err != 0) {
-            log_printf(10, "db_iterator_next: key_index=%d err = %s\n", it->db_index,
+            log_printf(10, "key_index=%d err = %s\n", it->db_index,
                        db_strerror(err));
         }
         return (err);
         break;
     case DB_INDEX_EXPIRE:
     case DB_INDEX_SOFT:
-        key.data = &tkey;
-        key.ulen = sizeof(tkey);
+        //** Kick out  if reached the end
+        if (leveldb_iter_valid(it->it) == 0) return(1);
 
-        err = it->cursor->get(it->cursor, &key, &data, direction);      //** Read the 1st
-        if (err != 0) {
-            log_printf(10, "db_iterator_next: key_index=%d err = %s\n", it->db_index,
-                       db_strerror(err));
-            return (err);
-        }
+        nbytes = 0;
+        tkey = (DB_timekey_t *)leveldb_iter_key(it->it, &nbytes);
+        if (nbytes == 0) return(1);
+
+        id = tkey->id;  //** Preserve the ID because the next call changes the contents
+        leveldb_iter_next(it->it);
+        return(_get_alloc_with_id_db(it->dbr, id, a));  //** The iterator already holds the lock.
         break;
     default:
-        log_printf(0, "db_iterator_next:  Invalid key_index!  key_index=%d\n", it->db_index);
+        log_printf(0, "Invalid key_index!  key_index=%d\n", it->db_index);
         return (-1);
     }
 
@@ -991,7 +1048,17 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
 
 DB_iterator_t *expire_iterator(DB_resource_t *dbr)
 {
-    return (db_iterator_begin(dbr, dbr->expire, dbr->dbenv, DB_INDEX_EXPIRE));
+    DB_iterator_t *it;
+    DB_timekey_t key;
+
+    tbx_type_malloc_clear(it, DB_iterator_t, 1);
+    it->id = rand();
+    it->db_index = DB_INDEX_EXPIRE;
+    it->dbr = dbr;
+    it->it = leveldb_create_iterator(dbr->expire, dbr->ropts);
+    leveldb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
+
+    return(it);
 }
 
 //***************************************************************************
@@ -1001,7 +1068,17 @@ DB_iterator_t *expire_iterator(DB_resource_t *dbr)
 
 DB_iterator_t *soft_iterator(DB_resource_t *dbr)
 {
-    return (db_iterator_begin(dbr, dbr->soft, dbr->dbenv, DB_INDEX_SOFT));
+    DB_iterator_t *it;
+    DB_timekey_t key;
+
+    tbx_type_malloc_clear(it, DB_iterator_t, 1);
+    it->id = rand();
+    it->db_index = DB_INDEX_SOFT;
+    it->dbr = dbr;
+    it->it = leveldb_create_iterator(dbr->soft, dbr->ropts);
+    leveldb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
+
+    return(it);
 }
 
 //***************************************************************************
@@ -1047,26 +1124,9 @@ int set_id_iterator(DB_iterator_t *dbi, osd_id_t id, Allocation_t *a)
 
 int set_expire_iterator(DB_iterator_t *dbi, ibp_time_t t, Allocation_t *a)
 {
-    int err;
-    DB_timekey_t tk;
-    DBT key, data;
+    DB_timekey_t key;
 
-    memset(&key, 0, sizeof(DBT));
-    memset(&data, 0, sizeof(DBT));
-
-    key.flags = DB_DBT_USERMEM;
-    data.flags = DB_DBT_USERMEM;
-
-    key.ulen = sizeof(DB_timekey_t);
-    key.data = fill_timekey(&tk, t, 0);
-    data.ulen = sizeof(Allocation_t);
-    data.data = a;
-
-    if ((err = dbi->cursor->get(dbi->cursor, &key, &data, DB_SET_RANGE)) != 0) {
-        log_printf(5, "set_expire_iterator: Error with get!  time=" TT " * error=%d\n",
-                   ibp2apr_time(t), err);
-        return (err);
-    }
+    leveldb_iter_seek(dbi->it, fill_timekey(&key, t, a->id), sizeof(key));
 
     log_printf(15, "set_expire_iterator: t=" TT " id=" LU "\n", ibp2apr_time(t), a->id);
 
