@@ -3296,8 +3296,8 @@ int handle_internal_mount(ibp_task_t *task)
     //** NOTE: read_internal_mount verified the RID isn't mounted.
     tbx_type_malloc(r, Resource_t, 1);
 
-    err = mount_resource(r, keyfile, sgrp, global_config->dbenv,
-                         arg->force_rebuild, global_config->server.lazy_allocate,
+    err = mount_resource(r, keyfile, sgrp, arg->force_rebuild,
+                         global_config->server.lazy_allocate,
                          global_config->truncate_expiration);
 
     tbx_inip_destroy(keyfile);

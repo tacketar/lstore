@@ -35,7 +35,6 @@
 //***** This is just used in the parallel mounting of the resources ****
 typedef struct {
     apr_thread_t *thread_id;
-    DB_env_t *dbenv;
     tbx_inip_file_t *keyfile;
     char *group;
     int force_resource_rebuild;
@@ -52,7 +51,7 @@ void *parallel_mount_resource(apr_thread_t *th, void *data)
 
     tbx_type_malloc_clear(r, Resource_t, 1);
 
-    int err = mount_resource(r, pm->keyfile, pm->group, pm->dbenv,
+    int err = mount_resource(r, pm->keyfile, pm->group,
                              pm->force_resource_rebuild, global_config->server.lazy_allocate,
                              global_config->truncate_expiration);
 
@@ -351,7 +350,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
     server->rid_eject_script = NULL;
     server->rid_eject_tmp_path = "/tmp";
 
-    cfg->dbenv_loc = "/tmp/ibp_dbenv";
     cfg->db_mem = 256;
     cfg->force_resource_rebuild = force_rebuild;
     cfg->truncate_expiration = 0;
@@ -427,7 +425,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
     server->return_cap_id =
         tbx_inip_get_integer(keyfile, "server", "return_cap_id", server->return_cap_id);
 
-    cfg->dbenv_loc = tbx_inip_get_string(keyfile, "server", "db_env_loc", cfg->dbenv_loc);
     cfg->db_mem = tbx_inip_get_integer(keyfile, "server", "db_mem", cfg->db_mem);
 
     server->alog_name = tbx_inip_get_string(keyfile, "server", "activity_file", server->alog_name);
@@ -469,7 +466,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
     // *** Now iterate through each resource which is assumed to be all groups beginning with "resource" ***
     apr_pool_t *mount_pool;
     apr_pool_create(&mount_pool, NULL);
-    cfg->dbenv = create_db_env(cfg->dbenv_loc, cfg->db_mem, cfg->force_resource_rebuild);
     k = tbx_inip_group_count(keyfile);
     tbx_type_malloc_clear(pmarray, pMount_t, k - 1);
     tbx_inip_group_t *igrp = tbx_inip_group_first(keyfile);
@@ -480,7 +476,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
             pm = &(pmarray[val]);
             pm->keyfile = keyfile;
             pm->group = strdup(str);
-            pm->dbenv = cfg->dbenv;
             pm->force_resource_rebuild = cfg->force_resource_rebuild;
 
             apr_thread_create(&(pm->thread_id), NULL, parallel_mount_resource, (void *) pm,
@@ -525,7 +520,6 @@ void cleanup_config(Config_t *cfg)
     free(server->password);
     free(server->logfile);
     free(server->default_acl);
-    free(cfg->dbenv_loc);
     free(server->rid_log);
 
     for (i = 0; i < server->n_iface; i++) {
@@ -576,11 +570,6 @@ int ibp_shutdown(Config_t *cfg)
         free(r);
     }
     resource_list_iterator_destroy(cfg->rl, &it);
-
-    //** Now clsoe the DB environment **
-    if ((err = close_db_env(cfg->dbenv)) != 0) {
-        log_printf(0, "ibp_server: Error closing DB envirnment!  Err=%d\n", err);
-    }
 
     return (0);
 }

@@ -22,7 +22,6 @@
 
 #include "visibility.h"
 #include <leveldb/c.h>
-#include <db.h>
 #include <apr_thread_mutex.h>
 #include <apr_pools.h>
 #include "allocation.h"
@@ -30,18 +29,12 @@
 #include "ibp_time.h"
 
 #define DBR_TYPE_DB "db"
-#define DBR_NEXT DB_NEXT
-#define DBR_PREV DB_PREV
+#define DBR_NEXT 1
+#define DBR_PREV -1
 
 #define DBR_ITER_INIT   0
 #define DBR_ITER_BUFFER 1
 #define DBR_ITER_EMPTY  2
-
-typedef struct {
-    DB_ENV *dbenv;
-    size_t max_size;
-    int local;
-} DB_env_t;
 
 typedef struct { //** Key for the history DB
     osd_id_t id;
@@ -52,15 +45,13 @@ typedef struct { //** Key for the history DB
 typedef struct {                //Resource DB interface
     char *kgroup;               //Ini file group
     char *loc;                  //Directory with all the DB's in it
-    DB *pdb;                    //Primary DB (key=object id)
+    leveldb_t *pdb;             //Primary DB (key=Object ID)
     leveldb_t *expire;          //DB with expiration as the key
     leveldb_t *soft;            //Expiration is used as the key but only soft allocs are stored in it
-    DB_env_t *env;
-    DB_ENV *dbenv;              //Common DB enviroment to use
     leveldb_t *history;         //History DB
     leveldb_writeoptions_t *wopts; //Generic option for Write
     leveldb_readoptions_t *ropts; //Generic option for Read
-    leveldb_options_t *opts;      //Generic option for open
+    leveldb_comparator_t *id_compare;  //History comparator
     leveldb_comparator_t *history_compare;  //History comparator
     leveldb_comparator_t *expire_compare;   //Expiriration comparator
     leveldb_comparator_t *soft_compare;     //Soft expireation comparator
@@ -70,8 +61,6 @@ typedef struct {                //Resource DB interface
 } DB_resource_t;
 
 typedef struct {                //Container for cursor
-    DBC *cursor;
-    DB_TXN *transaction;
     DB_resource_t *dbr;
     leveldb_iterator_t *it;
     int db_index;
@@ -82,12 +71,10 @@ void dbr_lock(DB_resource_t *dbr);
 void dbr_unlock(DB_resource_t *dbr);
 int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr);
 int mkfs_db(DB_resource_t *dbr, char *loc, const char *kgroup, FILE *fd, int n_partitions);
-int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *dbenv, DB_resource_t *dbres);
-int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup, DB_env_t *dbenv,
+int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_resource_t *dbres);
+int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
                      DB_resource_t *dbres, int wipe_clean, int n_partitions);
 int umount_db(DB_resource_t *dbres);
-IBPS_API DB_env_t *create_db_env(const char *loc, int db_mem, int run_recover);
-IBPS_API int close_db_env(DB_env_t *env);
 int print_db(DB_resource_t *db, FILE *fd);
 int get_num_allocations_db(DB_resource_t *db);
 int get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc);
@@ -96,13 +83,11 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration);
 int put_alloc_db(DB_resource_t *dbr, Allocation_t *alloc, uint32_t old_expiration);
 int remove_id_only_db(DB_resource_t *dbr, osd_id_t id);
 int remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc);
-int remove_alloc_iter_db(DB_iterator_t *it);
-int modify_alloc_iter_db(DB_iterator_t *it, Allocation_t *a);
+int remove_alloc_iter_db(DB_iterator_t *it, Allocation_t *a);
 int modify_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration);
 int create_alloc_db(DB_resource_t *dbr, Allocation_t *alloc);
 int rebuild_add_expiration_db(DB_resource_t *dbr, Allocation_t *a);
 
-//DB_iterator_t *db_iterator_begin(DB *db);
 int _id_iter_put_alloc_db(DB_iterator_t *it, Allocation_t *a);
 int db_iterator_end(DB_iterator_t *it);
 int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a);
@@ -110,7 +95,7 @@ DB_iterator_t *expire_iterator(DB_resource_t *dbr);
 DB_iterator_t *soft_iterator(DB_resource_t *dbr);
 DB_iterator_t *id_iterator(DB_resource_t *dbr);
 int set_expire_iterator(DB_iterator_t *dbi, ibp_time_t t, Allocation_t *a);
-int set_id_iterator(DB_iterator_t *dbi, osd_id_t i, Allocation_t *a);
+int set_id_iterator(DB_iterator_t *dbi, osd_id_t id);
 
 //** History Comparator routines
 int db_history_compare_op(void *arg, const char *a, size_t alen, const char *b, size_t blen);

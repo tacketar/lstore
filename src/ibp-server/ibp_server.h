@@ -118,9 +118,7 @@ typedef struct {                // Structure containg the overall server config
 typedef struct {                //Main config structure
     char *config_file;          // Configuration file
     Server_t server;            // Server config
-    char *dbenv_loc;            // Location of DB enviroment
     int db_mem;                 // DB envirment memory usage in MB
-    DB_env_t *dbenv;            // Container for DB environment
     int force_resource_rebuild; // Force rebuilding of all resources
     int truncate_expiration;    // Force existing allocs duration to be the RID max.  Only used in rebuild!
     int soft_fail;              // defaults to -1 for all errors. Only used for commands that mey be recoverable

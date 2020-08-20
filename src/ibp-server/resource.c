@@ -183,23 +183,6 @@ void _trash_adjust(Resource_t *r, int rmode, osd_id_t id)
     }
 }
 
-
-//***************************************************************************
-// print_resource_usage - Prints the usage stats to the fd
-//***************************************************************************
-
-int print_resource_usage(Resource_t *r, FILE *fd)
-{
-    fprintf(fd, "n_allocs = " LU "\n", r->n_allocs);
-    fprintf(fd, "n_alias = " LU "\n", r->n_alias);
-    fprintf(fd, "hard_usage = " LU "\n", r->used_space[ALLOC_HARD]);
-    fprintf(fd, "soft_usage = " LU "\n", r->used_space[ALLOC_SOFT]);
-
-    print_db(&(r->db), fd);
-
-    return (0);
-}
-
 //***************************************************************************
 // mkfs_resource - Creates a new resource
 //***************************************************************************
@@ -354,12 +337,11 @@ void rebuild_populate_partition_lut_with_db(Resource_t *r, int partition, apr_ha
     DB_iterator_t *it;
     rebuild_lut_t *d;
     Allocation_t a;
-    int err;
 
     it = id_iterator(&(r->db));
-    if (set_id_iterator(it, partition, &a) != 0) goto finished;
+    if (set_id_iterator(it, partition) != 0) goto finished;
 
-    do {
+    while (db_iterator_next(it, DBR_NEXT, &a) == 0) {
         //** Kick out if changed partition.
         if ((a.id % r->n_partitions) != (unsigned int)partition) goto finished;
 
@@ -374,7 +356,7 @@ void rebuild_populate_partition_lut_with_db(Resource_t *r, int partition, apr_ha
 
         d->found |= REBUILD_FOUND_DB;
         apr_hash_set(lut, &(d->id), sizeof(osd_id_t), d);
-    } while ((err = db_iterator_next(it, DB_NEXT, &a)) == 0);
+    }
 
 finished:
     db_iterator_end(it);
@@ -554,7 +536,7 @@ got_it:  //** Got a valid allocation so see if we add it
                            r->name, r->n_allocs,d->a.id, ibp2apr_time(t1), ibp2apr_time(t2));
                 rebuild_modify(r, d, max_expiration);
             } else {
-                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU "\n", r->name, r->n_allocs, d->a.id);
+                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " location=%d\n", r->name, r->n_allocs, d->a.id, d->found);
                 rebuild_add(r, d);
             }
         }
@@ -566,7 +548,7 @@ got_it:  //** Got a valid allocation so see if we add it
 // rebuild_resource - Rebuilds the resource
 //***************************************************************************
 
-int rebuild_resource(Resource_t *r, DB_env_t *env, tbx_inip_file_t *kfd, int remove_expired,
+int rebuild_resource(Resource_t *r, tbx_inip_file_t *kfd, int remove_expired,
                      int wipe_clean, int truncate_expiration)
 {
     char ppbuf[128];
@@ -774,7 +756,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
 // mount_resource - Mounts a resource for use
 //***************************************************************************
 
-int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_env_t *dbenv,
+int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
                    int force_rebuild, int lazy_allocate, int truncate_expiration)
 {
     int err, wipe_expired;
@@ -819,14 +801,14 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group, DB_en
     //** Rebuild the DB or mount it here **
     snprintf(db_group, sizeof(db_group), "db %s", res->name);
 
-    err = mount_db_generic(keyfile, db_group, dbenv, &(res->db), force_rebuild, res->n_partitions);
+    err = mount_db_generic(keyfile, db_group, &(res->db), force_rebuild, res->n_partitions);
     if (err != 0) {
         log_printf(0, "mount_resource:  Error mounting DB force_rebuild=%d! res=%s err=%d\n", force_rebuild, res->name, err);
         return (err);
     }
 
     //** Construct the interal tables and fix any issues
-    err = rebuild_resource(res, dbenv, keyfile, wipe_expired, force_rebuild, truncate_expiration);
+    err = rebuild_resource(res, keyfile, wipe_expired, force_rebuild, truncate_expiration);
 
     log_printf(15, "mount_resource: err=%d  res=%s cleanup_shutdown=%d\n", err,
                res->name, res->cleanup_shutdown);
@@ -1188,7 +1170,7 @@ int _remove_allocation_for_make_free(Resource_t *r, int rmode, Allocation_t *all
                alloc->id, alloc->max_size);
 
     //** EVen if this fails we want to try and remove the physical allocation
-    if ((err = remove_alloc_iter_db(it)) != 0) {
+    if ((err = remove_alloc_iter_db(it, alloc)) != 0) {
         debug_printf(1,
                      "_remove_allocation_for_make_free:  Error with remove_alloc_db!  Error=%d\n",
                      err);
@@ -1282,7 +1264,7 @@ int make_free_space_iterator(Resource_t *r, DB_iterator_t *dbi, ibp_off_t *nbyte
     nleft = *nbytesleft;
     finished = 0;
     do {
-        if ((err = db_iterator_next(dbi, DB_NEXT, &a)) == 0) {
+        if ((err = db_iterator_next(dbi, DBR_NEXT, &a)) == 0) {
             if (a.expiration < timestamp) {
                 if (nleft < (ibp_off_t) a.max_size) {   //** for alias allocations max_size == 0
                     nleft = 0;  //
@@ -1435,7 +1417,7 @@ int make_space(Resource_t *r, ibp_off_t size, int atype)
     }
 
     if ((nleft > 0) || (err != 0)) {
-        return (1);             //*** Didn't have envough space **
+        return (1);             //*** Didn't have enough space **
     } else {
         return (0);
     }

@@ -22,6 +22,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <apr_thread_proc.h>
 #include <apr_thread_mutex.h>

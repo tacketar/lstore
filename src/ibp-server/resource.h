@@ -148,7 +148,7 @@ typedef struct {
 IBPS_API int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_location,
                            ibp_off_t max_bytes, int n_partitions);
 IBPS_API int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
-                            DB_env_t *env, int force_rebuild, int lazy_allocate,
+                            int force_rebuild, int lazy_allocate,
                             int truncate_expiration);
 IBPS_API int umount_resource(Resource_t *res);
 IBPS_API int print_resource(char *buffer, int *used, int nbytes, Resource_t *res);

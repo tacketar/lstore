@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <unistd.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/log.h>
