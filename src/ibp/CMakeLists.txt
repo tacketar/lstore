@@ -61,6 +61,7 @@ set(LSTORE_PROJECT_EXECUTABLES
     ibp_copyperf
     ibp_perf
     ibp_tool
+    ibp_rid_bulk_warm
 )
 
 # Common functionality is stored here
