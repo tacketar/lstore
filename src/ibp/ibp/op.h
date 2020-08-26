@@ -32,20 +32,7 @@ extern "C" {
 
 // Typedefs
 typedef struct ibp_context_t ibp_context_t;
-typedef struct ibp_op_alloc_t ibp_op_alloc_t;
-typedef struct ibp_op_copy_t ibp_op_copy_t;
-typedef struct ibp_op_depot_inq_t ibp_op_depot_inq_t;
-typedef struct ibp_op_depot_modify_t ibp_op_depot_modify_t;
-typedef struct ibp_op_get_chksum_t ibp_op_get_chksum_t;
-typedef struct ibp_op_merge_alloc_t ibp_op_merge_alloc_t;
-typedef struct ibp_op_modify_alloc_t ibp_op_modify_alloc_t;
-typedef struct ibp_op_probe_t ibp_op_probe_t;
-typedef struct ibp_op_rid_inq_t ibp_op_rid_inq_t;
-typedef struct ibp_op_rw_t ibp_op_rw_t;
 typedef struct ibp_op_t ibp_op_t;
-typedef struct ibp_op_validate_chksum_t ibp_op_validate_chksum_t;
-typedef struct ibp_op_version_t ibp_op_version_t;
-typedef struct ibp_rw_buf_t ibp_rw_buf_t;
 
 // Functions
 IBP_API gop_op_generic_t *ibp_proxy_modify_count_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_cap_t *mcap, int mode, int captype, int timeout);
@@ -93,6 +80,8 @@ IBP_API void ibp_set_sync_context(ibp_context_t *ic);
 IBP_API gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap, int chksum_info_only,
         int *cs_type, int *cs_size, ibp_off_t *blocksize, ibp_off_t *nblocks, ibp_off_t *n_chksumbytes, char *buffer, ibp_off_t bufsize,
         int timeout);
+IBP_API gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, int duration, int n_caps, ibp_cap_t **mcaps, int *n_fail, int *results, int timeout);
+
 // Config accessor functions
 IBP_API int ibp_context_chksum_set(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
 IBP_API void ibp_context_chksum_get(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
@@ -118,4 +107,4 @@ IBP_API int  ibp_context_connection_mode_get(ibp_context_t *ic);
 }
 #endif
 
-#endif /* ^ ACCRE_IBP_IBP_OP_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_IBP_IBP_OP_H_INCLUDED ^ */

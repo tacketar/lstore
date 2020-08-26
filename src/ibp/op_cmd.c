@@ -35,6 +35,7 @@
 #include <tbx/transfer_buffer.h>
 #include <time.h>
 
+#include "misc.h"
 #include "op.h"
 #include "types.h"
 
@@ -1488,6 +1489,92 @@ gop_op_status_t query_res_recv(gop_op_generic_t *gop, tbx_ns_t *ns)
     }
 
     tbx_stack_free(list, 0);
+
+    return(err);
+}
+
+gop_op_status_t rid_bulk_warm_command(gop_op_generic_t *gop, tbx_ns_t *ns)
+{
+    ibp_op_t *op = ibp_get_iop(gop);
+    ibp_op_rid_bulk_warm_t *cmd = &(op->ops.rid_bulk_warm_op);
+    int bufsize = 204800;
+    char stackbuffer[bufsize];
+    char *buffer = stackbuffer;
+    char rbuf[1024];
+    char host[MAX_HOST_SIZE], key[256], typekey[256];
+    int i, used, port;
+    gop_op_status_t err;
+
+    used = 0;
+
+    //** Store the base command
+    tbx_append_printf(buffer, &used, bufsize, "%d %d %s %d %d", IBPv040, IBP_RID_BULK_WARM, ibp_rid2str(cmd->depot->rid, rbuf), cmd->duration, cmd->n_caps);
+
+    //** Add the manage caps
+    for (i=0; i<cmd->n_caps; i++) {
+        if (used >= (bufsize-100)) {
+            bufsize = bufsize * 1.5;
+            if (buffer == stackbuffer) {
+                buffer = (char *)malloc(bufsize);
+                memcpy(buffer, stackbuffer, used);
+            } else {
+                buffer = (char *)realloc(buffer, bufsize);
+            }
+        }
+
+        parse_cap(op->ic, cmd->mcaps[i], host, &port, key, typekey);
+        tbx_append_printf(buffer, &used, bufsize, " %s %s", key, typekey);
+    }
+
+    //** Add the timeout
+    tbx_append_printf(buffer, &used, bufsize, " %d \n", (int)apr_time_sec(gop->op->cmd.timeout));
+
+    tbx_ns_chksum_write_clear(ns);
+
+    err = send_command(gop, ns, buffer);
+    if (err.op_status != OP_STATE_SUCCESS) {
+        log_printf(10, "Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
+    }
+
+    if (buffer != stackbuffer) free(buffer);
+
+    return(err);
+}
+
+gop_op_status_t rid_bulk_warm_recv(gop_op_generic_t *gop, tbx_ns_t *ns)
+{
+    ibp_op_t *op = ibp_get_iop(gop);
+    ibp_op_rid_bulk_warm_t *cmd = &(op->ops.rid_bulk_warm_op);
+    char buffer[40960];
+    char buf2[256];
+    char *bstate;
+    gop_op_status_t err;
+    int i, status, fin;
+
+    err = gop_readline_with_timeout(ns, buffer, sizeof(buffer), gop);
+    if (err.op_status != OP_STATE_SUCCESS) return(err);
+
+    status = -1;
+    status = atoi(tbx_stk_string_token(buffer, " ", &bstate, &fin));
+    if (status != IBP_OK) {
+        log_printf(15, "ERROR: RID=%s:%d/%s err=%d\n", cmd->depot->host, cmd->depot->port, ibp_rid2str(cmd->depot->rid, buf2), status);
+        process_error(gop, &err, status, -1, &bstate);
+        return(err);
+    }
+
+    //** Get the number of failed warming ops
+    *(cmd->n_fail) = atoi(tbx_stk_string_token(NULL, " ", &bstate, &fin));
+    if (*(cmd->n_fail) == 0) return(err);
+
+    //** If we made it here then we have failed warming ops
+    for (i=0; i < *(cmd->n_fail); i++) {
+        cmd->results[i] = -1;
+        cmd->results[i] = atoi(tbx_stk_string_token(NULL, " ", &bstate, &fin));
+        if (cmd->results[i] == -1) {
+            log_printf(15, "ERROR: RID=%s:%d/%s Failed getting failed warm ops. n_fail=%d got=%d\n", cmd->depot->host, cmd->depot->port, ibp_rid2str(cmd->depot->rid, buf2), *cmd->n_fail, i);
+            return(gop_failure_status);
+        }
+    }
 
     return(err);
 }

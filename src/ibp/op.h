@@ -133,6 +133,22 @@ void destroy_ibp_sync_context();
 //******* ibp_errno.c ********
 void ibp_errno_init();
 
+// Typedefs
+typedef struct ibp_op_alloc_t ibp_op_alloc_t;
+typedef struct ibp_op_copy_t ibp_op_copy_t;
+typedef struct ibp_op_depot_inq_t ibp_op_depot_inq_t;
+typedef struct ibp_op_depot_modify_t ibp_op_depot_modify_t;
+typedef struct ibp_op_get_chksum_t ibp_op_get_chksum_t;
+typedef struct ibp_op_merge_alloc_t ibp_op_merge_alloc_t;
+typedef struct ibp_op_modify_alloc_t ibp_op_modify_alloc_t;
+typedef struct ibp_op_probe_t ibp_op_probe_t;
+typedef struct ibp_op_rid_inq_t ibp_op_rid_inq_t;
+typedef struct ibp_op_rw_t ibp_op_rw_t;
+typedef struct ibp_op_validate_chksum_t ibp_op_validate_chksum_t;
+typedef struct ibp_op_version_t ibp_op_version_t;
+typedef struct ibp_op_rid_bulk_warm_t ibp_op_rid_bulk_warm_t;
+typedef struct ibp_rw_buf_t ibp_rw_buf_t;
+
 struct ibp_op_validate_chksum_t {    //** IBP_VALIDATE_CHKSUM
     ibp_cap_t *cap;
     char       key[MAX_KEY_SIZE];
@@ -263,6 +279,15 @@ struct ibp_op_rid_inq_t {  //** Get a list of RID's for a depot
     ibp_ridlist_t *rlist;
 };
 
+struct ibp_op_rid_bulk_warm_t {  //** Bulk warm operation
+    ibp_depot_t *depot;
+    int duration;
+    int n_caps;
+    ibp_cap_t **mcaps;
+    int *n_fail;
+    int *results;
+};
+
 struct ibp_op_t { //** Individual IO operation
     ibp_context_t *ic;
     gop_op_generic_t gop;
@@ -284,6 +309,7 @@ struct ibp_op_t { //** Individual IO operation
         ibp_op_modify_alloc_t mod_alloc_op;
         ibp_op_rid_inq_t   rid_op;
         ibp_op_version_t   ver_op;
+        ibp_op_rid_bulk_warm_t rid_bulk_warm_op;
     } ops;
 };
 

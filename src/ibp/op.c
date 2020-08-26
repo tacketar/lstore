@@ -100,6 +100,8 @@ gop_op_status_t vec_write_command(gop_op_generic_t *gop, tbx_ns_t *ns);
 gop_op_status_t write_command(gop_op_generic_t *gop, tbx_ns_t *ns);
 gop_op_status_t write_recv(gop_op_generic_t *gop, tbx_ns_t *ns);
 gop_op_status_t write_send(gop_op_generic_t *gop, tbx_ns_t *ns);
+gop_op_status_t rid_bulk_warm_command(gop_op_generic_t *gop, tbx_ns_t *ns);
+gop_op_status_t rid_bulk_warm_recv(gop_op_generic_t *gop, tbx_ns_t *ns);
 
 //
 // Misc tools
@@ -560,7 +562,7 @@ gop_op_generic_t *ibp_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_off_t
     gop->op->cmd.send_command = allocate_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = allocate_recv;
-    
+
     return(ibp_get_gop(op));
 }
 
@@ -973,7 +975,7 @@ gop_op_generic_t *ibp_copy_gop(ibp_context_t *ic, int mode, int ns_type,
 {
     ibp_op_t *op = new_ibp_op(ic);
     if (op == NULL) return(NULL);
-    
+
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
@@ -1105,7 +1107,7 @@ gop_op_generic_t *ibp_query_resources_gop(ibp_context_t *ic, ibp_depot_t *depot,
 {
     ibp_op_t *op = new_ibp_op(ic);
     if (op == NULL) return(NULL);
-    
+
     char hoststr[MAX_HOST_SIZE];
     char pchoststr[MAX_HOST_SIZE];
     ibp_op_rid_inq_t *cmd = &(op->ops.rid_op);
@@ -1123,6 +1125,36 @@ gop_op_generic_t *ibp_query_resources_gop(ibp_context_t *ic, ibp_depot_t *depot,
     gop->op->cmd.send_command = query_res_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = query_res_recv;
-    
+
+    return(ibp_get_gop(op));
+}
+
+gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, int duration, int n_caps, ibp_cap_t **mcaps, int *n_fail, int *results, int timeout)
+{
+    ibp_op_t *op = new_ibp_op(ic);
+    if (op == NULL) return(NULL);
+
+    char hoststr[MAX_HOST_SIZE];
+    char pchoststr[MAX_HOST_SIZE];
+    ibp_op_rid_bulk_warm_t *cmd = &(op->ops.rid_bulk_warm_op);
+
+    ibppc_form_host(op->ic, pchoststr, sizeof(pchoststr), depot->host, depot->rid);
+    set_hostport(hoststr, sizeof(hoststr), pchoststr, depot->port, &(op->ic->cc[IBP_RID_BULK_WARM]));
+
+    init_ibp_base_op(op, "rid_bulk_warm", timeout, op->ic->rw_new_command*n_caps, strdup(hoststr),
+                        op->ic->other_new_command, IBP_RID_BULK_WARM, IBP_NOP);
+
+    cmd->depot = depot;
+    cmd->duration = duration;
+    cmd->n_caps = n_caps;
+    cmd->mcaps = mcaps;
+    cmd->n_fail = n_fail;
+    cmd->results = results;
+
+    gop_op_generic_t *gop = ibp_get_gop(op);
+    gop->op->cmd.send_command = rid_bulk_warm_command;
+    gop->op->cmd.send_phase = NULL;
+    gop->op->cmd.recv_phase = rid_bulk_warm_recv;
+
     return(ibp_get_gop(op));
 }

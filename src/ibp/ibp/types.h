@@ -63,8 +63,10 @@ IBP_API ibp_rid_t ibp_ridlist_element_get(ibp_ridlist_t *rlist, int index);
 IBP_API int ibp_ridlist_size_get(ibp_ridlist_t *rlist);
 IBP_API ibp_rid_t ibp_str2rid(char *rid_str);
 IBP_API void ibp_attributes_set(ibp_attributes_t *attr, time_t duration, int reliability, int type);
-IBP_API void ibp_depot_set(ibp_depot_t *d, char *host, int port, ibp_rid_t rid);
 IBP_API void ibp_timer_set(ibp_timer_t *t, int client_timeout, int server_timeout);
+IBP_API ibp_depot_t *ibp_depot_new();
+IBP_API void ibp_depot_destroy(ibp_depot_t *d);
+IBP_API void ibp_depot_set(ibp_depot_t *d, char *host, int port, ibp_rid_t rid);
 
 //** The proxy framework is being replaced so these will go away soon
 IBP_API ibp_proxy_capstatus_t *new_ibp_proxy_capstatus();

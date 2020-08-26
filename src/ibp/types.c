@@ -30,10 +30,10 @@
 #include "types.h"
 
 //*****************************************************************
-//  new_ibp_depot -Creates a new ibp_depot_t structure
+//  ibp_depot_new -Creates a new ibp_depot_t structure
 //*****************************************************************
 
-ibp_depot_t *new_ibp_depot()
+ibp_depot_t *ibp_depot_new()
 {
     return((ibp_depot_t *)malloc(sizeof(ibp_depot_t)));
 }
@@ -43,7 +43,7 @@ ibp_depot_t *new_ibp_depot()
 //  destroy_ibp_depot - Destrots the ibp_depot_t structure
 //*****************************************************************
 
-void destroy_ibp_depot(ibp_depot_t *d)
+void ibp_depot_destroy(ibp_depot_t *d)
 {
     free(d);
 }
