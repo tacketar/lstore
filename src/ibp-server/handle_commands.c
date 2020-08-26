@@ -1417,6 +1417,96 @@ int handle_manage(ibp_task_t *task)
 }
 
 //*****************************************************************
+// handle_rid_bulk_warm - Processes the RID bulk warm command
+//
+// Returns
+//     status n_failed [failed_index_1 ..failed_index_N] \n
+//
+//  NOTE: The indexing starts from 0
+//*****************************************************************
+
+int handle_rid_bulk_warm(ibp_task_t *task)
+{
+    Cmd_state_t *cmd = &(task->cmd);
+    Cmd_rid_bulk_warm_t *args = &(cmd->cargs.rid_bulk_warm);
+    Resource_t *r;
+    char result[global_config->server.max_warm*10+ 20 + 1];
+    Allocation_t a;
+    int i, n_bad, pos, bufsize, err;
+
+    err = 0;
+
+    //** Get the resource
+    r = resource_lookup(global_config->rl, args->crid);
+    if (r == NULL) {
+        log_printf(10, "Invalid RID :%s\n", args->crid);
+        alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
+        send_cmd_result(task, IBP_E_INVALID_RID);
+        err = global_config->soft_fail;
+    }
+    //** Resource is not mounted with manage access
+    if ((resource_get_mode(r) & RES_MODE_MANAGE) == 0) {
+        log_printf(10, "Manage access is disabled for RID=%s\n", r->name);
+        alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
+        send_cmd_result(task, IBP_E_FILE_ACCESS);
+        err = global_config->soft_fail;
+        goto cleanup;
+    }
+
+    //** Validate the new duration
+    if (args->new_duration > (ibp_time_now() + r->max_duration)) {
+        log_printf(10, "handle_manage: Duration > max_duration rid=%s\n", r->name);
+        alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
+        send_cmd_result(task, IBP_E_FILE_ACCESS);
+        err = global_config->soft_fail;
+        goto cleanup;
+    }
+
+    //** Cycle through warming everything
+    bufsize = sizeof(result)-1;
+    pos = 0;
+    n_bad = 0;
+    for (i=0; i<args->n_caps; i++) {
+        //** Get the allocation
+        lock_osd_id(args->caps[i].id);
+        if ((get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(args->caps[i]), &a)) != 0) {
+            n_bad++;
+            tbx_append_printf(result, &pos, bufsize, "%d ", i);
+            goto next;
+        }
+
+        a.expiration = args->new_duration;
+        alog_append_manage_change(task->myid, r->rl_index, a.id, a.max_size, a.reliability,
+                                              a.expiration);
+        update_manage_history(r, a.id, a.is_alias, &(task->ipadd), cmd->command,
+                                          IBP_CHNG, a.reliability, a.expiration, a.max_size, a.id);
+        if (modify_allocation_resource(r, a.id, &a, 0) != 0) {
+            n_bad++;
+            tbx_append_printf(result, &pos, bufsize, "%d ", i);
+            goto next;
+        }
+next:
+        unlock_osd_id(args->caps[i].id);
+    }
+
+    //** Form the response
+    char buf[20+1];
+    if (n_bad == 0) {
+        i = snprintf(buf, 20, "%d %d \n", IBP_OK, n_bad);
+        server_ns_write_block(task->ns, task->cmd_timeout, buf, strlen(buf));
+    } else {
+        i = snprintf(buf, 20, "%d %d ", IBP_OK, n_bad);
+        server_ns_write_block(task->ns, task->cmd_timeout, buf, strlen(buf));
+        tbx_append_printf(result, &pos, bufsize, "\n");
+        server_ns_write_block(task->ns, task->cmd_timeout, result, pos);
+    }
+
+cleanup:
+    free(args->caps);
+
+    return(err);
+}
+//*****************************************************************
 // handle_validate_chksum  - Handles the IBP_VALIDATE_CHKSUM commands
 //
 // Returns

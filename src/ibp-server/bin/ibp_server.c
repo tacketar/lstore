@@ -332,6 +332,7 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
     server->debug_level = 0;
     server->timestamp_interval = 60;
     server->password = DEFAULT_PASSWORD;
+    server->max_warm = 1000;
     server->lazy_allocate = 1;
     server->backoff_scale = 1.0 / 10;
     server->backoff_max = 30;
@@ -411,6 +412,8 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
         tbx_inip_get_integer(keyfile, "server", "log_maxsize", server->log_maxsize) * 1024 * 1024;
     server->debug_level =
         tbx_inip_get_integer(keyfile, "server", "debug_level", server->debug_level);
+    server->max_warm =
+        tbx_inip_get_integer(keyfile, "server", "max_warm", server->max_warm);
     server->lazy_allocate =
         tbx_inip_get_integer(keyfile, "server", "lazy_allocate", server->lazy_allocate);
     server->big_alloc_enable =

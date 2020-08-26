@@ -284,6 +284,7 @@ int print_config(char *buffer, int *used, int nbytes, Config_t *cfg)
     tbx_append_printf(buffer, used, nbytes, "max_network_wait_ms = %d\n", d);
     tbx_append_printf(buffer, used, nbytes, "password = %s\n", server->password);
     tbx_append_printf(buffer, used, nbytes, "stats_size = %d\n", server->stats_size);
+    tbx_append_printf(buffer, used, nbytes, "max_warm = %d\n", server->max_warm);
     tbx_append_printf(buffer, used, nbytes, "lazy_allocate = %d\n", server->lazy_allocate);
     tbx_append_printf(buffer, used, nbytes, "big_alloc_enable = %d\n", server->big_alloc_enable);
     tbx_append_printf(buffer, used, nbytes, "splice_enable = %d\n", server->splice_enable);

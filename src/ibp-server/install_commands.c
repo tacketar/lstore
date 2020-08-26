@@ -36,6 +36,7 @@ void install_commands(tbx_inip_file_t *kf)
                 read_merge_allocate, handle_merge);
     add_command(IBP_STATUS, "ibp_status", kf, NULL, NULL, NULL, NULL, read_status, handle_status);
     add_command(IBP_MANAGE, "ibp_manage", kf, NULL, NULL, NULL, NULL, read_manage, handle_manage);
+    add_command(IBP_RID_BULK_WARM, "ibp_rid_bulk_warm", kf, NULL, NULL, NULL, NULL, read_rid_bulk_warm, handle_rid_bulk_warm);
     add_command(IBP_WRITE, "ibp_write", kf, NULL, NULL, NULL, NULL, read_write, handle_write);
     add_command(IBP_STORE, "ibp_store", kf, NULL, NULL, NULL, NULL, read_write, handle_write);
     add_command(IBP_LOAD, "ibp_load", kf, NULL, NULL, NULL, NULL, read_read, handle_read);

@@ -106,6 +106,7 @@ typedef struct {                // Structure containg the overall server config
     int alog_max_history;       //** How many alog files to keep before dropping them
     int alog_port;              //** alog host's port to use
     int return_cap_id;          //** Returns the cap id in the capability if set
+    int max_warm;               //** Max number of allocations allowed for a singel IBP_RID_BULK_WARM operation
     int rid_check_interval;     //** DRive check interval
     int eject_timeout;          //** How long to wait for RID check failures before ejecting a drive
     char *rid_log;              //Where to store the running RID changes
@@ -205,6 +206,7 @@ IBPS_API int read_status(ibp_task_t *task, char **bstate);
 IBPS_API int read_manage(ibp_task_t *task, char **bstate);
 IBPS_API int read_write(ibp_task_t *task, char **bstate);
 IBPS_API int read_read(ibp_task_t *task, char **bstate);
+IBPS_API int read_rid_bulk_warm(ibp_task_t *task, char **bstate);
 IBPS_API int read_internal_get_alloc(ibp_task_t *task, char **bstate);
 IBPS_API int read_internal_get_corrupt(ibp_task_t *task, char **bstate);
 IBPS_API int read_internal_get_config(ibp_task_t *task, char **bstate);
@@ -225,6 +227,7 @@ IBPS_API int handle_alias_allocate(ibp_task_t *task);
 IBPS_API int handle_rename(ibp_task_t *task);
 IBPS_API int handle_status(ibp_task_t *task);
 IBPS_API int handle_manage(ibp_task_t *task);
+IBPS_API int handle_rid_bulk_warm(ibp_task_t *task);
 IBPS_API int handle_write(ibp_task_t *task);
 IBPS_API int handle_read(ibp_task_t *task);
 IBPS_API int handle_copy(ibp_task_t *task);

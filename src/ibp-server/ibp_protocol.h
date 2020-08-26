@@ -71,11 +71,12 @@
 #define   IBP_VEC_WRITE_CHKSUM  34
 #define   IBP_VEC_READ          35
 #define   IBP_VEC_READ_CHKSUM   36
+#define   IBP_RID_BULK_WARM     37
 
 #define   IBP_MAX_NUM_CMDS      37
 
 #define   IBP_TCP          1
-#define  IBP_PHOEBUS      2
+#define   IBP_PHOEBUS      2
 
 #define   IBP_PROBE       40
 #define   IBP_INCR        41

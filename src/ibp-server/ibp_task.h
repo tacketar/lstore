@@ -130,6 +130,14 @@ typedef struct {
 } Cmd_manage_t;
 
 typedef struct {
+    rid_t rid;                  //** RID for querying
+    char crid[128];             //** Character version of the RID for querying
+    long int new_duration;      //** New max duration for allocation
+    int n_caps;                 //** Number of caps to warm
+    cap_id_t *caps;             //** Pointer to the array of caps
+} Cmd_rid_bulk_warm_t;
+
+typedef struct {
     int sending;                //** Write state
     rid_t rid;                  //** RID for querying
     osd_id_t id;                //** Object id
@@ -210,6 +218,7 @@ typedef union {                 //** Union of command args
     Cmd_write_t write;
     Cmd_read_t read;
     Cmd_alias_alloc_t alias_alloc;
+    Cmd_rid_bulk_warm_t rid_bulk_warm;
     Cmd_internal_get_alloc_t get_alloc;
     Cmd_internal_date_free_t date_free;
     Cmd_internal_expire_log_t expire_log;

@@ -27,6 +27,7 @@
 #include "allocation.h"
 #include "resource.h"
 #include <tbx/network.h>
+#include <tbx/type_malloc.h>
 #include "ibp_task.h"
 #include "ibp-server_version.h"
 #include "ibp_time.h"
@@ -1199,6 +1200,74 @@ int read_read(ibp_task_t *task, char **bstate)
                  r->iovec.n, r->iovec.vec[0].off, r->iovec.vec[0].len);
     return (0);
 }
+
+//*****************************************************************
+//  read_rid_bulk_warm - Bulk RID warming operation
+//
+//  Command
+//    version IBP_BULK_WARM RID duration n_caps key_1 typekey_1 ... key_n typekey_n timeout\n
+//
+//*****************************************************************
+
+int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
+{
+    int finished, i, d;
+    Cmd_state_t *cmd = &(task->cmd);
+    Cmd_rid_bulk_warm_t *arg = &(cmd->cargs.rid_bulk_warm);
+    rid_t rid;
+    char crid[128];
+    cap_id_t *caps;
+
+    finished = 0;
+
+    debug_printf(1, "Starting to process buffer\n");
+
+    //** Get the RID
+    arg->crid[sizeof(arg->crid) - 1] = '\0';
+    strncpy(arg->crid, tbx_stk_string_token(NULL, " ", bstate, &finished), sizeof(arg->crid) - 1);
+    if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
+        log_printf(1, "Bad RID: %s\n", arg->crid);
+        send_cmd_result(task, IBP_E_INVALID_RID);
+        return (-1);
+    }
+
+    //** Get the new duration
+    d = 0;
+    sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), "%d", &d);
+    if (d <= 0) {
+        log_printf(1, "Bad duration: %d\n", d);
+        send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        return (-1);
+    }
+    arg->new_duration = ibp_time_now() + d;
+
+    //** Get the Number of caps
+    d = 0;
+    sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), "%d", &d);
+    if ((d < 1) || (d > global_config->server.max_warm)) {
+        log_printf(10, "Invalid n_caps (%d)!\n", d);
+        send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+        return (-1);
+    }
+    arg->n_caps = d;
+
+    //** Make the caps structure and cycle through loading them all
+    tbx_type_malloc_clear(caps, cap_id_t, arg->n_caps);
+    for (i=0; i<arg->n_caps; i++) {
+        d = parse_key2(bstate, &caps[i], &rid, crid, sizeof(crid));
+        if ((ibp_compare_rid(arg->rid, rid) != 0) || (d != 0)) {
+            free(caps);
+            log_printf(10, "Bad RID/master_cap!\n");
+            send_cmd_result(task, IBP_E_INVALID_RID);
+            return (-1);
+        }
+    }
+    arg->caps = caps;
+
+    get_command_timeout(task, bstate);
+    return (0);
+}
+
 
 //*****************************************************************
 //  read_internal_get_corrupt - Private command for getting the list

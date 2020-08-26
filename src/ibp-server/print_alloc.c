@@ -78,20 +78,24 @@ void print_manage_history(char *buffer, int *used, int nbytes, Allocation_manage
                 break;
             case IBP_RENAME:
                 cmd = "IBP_RENAME        ";
-                subcmd = "        ";
+                subcmd = "            ";
                 break;
             case IBP_SPLIT_ALLOCATE:
                 cmd = "IBP_SPLIT_ALLOCATE";
-                subcmd = "        ";
+                subcmd = "            ";
                 break;
             case IBP_ALIAS_ALLOCATE:
                 cmd = "IBP_ALIAS_ALLOCATE";
-                subcmd = "        ";
+                subcmd = "            ";
+                break;
+            case IBP_RID_BULK_WARM:
+                cmd = "IBP_RID_BULK_WARM ";
                 break;
             default:
                 sprintf(cmdbuf, "UNKNOWN(%d)", ts->cmd);
                 cmd = cmdbuf;
             }
+
             switch (ts->reliability) {
             case ALLOC_HARD:
                 rel = "IBP_HARD";
