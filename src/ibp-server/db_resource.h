@@ -21,7 +21,7 @@
 #define _DB_RESOURCE_H_
 
 #include "visibility.h"
-#include <leveldb/c.h>
+#include <rocksdb/c.h>
 #include <apr_thread_mutex.h>
 #include <apr_pools.h>
 #include "allocation.h"
@@ -45,16 +45,16 @@ typedef struct { //** Key for the history DB
 typedef struct {                //Resource DB interface
     char *kgroup;               //Ini file group
     char *loc;                  //Directory with all the DB's in it
-    leveldb_t *pdb;             //Primary DB (key=Object ID)
-    leveldb_t *expire;          //DB with expiration as the key
-    leveldb_t *soft;            //Expiration is used as the key but only soft allocs are stored in it
-    leveldb_t *history;         //History DB
-    leveldb_writeoptions_t *wopts; //Generic option for Write
-    leveldb_readoptions_t *ropts; //Generic option for Read
-    leveldb_comparator_t *id_compare;  //History comparator
-    leveldb_comparator_t *history_compare;  //History comparator
-    leveldb_comparator_t *expire_compare;   //Expiriration comparator
-    leveldb_comparator_t *soft_compare;     //Soft expireation comparator
+    rocksdb_t *pdb;             //Primary DB (key=Object ID)
+    rocksdb_t *expire;          //DB with expiration as the key
+    rocksdb_t *soft;            //Expiration is used as the key but only soft allocs are stored in it
+    rocksdb_t *history;         //History DB
+    rocksdb_writeoptions_t *wopts; //Generic option for Write
+    rocksdb_readoptions_t *ropts; //Generic option for Read
+    rocksdb_comparator_t *id_compare;  //History comparator
+    rocksdb_comparator_t *history_compare;  //History comparator
+    rocksdb_comparator_t *expire_compare;   //Expiriration comparator
+    rocksdb_comparator_t *soft_compare;     //Soft expireation comparator
     apr_thread_mutex_t *mutex;  // Lock used for creates
     apr_pool_t *pool;           //** Memory pool
     int n_partitions;           //** Number of load balancing splits for keys
@@ -62,7 +62,7 @@ typedef struct {                //Resource DB interface
 
 typedef struct {                //Container for cursor
     DB_resource_t *dbr;
-    leveldb_iterator_t *it;
+    rocksdb_iterator_t *it;
     int db_index;
     int id;
 } DB_iterator_t;

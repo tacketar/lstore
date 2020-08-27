@@ -66,7 +66,7 @@ int fd_get_history_table(Resource_t *r, osd_fd_t *fd, Allocation_history_t *h)
 int  get_history_table(Resource_t *r, osd_id_t id, Allocation_history_db_t *h)
 {
     int err;
-    leveldb_iterator_t *it;
+    rocksdb_iterator_t *it;
     db_history_key_t base_key;
     db_history_key_t *key;
     char *buf;
@@ -82,12 +82,12 @@ int  get_history_table(Resource_t *r, osd_id_t id, Allocation_history_db_t *h)
     tbx_type_malloc_clear(h->manage_ts, Allocation_manage_ts_t, r->n_history);
 
     //** Create the iterator
-    it = leveldb_create_iterator(r->db.history, r->db.ropts);
-    leveldb_iter_seek(it, db_fill_history_key(&base_key, id, 0, 0), sizeof(base_key));
+    it = rocksdb_create_iterator(r->db.history, r->db.ropts);
+    rocksdb_iter_seek(it, db_fill_history_key(&base_key, id, 0, 0), sizeof(base_key));
 
     count[0] = 0; count[1] = 0; count[2] = 0;
-    while (leveldb_iter_valid(it) > 0) {
-        key = (db_history_key_t *)leveldb_iter_key(it, &nbytes);
+    while (rocksdb_iter_valid(it) > 0) {
+        key = (db_history_key_t *)rocksdb_iter_key(it, &nbytes);
         if (nbytes == 0) break;
         if (key->id != id) break;
 
@@ -97,7 +97,7 @@ int  get_history_table(Resource_t *r, osd_id_t id, Allocation_history_db_t *h)
         mode = (unsigned char)key->type;
 
         //** Store it
-        buf = (char *)leveldb_iter_value(it, &nbytes);
+        buf = (char *)rocksdb_iter_value(it, &nbytes);
         switch (mode) {
             case 0:
                 if (nbytes == sizeof(Allocation_rw_ts_t)) {
@@ -120,7 +120,7 @@ int  get_history_table(Resource_t *r, osd_id_t id, Allocation_history_db_t *h)
         }
 
 next:
-        leveldb_iter_next(it);
+        rocksdb_iter_next(it);
     }
 
     //** Update the size
@@ -129,7 +129,7 @@ next:
     h->n_manage = (count[2] > r->n_history) ? r->n_history : count[2];
 
     //** Cleanup
-    leveldb_iter_destroy(it);
+    rocksdb_iter_destroy(it);
 
     return (err);
 }
@@ -394,7 +394,7 @@ const char *db_fill_history_key(db_history_key_t *key, osd_id_t id, int type, ap
 //     from the History DB
 //****************************************************************************
 
-void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, leveldb_iterator_t *it)
+void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, rocksdb_iterator_t *it)
 {
     db_history_key_t *key, *kd;
     size_t nbytes;
@@ -404,8 +404,8 @@ void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tb
     memset(lh, 0, r->lru_history_bytes); //** Clear the structure
     lh->id = id;
 
-    while (leveldb_iter_valid(it) > 0) {
-        key = (db_history_key_t *)leveldb_iter_key(it, &nbytes);
+    while (rocksdb_iter_valid(it) > 0) {
+        key = (db_history_key_t *)rocksdb_iter_key(it, &nbytes);
         if (nbytes == 0) break;
         if (key->id != id) break;
 
@@ -431,7 +431,7 @@ void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tb
         lh->ts[(lh->slot[mode] % r->n_history) + mode * r->n_history] = key->date;
         lh->slot[mode]++;  //** and increment the counter
 next:
-        leveldb_iter_next(it);
+        rocksdb_iter_next(it);
     }
 
     //** Wrap the slots now
@@ -456,7 +456,7 @@ void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack)
     if (!stack) return;
 
     while ((key = tbx_stack_pop(stack)) != NULL) {
-        leveldb_delete(r->db.history, r->db.wopts, (const char *)key, sizeof(db_history_key_t), &errstr);
+        rocksdb_delete(r->db.history, r->db.wopts, (const char *)key, sizeof(db_history_key_t), &errstr);
         if (errstr) {
             log_printf(1, "ERROR deleting history key id=" LU " type=%d time=" TT " error=%s\n", key->id, key->type, key->date, errstr);
             free(errstr);
@@ -475,18 +475,18 @@ void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack)
 
 void lru_history_populate(Resource_t *r, osd_id_t id, lru_history_t *lh)
 {
-    leveldb_iterator_t *it;
+    rocksdb_iterator_t *it;
     db_history_key_t base_key;
     tbx_stack_t *stack = NULL;  //** This is used for anything we need to delete
 
     //** Create the iterator
-    it = leveldb_create_iterator(r->db.history, r->db.ropts);
-    leveldb_iter_seek(it, db_fill_history_key(&base_key, id, 0, 0), sizeof(base_key));
+    it = rocksdb_create_iterator(r->db.history, r->db.ropts);
+    rocksdb_iter_seek(it, db_fill_history_key(&base_key, id, 0, 0), sizeof(base_key));
 
     lru_history_populate_core(r, id, lh, &stack, it);
 
     //** Cleanup
-    leveldb_iter_destroy(it);
+    rocksdb_iter_destroy(it);
 
     //** See if we have to delete something
     if (stack) lru_history_populate_remove(r, stack);
@@ -530,7 +530,7 @@ int db_history_index(Resource_t *r, int mode, lru_history_t *lh)
 
     //** Delete the old record
     if (lh->ts[k] != 0) {
-        leveldb_delete(r->db.history, r->db.wopts, db_fill_history_key(&key, lh->id, mode, lh->ts[k]), sizeof(key), &errstr);
+        rocksdb_delete(r->db.history, r->db.wopts, db_fill_history_key(&key, lh->id, mode, lh->ts[k]), sizeof(key), &errstr);
         if (errstr != NULL) {
             log_printf(1, "ERROR deleting read history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, lh->id, lh->ts[k], errstr);
             free(errstr);
@@ -582,7 +582,7 @@ void db_delete_history(Resource_t *r, osd_id_t id)
                 db_fill_history_key(&key, id, i, lh->ts[k]);
                 if (fd) {
                     nbytes = 0;
-                    ptr = leveldb_get(r->db.history, r->db.ropts, (void *)&key, sizeof(db_history_key_t), &nbytes, &errstr);
+                    ptr = rocksdb_get(r->db.history, r->db.ropts, (void *)&key, sizeof(db_history_key_t), &nbytes, &errstr);
                     if (errstr) {
                         log_printf(1, "ERROR getting history key id=" LU " type=%d time=" TT " error=%s\n", key.id, key.type, key.date, errstr);
                         free(errstr);
@@ -611,7 +611,7 @@ void db_delete_history(Resource_t *r, osd_id_t id)
                 }
 
                 //** Delete the record
-                leveldb_delete(r->db.history, r->db.wopts, (void *)&key, sizeof(db_history_key_t), &errstr);
+                rocksdb_delete(r->db.history, r->db.wopts, (void *)&key, sizeof(db_history_key_t), &errstr);
                 if (errstr) {
                     log_printf(1, "ERROR deleting history key id=" LU " type=%d time=" TT " error=%s\n", key.id, key.type, key.date, errstr);
                     free(errstr);
@@ -653,7 +653,7 @@ void db_update_read_history(Resource_t *r, osd_id_t id, int is_alias, Allocation
     set_rw_ts(&ts, &n, add, offset, size, pid);
     lh->ts[k] = apr_time_now();
 
-    leveldb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 0, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
+    rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 0, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding read history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
         free(errstr);
@@ -686,7 +686,7 @@ void db_update_write_history(Resource_t *r, osd_id_t id, int is_alias, Allocatio
     set_rw_ts(&ts, &n, add, offset, size, pid);
     lh->ts[k] = apr_time_now();
 
-    leveldb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 1, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
+    rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 1, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding write history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
         free(errstr);
@@ -720,7 +720,7 @@ void db_update_manage_history(Resource_t *r, osd_id_t id, int is_alias, Allocati
     set_manage_ts(&ts, &n, add, cmd, subcmd, reliability, expiration, size, pid);
     lh->ts[k] = apr_time_now();
 
-    leveldb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 2, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
+    rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 2, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding manage history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
         free(errstr);

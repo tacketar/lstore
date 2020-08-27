@@ -114,64 +114,64 @@ const char *db_expire_compare_name(void *arg) { return("expire"); }
 // update_expiresoft_db - Updates the expiration entry for the DB
 //*************************************************************************
 
-char *update_expiresoft_db(leveldb_t *db, leveldb_writeoptions_t *opts, osd_id_t id, uint32_t new_time, uint32_t old_time)
+char *update_expiresoft_db(rocksdb_t *db, rocksdb_writeoptions_t *opts, osd_id_t id, uint32_t new_time, uint32_t old_time)
 {
     DB_timekey_t key;
     char *errstr = NULL;
 
     //** Delete the old key if needed
     if ((old_time > 0) && (old_time != new_time)) {
-        leveldb_delete(db, opts, fill_timekey(&key, old_time, id), sizeof(key), &errstr);
+        rocksdb_delete(db, opts, fill_timekey(&key, old_time, id), sizeof(key), &errstr);
         if (errstr != NULL) { free(errstr); errstr = NULL; }
     }
 
     //** Add the entry
-    leveldb_put(db, opts, fill_timekey(&key, new_time, id), sizeof(key), (const char *)NULL, 0, &errstr);
+    rocksdb_put(db, opts, fill_timekey(&key, new_time, id), sizeof(key), (const char *)NULL, 0, &errstr);
 
     return(errstr);
 }
 
 //*************************************************************************
-// open_db - Opens the LevelDB database using the given path
+// open_db - Opens the RocksDB database using the given path
 //*************************************************************************
 
-leveldb_t *open_db(char *db_path, leveldb_comparator_t *cmp, int wipe_clean)
+rocksdb_t *open_db(char *db_path, rocksdb_comparator_t *cmp, int wipe_clean)
 {
-    leveldb_t *db;
-    leveldb_options_t *opts, *opts2;
+    rocksdb_t *db;
+    rocksdb_options_t *opts, *opts2;
     char *errstr = NULL;
 
     if (wipe_clean != 0) { //** Wipe the DB if requested
-        opts2 = leveldb_options_create();
-        leveldb_options_set_error_if_exists(opts2, 1);
+        opts2 = rocksdb_options_create();
+        rocksdb_options_set_error_if_exists(opts2, 1);
 
-        db = leveldb_open(opts2, db_path, &errstr);
+        db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists so need to remove it first
             free(errstr);
             errstr = NULL;
 
             //** Remove it
-            leveldb_destroy_db(opts2, db_path, &errstr);
+            rocksdb_destroy_db(opts2, db_path, &errstr);
             if (errstr != NULL) {  //** Got an error so just kick out
                 fprintf(stderr, "ERROR: Failed removing %s for fresh DB. DB error:%s\n", db_path, errstr);
                 exit(1);
             }
         }
-        leveldb_options_destroy(opts2);
+        rocksdb_options_destroy(opts2);
     }
 
     //** Try opening it for real
-    opts = leveldb_options_create();
-    leveldb_options_set_comparator(opts, cmp);
-    leveldb_options_set_create_if_missing(opts, 1);
+    opts = rocksdb_options_create();
+    rocksdb_options_set_comparator(opts, cmp);
+    rocksdb_options_set_create_if_missing(opts, 1);
 
-    db = leveldb_open(opts, db_path, &errstr);
+    db = rocksdb_open(opts, db_path, &errstr);
     if (errstr != NULL) {  //** An Error occured
         fprintf(stderr, "ERROR: Failed Opening/Creating %s. DB error:%s\n", db_path, errstr);
         exit(1);
     }
 
-    leveldb_options_destroy(opts);
+    rocksdb_options_destroy(opts);
 
     return(db);
 }
@@ -248,7 +248,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     dbres->n_partitions = n_partitions;
 
     //*** Create/Open the primary DB containing the ID's ***
-    dbres->id_compare = leveldb_comparator_create(dbres, db_id_compare_destroy,
+    dbres->id_compare = rocksdb_comparator_create(dbres, db_id_compare_destroy,
         db_id_compare_op, db_id_compare_name);
     snprintf(fname, sizeof(fname), "%s/id", loc);
     dbres->pdb = open_db(fname, dbres->id_compare, 1);
@@ -258,7 +258,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     }
 
     //*** Make the expire and soft DBs.  These are always a full wipe
-    dbres->expire_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+    dbres->expire_compare = rocksdb_comparator_create(NULL, db_expire_compare_destroy,
         db_expire_compare_op, db_expire_compare_name);
     snprintf(fname, sizeof(fname), "%s/history", loc);
     dbres->expire = open_db(fname, dbres->expire_compare, 1);
@@ -267,7 +267,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
         abort();
     }
 
-    dbres->soft_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+    dbres->soft_compare = rocksdb_comparator_create(NULL, db_expire_compare_destroy,
         db_expire_compare_op, db_expire_compare_name);
     snprintf(fname, sizeof(fname), "%s/soft", loc);
     dbres->soft = open_db(fname, dbres->soft_compare, 1);
@@ -277,7 +277,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     }
 
     //** And the history DB
-    dbres->history_compare = leveldb_comparator_create(dbres, db_history_compare_destroy,
+    dbres->history_compare = rocksdb_comparator_create(dbres, db_history_compare_destroy,
         db_history_compare_op, db_history_compare_name);
     snprintf(fname, sizeof(fname), "%s/history", loc);
     dbres->history= open_db(fname, dbres->history_compare, 0);
@@ -287,8 +287,8 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     }
 
     //** And the generic RW opt
-    dbres->wopts = leveldb_writeoptions_create();
-    dbres->ropts = leveldb_readoptions_create();
+    dbres->wopts = rocksdb_writeoptions_create();
+    dbres->ropts = rocksdb_readoptions_create();
 
     //*** Lastly add the group to the Key file ***
     dbres->loc = strdup(loc);
@@ -333,7 +333,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     }
 
     //*** Create/Open the primary DB containing the ID's ***
-    dbres->id_compare = leveldb_comparator_create(dbres, db_id_compare_destroy,
+    dbres->id_compare = rocksdb_comparator_create(dbres, db_id_compare_destroy,
         db_id_compare_op, db_id_compare_name);
     snprintf(fname, sizeof(fname), "%s/id", dbres->loc);
     dbres->pdb = open_db(fname, dbres->id_compare, wipe_clean);
@@ -343,7 +343,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     }
 
     //*** Make the expire and soft DBs.  These are always a full wipe
-    dbres->expire_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+    dbres->expire_compare = rocksdb_comparator_create(NULL, db_expire_compare_destroy,
         db_expire_compare_op, db_expire_compare_name);
     snprintf(fname, sizeof(fname), "%s/expire", dbres->loc);
     dbres->expire = open_db(fname, dbres->expire_compare, 1);
@@ -352,7 +352,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
         abort();
     }
 
-    dbres->soft_compare = leveldb_comparator_create(NULL, db_expire_compare_destroy,
+    dbres->soft_compare = rocksdb_comparator_create(NULL, db_expire_compare_destroy,
         db_expire_compare_op, db_expire_compare_name);
     snprintf(fname, sizeof(fname), "%s/soft", dbres->loc);
     dbres->soft = open_db(fname, dbres->soft_compare, 1);
@@ -362,7 +362,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     }
 
     //** And the history DB
-    dbres->history_compare = leveldb_comparator_create(dbres, db_history_compare_destroy,
+    dbres->history_compare = rocksdb_comparator_create(dbres, db_history_compare_destroy,
         db_history_compare_op, db_history_compare_name);
     snprintf(fname, sizeof(fname), "%s/history", dbres->loc);
     dbres->history = open_db(fname, dbres->history_compare, 0);
@@ -372,8 +372,8 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     }
 
     //** And the generic RW opt
-    dbres->wopts = leveldb_writeoptions_create();
-    dbres->ropts = leveldb_readoptions_create();
+    dbres->wopts = rocksdb_writeoptions_create();
+    dbres->ropts = rocksdb_readoptions_create();
 
     //** and make the mutex
     apr_pool_create(&(dbres->pool), NULL);
@@ -388,17 +388,17 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
 
 int umount_db(DB_resource_t *dbres)
 {
-    leveldb_close(dbres->pdb);
-    leveldb_close(dbres->expire);
-    leveldb_close(dbres->soft);
-    leveldb_close(dbres->history);
+    rocksdb_cancel_all_background_work(dbres->pdb, 1);     rocksdb_close(dbres->pdb);
+    rocksdb_cancel_all_background_work(dbres->expire, 1);  rocksdb_close(dbres->expire);
+    rocksdb_cancel_all_background_work(dbres->soft, 1);    rocksdb_close(dbres->soft);
+    rocksdb_cancel_all_background_work(dbres->history, 1); rocksdb_close(dbres->history);
 
-    leveldb_comparator_destroy(dbres->id_compare);
-    leveldb_comparator_destroy(dbres->expire_compare);
-    leveldb_comparator_destroy(dbres->soft_compare);
-    leveldb_comparator_destroy(dbres->history_compare);
-    leveldb_writeoptions_destroy(dbres->wopts);
-    leveldb_readoptions_destroy(dbres->ropts);
+    rocksdb_comparator_destroy(dbres->id_compare);
+    rocksdb_comparator_destroy(dbres->expire_compare);
+    rocksdb_comparator_destroy(dbres->soft_compare);
+    rocksdb_comparator_destroy(dbres->history_compare);
+    rocksdb_writeoptions_destroy(dbres->wopts);
+    rocksdb_readoptions_destroy(dbres->ropts);
 
     apr_thread_mutex_destroy(dbres->mutex);
     apr_pool_destroy(dbres->pool);
@@ -425,7 +425,7 @@ int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
     nbytes = 0;
     ptr = NULL;
     errstr = NULL;
-    ptr = leveldb_get(dbr->pdb, dbr->ropts, (void *)&id, sizeof(id), &nbytes, &errstr);
+    ptr = rocksdb_get(dbr->pdb, dbr->ropts, (void *)&id, sizeof(id), &nbytes, &errstr);
     if (errstr) {
         log_printf(10, "Unknown ID: " LU " errstr=%s\n", id, errstr);
         if (ptr) free(ptr);
@@ -500,7 +500,7 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
     errstr = NULL;
 
     //** Update the DB
-    leveldb_put(dbr->pdb, dbr->wopts, (void *)&(a->id), sizeof(osd_id_t), (const char *)a, sizeof(Allocation_t), &errstr);
+    rocksdb_put(dbr->pdb, dbr->wopts, (void *)&(a->id), sizeof(osd_id_t), (const char *)a, sizeof(Allocation_t), &errstr);
     if (errstr) {
         log_printf(10, "ERROR: Failed storing primary key: id=" LU " error=%s\n", a->id, errstr);
         free(errstr);
@@ -563,7 +563,7 @@ int _remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc)
 
     err = 0;
     errstr = NULL;
-    leveldb_delete(dbr->pdb, dbr->wopts, (void *)&(alloc->id), sizeof(osd_id_t), &errstr);
+    rocksdb_delete(dbr->pdb, dbr->wopts, (void *)&(alloc->id), sizeof(osd_id_t), &errstr);
     if (errstr) {
         log_printf(0, "ERROR removing key! id=" LU " error=%s\n", alloc->id, errstr);
         free(errstr);
@@ -571,11 +571,11 @@ int _remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc)
     }
 
     errstr = NULL;
-    leveldb_delete(dbr->expire, dbr->wopts, fill_timekey(&tkey, alloc->expiration, alloc->id), sizeof(tkey), &errstr);
+    rocksdb_delete(dbr->expire, dbr->wopts, fill_timekey(&tkey, alloc->expiration, alloc->id), sizeof(tkey), &errstr);
     if (errstr != NULL) { free(errstr); errstr = NULL; }
     if (alloc->reliability == ALLOC_SOFT) {
         errstr = NULL;
-        leveldb_delete(dbr->soft, dbr->wopts, (const char *)&tkey, sizeof(tkey), &errstr);
+        rocksdb_delete(dbr->soft, dbr->wopts, (const char *)&tkey, sizeof(tkey), &errstr);
         if (errstr != NULL) { free(errstr); errstr = NULL; }
     }
     return (err);
@@ -656,7 +656,7 @@ int create_alloc_db(DB_resource_t *dbr, Allocation_t *a)
 
 int db_iterator_end(DB_iterator_t *it)
 {
-    if (it->it) leveldb_iter_destroy(it->it);
+    if (it->it) rocksdb_iter_destroy(it->it);
     free(it);
 
     return (0);
@@ -681,26 +681,26 @@ int db_iterator_next(DB_iterator_t *it, int direction, Allocation_t *a)
     Allocation_t *aptr;
 
     //** Kick out  if reached the end
-    if (leveldb_iter_valid(it->it) == 0) return(1);
+    if (rocksdb_iter_valid(it->it) == 0) return(1);
 
     nbytes = 0;
 
     switch (it->db_index) {
     case (DB_INDEX_ID):
-        aptr = (Allocation_t *)leveldb_iter_value(it->it, &nbytes);
+        aptr = (Allocation_t *)rocksdb_iter_value(it->it, &nbytes);
         if (nbytes != sizeof(Allocation_t)) return(1);
 
         memcpy(a, aptr, sizeof(Allocation_t));
-        leveldb_iter_next(it->it);
+        rocksdb_iter_next(it->it);
         return (0);
         break;
     case DB_INDEX_EXPIRE:
     case DB_INDEX_SOFT:
-        tkey = (DB_timekey_t *)leveldb_iter_key(it->it, &nbytes);
+        tkey = (DB_timekey_t *)rocksdb_iter_key(it->it, &nbytes);
         if (nbytes == 0) return(1);
 
         id = tkey->id;  //** Preserve the ID because the next call changes the contents
-        leveldb_iter_next(it->it);
+        rocksdb_iter_next(it->it);
         return(_get_alloc_with_id_db(it->dbr, id, a));  //** The iterator already holds the lock.
         break;
     default:
@@ -726,8 +726,8 @@ DB_iterator_t *expire_iterator(DB_resource_t *dbr)
     it->id = rand();
     it->db_index = DB_INDEX_EXPIRE;
     it->dbr = dbr;
-    it->it = leveldb_create_iterator(dbr->expire, dbr->ropts);
-    leveldb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
+    it->it = rocksdb_create_iterator(dbr->expire, dbr->ropts);
+    rocksdb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
 
     return(it);
 }
@@ -746,8 +746,8 @@ DB_iterator_t *soft_iterator(DB_resource_t *dbr)
     it->id = rand();
     it->db_index = DB_INDEX_SOFT;
     it->dbr = dbr;
-    it->it = leveldb_create_iterator(dbr->soft, dbr->ropts);
-    leveldb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
+    it->it = rocksdb_create_iterator(dbr->soft, dbr->ropts);
+    rocksdb_iter_seek(it->it, fill_timekey(&key, 0, 0), sizeof(key));
 
     return(it);
 }
@@ -765,8 +765,8 @@ DB_iterator_t *id_iterator(DB_resource_t *dbr)
     it->id = rand();
     it->db_index = DB_INDEX_ID;
     it->dbr = dbr;
-    it->it = leveldb_create_iterator(dbr->pdb, dbr->ropts);
-    leveldb_iter_seek(it->it, (void *)&id, sizeof(id));
+    it->it = rocksdb_create_iterator(dbr->pdb, dbr->ropts);
+    rocksdb_iter_seek(it->it, (void *)&id, sizeof(id));
 
     return(it);
 }
@@ -778,7 +778,7 @@ DB_iterator_t *id_iterator(DB_resource_t *dbr)
 int set_id_iterator(DB_iterator_t *dbi, osd_id_t id)
 {
 
-    leveldb_iter_seek(dbi->it, (void *)&id, sizeof(osd_id_t));
+    rocksdb_iter_seek(dbi->it, (void *)&id, sizeof(osd_id_t));
 
     log_printf(15, "id=" LU "\n", id);
 
@@ -793,7 +793,7 @@ int set_expire_iterator(DB_iterator_t *dbi, ibp_time_t t, Allocation_t *a)
 {
     DB_timekey_t key;
 
-    leveldb_iter_seek(dbi->it, fill_timekey(&key, t, a->id), sizeof(key));
+    rocksdb_iter_seek(dbi->it, fill_timekey(&key, t, a->id), sizeof(key));
 
     log_printf(15, "set_expire_iterator: t=" TT " id=" LU "\n", ibp2apr_time(t), a->id);
 

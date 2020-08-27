@@ -225,7 +225,7 @@ endif()
 
 find_package(ZLIB REQUIRED)
 find_package(ZMQ REQUIRED)
-find_package(LevelDB REQUIRED)
+find_package(RocksDB REQUIRED)
 find_package(APR REQUIRED)
 find_package(APRUtil REQUIRED)
 

@@ -31,15 +31,15 @@ if(NOT USE_SUPERBUILD)
     if (NOT HAS_FUSE3)
         find_package(FUSE REQUIRED)
     endif()
-    find_package(LevelDB REQUIRED)
+    find_package(RocksDB REQUIRED)
     include_directories(
         ${JERASURE_INCLUDE_DIR} ${TOOLBOX_INCLUDE_DIR} ${GOP_INCLUDE_DIR}
-        ${IBP_INCLUDE_DIR} ${FUSE_INCLUDE_DIR} ${LEVELDB_INCLUDE_DIR}
+        ${IBP_INCLUDE_DIR} ${FUSE_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR}
     )
 
     list(APPEND LIBS
         ${IBP_LIBRARY} ${GOP_LIBRARY} ${TOOLBOX_LIBRARY}
-        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${LEVELDB_LIBRARY}
+        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY}
     )
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FILE_OFFSET_BITS=64")
@@ -59,7 +59,7 @@ set(LSTORE_LIBS toolbox
                 ${ZMQ_LIBRARY}
                 ${FUSE_LIBRARY}
                 ${JERASURE_LIBRARY}
-                ${LEVELDB_LIBRARY}
+                ${ROCKSDB_LIBRARY}
                 dl
                 )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
@@ -69,7 +69,7 @@ set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${ZLIB_INCLUDE_DIR}
                     ${FUSE_INCLUDE_DIR}
                     ${JERASURE_INCLUDE_DIR}
-                    ${LEVELDB_INCLUDE_DIR})
+                    ${ROCKSDB_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
 # common objects

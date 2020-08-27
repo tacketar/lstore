@@ -369,7 +369,7 @@ finished:
 
 void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, apr_hash_t *lut, apr_pool_t *mpool)
 {
-    leveldb_iterator_t *it;
+    rocksdb_iterator_t *it;
     char buf[r->lru_history_bytes];
     lru_history_t *lh = (lru_history_t *)buf;
     db_history_key_t *key;
@@ -380,12 +380,12 @@ void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, a
     tbx_stack_t *stack = NULL;  //** This is used for anything we need to delete
 
     //** Create the iterator
-    it = leveldb_create_iterator(r->db.history, r->db.ropts);
-    leveldb_iter_seek(it, db_fill_history_key(&base_key, partition, 0, 0), sizeof(base_key));
+    it = rocksdb_create_iterator(r->db.history, r->db.ropts);
+    rocksdb_iter_seek(it, db_fill_history_key(&base_key, partition, 0, 0), sizeof(base_key));
 
-    while (leveldb_iter_valid(it) > 0) {
+    while (rocksdb_iter_valid(it) > 0) {
         nbytes = 0;
-        key = (db_history_key_t *)leveldb_iter_key(it, &nbytes);
+        key = (db_history_key_t *)rocksdb_iter_key(it, &nbytes);
         if (nbytes == 0) break;
         id = key->id; //** Snag the ID for later use. key gits overwritten below
         if ((id % r->n_partitions) != (unsigned int)partition) {   //** Kick out if a different partition
@@ -406,11 +406,11 @@ void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, a
         //** Flag it as found.  If this isn't a viable ID then it will get removed in the merge process
         d->found |= REBUILD_FOUND_HISTORY;
         apr_hash_set(lut, &(d->id), sizeof(d->id), d);
-        if (leveldb_iter_valid(it)) leveldb_iter_next(it);  //** The populate_core call above can hit the iter end
+        if (rocksdb_iter_valid(it)) rocksdb_iter_next(it);  //** The populate_core call above can hit the iter end
     }
 
     //** Cleanup
-    leveldb_iter_destroy(it);
+    rocksdb_iter_destroy(it);
 
     //** See if we have to delete something
     if (stack) lru_history_populate_remove(r, stack);
@@ -466,10 +466,8 @@ void rebuild_add(Resource_t *r, rebuild_lut_t *d)
 
 void rebuild_modify(Resource_t *r, rebuild_lut_t *d, ibp_time_t new_expiration)
 {
-    //** BDB has the 2ndary indices coupled to the ID so this will remove the old expiration entries
-    //** We'll have to change this for LevelDB/RockDB
     d->a.expiration = new_expiration;
-    if (d->found & REBUILD_FOUND_DB) modify_alloc_db(&(r->db), &(d->a), 0);
+    modify_alloc_db(&(r->db), &(d->a), 0);
 
     if (r->update_alloc == 1) {
         write_allocation_header(r, &(d->a), 0);

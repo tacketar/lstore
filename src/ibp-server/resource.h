@@ -218,6 +218,6 @@ IBPS_API void update_manage_history(Resource_t *r, osd_id_t id, int is_alias,
                                     osd_id_t pid);
 IBPS_API const char *db_fill_history_key(db_history_key_t *key, osd_id_t id, int type, apr_time_t date);
 IBPS_API void db_delete_history(Resource_t *r, osd_id_t id);
-IBPS_API void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, leveldb_iterator_t *it);
+IBPS_API void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, rocksdb_iterator_t *it);
 IBPS_API void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack);
 #endif
