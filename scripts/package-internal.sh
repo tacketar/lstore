@@ -9,7 +9,7 @@
 #
 
 echo "====================Manually installing libleveldb-dev================================="
-apt-get install -y libleveldb-dev
+apt-get install -y librocksdb-dev
 echo "======================================================================================="
 
 set -eux
