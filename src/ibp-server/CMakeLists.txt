@@ -36,6 +36,15 @@ set(LSTORE_LIBS toolbox
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
+#Temporary hack until the packaged version of RocksDB catches up with git
+include(CheckLibraryExists)
+check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+if (NOT HAS_ROCKSDB_CANCEL)
+message(STATUS "MISSING RocksDB_cancel!")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_ROCKSDB_CANCEL_MISSING")
+    set (ROCKSDB_CANCEL "rocksdb_cancel_all_background_work.cc")
+endif()
+
 # Additional Compiler flags.
 # No-op for ibp
 
@@ -68,6 +77,7 @@ set(LSTORE_PROJECT_OBJS
     subnet.c
     thread_slots.c
     transfer_stats.c
+    ${ROCKSDB_CANCEL}
 )
 
 set(LSTORE_PROJECT_INCLUDES_OLD)

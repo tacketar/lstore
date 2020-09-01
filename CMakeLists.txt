@@ -100,7 +100,7 @@ endif()
 # Now that we know what compiler we're using, we can "start" the project. If
 # you do it in the other order, cmake complains and reruns the CMakeLists.txt
 # compilation.
-project(LStore C)
+project(LStore C CXX)
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(LStoreVersion)
 

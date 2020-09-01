@@ -32,6 +32,11 @@ extern "C" {
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
 
+//**Hack until packaged version of RocksDB catches up with git
+#ifdef _ROCKSDB_CANCEL_MISSING
+void rocksdb_cancel_all_background_work(rocksdb_t* db, unsigned char wait);
+#endif
+
 //****** Don't complain if not used.  These are helpers for lio_wamer and warmer_query *******
 __attribute__((unused)) static int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db);
 __attribute__((unused)) static int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *name);

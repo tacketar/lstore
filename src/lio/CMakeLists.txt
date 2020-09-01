@@ -72,6 +72,15 @@ set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${ROCKSDB_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
+#Temporary hack until the packaged version of RocksDB catches up with git
+include(CheckLibraryExists)
+check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+if (NOT HAS_ROCKSDB_CANCEL)
+message(STATUS "MISSING RocksDB_cancel!")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_ROCKSDB_CANCEL_MISSING")
+    set (ROCKSDB_CANCEL "rocksdb_cancel_all_background_work.cc")
+endif()
+
 # common objects
 set(LSTORE_PROJECT_OBJS
 		authn/fake.c
@@ -125,6 +134,7 @@ set(LSTORE_PROJECT_OBJS
 		trace.c
 		trace_replay.c
 		view_base.c
+        ${ROCKSDB_CANCEL}
 )
 
 set(LSTORE_PROJECT_INCLUDES_OLD)

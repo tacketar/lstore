@@ -1,7 +1,6 @@
 macro(lstore_project_common LSTORE_PROJECT_NAME)
     # Extract version components, version string is expected be in the form:
     #  <major>.<minor>.<patch>-<git-hash>[-<other-tags>]
-    
     # Make the version file.
     include(${CMAKE_SOURCE_DIR}/cmake/Date.cmake)
     include(${CMAKE_SOURCE_DIR}/cmake/CompilerVersion.cmake)

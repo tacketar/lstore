@@ -38,6 +38,11 @@
 #include <dirent.h>
 #include <signal.h>
 
+//**Hack until packaged version of RocksDB catches up with git
+#ifdef _ROCKSDB_CANCEL_MISSING
+void rocksdb_cancel_all_background_work(rocksdb_t* db, unsigned char wait);
+#endif
+
 #define DB_INDEX_ID     0
 #define DB_INDEX_EXPIRE 1
 #define DB_INDEX_SOFT   2
