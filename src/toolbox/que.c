@@ -37,17 +37,42 @@ struct tbx_que_s {
     int n_used;
     int get_waiting;
     int put_waiting;
+    int finished;
 };
+
+//************************************************************************************
+
+void tbx_que_set_finished(tbx_que_t *q)
+{
+    apr_thread_mutex_lock(q->lock);
+    q->finished = TBX_QUE_FINISHED;
+    apr_thread_mutex_unlock(q->lock);
+
+}
+
+//************************************************************************************
+
+int tbx_que_is_finished(tbx_que_t *q)
+{
+    int done;
+
+    apr_thread_mutex_lock(q->lock);
+    done = q->finished;
+    apr_thread_mutex_unlock(q->lock);
+
+    return(done);
+}
+
 
 //************************************************************************************
 
 int tbx_que_count(tbx_que_t *q)
 {
     int n;
-    
+
     apr_thread_mutex_lock(q->lock);
     n = q->n_used;
-    apr_thread_mutex_lock(q->lock);
+    apr_thread_mutex_unlock(q->lock);
     return(n);
 }
 
@@ -91,36 +116,35 @@ tbx_que_t *tbx_que_create(int n_objects, int object_size)
 }
 
 //************************************************************************************
+// tbx_que_{bulk}_put commands
+//************************************************************************************
 
-int tbx_que_put(tbx_que_t *q, void *object, apr_time_t dt)
+int _tbx_que_bulk_put(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt, apr_time_t stime)
 {
-    int err, slot;
-    apr_time_t stime;
-
-    err = 0;
-    stime = apr_time_now();
-    apr_thread_mutex_lock(q->lock);
+    int i, n, slot;
 
     while (1) {
         if (q->n_used < q->n_objects) {  //** Got space
-            if (object != NULL) {
-                slot = (q->n_used + q->slot) % q->n_objects;
-                memcpy(q->array + slot*q->object_size, object, q->object_size);
-                q->n_used++;
+            if (objects != NULL) {
+                i = q->n_objects - q->n_used;
+                n = (i > n_objects) ? n_objects : i;
+                for (i=0; i<n; i++) {
+                    slot = (q->n_used + q->slot) % q->n_objects;
+                    memcpy(q->array + slot*q->object_size, (char *)objects + i*q->object_size, q->object_size);
+                    q->n_used++;
+                }
+
             }
 
             //** Check if someone is waiting
             if (q->get_waiting > 0) apr_thread_cond_broadcast(q->get_cond);
             if (q->put_waiting > 0) apr_thread_cond_broadcast(q->put_cond);
 
-            break;
+            return(n);
         }
 
         //** See if we timed out
-        if ((apr_time_now()-stime) > dt) {
-            err = 1;
-            break;
-        }
+        if ((apr_time_now()-stime) > dt) return(TBX_QUE_TIMEOUT);
 
         //** See if we always block
         if (dt == TBX_QUE_BLOCK) stime = apr_time_now();
@@ -131,43 +155,68 @@ int tbx_que_put(tbx_que_t *q, void *object, apr_time_t dt)
         q->put_waiting--;
     }
 
-    apr_thread_mutex_unlock(q->lock);
-
-    return(err);
+    return(0);
 }
 
 //************************************************************************************
 
-int tbx_que_get(tbx_que_t *q, void *object, apr_time_t dt)
+int tbx_que_bulk_put(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt)
 {
-    int err;
+    int n;
     apr_time_t stime;
 
-    err = 0;
     stime = apr_time_now();
     apr_thread_mutex_lock(q->lock);
+    if ((q->n_used == 0) && (q->finished == TBX_QUE_FINISHED)) {
+        n = TBX_QUE_FINISHED;
+    } else {
+        n = _tbx_que_bulk_put(q, n_objects, objects, dt, stime);
+    }
+    apr_thread_mutex_unlock(q->lock);
+
+    return(n);
+}
+
+//************************************************************************************
+
+int tbx_que_put(tbx_que_t *q, void *object, apr_time_t dt)
+{
+    int n;
+
+    n = tbx_que_bulk_put(q, 1, object, dt);
+
+    return((n == 1) ? 0 : n);
+}
+
+//************************************************************************************
+// tbx_que_{bulk}_get commands
+//************************************************************************************
+
+int _tbx_que_bulk_get(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt, apr_time_t stime)
+{
+    int i, n;
 
     while (1) {
         if (q->n_used > 0) {  //** Got an object
-            if (object != NULL) {
-                q->slot = q->slot % q->n_objects;
-                memcpy(object, q->array + q->slot*q->object_size, q->object_size);
-                q->n_used--;
-                q->slot++;
+            n = (q->n_used > n_objects) ? n_objects : q->n_used;
+            if (objects != NULL) {
+                for (i=0; i<n; i++) {
+                    q->slot = q->slot % q->n_objects;
+                    memcpy((char *)objects + i*q->object_size, q->array + q->slot*q->object_size, q->object_size);
+                    q->n_used--;
+                    q->slot++;
+                }
             }
 
             //** Check if someone is waiting
             if (q->get_waiting > 0) apr_thread_cond_broadcast(q->get_cond);
             if (q->put_waiting > 0) apr_thread_cond_broadcast(q->put_cond);
 
-            break;
+            return(n);
         }
 
         //** See if we timed out
-        if ((apr_time_now()-stime) > dt) {
-            err = 1;
-            break;
-        }
+        if ((apr_time_now()-stime) > dt) return(TBX_QUE_TIMEOUT);
 
         //** See if we always block
         if (dt == TBX_QUE_BLOCK) stime = apr_time_now();
@@ -178,7 +227,35 @@ int tbx_que_get(tbx_que_t *q, void *object, apr_time_t dt)
         q->get_waiting--;
     }
 
+    return(0);
+}
+
+//************************************************************************************
+
+int tbx_que_bulk_get(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt)
+{
+    int n;
+    apr_time_t stime;
+
+    stime = apr_time_now();
+    apr_thread_mutex_lock(q->lock);
+    if ((q->n_used == 0) && (q->finished == TBX_QUE_FINISHED)) {
+        n = TBX_QUE_FINISHED;
+    } else {
+        n = _tbx_que_bulk_get(q, n_objects, objects, dt, stime);
+    }
     apr_thread_mutex_unlock(q->lock);
 
-    return(err);
+    return(n);
+}
+
+//************************************************************************************
+
+int tbx_que_get(tbx_que_t *q, void *object, apr_time_t dt)
+{
+    int n;
+
+    n = tbx_que_bulk_get(q, 1, object, dt);
+
+    return((n == 1) ? 0 : n);
 }

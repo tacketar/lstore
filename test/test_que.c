@@ -47,6 +47,7 @@ typedef struct {
     tbx_que_t *q;
     apr_time_t dt;
     int ntasks;
+    int n_bulk;
     int me;
     int retries;
     task_t *task;
@@ -59,6 +60,8 @@ typedef struct {
     apr_time_t dt;
     int ntasks;
     int retries;
+    int n_bulk;
+    int me;
     task_t *task;
 } producer_t;
 
@@ -71,30 +74,42 @@ void *producer_thread(apr_thread_t *th, void *arg)
     task_t *task = p->task;
     task_t *t;
     apr_time_t dt, start;
-    int i, n;
-
+    int i, n, j;
+    task_t **ptr;
     dt = p->dt;
 
-    start = apr_time_now();
+    //** Create all the tasks
+    tbx_type_malloc_clear(ptr, task_t *, p->ntasks);
     for (i=0; i<p->ntasks; i++) {
         task[i].slot = i;
         task[i].start = apr_time_now();
         task[i].times_consumed = 0;
-    again:
-        t = task + i;
-        if (mode == 0) {
-            n = tbx_pipe_put(p->pfd, &t, sizeof(task_t *), dt);
-        } else {
-            n = tbx_que_put(p->q, &t, dt);
-        }
-        if (n != 0) {
-            task[i].retries++;
-            p->retries++;
-            goto again;
-        }
+        ptr[i] = task + i;
     }
 
+    //** Now submit them
+    start = apr_time_now();
+    n = 0;
+    for (i=0; i<p->ntasks; i = i + n) {
+        t = task + i;
+        j = p->ntasks - i;
+        n = (j > p->n_bulk) ? p->n_bulk : j;
+        if (mode == 0) {
+            n = tbx_pipe_put(p->pfd, &t, sizeof(task_t *), dt);
+            n = (n == 0) ? 1 : 0;
+        } else {
+            n = tbx_que_bulk_put(p->q, n, ptr + i, dt);
+        }
+        if (n == 0) {
+            task[i].retries++;
+            p->retries++;
+        } else if (n<0) {
+            n = 0;
+        }
+    }
     p->dt = apr_time_now() - start;
+    free(ptr);
+
     return(NULL);
 }
 
@@ -103,34 +118,46 @@ void *producer_thread(apr_thread_t *th, void *arg)
 void *consumer_thread(apr_thread_t *th, void *arg)
 {
     consumer_t *c = (consumer_t *)arg;
-    task_t *task;
+    task_t **task;
     apr_time_t dt, start;
-    int n;
+    int i, n;
 
     dt = c->dt;
     c->ntasks = 0;
+
+    tbx_type_malloc_clear(task, task_t *, c->n_bulk);
 
     start = apr_time_now();
     do {
     again:
         if (mode == 0) {
-            n = tbx_pipe_get(c->pfd, &task, sizeof(task_t *), dt);
+            n = tbx_pipe_get(c->pfd, task, sizeof(task_t *), dt);
+            if (n == 0) {
+                n = 1;
+                if (task[0] == NULL) n = TBX_QUE_FINISHED;
+            } else if (n == 1) {
+                n = 0;
+            }
         } else {
-            n = tbx_que_get(c->q, &task, dt);
+            n = tbx_que_bulk_get(c->q, c->n_bulk, task, dt);
         }
-        if (n != 0) {
+
+        if (n == TBX_QUE_TIMEOUT) {
             c->retries++;
             goto again;
-        } else if (task != NULL) {
-            task->end = apr_time_now();
-            task->who = c->me;
-            task->times_consumed++;
-            c->ntasks++;
+        } else if (n > 0) {
+            for (i=0; i<n; i++) {
+                task[i]->end = apr_time_now();
+                task[i]->who = c->me;
+                task[i]->times_consumed++;
+                c->ntasks++;
+            }
         }
-    } while (task != NULL);
+    } while (n != TBX_QUE_FINISHED);
 
     c->dt = apr_time_now() - start;
 
+    free(task);
     return(NULL);
 }
 
@@ -210,12 +237,15 @@ int process_results(task_t *task, int ntasks, producer_t *producer, int np, cons
     fprintf(stdout, "\n");
     fprintf(stdout, "-------------- Consumer stats (# - dt ntasks rate retries)-------------\n");
     j = k = consumer[0].ntasks;
+    n = 0;
     for (i=0; i<nc; i++) {
+        n = n + consumer[i].ntasks;
         if (consumer[i].ntasks > k) k = consumer[i].ntasks;
         if (consumer[i].ntasks < j) j = consumer[i].ntasks;
         d =  (consumer[i].ntasks != 0) ? (consumer[i].dt*1.0)/consumer[i].ntasks : 0;
         fprintf(stdout, "%d - " TT "  %d  %lf %d\n", i, consumer[i].dt, consumer[i].ntasks, d, consumer[i].retries);
     }
+    fprintf(stdout, "Total tasks: %d\n", n);
 
     n = (j+k)/2;
     d = (double)(k-j)/n*100.0;
@@ -261,7 +291,8 @@ int process_results(task_t *task, int ntasks, producer_t *producer, int np, cons
 
 int main(int argc, char **argv)
 {
-    int np, nc, ntasks, i, start_option, j, k, n;
+    int ntasks, i, start_option, j, k, n;
+    int np_bulk, nc_bulk, np, nc;
     int pfd[2], n_slots;
     tbx_que_t *q;
     apr_status_t dummy;
@@ -271,19 +302,24 @@ int main(int argc, char **argv)
     producer_t *producer;
     apr_pool_t *mpool;
 
-    np = 1;
-    nc = 1;
+    np = 1;  np_bulk = 1;
+    nc = 1;  nc_bulk = 1;
     ntasks = 1000;
 
     if (argc == 1) {
-        printf("test_que --pipe|--que n_slots --dt dt --np n_producers --nc n_consumers --ntasks ntasks\n");
+        printf("test_que --pipe|--que n_slots --dt dt --np n_producers --nc n_consumers [--np_bulk n_tasks] [ --nc_bulk n_tasks] --ntasks ntasks\n");
         printf("    --pipe   Use the system pipe functions for interprocess communication(default mode)\n");
         printf("    --que n_slots      Use the array queue functions for interprocess communication\n");
         printf("    --dt dt            Max time to wait for a task(us).\n");
         printf("    --np n_producers   Number of producer threads. Default is %d.\n", np);
         printf("    --nc n_consumers   Number of consumer threads. Defaults is %d.\n", nc);
+        printf("    --np_bulk n_tasks  Number of consumer tasks to submit at a time.  Defaults is %d.\n", np_bulk);
+        printf("                       Only valid with --que\n");
+        printf("    --nc_bulk n_tasks  Number of consumer tasks to submit at a time.  Defaults is %d.\n", nc_bulk);
+        printf("                       Only valid with --que\n");
         printf("    --ntasks ntasks    Total number of tasks to process. Default is %d\n", ntasks);
         printf("\n");
+        return(0);
      }
 
     dt = apr_time_from_sec(1);
@@ -312,6 +348,14 @@ int main(int argc, char **argv)
             i++;
             np = atol(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "--nc_bulk") == 0) {
+            i++;
+            nc_bulk = atol(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "--np_bulk") == 0) {
+            i++;
+            np_bulk = atol(argv[i]);
+            i++;
         } else if (strcmp(argv[i], "--ntasks") == 0) {
             i++;
             ntasks = atol(argv[i]);
@@ -319,6 +363,11 @@ int main(int argc, char **argv)
         }
     } while  ((start_option < i) && (i<argc));
 
+
+    if (((np_bulk > 1) || (nc_bulk > 1)) && (mode == 0)) {
+        printf("ERROR: np_bulk or nc_bulk can only be greater than 1 when que mode is enabled!\n");
+        return(1);
+    }
 
     //** Allocate all the space
     tbx_type_malloc_clear(task, task_t, ntasks);
@@ -356,14 +405,17 @@ int main(int argc, char **argv)
         consumer[i].me = i;
         consumer[i].pfd = pfd;
         consumer[i].q = q;
+        consumer[i].n_bulk = nc_bulk;
         tbx_thread_create_assert(&(consumer[i].thread), NULL, consumer_thread, consumer + i, mpool);
     }
 
     //** Launch the producers
     for (i=0; i<np; i++) {
+        producer[i].me = i;
         producer[i].dt = dt;
         producer[i].pfd = pfd;
         producer[i].q = q;
+        producer[i].n_bulk = np_bulk;
         tbx_thread_create_assert(&(producer[i].thread), NULL, producer_thread, producer + i, mpool);
     }
 
@@ -371,14 +423,15 @@ int main(int argc, char **argv)
     for (i=0; i<np; i++) {
         apr_thread_join(&dummy, producer[i].thread);
     }
-    t = NULL;  //** Tell the consumeers to shut down
-    for (i=0; i<nc; i++) {
-        if (mode == 0) {
+    if (mode == 0) {
+        t = NULL;  //** Tell the consumeers to shut down
+        for (i=0; i<nc; i++) {
             tbx_pipe_put(pfd, &t, sizeof(task_t *), apr_time_from_sec(30));
-        } else {
-            tbx_que_put(q, &t, apr_time_from_sec(30));
         }
+    } else {
+        tbx_que_set_finished(q);
     }
+
     for (i=0; i<nc; i++) {
         apr_thread_join(&dummy, consumer[i].thread);
     }

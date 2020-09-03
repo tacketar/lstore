@@ -24,13 +24,20 @@
 
 #define TBX_QUE_BLOCK 123456789  //** Only return when the get/put completes
 
+#define TBX_QUE_TIMEOUT  -1
+#define TBX_QUE_FINISHED -2
+
 struct tbx_que_s;
 typedef struct tbx_que_s tbx_que_t;
 
 TBX_API int tbx_que_count(tbx_que_t *q);
+TBX_API void tbx_que_set_finished(tbx_que_t *q);
+TBX_API int tbx_que_is_finished(tbx_que_t *q);
 TBX_API tbx_que_t *tbx_que_create(int n_objects, int object_size);
 TBX_API void tbx_que_destroy(tbx_que_t *q);
 TBX_API int tbx_que_get(tbx_que_t *q, void *object, apr_time_t dt);
+TBX_API int tbx_que_bulk_get(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt);
 TBX_API int tbx_que_put(tbx_que_t *q, void *object, apr_time_t dt);
+TBX_API int tbx_que_bulk_put(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt);
 
 #endif
