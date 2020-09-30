@@ -54,7 +54,7 @@ typedef int (*gop_portal_connect_fn_t)(tbx_ns_t *ns, void *connect_context, char
 typedef void (*gop_portal_close_fn_t)(tbx_ns_t *ns);
 typedef void (*gop_portal_sort_fn_t)(void *arg, gop_opque_t *q);        //** optional
 typedef void (*gop_portal_submit_fn_t)(void *arg, gop_op_generic_t *op);
-typedef void (*gop_portal_exec_fn_t)(void *arg, gop_op_generic_t *op);   //** optional
+typedef void *(*gop_portal_exec_fn_t)(void *arg, gop_op_generic_t *op);   //** optional
 
 struct gop_portal_fn_t {
     gop_portal_dup_fn_t dup_connect_context;

@@ -181,7 +181,7 @@ if (gop) {
 }
 
 //*************************************************************
-void thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
+void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
 {
     gop_thread_pool_op_t *op = gop_get_tp(gop);
     gop_thread_pool_context_t *tpc = op->tpc;
@@ -230,7 +230,10 @@ void thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
     log_printf(4, "tp_recv: Start!!! gid=%d tid=%d op->depth=%d op->overflow_slot=%d n_overflow=" AIT "\n", gop_id(gop), tid, op->depth, op->overflow_slot, tbx_atomic_get(tpc->n_overflow));
     tbx_atomic_inc(tpc->n_started);
 
+    gop->op->cmd.start_time = apr_time_now();
     status = op->fn(op->arg, gop_id(gop));
+    gop->op->cmd.end_time = apr_time_now();
+
     if (_tp_stats > 0) {
         if (tid != op->parent_tid) {
             tbx_atomic_dec(_tp_depth_concurrent[*(_thread_local_depth_ptr())]);
@@ -269,6 +272,8 @@ void thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
 
         if (gop) _tp_submit_op(NULL, gop); //** If we got one just loop around and process it
     }
+
+    return(NULL);
 }
 
 //*************************************************************

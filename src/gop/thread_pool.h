@@ -38,7 +38,7 @@ int thread_pool_direct(gop_thread_pool_context_t *tpc, apr_thread_start_t fn, vo
 int set_thread_pool_op(gop_thread_pool_op_t *op, gop_thread_pool_context_t *tpc, char *que, gop_op_status_t (*fn)(void *arg, int id), void *arg, void (*my_op_free)(void *arg), int workload);
 
 
-void thread_pool_exec_fn(void *arg, gop_op_generic_t *op);
+void *thread_pool_exec_fn(void *arg, gop_op_generic_t *op);
 
 #ifdef __cplusplus
 }
