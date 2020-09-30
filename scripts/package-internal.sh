@@ -8,7 +8,7 @@
 # Preliminary bootstrapping
 #
 
-echo "====================Manually installing libleveldb-dev================================="
+echo "====================Manually installing librocksdb-dev================================="
 apt-get install -y librocksdb-dev
 echo "======================================================================================="
 
