@@ -67,6 +67,7 @@ IBP_API void ibp_timer_set(ibp_timer_t *t, int client_timeout, int server_timeou
 IBP_API ibp_depot_t *ibp_depot_new();
 IBP_API void ibp_depot_destroy(ibp_depot_t *d);
 IBP_API void ibp_depot_set(ibp_depot_t *d, char *host, int port, ibp_rid_t rid);
+IBP_API void ibp_cap2depot(const ibp_cap_t *cap, ibp_depot_t *d);
 
 //** The proxy framework is being replaced so these will go away soon
 IBP_API ibp_proxy_capstatus_t *new_ibp_proxy_capstatus();

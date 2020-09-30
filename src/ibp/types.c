@@ -23,10 +23,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tbx/assert_result.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/log.h>
 #include <time.h>
 
+#include "misc.h"
+#include "op.h"
 #include "types.h"
 
 //*****************************************************************
@@ -60,6 +63,38 @@ void ibp_depot_set(ibp_depot_t *d, char *host, int port, ibp_rid_t rid)
 
     d->port = port;
     d->rid = rid;
+}
+
+//*****************************************************************
+//  ibp_cap2depot - Takes a capability and strips out the depot bits and stores it
+//*****************************************************************
+
+void ibp_cap2depot(const ibp_cap_t *cap, ibp_depot_t *d)
+{
+    char host[MAX_HOST_SIZE];
+    char *bstate;
+    char *rid;
+    int port, finished;
+
+    host[MAX_HOST_SIZE-1] = '\0';
+    host[0] = '\0';
+    port = -1;
+
+    char *temp = strdup(cap);
+    char *ptr;
+    tbx_stk_string_token(temp, "/", &bstate, &finished); //** gets the ibp:/
+    ptr = tbx_stk_string_token(NULL, ":", &bstate, &finished); //** This should be the hostname
+    ptr = &(ptr[1]);  //** Skip the extra "/"
+    sscanf(tbx_stk_string_token(NULL, "/", &bstate, &finished), "%d", &port);
+    strncpy(host,  ptr, MAX_HOST_SIZE-1); //** This should be the host name
+
+    ptr = tbx_stk_string_token(NULL, "#", &bstate, &finished); //** This should be the RID
+    rid = tbx_stk_unescape_text('\\', ptr);
+
+    ibp_depot_set(d, host, port, ibp_str2rid(rid));
+
+    free(temp); //** Cleanup
+    free(rid);
 }
 
 //===================================================================
