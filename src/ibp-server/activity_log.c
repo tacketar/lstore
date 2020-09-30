@@ -505,7 +505,7 @@ int alog_read_alias_copy32(activity_log_t *alog, int cmd, FILE *outfd)
     uint64_t offset2, offset, size;
     int port, family, nbytes;
     char address[16], key[512], typekey[512], host[128];
-    char path[4096], tmp[4096];
+    char path[4096+6], tmp[4096];
 
     aread(alog->fd, &a, sizeof(a), "alog_read_alias_copy32: Error with read!\n");
     aread(alog->fd, &ca, sizeof(ca), "alog_read_alias_copy32: Error with read!\n");
@@ -579,7 +579,7 @@ int alog_read_alias_copy64(activity_log_t *alog, int cmd, FILE *outfd)
     uint64_t offset2;
     int port, family, nbytes;
     char address[16], key[512], typekey[512], host[128];
-    char path[4096], tmp[4096];
+    char path[4096+6], tmp[4096];
 
     aread(alog->fd, &a, sizeof(a), "alog_read_alias_copy64: Error with read!\n");
     aread(alog->fd, &ca, sizeof(ca), "alog_read_alias_copy64: Error with read!\n");
@@ -650,7 +650,7 @@ int alog_read_copy64(activity_log_t *alog, int cmd, FILE *outfd)
     uint64_t offset2;
     int port, family, nbytes;
     char address[16], key[512], typekey[512], host[128];
-    char path[4096], tmp[4096];
+    char path[4096+6], tmp[4096];
 
     aread(alog->fd, &a, sizeof(a), "alog_read_copy64: Error with read!\n");
     aread(alog->fd, &ca, sizeof(ca), "alog_read_copy64: Error with read!\n");
@@ -725,7 +725,7 @@ int alog_read_copy32(activity_log_t *alog, int cmd, FILE *outfd)
     uint64_t offset2, offset, size;
     int port, family, nbytes;
     char address[16], key[512], typekey[512], host[128];
-    char path[4096], tmp[4096];
+    char path[4096+6], tmp[4096];
 
     aread(alog->fd, &a, sizeof(a), "alog_read_copy32: Error with read!\n");
     aread(alog->fd, &ca, sizeof(ca), "alog_read_copy32: Error with read!\n");
