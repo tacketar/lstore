@@ -617,8 +617,8 @@ int main(int argc, const char **argv)
     global_network = NULL;
 
     if (argc < 1) {
-        printf("ibp_server [-d] [-r] config_file\n\n");
-        printf("-r          - Rebuild RID databases. Same as force_rebuild=1 in config file.\n");
+        printf("ibp_server [-d] [--rebuild] config_file\n\n");
+        printf("--rebuild   - Rebuild RID databases. Same as force_rebuild=1 in config file.\n");
         printf("              This takes signifcantly longer to start the IBP server and should\n");
         printf("              not be required unless the DB itself is corrupt\n");
         printf("-d          - Run as a daemon\n");
@@ -631,7 +631,7 @@ int main(int argc, const char **argv)
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0) {
             daemon = 1;
-        } else if (strcmp(argv[i], "-r") == 0) {
+        } else if (strcmp(argv[i], "--rebuild") == 0) {
             force_rebuild = 1;
         }
     }
