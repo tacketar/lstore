@@ -46,6 +46,9 @@ void tbx_que_set_finished(tbx_que_t *q)
 {
     apr_thread_mutex_lock(q->lock);
     q->finished = TBX_QUE_FINISHED;
+
+    //** Check if someone is waiting
+    if (q->get_waiting > 0) apr_thread_cond_broadcast(q->get_cond);
     apr_thread_mutex_unlock(q->lock);
 
 }
@@ -57,7 +60,7 @@ int tbx_que_is_finished(tbx_que_t *q)
     int done;
 
     apr_thread_mutex_lock(q->lock);
-    done = q->finished;
+    done = ((q->n_used == 0) && (q->finished == TBX_QUE_FINISHED)) ? 1 : 0;
     apr_thread_mutex_unlock(q->lock);
 
     return(done);
@@ -213,6 +216,8 @@ int _tbx_que_bulk_get(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt,
             if (q->put_waiting > 0) apr_thread_cond_broadcast(q->put_cond);
 
             return(n);
+        } else if (q->finished == TBX_QUE_FINISHED) {  //** See if we kick out
+            return(TBX_QUE_FINISHED);
         }
 
         //** See if we timed out
