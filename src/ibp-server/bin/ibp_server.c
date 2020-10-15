@@ -303,11 +303,69 @@ void log_preamble(Config_t *cfg)
 
 
 //*****************************************************************************
-//  parse_config - Parses the config file(fname) and initializes the config
-//                 data structure (cfg).
+//  parse_config_prefork - Parses the config file(fname) and initializes the config
+//                 data structures (cfg) for things before calling FORK.
 //*****************************************************************************
 
-int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
+int parse_config_prefork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
+{
+    Server_t *server;
+    int i, j, k, n, error;
+    char *str;
+
+    server = &(cfg->server);
+    error = 0;
+
+    //** Get the logging info.  It's used for checking if we can fork
+    server->logfile = "ibp.log";
+    server->log_overwrite = 0;  //QWERT????
+    server->log_level = 0;
+    server->log_maxsize = 100;
+    server->debug_level = 0;
+
+    server->logfile = tbx_inip_get_string(keyfile, "server", "log_file", server->logfile);
+    server->log_level = tbx_inip_get_integer(keyfile, "server", "log_level", server->log_level);
+    server->log_maxsize =
+        tbx_inip_get_integer(keyfile, "server", "log_maxsize", server->log_maxsize) * 1024 * 1024;
+    server->debug_level =
+        tbx_inip_get_integer(keyfile, "server", "debug_level", server->debug_level);
+
+    //** Determine the max number of threads
+    server->max_threads = 64;
+    server->max_threads = tbx_inip_get_integer(keyfile, "server", "threads", server->max_threads);
+
+    //** Find out how many resources we have
+    n = 0;
+    tbx_inip_group_t *igrp = tbx_inip_group_first(keyfile);
+    while (igrp) {
+        str = tbx_inip_group_get(igrp);
+        if (strncmp("resource", str, 8) == 0) n++;
+        igrp = tbx_inip_group_next(igrp);
+    }
+
+    //** Make sure we have enough fd's
+    i = sysconf(_SC_OPEN_MAX);
+    j = 3 * server->max_threads + 2 * n + 64;
+    if (i < j) {
+        k = (i - 2 * n - 64) / 3;
+        log_printf(0,
+                   "ibp_server: ERROR Too many threads!  Current threads=%d, n_resources=%d, and max fd=%d.\n",
+                   server->max_threads, n, i);
+        log_printf(0,
+                   "ibp_server: Either make threads < %d or increase the max fd > %d (ulimit -n %d)\n",
+                   k, j, j);
+        error = 1;
+    }
+
+    return(error);
+}
+
+//*****************************************************************************
+//  parse_config_postfork - Parses the config file(fname) and initializes the config
+//                 data structure (cfg) after the FORK.
+//*****************************************************************************
+
+int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
 {
     Server_t *server;
     char *str, *bstate;
@@ -318,18 +376,12 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
 
     // *** Initialize the data structure to default values ***
     server = &(cfg->server);
-    server->max_threads = 64;
     server->max_pending = 16;
     server->min_idle = apr_time_make(60, 0);
     server->stats_size = 5000;
     timeout_ms = 1 * 1000;      //** Wait 1 sec
 //  tbx_ns_timeout_set(&(server->timeout), 1, 0);  //**Wait 1sec
     server->timeout_secs = timeout_ms / 1000;
-    server->logfile = "ibp.log";
-    server->log_overwrite = 0;
-    server->log_level = 0;
-    server->log_maxsize = 100;
-    server->debug_level = 0;
     server->timestamp_interval = 60;
     server->password = DEFAULT_PASSWORD;
     server->max_warm = 1000;
@@ -388,7 +440,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
         }
     }
 
-    server->max_threads = tbx_inip_get_integer(keyfile, "server", "threads", server->max_threads);
     server->max_pending =
         tbx_inip_get_integer(keyfile, "server", "max_pending", server->max_pending);
     t = 0;
@@ -406,12 +457,6 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
 
     server->stats_size = tbx_inip_get_integer(keyfile, "server", "stats_size", server->stats_size);
     server->password = tbx_inip_get_string(keyfile, "server", "password", server->password);
-    server->logfile = tbx_inip_get_string(keyfile, "server", "log_file", server->logfile);
-    server->log_level = tbx_inip_get_integer(keyfile, "server", "log_level", server->log_level);
-    server->log_maxsize =
-        tbx_inip_get_integer(keyfile, "server", "log_maxsize", server->log_maxsize) * 1024 * 1024;
-    server->debug_level =
-        tbx_inip_get_integer(keyfile, "server", "debug_level", server->debug_level);
     server->max_warm =
         tbx_inip_get_integer(keyfile, "server", "max_warm", server->max_warm);
     server->lazy_allocate =
@@ -466,7 +511,9 @@ int parse_config(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
     set_debug_level(cfg->server.debug_level);
     tbx_set_log_maxsize(cfg->server.log_maxsize);
 
-    // *** Now iterate through each resource which is assumed to be all groups beginning with "resource" ***
+    //*** Now iterate through each resource which is assumed to be all groups beginning with "resource" ***
+    //*** NOTE: RocksDB Will lock based on the PID which changes pre/post fork so this MUST be done
+    //***        AFTER the fork()!
     apr_pool_t *mount_pool;
     apr_pool_create(&mount_pool, NULL);
     k = tbx_inip_group_count(keyfile);
@@ -602,7 +649,7 @@ int main(int argc, const char **argv)
 {
     Config_t config;
     char *config_file;
-    int i, j, k;
+    int i;
     apr_thread_t *rid_check_thread;
     apr_status_t dummy;
 
@@ -654,27 +701,40 @@ int main(int argc, const char **argv)
         return (-1);
     }
 
-
     set_starttime();
 
     config.rl = create_resource_list(1);
 
-    //** Parse the global options first ***
-    parse_config(keyfile, &config, force_rebuild);
+    //** Parse the global options needed before we can safely fork ***
+    if (parse_config_prefork(keyfile, &config, force_rebuild) != 0) exit(1); //** Kick out if an error
 
-    //** Make sure we have enough fd's
-    i = sysconf(_SC_OPEN_MAX);
-    j = 3 * config.server.max_threads + 2 * resource_list_n_used(config.rl) + 64;
-    if (i < j) {
-        k = (i - 2 * resource_list_n_used(config.rl) - 64) / 3;
-        log_printf(0,
-                   "ibp_server: ERROR Too many threads!  Current threads=%d, n_resources=%d, and max fd=%d.\n",
-                   config.server.max_threads, resource_list_n_used(config.rl), i);
-        log_printf(0,
-                   "ibp_server: Either make threads < %d or increase the max fd > %d (ulimit -n %d)\n",
-                   k, j, j);
-        shutdown_now = 1;
+    //***Launch as a daemon if needed***
+    if (daemon == 1) {          //*** Launch as a daemon ***
+        if ((strcmp(config.server.logfile, "stdout") == 0) ||
+            (strcmp(config.server.logfile, "stderr") == 0)) {
+            log_printf(0, "Can't launch as a daemom because log_file is either stdout or stderr\n");
+            log_printf(0, "Running in normal mode\n");
+        } else if (fork() == 0) {       //** This is the daemon
+            log_printf(0, "Running as a daemon.\n");
+            tbx_log_flush();
+            fclose(stdin);      //** Need to close all the std* devices **
+            fclose(stdout);
+            fclose(stderr);
+
+            char fname[1024];
+            fname[1023] = '\0';
+            snprintf(fname, 1023, "%s.stdout", config.server.logfile);
+            assert_result_not_null(stdout = fopen(fname, "w"));
+            snprintf(fname, 1023, "%s.stderr", config.server.logfile);
+            assert_result_not_null(stderr = fopen(fname, "w"));
+        } else {                //** Parent exits
+            exit(0);
+        }
     }
+
+    //** Loadhe rest of the config after forking.
+    parse_config_postfork(keyfile, &config, force_rebuild);
+
 
     init_thread_slots(2 * config.server.max_threads);   //** Make pigeon holes
 
@@ -700,32 +760,7 @@ int main(int argc, const char **argv)
     init_stats(config.server.stats_size);
     lock_alloc_init();
 
-    //***Launch as a daemon if needed***
-    if (daemon == 1) {          //*** Launch as a daemon ***
-        if ((strcmp(config.server.logfile, "stdout") == 0) ||
-            (strcmp(config.server.logfile, "stderr") == 0)) {
-            log_printf(0, "Can't launch as a daemom because log_file is either stdout or stderr\n");
-            log_printf(0, "Running in normal mode\n");
-        } else if (fork() == 0) {       //** This is the daemon
-            log_printf(0, "Running as a daemon.\n");
-            tbx_log_flush();
-            fclose(stdin);      //** Need to close all the std* devices **
-            fclose(stdout);
-            fclose(stderr);
-
-            char fname[1024];
-            fname[1023] = '\0';
-            snprintf(fname, 1023, "%s.stdout", config.server.logfile);
-            assert_result_not_null(stdout = fopen(fname, "w"));
-            snprintf(fname, 1023, "%s.stderr", config.server.logfile);
-            assert_result_not_null(stderr = fopen(fname, "w"));
-//        stdout = stderr = log_fd();  //** and reassign them to the log device
-            printf("ibp_server.c: STDOUT=STDERR=LOG_FD() dnoes not work!!!!!!!!!!!!!!!!!!!!!!!!\n");
-        } else {                //** Parent exits
-            exit(0);
-        }
-    }
-//  test_alloc();   //** Used for testing allocation speed only
+//******QWERT OLD FORK WENT HERE
 
     //*** Initialize all command data structures.  This is mainly 3rd party commands ***
     initialize_commands();
