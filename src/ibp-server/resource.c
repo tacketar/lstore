@@ -215,7 +215,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     //*** Fill in defaults for everything ***
     snprintf(kgroup, sizeof(kgroup), "resource %s", ibp_rid2str(rid, rname));
     res.keygroup = kgroup;
-    res.keygroup = strdup(kgroup);
+//    res.keygroup = strdup(kgroup);
 //WORKS
     res.name = ibp_rid2str(rid, name);
 //return(0);
@@ -529,12 +529,12 @@ got_it:  //** Got a valid allocation so see if we add it
                 t1 = d->a.expiration;
                 t2 = max_expiration;
                 log_printf(1,
-                           "(rid=%s) Adding record " LU " with id: " LU
+                           "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d"
                            " but truncating expiration curr:" TT " * new:" TT "\n",
-                           r->name, r->n_allocs,d->a.id, ibp2apr_time(t1), ibp2apr_time(t2));
+                           r->name, r->n_allocs,d->a.id, d->a.is_alias, ibp2apr_time(t1), ibp2apr_time(t2));
                 rebuild_modify(r, d, max_expiration);
             } else {
-                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " location=%d\n", r->name, r->n_allocs, d->a.id, d->found);
+                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d location=%d\n", r->name, r->n_allocs, d->a.id, d->a.is_alias, d->found);
                 rebuild_add(r, d);
             }
         }
