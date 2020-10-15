@@ -18,6 +18,8 @@
 #ifndef _RID_H_
 #define _RID_H_
 
+#include "visibility.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,11 +31,11 @@ typedef struct {            //**IBP resource ID data type
 } rid_t;
 
 
-char *ibp_rid2str(rid_t rid, char *buffer);
-int ibp_str2rid(char *rid_str, rid_t *rid);
-void ibp_empty_rid(rid_t *rid);
-int ibp_rid_is_empty(rid_t rid);
-int ibp_compare_rid(rid_t rid1, rid_t rid2);
+IBPS_API char *ibp_rid2str(rid_t rid, char *buffer);
+IBPS_API int ibp_str2rid(char *rid_str, rid_t *rid);
+IBPS_API void ibp_empty_rid(rid_t *rid);
+IBPS_API int ibp_rid_is_empty(rid_t rid);
+IBPS_API int ibp_compare_rid(rid_t rid1, rid_t rid2);
 
 #ifdef __cplusplus
 }

@@ -3279,11 +3279,12 @@ osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_
     fs->n_partitions = n_partitions;
 
     if (strcmp(device, FS_LOOPBACK_DEVICE) != 0) {
-        DIR *dir;
-        if ((dir = opendir(fs->devicename)) == NULL) {
-            log_printf(0, "osd_fs:  Directory does not exist!!!!!! checked: %s\n", device);
-        } else {
-            closedir(dir);
+        if (mkdir(fs->devicename, S_IRUSR | S_IWUSR | S_IXUSR) != 0) {
+            if (errno != EEXIST) {
+                printf("osd_fs: Error creating/checking data base directory!  errno=%d\n", errno);
+                printf("osd_fs: Directory : %s\n", fs->devicename);
+                abort();
+            }
         }
 
         //*** Check and make sure all the directories exist ***

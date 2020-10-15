@@ -257,17 +257,17 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
         db_id_compare_op, db_id_compare_name);
     snprintf(fname, sizeof(fname), "%s/id", loc);
     dbres->pdb = open_db(fname, dbres->id_compare, 1);
-    if (dbres->pdb != NULL) {
-        printf("mkfs_db: Error creating history DB: %s\n", fname);
+    if (dbres->pdb == NULL) {
+        printf("mkfs_db: Error creating ID DB: %s\n", fname);
         abort();
     }
 
     //*** Make the expire and soft DBs.  These are always a full wipe
     dbres->expire_compare = rocksdb_comparator_create(NULL, db_expire_compare_destroy,
         db_expire_compare_op, db_expire_compare_name);
-    snprintf(fname, sizeof(fname), "%s/history", loc);
+    snprintf(fname, sizeof(fname), "%s/expire", loc);
     dbres->expire = open_db(fname, dbres->expire_compare, 1);
-    if (dbres->expire != NULL) {
+    if (dbres->expire == NULL) {
         printf("mkfs_db: Error creating expire DB: %s\n", fname);
         abort();
     }
@@ -276,7 +276,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
         db_expire_compare_op, db_expire_compare_name);
     snprintf(fname, sizeof(fname), "%s/soft", loc);
     dbres->soft = open_db(fname, dbres->soft_compare, 1);
-    if (dbres->expire != NULL) {
+    if (dbres->expire == NULL) {
         printf("mkfs_db: Error creating soft DB: %s\n", fname);
         abort();
     }
