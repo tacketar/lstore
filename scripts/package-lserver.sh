@@ -66,12 +66,14 @@ if [ "${skip_deb}" != "1" ]; then
     ${LSTORE_SCRIPT_BASE}/package.sh ${DISTRO}
 fi
 
-#Copy it
+#Copy both the normal package and the debug info in the *.ddeb
 ddir=${DEBDIR}/$(ls -t ${DEBDIR}/ | head -n 1)
-#cp ${ddir}/lstore_*.deb ${ddir}/lstore-dbgsym*.deb ${PDIR}/repo/packages
-cp ${ddir}/lstore_*.deb ${PDIR}/repo/packages
+cp ${ddir}/lstore_*.deb ${ddir}/lstore-dbgsym*.ddeb ${PDIR}/repo/packages
 cd ${PDIR}/repo
-dpkg-scanpackages packages . | gzip -9c > packages/Packages.gz
+dpkg-scanpackages packages . > /tmp/lserver.out
+dpkg-scanpackages -tddeb packages . >> /tmp/lserver.out
+cat /tmp/lserver.out | gzip -9c > packages/Packages.gz
+rm /tmp/lserver.out
 
 #Copy all the install scripts
 cp -a ${LSTORE_RELEASE_BASE}/lserver/install/* ${PDIR}/install || echo "No LServer install scripts"

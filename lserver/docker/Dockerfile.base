@@ -25,6 +25,7 @@ COPY repo /repo
 # And install them
 RUN apt-get update && apt-get install -y --allow-unauthenticated --no-install-recommends \
   lstore \
+  lstore-dbgsym \
   libapr1 \
   libaprutil1 \
   libfuse-dev \

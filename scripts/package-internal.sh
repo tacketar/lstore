@@ -7,11 +7,6 @@
 #
 # Preliminary bootstrapping
 #
-
-echo "====================Manually installing librocksdb-dev================================="
-apt-get install -y librocksdb-dev
-echo "======================================================================================="
-
 set -eux
 ABSOLUTE_PATH=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)
 source $ABSOLUTE_PATH/functions.sh
@@ -126,7 +121,7 @@ elif [[ $PACKAGE_SUFFIX == deb ]]; then
 (
     umask 000
     mkdir -p $PACKAGE_REPO
-    cp -r ../lstore*.{deb,tar.*z,changes} $PACKAGE_REPO
+    cp -r ../lstore*.{deb,ddeb,tar.*z,changes} $PACKAGE_REPO
     chmod -R u=rwX,g=rwX,o=rwX $PACKAGE_REPO/*
     # Update lstore-release if we built it
     if test -n "$(shopt -s nullglob; set +u; echo lstore-release*.deb)"; then
