@@ -100,8 +100,9 @@ int main(int argc, char **argv)
     }
 
     //** Close the connection
-    tbx_ns_close(ns);
+    tbx_ns_destroy(ns);
 
+    tbx_dnsc_shutdown();
     apr_terminate();
     return (0);
 }
