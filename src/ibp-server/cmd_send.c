@@ -56,13 +56,7 @@ tbx_ns_t *cmd_send(char *host, int port, char *cmd, char **res_buffer, int timeo
     apr_time_t await, sec, usec;
 
     *res_buffer = NULL;
-
-//tbx_set_log_level(20);
-//int loop =0;
     do {
-//loop++;
-//printf("cmd_send: loop=%d\n", loop);
-
         failed = 0;
         //** Make the host connection
         retry = 3;
@@ -70,7 +64,6 @@ tbx_ns_t *cmd_send(char *host, int port, char *cmd, char **res_buffer, int timeo
             ns = tbx_ns_new();
             tbx_ns_sock_config(ns, -1);
             tbx_ns_timeout_set(&dt, 60, 0);
-
             err = tbx_ns_connect(ns, host, port, dt);
             if (err != 0) {
                 tbx_ns_destroy(ns);
