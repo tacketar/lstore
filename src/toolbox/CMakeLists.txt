@@ -34,6 +34,7 @@ set(TOOL_OBJS
     constructor.c
     direct_io.c
     dns_cache.c
+    fork_helper.c
     iniparse.c
     interval_skiplist.c
     log.c
@@ -65,6 +66,7 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/constructor_wrapper.h
     tbx/direct_io.h
     tbx/dns_cache.h
+    tbx/fork_helper.h
     tbx/fmttypes.h
     tbx/iniparse.h
     tbx/interval_skiplist.h

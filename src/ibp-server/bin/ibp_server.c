@@ -28,6 +28,7 @@
 #include <tbx/log.h>
 #include <tbx/assert_result.h>
 #include <tbx/dns_cache.h>
+#include <tbx/fork_helper.h>
 #include <tbx/type_malloc.h>
 #include "lock_alloc.h"
 #include "activity_log.h"
@@ -653,7 +654,7 @@ int main(int argc, const char **argv)
     apr_thread_t *rid_check_thread;
     apr_status_t dummy;
 
-//  assert_result(apr_initialize(), APR_SUCCESS);
+    assert_result(apr_initialize(), APR_SUCCESS);
     assert_result(apr_pool_create(&global_pool, NULL), APR_SUCCESS);
     tbx_random_startup();
 
@@ -714,27 +715,19 @@ int main(int argc, const char **argv)
             (strcmp(config.server.logfile, "stderr") == 0)) {
             log_printf(0, "Can't launch as a daemom because log_file is either stdout or stderr\n");
             log_printf(0, "Running in normal mode\n");
-        } else if (fork() == 0) {       //** This is the daemon
-            log_printf(0, "Running as a daemon.\n");
-            tbx_log_flush();
-            fclose(stdin);      //** Need to close all the std* devices **
-            fclose(stdout);
-            fclose(stderr);
-
-            char fname[1024];
-            fname[1023] = '\0';
-            snprintf(fname, 1023, "%s.stdout", config.server.logfile);
-            assert_result_not_null(stdout = fopen(fname, "w"));
-            snprintf(fname, 1023, "%s.stderr", config.server.logfile);
-            assert_result_not_null(stderr = fopen(fname, "w"));
-        } else {                //** Parent exits
-            exit(0);
+        } else {
+            i = tbx_fork(config.server.logfile);  //** The parent terminates in the call
+            if (i != 0) {
+                fprintf(stderr, "ERROR attempting to fork(). err=%d\n", i);
+                fprintf(stderr, "Normally this occurs because the new stdout/err files can't be created.\n");
+                fprintf(stderr, "The prefix is config.server.logfile=%s\n", config.server.logfile);
+                exit(1);
+            }
         }
     }
 
     //** Loadhe rest of the config after forking.
     parse_config_postfork(keyfile, &config, force_rebuild);
-
 
     init_thread_slots(2 * config.server.max_threads);   //** Make pigeon holes
 
@@ -754,17 +747,11 @@ int main(int argc, const char **argv)
     apr_thread_mutex_create(&shutdown_lock, APR_THREAD_MUTEX_DEFAULT, global_pool);
     apr_thread_cond_create(&shutdown_cond, global_pool);
 
-//  log_printf(0, "Looking up resource 2 and printing info.....\n")
-//  print_resource(resource_lookup(config.rl, "2"), log_fd());
-
     init_stats(config.server.stats_size);
     lock_alloc_init();
 
-//******QWERT OLD FORK WENT HERE
-
     //*** Initialize all command data structures.  This is mainly 3rd party commands ***
     initialize_commands();
-
 
     //** Launch the garbage collection threads ...AFTER fork!!!!!!
     resource_list_iterator_t it;
@@ -801,11 +788,8 @@ int main(int argc, const char **argv)
     free_resource_list(config.rl);
 
     free_stats();
-
     cleanup_config(&config);
-    log_printf(0, "main: Completed shutdown. Exiting\n");
-//  close_log();
-//  close_debug();
+    log_printf(0, "main: Completed shutdown. Exiting\n");  tbx_log_flush();
 
     apr_terminate();
 
