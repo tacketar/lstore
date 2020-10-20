@@ -302,12 +302,11 @@ int sock_connect(net_sock_t *nsock, const char *hostname, int port, tbx_ns_timeo
 
     if ((sock->fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) return(-1);
 
-log_printf(20, "hostname=%s:%d sock->fd=%d\n", hostname, port, sock->fd);
+    log_printf(20, "hostname=%s:%d sock->fd=%d\n", hostname, port, sock->fd);
 
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port = htons(port);
-
     if (tbx_dnsc_lookup(hostname, (char *)&sa.sin_addr, NULL) != 0) goto fail;
 
     sock_timeout_set(sock, timeout);
