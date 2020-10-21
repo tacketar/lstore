@@ -80,6 +80,7 @@ typedef struct {                //Resource structure
     int max_duration;           //MAx duration for an allocation in SECONDS
     int lazy_allocate;          //If 1 then the actual file is created with the allocation.  Otherwise just the DB entry
     int enable_chksum;          //If 1 then default chksum is enabled
+    int remove_mangled;         //If 1 then mangled allocation are removed on rebuild
     tbx_chksum_t chksum;        //Type of default chksum
     ibp_off_t chksum_blocksize; // Chksum block size
     int res_type;               //Resource type this is coupled with device_type below

@@ -231,6 +231,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.preallocate = 0;
     res.minfree = (ibp_off_t) 10 *1024 * 1024 * 1024;   //Default to 10GB free
     res.update_alloc = 1;
+    res.remove_mangled = 0;
     res.enable_read_history = 1;
     res.enable_write_history = 1;
     res.enable_manage_history = 1;
@@ -315,21 +316,17 @@ int allocation_sanity_check(Resource_t *r, osd_id_t id, Allocation_t *a)
     }
 
     switch(a->reliability) {
-        case (IBP_SOFT) : break;
-        case (IBP_HARD) : break;
+        case (ALLOC_SOFT) : break;
+        case (ALLOC_HARD) : break;
         default: return(3);
     }
 
-    if (a->size > a->max_size) return(4);
-    if (a->r_pos >= a->size) return(5);
-    if (a->w_pos >= a->size) return(6);
-    if (a->expiration == 0) return(7);
-    if (a->read_refcount <= 0) return(8);
-    if (a->write_refcount <= 0) return(9);
+    if (a->r_pos > a->size) return(4);
+    if (a->w_pos > a->size) return(5);
+    if (a->read_refcount < 0) return(6);
+    if (a->write_refcount < 0) return(7);
 
-    if (a->is_alias > 1) return(10);
-    if ((ibp_off_t)a->size > r->max_size[a->reliability]) return(11);
-    if ((ibp_off_t)a->max_size > r->max_size[a->reliability]) return(12);
+    if (a->is_alias > 1) return(8);
 
     return(0);
 }
@@ -462,8 +459,12 @@ void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
     log_printf(1, "rid=%s Removing id=" LU " found=%d\n", r->name, d->id, d->found);
 
     if (d->found & REBUILD_FOUND_OSD) {
-        _trash_adjust(r, OSD_EXPIRE_ID, d->id);
-        osd_remove(r->dev, OSD_EXPIRE_ID, d->id);
+        if (r->remove_mangled == 1) {
+            _trash_adjust(r, OSD_EXPIRE_ID, d->id);
+            osd_remove(r->dev, OSD_EXPIRE_ID, d->id);
+        } else {
+            log_printf(0, "Skipping OSD removal id=" LU "\n", d->id);
+        }
     }
 
     if (d->found & REBUILD_FOUND_DB) {
@@ -563,6 +564,15 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
         }
 
 got_it:  //** Got a valid allocation so see if we add it
+        //** Check if we need to truncate
+        if (d->a.size > d->a.max_size) {
+            log_printf(1, "(rid=%s) Truncating allocation with id: " LU " curr_size=" LU " max_size=" LU "\n", r->name, d->id, d->a.size, d->a.max_size);
+//            d->a.size = d->a.max_size;
+//            if (d->a.w_pos >= d->a.size) d->a.w_pos = d->a.size-1;
+//            if (d->a.r_pos >= d->a.size) d->a.r_pos = d->a.size-1;
+//            osd_truncate(r->dev, d->a.id, d->a.max_size + ALLOC_HEADER);
+        }
+
         if ((d->a.expiration < now) && (remove_expired == 1)) {
             log_printf(1,
                        "(rid=%s) Removing expired record with id: " LU "\n", r->name, d->a.id);
@@ -660,6 +670,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
 
     res->preallocate = tbx_inip_get_integer(keyfile, group, "preallocate", 0);
     res->update_alloc = tbx_inip_get_integer(keyfile, group, "update_alloc", 1);
+    res->remove_mangled = tbx_inip_get_integer(keyfile, group, "remove_mangled", 0);
     res->enable_write_history = tbx_inip_get_integer(keyfile, group, "enable_write_history", 1);
     res->enable_read_history = tbx_inip_get_integer(keyfile, group, "enable_read_history", 1);
     res->enable_manage_history = tbx_inip_get_integer(keyfile, group, "enable_manage_history", 1);
@@ -935,6 +946,7 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
     tbx_append_printf(buffer, used, nbytes, "resource_type = %s\n", res->device_type);
     tbx_append_printf(buffer, used, nbytes, "device = %s\n", res->device);
     tbx_append_printf(buffer, used, nbytes, "update_alloc = %d\n", res->update_alloc);
+    tbx_append_printf(buffer, used, nbytes, "remove_mangled = %d\n", res->remove_mangled);
     tbx_append_printf(buffer, used, nbytes, "n_lru = %d\n", res->n_lru);
     tbx_append_printf(buffer, used, nbytes, "n_partitions = %d\n", res->n_partitions);
 
@@ -1893,7 +1905,8 @@ int modify_allocation_resource(Resource_t *r, osd_id_t id, Allocation_t *a, int 
             } else {            //** Shrinking the space
                 if (a->size > a->max_size) {
                     a->size = a->max_size;
-                    a->w_pos = a->size;
+                    if (a->w_pos >= a->size) a->w_pos = a->size - 1;
+                    if (a->r_pos >= a->size) a->r_pos = a->size - 1;
                     osd_truncate(r->dev, a->id, a->max_size + ALLOC_HEADER);
                 }
 
