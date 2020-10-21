@@ -299,6 +299,42 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
 }
 
 //***************************************************************************
+//  allocation_sanity_check - Sanity checks the allocation
+//***************************************************************************
+
+int allocation_sanity_check(Resource_t *r, osd_id_t id, Allocation_t *a)
+{
+    if (id != a->id) return(1);
+
+    switch(a->type) {
+        case (IBP_BYTEARRAY): break;
+        case (IBP_BUFFER): break;
+        case (IBP_FIFO): break;
+        case (IBP_CIRQ): break;
+        default: return(2);
+    }
+
+    switch(a->reliability) {
+        case (IBP_SOFT) : break;
+        case (IBP_HARD) : break;
+        default: return(3);
+    }
+
+    if (a->size > a->max_size) return(4);
+    if (a->r_pos >= a->size) return(5);
+    if (a->w_pos >= a->size) return(6);
+    if (a->expiration == 0) return(7);
+    if (a->read_refcount <= 0) return(8);
+    if (a->write_refcount <= 0) return(9);
+
+    if (a->is_alias > 1) return(10);
+    if ((ibp_off_t)a->size > r->max_size[a->reliability]) return(11);
+    if ((ibp_off_t)a->max_size > r->max_size[a->reliability]) return(12);
+
+    return(0);
+}
+
+//***************************************************************************
 // rebuild_populate_partition_lut_with_osd - Populates the LUT for the partition
 //     using OSD data
 //***************************************************************************
@@ -508,7 +544,14 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
         //** If we made it here then in some combination of OSD|DB|History
         //** If it's not in the OSD then we always delete it
         if (d->found & REBUILD_FOUND_OSD)  {  //** It's in the OSD but not the DB
-            if (read_allocation_header(r, d->id, &(d->a)) != 0) { //** Failed reading the header
+            int bad = read_allocation_header(r, d->id, &(d->a));
+            if (bad == 0) {
+                bad = allocation_sanity_check(r, d->id, &(d->a));
+            } else {
+                bad = -1;
+            }
+            if (bad != 0) { // Failed reading the allocation or it's mangled
+                log_printf(1, "(rid=%s) Removing mangled allocation with id: " LU " err=%d\n", r->name, d->id, bad);
                 rebuild_remove(r, d);
                 continue;
             }
