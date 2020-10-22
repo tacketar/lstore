@@ -564,13 +564,12 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
         }
 
 got_it:  //** Got a valid allocation so see if we add it
-        //** Check if we need to truncate
+        //** Check if we need to correct the size
         if (d->a.size > d->a.max_size) {
-            log_printf(1, "(rid=%s) Truncating allocation with id: " LU " curr_size=" LU " max_size=" LU "\n", r->name, d->id, d->a.size, d->a.max_size);
+            log_printf(1, "(rid=%s) Correcting allocation size with id: " LU " curr_size=" LU " max_size=" LU "\n", r->name, d->id, d->a.size, d->a.max_size);
 //            d->a.size = d->a.max_size;
 //            if (d->a.w_pos >= d->a.size) d->a.w_pos = d->a.size-1;
 //            if (d->a.r_pos >= d->a.size) d->a.r_pos = d->a.size-1;
-//            osd_truncate(r->dev, d->a.id, d->a.max_size + ALLOC_HEADER);
         }
 
         if ((d->a.expiration < now) && (remove_expired == 1)) {
