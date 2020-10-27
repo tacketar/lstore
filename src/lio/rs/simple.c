@@ -1037,6 +1037,7 @@ int _rs_simple_refresh(lio_resource_service_fn_t *rs)
 
     if (stat(rss->fname, &sbuf) != 0) {
         log_printf(1, "RS file missing!!! Using old definition. fname=%s\n", rss->fname);
+        if (rss->rid_table == NULL) rss->rid_table = tbx_list_create(0, &tbx_list_string_compare, NULL, NULL, rs_simple_rid_free);  //** Make an empty one to keep things from crashing
         return(0);
     }
 
