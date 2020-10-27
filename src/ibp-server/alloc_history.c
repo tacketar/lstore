@@ -558,7 +558,7 @@ void db_delete_history(Resource_t *r, osd_id_t id)
     osd_fd_t *fd;
 
     //** Fetch the record
-    if (lru_get_history(r, id, 0, lh) != 0) return; //** Nothing to delete
+    if (lru_get_history(r, id, 1, lh) != 0) return; //** Nothing to delete
 
     //** And fetch the history from the OSD if needed
     fd = (r->enable_history_update_on_delete == 0) ? NULL : osd_open(r->dev, id, OSD_READ_MODE | OSD_WRITE_MODE);

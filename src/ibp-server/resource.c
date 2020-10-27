@@ -439,7 +439,6 @@ void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, a
         //** Flag it as found.  If this isn't a viable ID then it will get removed in the merge process
         d->found |= REBUILD_FOUND_HISTORY;
         apr_hash_set(lut, &(d->id), sizeof(d->id), d);
-        if (rocksdb_iter_valid(it)) rocksdb_iter_next(it);  //** The populate_core call above can hit the iter end
     }
 
     //** Cleanup
@@ -456,7 +455,9 @@ void rebuild_populate_partition_lut_with_history(Resource_t *r, int partition, a
 void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
 {
 
-    log_printf(1, "rid=%s Removing id=" LU " found=%d\n", r->name, d->id, d->found);
+    log_printf(1, "rid=%s Removing id=" LU " d->a.id=" LU " found=%d\n", r->name, d->id, d->a.id, d->found);
+
+    d->a.id = d->id;  //** Make sure we use the correct ID since this is used to filter out mangled allocations
 
     if (d->found & REBUILD_FOUND_OSD) {
         if (r->remove_mangled == 1) {
@@ -471,42 +472,22 @@ void rebuild_remove(Resource_t *r, rebuild_lut_t *d)
        remove_alloc_db(&(r->db), &(d->a));
     }
 
-    if (d->found & REBUILD_FOUND_HISTORY) db_delete_history(r, d->a.id);  //** And the history
+    if (d->found & REBUILD_FOUND_HISTORY) db_delete_history(r, d->id);  //** And the history
 }
 
 //***************************************************************************
 // rebuild_add - Adds an allocation during the rebuild process
 //***************************************************************************
 
-void rebuild_add(Resource_t *r, rebuild_lut_t *d)
+void rebuild_add(Resource_t *r, rebuild_lut_t *d, ibp_time_t old_expiration, int update_alloc)
 {
-    if (!(d->found & REBUILD_FOUND_DB)) {
-        _put_alloc_db(&(r->db), &(d->a), 0);
+    if ((!(d->found & REBUILD_FOUND_DB)) || update_alloc || (d->a.expiration != old_expiration)) {
+        _put_alloc_db(&(r->db), &(d->a), old_expiration);
     } else {
         rebuild_add_expiration_db(&(r->db), &(d->a));
     }
 
-    alru_put(r, &(d->a)); //** and the LRU copy
-
-    //** Adjust the space
-    r->n_allocs++;
-    if (d->a.is_alias == 0) {
-        r->used_space[d->a.reliability] += d->a.max_size;
-    } else {
-        r->n_alias++;
-    }
-}
-
-//***************************************************************************
-// rebuild_modify - Adds an allocation and and tweaks the expiration during the rebuild process
-//***************************************************************************
-
-void rebuild_modify(Resource_t *r, rebuild_lut_t *d, ibp_time_t new_expiration)
-{
-    d->a.expiration = new_expiration;
-    modify_alloc_db(&(r->db), &(d->a), 0);
-
-    if (r->update_alloc == 1) {
+    if ((r->update_alloc == 1) || (update_alloc == 1)) {
         write_allocation_header(r, &(d->a), 0);
     }
 
@@ -530,7 +511,8 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
     apr_hash_index_t *hi;
     apr_ssize_t hlen;
     rebuild_lut_t *d;
-    ibp_time_t max_expiration, now, t1, t2;
+    ibp_time_t max_expiration, old_expiration, now, t1, t2;
+    int update_alloc;
 
     now = ibp_time_now();
     max_expiration = now + r->max_duration;
@@ -565,11 +547,14 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
 
 got_it:  //** Got a valid allocation so see if we add it
         //** Check if we need to correct the size
+        update_alloc = 0;
         if (d->a.size > d->a.max_size) {
             log_printf(1, "(rid=%s) Correcting allocation size with id: " LU " curr_size=" LU " max_size=" LU "\n", r->name, d->id, d->a.size, d->a.max_size);
-//            d->a.size = d->a.max_size;
-//            if (d->a.w_pos >= d->a.size) d->a.w_pos = d->a.size-1;
-//            if (d->a.r_pos >= d->a.size) d->a.r_pos = d->a.size-1;
+            update_alloc = 1;
+            d->a.size = d->a.max_size;
+            if (d->a.w_pos >= d->a.size) d->a.w_pos = d->a.size-1;
+            if (d->a.r_pos >= d->a.size) d->a.r_pos = d->a.size-1;
+            osd_truncate(r->dev, d->id, d->a.max_size + ALLOC_HEADER);
         }
 
         if ((d->a.expiration < now) && (remove_expired == 1)) {
@@ -577,18 +562,20 @@ got_it:  //** Got a valid allocation so see if we add it
                        "(rid=%s) Removing expired record with id: " LU "\n", r->name, d->a.id);
             rebuild_remove(r, d);
         } else {                //*** Adding the record
+            old_expiration = d->a.expiration;
             if ((d->a.expiration > max_expiration) && (truncate_expiration == 1)) {
                 t1 = d->a.expiration;
                 t2 = max_expiration;
                 log_printf(1,
-                           "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d"
-                           " but truncating expiration curr:" TT " * new:" TT "\n",
-                           r->name, r->n_allocs,d->a.id, d->a.is_alias, ibp2apr_time(t1), ibp2apr_time(t2));
-                rebuild_modify(r, d, max_expiration);
-            } else {
-                log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d location=%d\n", r->name, r->n_allocs, d->a.id, d->a.is_alias, d->found);
-                rebuild_add(r, d);
+                           "(rid=%s) Truncating expiration for id id: " LU " is_alias=%d"
+                           " Old expiration:" TT " * new:" TT "\n",
+                           r->name, d->a.id, d->a.is_alias, ibp2apr_time(t1), ibp2apr_time(t2));
+                d->a.expiration = max_expiration;
+//                rebuild_modify(r, d, max_expiration);
             }
+
+            log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d location=%d\n", r->name, r->n_allocs, d->a.id, d->a.is_alias, d->found);
+            rebuild_add(r, d, old_expiration, update_alloc);
         }
     }
 
