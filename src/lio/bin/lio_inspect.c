@@ -1137,6 +1137,16 @@ int main(int argc, char **argv)
             printf("                 %s\n", inspect_opts[i]);
         }
         printf("    -                  - If no file is given but a single dash is used the files are taken from stdin\n");
+        printf("\n");
+        printf("slun_row_placement_check status codes:\n");
+        printf("       0   No issues\n");
+        printf("       1   Missing allocation\n");
+        printf("    -101   Didn't find enough RIDs for the request\n");
+        printf("    -102   The fixed RID failed to match the request\n");
+        printf("    -103   The fixed RID couldn't be located in the RID table\n");
+        printf("    -104   The fixed RID's local RSQ contained a pickone or unique which isn't supported\n");
+        printf("    -105   The Query stack is empty so the query is probably malformed\n");
+        printf("\n");
         return(1);
     }
 
