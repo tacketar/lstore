@@ -571,7 +571,6 @@ got_it:  //** Got a valid allocation so see if we add it
                            " Old expiration:" TT " * new:" TT "\n",
                            r->name, d->a.id, d->a.is_alias, ibp2apr_time(t1), ibp2apr_time(t2));
                 d->a.expiration = max_expiration;
-//                rebuild_modify(r, d, max_expiration);
             }
 
             log_printf(1, "(rid=%s) Adding record " LU " with id: " LU " is_alias=%d location=%d\n", r->name, r->n_allocs, d->a.id, d->a.is_alias, d->found);
