@@ -45,14 +45,17 @@ int main(int argc, char **argv)
     tbx_ns_t *ns;
 
     if (argc < 4) {
-        printf("ibp_attach_rid [-r] host port RID [msg]\n");
+        printf("ibp_attach_rid [--rebuild] host port RID [msg]\n");
+        printf("--rebuild   - Rebuild RID databases added. Same as force_rebuild=1 in config file.\n");
+        printf("              This takes signifcantly longer to start should\n");
+        printf("              not be required unless the DB itself is corrupt\n");
         printf("\n");
         return (0);
     }
 
     i = 1;
     force_rebuild = 0;
-    if (strcmp(argv[i], "-r") == 0) {
+    if (strcmp(argv[i], "--rebuild") == 0) {
         force_rebuild = 2;
         i++;
     }
