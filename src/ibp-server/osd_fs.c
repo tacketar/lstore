@@ -1366,7 +1366,6 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
     int n, normal;
     osd_fs_chksum_t *fcs = &(obj->fd_chksum);
 
-    obj->is_ok = 0;             //** Default is failure
     normal = 1;
 
     FILE *fd = fopen(_id2fname(fs, obj->id, fname, sizeof(fname)), "r+");
@@ -1430,8 +1429,6 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
     if (obj->state != OSD_STATE_GOOD)
         _insert_corrupt_hash(fs, obj->id, "chksum");
 
-    obj->is_ok = 1;             //** Successful open!
-
     return (0);
 }
 
@@ -1443,7 +1440,7 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
 osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
 {
     tbx_pch_t pch;
-    osd_fs_object_t *obj;
+    osd_fs_object_t *obj, *obj2;
     int err;
 
     apr_thread_mutex_lock(fs->obj_lock);
@@ -1451,73 +1448,49 @@ osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
     //** 1st see if it's already in use
     obj = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
     if (obj == NULL) {          //** New object
+        apr_thread_mutex_unlock(fs->obj_lock);  //** Unlock the list while we do the open
+
         pch = tbx_pch_reserve(fs->obj_list);
         obj = (osd_fs_object_t *) tbx_pch_data(&pch);
         obj->id = id;
         obj->my_slot = pch;
         obj->n_opened = 1;      //** Include the caller
-        obj->n_pending = 0;     //** Reset the pending count
         obj->n_read = 0;
         obj->n_write = 0;
         obj->count = 0;
-        obj->is_ok = -1;        //** Default to object_open failure
         obj->state = OSD_STATE_GOOD;
-
-        apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), obj);  //** Add it to the table
-
-        apr_thread_mutex_lock(obj->lock);       //** Lock it so no one else can open/close it
-
-        apr_thread_mutex_unlock(fs->obj_lock);  //** Unlock the list and do the open
 
         err = object_open(fs, obj);     //** Opens the object and stores the approp r/w routines
 
-        apr_thread_mutex_unlock(obj->lock);     // Free the object lock
-
-        if (err != 0) {         //** Failed on open so cleanup
-            apr_thread_mutex_lock(fs->obj_lock);        //** Can only remove if no one is waiting
-            if (obj->n_pending <= 0) {
-                apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), NULL);
-                tbx_pch_release(fs->obj_list, &pch);
-            }
-            apr_thread_mutex_unlock(fs->obj_lock);
-            obj = NULL;
-        } else {
-            log_printf(15, "fs_object_get(1): id=" LU " nopened=%d shelf=%d hole=%d\n", obj->id,
-                       obj->n_opened, obj->my_slot.shelf, obj->my_slot.hole);
+        if (err != 0) { //** Failed on open so cleanup
+            tbx_pch_release(fs->obj_list, &pch);
+            return(NULL);
         }
-    } else {                    //** Already opened so just increase the ref count
-        apr_thread_mutex_lock(obj->lock);
 
-        //** Make sure object_open didn't fail
-        err = 0;
-        obj->n_pending--;
-        log_printf(15,
-                   "fs_object_get(2): want_id=" LU " id=" LU
-                   " nopened=%d npending=%d shelf=%d hole=%d err=%d\n", id, obj->id, obj->n_opened,
-                   obj->n_pending, obj->my_slot.shelf, obj->my_slot.hole, err);
-
-        if ((obj->id == id) && (obj->is_ok == 1)) {     //** and id matches and is ok
+        //** If we made it here the open succeeded. Now just need to check that someone else
+        //** didn't beat us in adding it to the list
+        apr_thread_mutex_lock(fs->obj_lock);
+        obj2 = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
+        if (obj2) {    //** Somebody else beat us to it
+            tbx_pch_release(fs->obj_list, &pch);  //** Release the one I created
+            obj = obj2;   //** And use the stored object
+            apr_thread_mutex_lock(obj->lock);
             obj->n_opened++;
             apr_thread_mutex_unlock(obj->lock);
         } else {
-            err = 1;
-
-            if ((obj->n_pending <= 0) && (obj->n_opened <= 0)) {        //** Last person in failure chain so do the final clean up
-                apr_thread_mutex_unlock(obj->lock);
-                apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), NULL);
-                tbx_pch_release(fs->obj_list, &(obj->my_slot));
-            } else {            //** Someone else is waiting so let them clean up
-                apr_thread_mutex_unlock(obj->lock);
-            }
+            apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), obj);  //** All good so add it to the table
         }
-
-        log_printf(15, "fs_object_get(2): id=" LU "  err=%d\n", id, err);
-
-        apr_thread_mutex_unlock(fs->obj_lock);
-
-        if (err == 1)
-            obj = NULL;
+    } else {                    //** Already opened so just increase the ref count
+        apr_thread_mutex_lock(obj->lock);
+        log_printf(15,
+                   "fs_object_get(2): want_id=" LU " id=" LU
+                   " nopened=%d shelf=%d hole=%d\n", id, obj->id, obj->n_opened,
+                   obj->my_slot.shelf, obj->my_slot.hole);
+        obj->n_opened++;
+        apr_thread_mutex_unlock(obj->lock);
     }
+
+    apr_thread_mutex_unlock(fs->obj_lock);
 
     return (obj);
 }
@@ -1532,8 +1505,8 @@ int fs_object_release(osd_fs_t *fs, osd_fs_object_t *obj)
 
     apr_thread_mutex_lock(obj->lock);
 
-    log_printf(15, "id=" LU " nopened=%d npending=%d state=%d shelf=%d hole=%d\n", obj->id,
-               obj->n_opened, obj->n_pending, obj->state, obj->my_slot.shelf, obj->my_slot.hole);
+    log_printf(15, "id=" LU " nopened=%d state=%d shelf=%d hole=%d\n", obj->id,
+               obj->n_opened, obj->state, obj->my_slot.shelf, obj->my_slot.hole);
 
     if (obj->n_opened > 1) {    //** Early exit
         obj->n_opened--;
@@ -1550,10 +1523,10 @@ int fs_object_release(osd_fs_t *fs, osd_fs_object_t *obj)
     obj->n_opened--;
 
     log_printf(15,
-               "Trying to REALLY close it... id=" LU " nopened=%d npending=%d shelf=%d hole=%d\n",
-               obj->id, obj->n_opened, obj->n_pending, obj->my_slot.shelf, obj->my_slot.hole);
+               "Trying to REALLY close it... id=" LU " nopened=%d shelf=%d hole=%d\n",
+               obj->id, obj->n_opened, obj->my_slot.shelf, obj->my_slot.hole);
 
-    if ((obj->n_opened <= 0) && (obj->n_pending == 0)) {        //** Now *really* close it
+    if (obj->n_opened <= 0) {        //** Now *really* close it
         apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), NULL);
         apr_thread_mutex_unlock(obj->lock);     //** Free my lock since it's now removed from the hash and before the release
 
