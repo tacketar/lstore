@@ -38,6 +38,7 @@
 #include "random.h"
 #include "statfs.h"
 #include <tbx/chksum.h>
+#include <tbx/lru.h>
 #include "pigeon_coop.h"
 
 #define FS_MAX_LOOPBACK 100
@@ -139,6 +140,7 @@ struct osd_fs_s {
     int n_partitions;
     tbx_pc_t *obj_list;
     tbx_pc_t *fd_list;
+    tbx_lru_t *obj_encoding_lru;
     apr_hash_t *obj_hash;
     apr_hash_t *corrupt_hash;
     fs_cache_table_t *cache;

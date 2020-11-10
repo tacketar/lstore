@@ -44,6 +44,9 @@
 //#define FS_RANGE_COUNT 16
 #define FS_OBJ_COUNT 64
 #define FS_RANGE_COUNT 4
+#define FS_OBJ_ENCODING_COUNT 1000000
+
+const int obj_encoding_lru_size = sizeof(osd_fs_object_t);
 
 #define _id2fname(fs, id, fname, len) (fs)->id2fname(fs, id, fname, len)
 #define _trashid2fname(fs, trash_type, trash_id, fname, len) (fs)->trashid2fname(fs, trash_type, trash_id, fname, len)
@@ -69,6 +72,20 @@ osd_off_t _chksum_buffered_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t len, 
 #define INT2PTR(n) (void *)(long)(n)
 #define fs_cache_lock(c) apr_thread_mutex_lock((c)->lock)
 #define fs_cache_unlock(c) apr_thread_mutex_unlock((c)->lock)
+
+
+
+//***************************************************************************
+// fs_fetch_idkey - Routine to fetch the ID key for the encoding object
+//***************************************************************************
+
+void fs_fetch_idkey(void *global, void *object, void **key, int *len)
+{
+    osd_fs_object_t *obj = (osd_fs_object_t *)object;
+
+    *key = &(obj->id);
+    *len = sizeof(osd_id_t);
+}
 
 //******************************************************************************
 // fs_chksum_add - Add data to the ruhnning chksum
@@ -1011,6 +1028,7 @@ int fs_physical_remove(osd_t *d, osd_id_t id)
 
     char fname[fs->pathlen];
 
+    tbx_lru_delete(fs->obj_encoding_lru, &id, sizeof(id));
     return (remove(_id2fname(fs, id, fname, sizeof(fname))));
 }
 
@@ -1042,6 +1060,7 @@ int fs_delete_remove(osd_t *d, osd_id_t id)
     now = apr_time_sec(now);
     snprintf(tname, sizeof(tname), "%s/deleted_trash/" TT "_" LU, fs->devicename, now, id);
 
+    tbx_lru_delete(fs->obj_encoding_lru, &id, sizeof(id));
     return (rename(_id2fname(fs, id, fname, sizeof(fname)), tname));
 }
 
@@ -1060,6 +1079,7 @@ int fs_expire_remove(osd_t *d, osd_id_t id)
 
     snprintf(tname, sizeof(tname), "%s/expired_trash/" TT "_" LU, fs->devicename, now, id);
 
+    tbx_lru_delete(fs->obj_encoding_lru, &id, sizeof(id));
     return (rename(_id2fname(fs, id, fname, sizeof(fname)), tname));
 }
 
@@ -1441,6 +1461,7 @@ osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
 {
     tbx_pch_t pch;
     osd_fs_object_t *obj, *obj2;
+    osd_fs_object_t eobj;
     int err;
 
     apr_thread_mutex_lock(fs->obj_lock);
@@ -1448,10 +1469,11 @@ osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
     //** 1st see if it's already in use
     obj = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
     if (obj == NULL) {          //** New object
-        apr_thread_mutex_unlock(fs->obj_lock);  //** Unlock the list while we do the open
-
+        //** Get where we're going to store things
         pch = tbx_pch_reserve(fs->obj_list);
         obj = (osd_fs_object_t *) tbx_pch_data(&pch);
+
+        //** Initialize the structure
         obj->id = id;
         obj->my_slot = pch;
         obj->n_opened = 1;      //** Include the caller
@@ -1460,28 +1482,48 @@ osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
         obj->count = 0;
         obj->state = OSD_STATE_GOOD;
 
-        err = object_open(fs, obj);     //** Opens the object and stores the approp r/w routines
+        //** check to see if we don't have to open the allocation to determine the encoding
+        if (tbx_lru_get(fs->obj_encoding_lru, &id, sizeof(osd_id_t), &eobj) == 0) { //** got it
+log_printf(0, "NEW ENCODING_LRU HIT  id=" LU "\n", id);
+            //** Copy the contents over... selectively. These are teh things set in object_open()
+            obj->fd_chksum = eobj.fd_chksum;
+            obj->read = eobj.read;
+            obj->write = eobj.write;
+            obj->header = eobj.header;
 
-        if (err != 0) { //** Failed on open so cleanup
-            tbx_pch_release(fs->obj_list, &pch);
-            return(NULL);
-        }
-
-        //** If we made it here the open succeeded. Now just need to check that someone else
-        //** didn't beat us in adding it to the list
-        apr_thread_mutex_lock(fs->obj_lock);
-        obj2 = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
-        if (obj2) {    //** Somebody else beat us to it
-            tbx_pch_release(fs->obj_list, &pch);  //** Release the one I created
-            obj = obj2;   //** And use the stored object
-            apr_thread_mutex_lock(obj->lock);
-            obj->n_opened++;
-            apr_thread_mutex_unlock(obj->lock);
-        } else {
             apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), obj);  //** All good so add it to the table
+        } else {   //** Have to open the actual object
+            apr_thread_mutex_unlock(fs->obj_lock);  //** Unlock the list while we do the open
+log_printf(0, "NEW ENCODING_LRU MISS id=" LU "\n", id);
+
+            err = object_open(fs, obj);     //** Opens the object and stores the approp r/w routines
+
+            if (err != 0) { //** Failed on open so cleanup
+                tbx_pch_release(fs->obj_list, &pch);
+                return(NULL);
+            }
+
+            //** Add the object to the encoding LRU
+            tbx_lru_put(fs->obj_encoding_lru, obj);
+
+            //** If we made it here the open succeeded. Now just need to check that someone else
+            //** didn't beat us in adding it to the list
+            apr_thread_mutex_lock(fs->obj_lock);  //** Also get the lock back
+            obj2 = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
+            if (obj2) {    //** Somebody else beat us to it
+log_printf(0, "DUP ENCODING_LRU MISS id=" LU "\n", id);
+                tbx_pch_release(fs->obj_list, &pch);  //** Release the one I created
+                obj = obj2;   //** And use the stored object
+                apr_thread_mutex_lock(obj->lock);
+                obj->n_opened++;
+                apr_thread_mutex_unlock(obj->lock);
+            } else {
+                apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), obj);  //** All good so add it to the table
+            }
         }
     } else {                    //** Already opened so just increase the ref count
         apr_thread_mutex_lock(obj->lock);
+log_printf(0, "OLD ENCODING_LRU HIT  id=" LU "\n", id);
         log_printf(15,
                    "fs_object_get(2): want_id=" LU " id=" LU
                    " nopened=%d shelf=%d hole=%d\n", id, obj->id, obj->n_opened,
@@ -1504,6 +1546,8 @@ int fs_object_release(osd_fs_t *fs, osd_fs_object_t *obj)
     tbx_pch_t pch;
 
     apr_thread_mutex_lock(obj->lock);
+
+log_printf(0, "CLOSE ENCODING_LRU id=" LU " n_opened=%d\n", obj->id, obj->n_opened);
 
     log_printf(15, "id=" LU " nopened=%d state=%d shelf=%d hole=%d\n", obj->id,
                obj->n_opened, obj->state, obj->my_slot.shelf, obj->my_slot.hole);
@@ -3081,6 +3125,7 @@ int fs_umount(osd_t *d)
 
     tbx_pc_destroy(fs->fd_list);
     tbx_pc_destroy(fs->obj_list);
+    tbx_lru_destroy(fs->obj_encoding_lru);
 
     fs_cache_destroy(fs->cache);
 
@@ -3365,6 +3410,8 @@ osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_
     fs->corrupt_hash = apr_hash_make(fs->pool);
     assert_result_not_null(fs->corrupt_hash);
 
+    //** Make the encoding cache structure
+    fs->obj_encoding_lru = tbx_lru_create(FS_OBJ_ENCODING_COUNT, fs_fetch_idkey, tbx_lru_clone_default, tbx_lru_copy_default, tbx_lru_free_default, (void *)(&obj_encoding_lru_size));
     //** Lastly make the cache buffers
     i = (n_cache > 0) ? sqrt(1.0 * n_cache) : 0;
     fs->cache = fs_cache_create(fs->pool, i, i, expire_time);
