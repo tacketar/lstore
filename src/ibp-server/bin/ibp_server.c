@@ -398,7 +398,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     server->alog_port = 0;
     server->port = IBP_PORT;
     server->return_cap_id = 1;
-    server->rid_check_interval = 15;
+    server->rid_check_interval = 30;
     server->eject_timeout = 35;
     server->rid_log = "/log/rid.log";
     server->rid_eject_script = NULL;
