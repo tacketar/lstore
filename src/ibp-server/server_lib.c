@@ -967,6 +967,10 @@ void server_loop(Config_t *config)
              config->server.max_pending) != 0) {
             log_printf(0, "ERROR binding iface[%d]=%s:%d so shutting down!\n", i,
                        config->server.iface[i].hostname, config->server.iface[i].port);
+            fprintf(stderr, "ERROR binding iface[%d]=%s:%d so shutting down!\n", i,
+                       config->server.iface[i].hostname, config->server.iface[i].port);
+            fprintf(stdout, "ERROR binding iface[%d]=%s:%d so shutting down!\n", i,
+                       config->server.iface[i].hostname, config->server.iface[i].port);
             shutdown_now = 1;   //** Trigger a shutdown
         }
     }
