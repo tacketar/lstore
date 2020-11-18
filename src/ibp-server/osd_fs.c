@@ -44,7 +44,7 @@
 //#define FS_RANGE_COUNT 16
 #define FS_OBJ_COUNT 64
 #define FS_RANGE_COUNT 4
-#define FS_OBJ_ENCODING_COUNT 1000000
+#define FS_OBJ_ENCODING_COUNT 10000
 
 const int obj_encoding_lru_size = sizeof(osd_fs_object_t);
 
@@ -332,10 +332,6 @@ int fs_direct_cache_read(fs_cache_table_t *c, osd_id_t id, int block)
     log_printf(15, "fs_direct_cache_read: id=" LU " block=%d slot=%d\n", id, block, slot);
     tbx_log_flush();
 
-//  void *v = apr_hash_get(c->hash, &key, sizeof(key));
-//  slot = PTR2INT(v);
-//log_printf(15, "fs_direct_cache_read: id=" LU " block=%d slot=%d \n", id, block, slot); tbx_log_flush();
-
     if (slot != 0) {
         now = apr_time_now();
         dt = now - c->table[slot].time;
@@ -352,7 +348,6 @@ int fs_direct_cache_read(fs_cache_table_t *c, osd_id_t id, int block)
     log_printf(15, "fs_direct_cache_read: id=" LU " block=%d slot=%d err=%d\n", id, block, slot,
                err);
     tbx_log_flush();
-//return(0);
 
     return (err);
 }
@@ -473,8 +468,6 @@ char *trashid2fname_normal(osd_fs_t *fs, int trash_type, const char *trash_id, c
         fname[0] = '\0';
     }
 
-//   printf("_trashid2fname: fname=%s\n", fname);
-
     return (fname);
 }
 
@@ -483,7 +476,6 @@ char *trashid2fname_normal(osd_fs_t *fs, int trash_type, const char *trash_id, c
 char *trashid2fname_loopback(osd_fs_t *fs, int trash_type, const char *trash_id, char *fname,
                              int len)
 {
-//   return((const char *)trash_id);  //** A little sloppy....
     return (NULL);
 }
 
@@ -621,7 +613,6 @@ int fs_mapping(osd_fs_fd_t *fsfd, osd_off_t offset, osd_off_t len,
     if (offset < fcs->header_blocksize) {
         *start_block = 0;
         *start_offset = offset;
-//     *start_size = ((len+offset) > fcs->header_blocksize) ? fcs->header_blocksize - offset : len;
         *start_size =
             ((len + *start_offset) > fcs->header_blocksize) ? fcs->header_blocksize - offset : len;
     } else {
@@ -780,11 +771,6 @@ void fsfd_unlock(osd_fs_t *fs, osd_fs_fd_t *fsfd)
 
     //** Wake up everyone
     apr_thread_cond_broadcast(obj->cond);
-
-//  //** Wake up everyone I overlap with
-//  _range_request_wakeup(obj->write_range_list, my_lo, my_hi);
-//  _range_request_wakeup(obj->read_range_list, my_lo, my_hi);
-
     apr_thread_mutex_unlock(obj->lock);
 }
 
@@ -839,7 +825,6 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
                        timestamp);
             tbx_log_flush();
             insert_range(coop, fsfd, RANGE_REQUEST, timestamp, start_block, end_block);
-//       apr_thread_cond_wait(fsfd->cond, obj->lock);
             apr_thread_cond_wait(obj->cond, obj->lock);
             log_printf(10, "fsfd_lock: fsfd=%p Woken back so trying again ts=" I64T "\n", fsfd,
                        timestamp);
@@ -1023,7 +1008,6 @@ osd_id_t fs_create_id(osd_t *d, int chksum_type, int header_size, int block_size
 
 int fs_physical_remove(osd_t *d, osd_id_t id)
 {
-//   log_printf(10, "physical_remove(" LU ")\n", id);
     osd_fs_t *fs = (osd_fs_t *) (d->private);
 
     char fname[fs->pathlen];
@@ -1038,7 +1022,6 @@ int fs_physical_remove(osd_t *d, osd_id_t id)
 
 int fs_trash_physical_remove(osd_t *d, int trash_type, const char *trash_id)
 {
-//log_printf(10, "trash_physical_remove(%d, %s)\n", trash_type, trash_id);
     osd_fs_t *fs = (osd_fs_t *) (d->private);
 
     char fname[fs->pathlen];
@@ -1052,7 +1035,6 @@ int fs_trash_physical_remove(osd_t *d, int trash_type, const char *trash_id)
 
 int fs_delete_remove(osd_t *d, osd_id_t id)
 {
-//log_printf(10,"delete_remove(" LU ")\n", id);
     osd_fs_t *fs = (osd_fs_t *) (d->private);
 
     char fname[fs->pathlen], tname[fs->pathlen];
@@ -1070,7 +1052,6 @@ int fs_delete_remove(osd_t *d, osd_id_t id)
 
 int fs_expire_remove(osd_t *d, osd_id_t id)
 {
-//log_printf(10,"expire_remove(" LU ")\n", id);
     osd_fs_t *fs = (osd_fs_t *) (d->private);
 
     char fname[fs->pathlen], tname[fs->pathlen];
@@ -1119,7 +1100,6 @@ osd_id_t fs_trash_undelete(osd_t *d, int trash_type, const char *trash_id)
     //** Parse for the id
     strncpy(wname, trash_id, sizeof(wname));
     tbx_stk_string_token(wname, "_", &bstate, &n);      //** Throw away the time
-//   sscanf(tbx_stk_string_token(NULL, "_", &bstate, &n), LU, &id);
     char *dummy = tbx_stk_string_token(NULL, "_", &bstate, &n);
     log_printf(15, "trash_undelete: text id=%s\n", dummy);
     sscanf(dummy, LU, &id);
@@ -1149,7 +1129,6 @@ osd_off_t fs_offset_l2p(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t l_offset)
 
 
     fcs = &(fsfd->obj->fd_chksum);
-//log_printf(10, "fs_offset_l2p: id=" LU " l_offset=" I64T " is_valid=%d\n", fsfd->obj->id, l_offset, fcs->is_valid);
 
     if (fcs->is_valid == 0)
         return (l_offset);
@@ -1484,7 +1463,6 @@ osd_fs_object_t *fs_object_get(osd_fs_t *fs, osd_id_t id)
 
         //** check to see if we don't have to open the allocation to determine the encoding
         if (tbx_lru_get(fs->obj_encoding_lru, &id, sizeof(osd_id_t), &eobj) == 0) { //** got it
-log_printf(0, "NEW ENCODING_LRU HIT  id=" LU "\n", id);
             //** Copy the contents over... selectively. These are teh things set in object_open()
             obj->fd_chksum = eobj.fd_chksum;
             obj->read = eobj.read;
@@ -1494,7 +1472,6 @@ log_printf(0, "NEW ENCODING_LRU HIT  id=" LU "\n", id);
             apr_hash_set(fs->obj_hash, &(obj->id), sizeof(osd_id_t), obj);  //** All good so add it to the table
         } else {   //** Have to open the actual object
             apr_thread_mutex_unlock(fs->obj_lock);  //** Unlock the list while we do the open
-log_printf(0, "NEW ENCODING_LRU MISS id=" LU "\n", id);
 
             err = object_open(fs, obj);     //** Opens the object and stores the approp r/w routines
 
@@ -1511,7 +1488,6 @@ log_printf(0, "NEW ENCODING_LRU MISS id=" LU "\n", id);
             apr_thread_mutex_lock(fs->obj_lock);  //** Also get the lock back
             obj2 = (osd_fs_object_t *) apr_hash_get(fs->obj_hash, &id, sizeof(osd_id_t));
             if (obj2) {    //** Somebody else beat us to it
-log_printf(0, "DUP ENCODING_LRU MISS id=" LU "\n", id);
                 tbx_pch_release(fs->obj_list, &pch);  //** Release the one I created
                 obj = obj2;   //** And use the stored object
                 apr_thread_mutex_lock(obj->lock);
@@ -1523,7 +1499,6 @@ log_printf(0, "DUP ENCODING_LRU MISS id=" LU "\n", id);
         }
     } else {                    //** Already opened so just increase the ref count
         apr_thread_mutex_lock(obj->lock);
-log_printf(0, "OLD ENCODING_LRU HIT  id=" LU "\n", id);
         log_printf(15,
                    "fs_object_get(2): want_id=" LU " id=" LU
                    " nopened=%d shelf=%d hole=%d\n", id, obj->id, obj->n_opened,
@@ -1546,8 +1521,6 @@ int fs_object_release(osd_fs_t *fs, osd_fs_object_t *obj)
     tbx_pch_t pch;
 
     apr_thread_mutex_lock(obj->lock);
-
-log_printf(0, "CLOSE ENCODING_LRU id=" LU " n_opened=%d\n", obj->id, obj->n_opened);
 
     log_printf(15, "id=" LU " nopened=%d state=%d shelf=%d hole=%d\n", obj->id,
                obj->n_opened, obj->state, obj->my_slot.shelf, obj->my_slot.hole);
@@ -1651,8 +1624,6 @@ osd_fs_fd_t *fsfd_get(osd_fs_t *fs, osd_id_t id, int mode)
 int fsfd_remove(osd_fs_t *fs, osd_fs_fd_t *fsfd)
 {
     osd_fs_object_t *obj;
-//  apr_thread_mutex_lock(fs->obj_lock);
-//  apr_thread_mutex_lock(fsfs->obj->lock);
 
     obj = fsfd->obj;            //** Get the object 1st
     fs_object_fd_release(fs, fsfd);     //** Then release the fd
@@ -1787,7 +1758,6 @@ osd_off_t _chksum_buffered_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t len, 
         log_printf(10,
                    "_chksum_buffered_read: len=" I64T " bufsize=" I64T " nblocks=" I64T " nleft="
                    I64T "\n", len, bufsize, nblocks, nleft);
-//ftello(fsfd->fd);
         n = n + fread(buffer, 1, nleft, fsfd->fd);
         fs_chksum_add(cs1, nleft, buffer);
         if (cs2 != NULL)
@@ -1807,7 +1777,6 @@ osd_off_t chksum_merged_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, 
 {
     char cs_value[CHKSUM_MAX_SIZE + 2];
     char disk_value[CHKSUM_MAX_SIZE + 2];
-//  char dummy_value[CHKSUM_MAX_SIZE+2];
     char buffer[FS_BUF_SIZE];
     uint32_t block_bytes_used;
     osd_off_t n, n2, obj_offset, nbytes, bs, d, herr;
@@ -1866,6 +1835,7 @@ osd_off_t chksum_merged_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, 
         n2 = (block == 0) ? OSD_STATE_BAD_HEADER : OSD_STATE_BAD_BLOCK;
         return (n2);
     }
+
     //** Now read it back and calculate the chksum
     n2 = offset + len;
     if (n2 > block_bytes_used)
@@ -1905,9 +1875,6 @@ osd_off_t chksum_full_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, bu
     tbx_chksum_t *cs = &(fsfd->chksum);
     osd_fs_chksum_t *ocs = &(fsfd->obj->fd_chksum);
 
-//apr_time_t start_time, dt;
-//start_time = apr_time_now();
-
     //** Prepare the chksum **
     tbx_chksum_reset(cs);
     fs_chksum_add(cs, ocs->blocksize, buffer);
@@ -1923,8 +1890,6 @@ osd_off_t chksum_full_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, bu
     herr = _fs_write_block_header(fsfd, block_bytes_used, cs_value, nbytes);
     n = fwrite(buffer, 1, ocs->blocksize, fsfd->fd);    //** Lastly the data
 
-//Q  posix_fadvise(fileno(fsfd->fd), obj_offset, ocs->bs_with_chksum, POSIX_FADV_DONTNEED);
-
     if ((n != ocs->blocksize) || (herr != 0)) {
         log_printf(0,
                    "chksum_full_write(%p, " I64T ", " I64T ") write error = %d n=" I64T
@@ -1933,7 +1898,6 @@ osd_off_t chksum_full_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, bu
         n = (block == 0) ? OSD_STATE_BAD_HEADER : OSD_STATE_BAD_BLOCK;
         return (n);
     }
-//dt = apr_time_now() - start_time;
     tbx_chksum_get(cs, CHKSUM_DIGEST_HEX, dummy_value);
     log_printf(15, "chksum_full_write(%p, " I64T ", " I64T ") cs=%s\n", fsfd, obj_offset,
                ocs->blocksize, dummy_value);
@@ -2038,8 +2002,6 @@ osd_off_t fs_chksum_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd
 
         start_block = end_got + 1;
 
-//     fflush(fsfd->fd);  //** Make sure data is available for other threads  -- done in fsfd_unlock
-
         fsfd_unlock(fs, fsfd);
     } while (end_got < end_block);
 
@@ -2073,8 +2035,6 @@ osd_off_t fs_normal_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd
 {
     osd_off_t n, err;
 
-//   apr_thread_mutex_lock(fsfd->lock);
-
     fseeko(fsfd->fd, offset, SEEK_SET);
 
     log_printf(15, "fs_normal_write(%s, %p, " I64T ", " I64T ", %p)\n", fs->devicename, fsfd,
@@ -2087,7 +2047,6 @@ osd_off_t fs_normal_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd
                    fsfd, offset, len, errno, n);
         err = 1;
     }
-//   apr_thread_mutex_unlock(fsfd->lock);
 
     if (offset > 4095)
         posix_fadvise(fileno(fsfd->fd), offset, len, POSIX_FADV_DONTNEED);
@@ -2172,8 +2131,6 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
     tbx_chksum_t *cs = &(fsfd->chksum);
     osd_fs_chksum_t *ocs = &(fsfd->obj->fd_chksum);
 
-//memset(data, 0, len);
-
     //** Move to the start of the block
     if (block == 0) {
         obj_offset = FS_MAGIC_HEADER;
@@ -2185,18 +2142,12 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
 
     fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
-//log_printf(5, "chksum_merged_read: block=" I64T " fpos=" I64T " len=" I64T "\n", block, obj_offset, len); tbx_log_flush();
-
     tbx_chksum_reset(cs);       //** Reset the chksum
 
     //** Get the chksum and block bytes from disk
     block_bytes_used = 0;
     nbytes = tbx_chksum_size(cs, CHKSUM_DIGEST_BIN);
     herr = _fs_read_block_header(fsfd, &block_bytes_used, disk_value, bs, nbytes);
-
-//  nblocks = block_bytes_used;
-//  log_printf(10, "chksum_merged_read(%p, b=" I64T ", o=" I64T ", l=" I64T " oo=" I64T ", bs=" I64T ", csl=" I64T ") after initial chksum read herr=%d bytes_used=" I64T "\n",
-//       fsfd, block, offset, len, obj_offset, ocs->blocksize, nbytes, herr, nblocks);
 
     if (herr != 0) {            //** Either a disk error or more likely this block is empty
         log_printf(10,
@@ -2212,8 +2163,6 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
     //** Read in any data before the "read" start position
     n = n + _chksum_buffered_read(fs, fsfd, off, buffer, FS_BUF_SIZE, cs, NULL);
 
-//log_printf(10, "chksum_merged_read(%p, " I64T ", " I64T ") after pre-read n=" I64T "\n", fsfd, obj_offset, ocs->blocksize, n);
-
     if (offset < block_bytes_used) {    //** Siphon the requested data if available
         off = offset + len;
         len2 = (off >= block_bytes_used) ? block_bytes_used - offset : len;
@@ -2223,16 +2172,12 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
             memset(&(data[len2]), 0, off);
         }
         fs_chksum_add(cs, len2, data);  //** Only chksum the available data
-//log_printf(10, "chksum_merged_read(%p, " I64T ", " I64T ") after siphon n=" I64T "\n", fsfd, obj_offset, ocs->blocksize, n);
 
         //** Read in the rest of block if available
         off = offset + len;
         bs = (off > block_bytes_used) ? off : block_bytes_used;
         nleft = bs - offset - len;
         n = n + _chksum_buffered_read(fs, fsfd, nleft, buffer, FS_BUF_SIZE, cs, NULL);
-
-//log_printf(10, "chksum_merged_read(%p, " I64T ", " I64T ") after post-read n=" I64T "\n", fsfd, obj_offset, ocs->blocksize, n);
-
     } else {                    //** Nothing to read so fill with blanks
         memset(data, 0, len);
     }
@@ -2278,8 +2223,6 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
     osd_off_t n, obj_offset, nbytes, nleft;
     tbx_chksum_t *cs = &(fsfd->chksum);
     osd_fs_chksum_t *ocs = &(fsfd->obj->fd_chksum);
-
-//memset(buffer, 0, ocs->blocksize);
 
     //** Prepare the chksum **
     tbx_chksum_reset(cs);
@@ -2340,8 +2283,6 @@ osd_off_t fs_normal_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
 {
     osd_off_t n, err;
 
-//   apr_thread_mutex_lock(fsfd->lock);
-
     posix_fadvise(fileno(fsfd->fd), offset, len, POSIX_FADV_WILLNEED);
 
     fseeko(fsfd->fd, offset, SEEK_SET);
@@ -2356,7 +2297,6 @@ osd_off_t fs_normal_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
                    offset, len, errno, n);
         err = 1;
     }
-//   apr_thread_mutex_unlock(fsfd->lock);
 
     return (err);
 }
@@ -2374,8 +2314,6 @@ osd_off_t fs_chksum_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
     int got_last;
     char *buffer = (char *) buf;
     osd_fs_chksum_t *ocs = &(fsfd->obj->fd_chksum);
-
-//memset(buffer, 0, len);
 
     n = 0;
 
@@ -2439,7 +2377,6 @@ osd_off_t fs_chksum_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
         }
 
         for (block = start_block; block <= got_last; block++) {
-//log_printf(10, "11111111111111111111\n");
             if (fs_direct_cache_read(fs->cache, fsfd->obj->id, start_block) == 1) {
                 n = chksum_direct_read(fs, fsfd, block, 0, ocs->blocksize, &(buffer[bpos]));
                 if (n != 0)
@@ -2461,8 +2398,6 @@ osd_off_t fs_chksum_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
         //** Check if the last block is full.  If not read it with chksum_merged
         //** handle the last block
         if ((end_got == end_block) && (end_block != first_block)) {
-//log_printf(10, "2222222222222222\n");
-// log_printf(10, "22222222222222fs_chksum_read(%p, " I64T ", " I64T ") sb=" I64T " eb=" I64T " end_got=" I64T "\n", fsfd->fd, offset, len, start_block, end_block, end_got);
             if (fs_direct_cache_read(fs->cache, fsfd->obj->id, start_block) == 1) {
                 n = chksum_direct_read(fs, fsfd, end_block, 0, end_size, &(buffer[bpos]));
             } else {
@@ -2584,9 +2519,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
     uint32_t block_bytes_used;
     char disk_value[CHKSUM_MAX_SIZE], calc_value[CHKSUM_MAX_SIZE];
     char chksum_buffer[FS_BUF_SIZE];
-//char hex_buffer[CHKSUM_MAX_SIZE];
-
-//log_printf(0, "fs_get_chksum: 00000000000000000\n"); tbx_log_flush();
 
     osd_fs_fd_t *fsfd = (osd_fs_fd_t *) fs_open(d, id, OSD_READ_MODE);
     if (fsfd == NULL)
@@ -2613,12 +2545,8 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
     bpos = 0;
     slot = 0;
 
-//log_printf(0, "fs_get_chksum: 1111111111111111111111\n"); tbx_log_flush();
-
     //** Get the header 1st if needed
     if (start_block == 0) {
-//log_printf(0, "fs_get_chksum: 22222222222222222222\n"); tbx_log_flush();
-
         fpos = FS_MAGIC_HEADER;
         fseeko(fsfd->fd, fpos, SEEK_SET);
 
@@ -2640,10 +2568,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         if (n != cs_size) {
             log_printf(0, "fs_get_chksum: Error reading header chksum! id=" LU "\n", id);
         }
-//log_printf(0, "fs_get_chksum: 333333333333333333333333333\n"); tbx_log_flush();
-
-
-//log_printf(0, "fs_get_chksum: 4444444444444444444444\n"); tbx_log_flush();
 
         //** Lastly see if we need to verify the chksum
         if ((good_block != NULL) || (calc_buffer != NULL)) {
@@ -2660,7 +2584,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         slot++;
         start_block++;
     }
-//log_printf(0, "fs_get_chksum: 555555555555555555555555555\n"); tbx_log_flush();
 
     if (end_block == 0) {       //** Exit if only reading the header
         fs_close(d, (osd_fd_t *) fsfd);
@@ -2699,8 +2622,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
                            "fs_get_chksum: Error reading block chksum! id=" LU " block=" I64T
                            " err=" I64T "\n", id, block, n);
             }
-//tbx_chksum_bin2hex(cs_size, (unsigned char *)disk_value, hex_buffer);
-//log_printf(5, "fs_get_chksum: block=" I64T " dcs=%s\n", block, hex_buffer);
 
             //** Lastly see if we need to verify the chksum
             if ((good_block != NULL) || (calc_buffer != NULL)) {
@@ -2709,8 +2630,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
                                          FS_BUF_SIZE, calc_value, 0);
                 if (state != 0)
                     flag_corrupt = 1;
-//tbx_chksum_bin2hex(cs_size, (unsigned char *)calc_value, hex_buffer);
-//log_printf(5, "fs_get_chksum: block=" I64T " ccs=%s\n", block, hex_buffer);
                 if (good_block != NULL)
                     good_block[slot] = state;
                 if (calc_buffer != NULL)
@@ -3102,11 +3021,6 @@ int fs_trash_iterator_next(osd_iter_t *oi, osd_id_t *id, ibp_time_t *move_time, 
                 tbx_log_flush();
             }
         }
-//if (result==NULL) {
-//  log_printf(15, "osd_fs:iterator_next: result=NULL n=%d\n", iter->n); tbx_log_flush();
-//} else {
-//  log_printf(15, "osd_fs:iterator_next: d_name=%s\n", result->d_name); tbx_log_flush();
-//}
     } while (finished == 0);
 
 
@@ -3265,7 +3179,6 @@ void fs_shelf_object_free(void *arg, int size, void *data)
         //** Free the lock
         apr_thread_mutex_destroy(obj->lock);
         apr_thread_cond_destroy(obj->cond);
-//     apr_thread_mutex_destroy(obj->obj_lock);
         apr_pool_destroy(obj->pool);
     }
 
@@ -3340,10 +3253,6 @@ osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_
 
 
     fs->mount_type = 0;
-
-//#ifdef _HAS_XFS
-//   fs->mount_type = platform_test_xfs_path(device);
-//#endif
 
     log_printf(10, "osd_fs_mount: %s mount_type=%d\n", fs->devicename, fs->mount_type);
     log_printf(15, "fs_mount fs=%p rid=%s\n", fs, fs->devicename);
