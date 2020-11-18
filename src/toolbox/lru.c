@@ -216,7 +216,7 @@ void tbx_lru_put(tbx_lru_t *lru, void *object)
         tbx_stack_link_insert_above(lru->que, entry->ele);
     }
 
-    //** Got it so copy it it
+    //** Got it so copy it
     if (entry->object == NULL) {
         entry->object = lru->clone(lru->global_arg, object);
     } else {
