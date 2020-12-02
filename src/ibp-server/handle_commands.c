@@ -166,6 +166,7 @@ int handle_allocate(ibp_task_t *task)
                    err, a.type);
     }
     //** Send the result back **
+    cid = 0;
     if (global_config->server.return_cap_id == 1)
         cid = a.id;
     tbx_ns_monitor_t *nm = tbx_ns_monitor_get(task->ns);

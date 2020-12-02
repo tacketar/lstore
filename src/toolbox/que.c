@@ -126,6 +126,7 @@ int _tbx_que_bulk_put(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt,
 {
     int i, n, slot;
 
+    n = 0;
     while (1) {
         if (q->n_used < q->n_objects) {  //** Got space
             if (objects != NULL) {
