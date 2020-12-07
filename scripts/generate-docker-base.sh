@@ -41,6 +41,7 @@ for DISTRO in "${DISTROS[@]}"; do
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
             # Should I rewrite this again to include dnf as a different packager
             # When does dnf first exist?
+            ROCKSDB_MANUAL="1"
             PACKAGER="rpm"
             PACKAGE_PREFIX="RUN yum install -y"
             PACKAGE_POSTFIX="&& yum clean all"
@@ -74,7 +75,6 @@ for DISTRO in "${DISTROS[@]}"; do
                                     createrepo
                                     expat-devel
                                     fuse3-devel
-                                    rocksdb-devel
                                     libtool
                                     openssl-devel
                                     python
@@ -154,6 +154,37 @@ RUN cd /tmp && \
     rm -rf CMake
 $PACKAGE_INSTALL
 EOF
+
+    #See if we have to Manually build RocksDB
+    if [ "${ROCKSDB_MANUAL}" != "" ]; then
+        cat >> $OUT <<-EOF
+#Manually Building RocksDB!!!
+RUN yum install -y snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4-devel
+#Now build gflags from source
+RUN cd /tmp && \
+    git clone https://github.com/gflags/gflags.git && \
+    cd gflags && \
+    git checkout v2.0 && \
+    ./configure && make -j16 && make install
+
+#Build zstandard
+RUN cd /tmp && \
+    wget https://github.com/facebook/zstd/archive/v1.1.3.tar.gz && \
+    mv v1.1.3.tar.gz zstd-1.1.3.tar.gz && \
+    tar zxvf zstd-1.1.3.tar.gz && \
+    cd zstd-1.1.3 && \
+    make -j16 && make install
+
+#And finally RocksDB
+RUN cd /tmp && \
+    git clone https://github.com/facebook/rocksdb.git && \
+    cd rocksdb && \
+    PORTABLE=1 make -j16 static_lib && \
+    PORTABLE=1 make install-static    
+EOF
+    fi
+
+
     BUILDSLAVE_DIR=$LSTORE_RELEASE_BASE/scripts/docker/buildslave/$DISTRO
     if [[ -d "$BUILDSLAVE_DIR" && ! -z "$JAVA_INSTALL" ]]; then
         cat > $BUILDSLAVE_DIR/jenkins_slave <<-'EOF'
