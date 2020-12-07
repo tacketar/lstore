@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
 
-if(POLICY CMP0048)
-	cmake_policy(SET CMP0048 OLD)
-endif()
-
 # Name this project
 set(LSTORE_PROJECT_NAME "ibpserver")
 project(${LSTORE_PROJECT_NAME} C)
@@ -24,7 +20,7 @@ if(NOT USE_SUPERBUILD)
     find_package(IBP REQUIRED)
     find_package(RocksDB REQUIRED)
     include_directories(${TOOLBOX_INCLUDE_DIR} ${GOP_INCLUDE_DIR} ${IBP_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR})
-    list(APPEND LIBS ${TOOLBOX_LIBRARY} ${GOP_LIBRARY} ${IBP_LIBRARY} ${ROCKSDB_LIBRARY})
+    list(APPEND LIBS ${TOOLBOX_LIBRARY} ${GOP_LIBRARY} ${IBP_LIBRARY} ${ROCKSDB_LIBRARY} ${ROCKSDB_EXTRA_LIBRARY})
 endif()
 set(LSTORE_LIBS toolbox
                 gop
@@ -32,15 +28,20 @@ set(LSTORE_LIBS toolbox
                 ${APR_LIBRARY}
                 ${APRUTIL_LIBRARY}
                 ${ROCKSDB_LIBRARY}
+                ${ROCKSDB_EXTRA_LIBRARY}
     )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
 #Temporary hack until the packaged version of RocksDB catches up with git
 include(CheckLibraryExists)
-check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+if(ROCKSDB_EXTRA_LIBRARY STREQUAL "")
+    check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+else()
+    set(HAS_ROCKSDB_CANCEL "YES")
+endif()
 if (NOT HAS_ROCKSDB_CANCEL)
-message(STATUS "MISSING RocksDB_cancel!")
+    message(STATUS "MISSING RocksDB_cancel!")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_ROCKSDB_CANCEL_MISSING")
     set (ROCKSDB_CANCEL "rocksdb_cancel_all_background_work.cc")
 endif()
@@ -115,5 +116,6 @@ else()
 endif()
 
 foreach(f ${LSTORE_PROJECT_EXECUTABLES})
-    set_target_properties(${f} PROPERTIES COMPILE_FLAGS "-DLSTORE_HACK_EXPORT")
+    set_target_properties(${f} PROPERTIES COMPILE_FLAGS "-DLSTORE_HACK_EXPORT" LINKER_LANGUAGE CXX)
+    target_link_libraries(${f} LINK_PUBLIC dl)
 endforeach()

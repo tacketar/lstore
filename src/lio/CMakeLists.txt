@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
 
-if(POLICY CMP0048)
-	cmake_policy(SET CMP0048 OLD)
-endif()
-
 # Name this project
 set(LSTORE_PROJECT_NAME "lio")
 project(${LSTORE_PROJECT_NAME} C)
@@ -39,7 +35,7 @@ if(NOT USE_SUPERBUILD)
 
     list(APPEND LIBS
         ${IBP_LIBRARY} ${GOP_LIBRARY} ${TOOLBOX_LIBRARY}
-        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY}
+        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY} ${ROCKSDB_EXTRA_LIBRARY}
     )
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FILE_OFFSET_BITS=64")
@@ -60,6 +56,7 @@ set(LSTORE_LIBS toolbox
                 ${FUSE_LIBRARY}
                 ${JERASURE_LIBRARY}
                 ${ROCKSDB_LIBRARY}
+                ${ROCKSDB_EXTRA_LIBRARY}
                 dl
                 )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
@@ -74,9 +71,13 @@ set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
 #Temporary hack until the packaged version of RocksDB catches up with git
 include(CheckLibraryExists)
-check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+if(ROCKSDB_EXTRA_LIBRARY STREQUAL "")
+    check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
+else()
+    set(HAS_ROCKSDB_CANCEL "YES")
+endif()
 if (NOT HAS_ROCKSDB_CANCEL)
-message(STATUS "MISSING RocksDB_cancel!")
+    message(STATUS "MISSING RocksDB_cancel!")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_ROCKSDB_CANCEL_MISSING")
     set (ROCKSDB_CANCEL "rocksdb_cancel_all_background_work.cc")
 endif()
@@ -232,15 +233,6 @@ foreach(f erasure_tools.c exnode.c lio_config.c bin/ds_read.c bin/ldiff.c)
     set_source_files_properties(${f} PROPERTIES COMPILE_FLAGS "${OLD_COMPILE_FLAGS} ${LSTORE_FLAG_UNUSED_RESULT}")
 endforeach()
 
-# Temporarily disable errors around strict overflow
-#foreach(f lio_rm.c)
-#    get_source_file_property(OLD_COMPILE_FLAGS ${f} COMPILE_FLAGS)
-#    if(NOT OLD_COMPILE_FLAGS)
-#        set(OLD_COMPILE_FLAGS)
-#    endif()
-#    set_source_files_properties(${f} PROPERTIES COMPILE_FLAGS "${OLD_COMPILE_FLAGS} -Wno-strict-overflow")
-#endforeach()
-
 foreach(f ${LSTORE_PROJECT_EXECUTABLES} trace_replay)
-    set_target_properties(${f} PROPERTIES COMPILE_FLAGS "-DLSTORE_HACK_EXPORT")
+    set_target_properties(${f} PROPERTIES COMPILE_FLAGS "-DLSTORE_HACK_EXPORT" LINKER_LANGUAGE CXX)
 endforeach()

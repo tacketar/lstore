@@ -58,7 +58,7 @@ macro(lstore_project_common LSTORE_PROJECT_NAME)
         add_executable(${f} bin/${f}.c)
     endforeach()
     foreach(f ${LSTORE_PROJECT_EXECUTABLES_OLD} ${LSTORE_PROJECT_EXECUTABLES})
-        target_link_libraries(${f} ${LSTORE_PROJECT_NAME})
+        target_link_libraries(${f} LINK_PUBLIC ${LSTORE_PROJECT_NAME})
         if("${CMAKE_VERSION}" VERSION_GREATER 3.0.0)
             target_include_directories(${f}
                                         SYSTEM PRIVATE
