@@ -30,6 +30,8 @@ for DISTRO in "${DISTROS[@]}"; do
     PARENT="${DISTRO%-*}"
     RELEASE="${DISTRO##*-}"
     FROM="${PARENT}:${RELEASE}"
+    ROCKSDB_MANUAL=""  #Default is to install it from a package
+
     
     mkdir -p $DISTRO
 
@@ -180,7 +182,7 @@ RUN cd /tmp && \
     git clone https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
     PORTABLE=1 make -j16 static_lib && \
-    PORTABLE=1 make install-static    
+    PORTABLE=1 make install-static
 EOF
     fi
 
