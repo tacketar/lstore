@@ -32,6 +32,7 @@ You will need to bring your own copies of:
 * openssl-devel
 * zlib-devel
 * zmq-devel
+* rocksdb-devel
 
 In addition, LStore has build-time dependencies on
 
@@ -44,6 +45,15 @@ For centos, at least, these dependencies can be installed with:
 yum groupinstall "Development Tools"
 yum install cmake openssl-devel czmq-devel zmq-devel zlib-devel fuse-devel leveldb-devel
 ```
+
+Although RocksDB is only available via Fedora on RedHat/CentOS and will need to be built
+from scratch for other RedHat/CentOS distributions. RocksDB is available for Ubuntu.
+RocksDB for RedHat/CentOS RocksDB is automatically built when creating RPMs which requires building
+a few additional packages from scratch. Care needs to be taken to only use the static libraries
+for those tools in order to keep the software portable and not require the propagation of
+RocksDB and the other manually added source packages.  Take a look at
+./scripts/generate-docker-base.sh for how this is done for packaging. Specifically
+look at the logic around ROCKSDB_MANUAL variable for guidance.
 
 If the local CMake installation is too old, we install a local copy into build/
 

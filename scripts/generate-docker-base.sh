@@ -160,28 +160,29 @@ EOF
     #See if we have to Manually build RocksDB
     if [ "${ROCKSDB_MANUAL}" != "" ]; then
         cat >> $OUT <<-EOF
-#Manually Building RocksDB!!!
-RUN yum install -y snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4-devel
-#Now build gflags from source
+#Manually Building RocksDB!!!  Notice how we keep remving any shared libs so RocksDB does the right thing
+RUN yum install -y zlib-devel bzip2-devel lz4-devel snappy-devel
+
+#Now build gflags from source and only make static libs
 RUN cd /tmp && \
     git clone https://github.com/gflags/gflags.git && \
     cd gflags && \
     git checkout v2.0 && \
-    ./configure && make -j16 && make install
+    ./configure --disable-shared && make -j16 && make install
 
-#Build zstandard
+#Build zstandard and remove shared libs to force static linking
 RUN cd /tmp && \
     wget https://github.com/facebook/zstd/archive/v1.1.3.tar.gz && \
     mv v1.1.3.tar.gz zstd-1.1.3.tar.gz && \
     tar zxvf zstd-1.1.3.tar.gz && \
     cd zstd-1.1.3 && \
-    make -j16 && make install
+    make CFLAGS="-fPIC -O3" -j16 && make install && rm /usr/local/lib/libzstd*so*
 
-#And finally RocksDB
+#And finally RocksDB static lib.  This way all the custom built software doesn't have to propagated
 RUN cd /tmp && \
     git clone https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
-    PORTABLE=1 make -j16 static_lib && \
+    EXTRA_CFLAGS="-fPIC" EXTRA_CXXFLAGS="-fPIC" EXTRA_LDFLAGS="-fPIC" PORTABLE=1 make -j16 static_lib && \
     PORTABLE=1 make install-static
 EOF
     fi
