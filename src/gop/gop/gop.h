@@ -77,6 +77,7 @@ typedef enum gop_op_exec_mode_t gop_op_exec_mode_t;
 //};
 
 // Functions
+GOP_API char *gop_generate_host_id(char *my_name, char *exe_name, int heartbeat, int random_num);
 GOP_API void gop_mark_completed(gop_op_generic_t *gop, gop_op_status_t status);
 GOP_API void gop_callback_append(gop_op_generic_t *q, gop_callback_t *cb);
 GOP_API int gop_completed_successfully(gop_op_generic_t *gop);

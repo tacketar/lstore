@@ -16,12 +16,18 @@
 
 #define _log_module_index 124
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <errno.h>
+
 #include <apr_thread_cond.h>
 #include <gop/portal.h>
 #include <stdlib.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/log.h>
 #include <tbx/pigeon_coop.h>
+#include <tbx/random.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
 
@@ -44,6 +50,50 @@ gop_op_status_t op_timeout_status = {OP_STATE_TIMEOUT, 0};
 gop_op_status_t op_invalid_host_status = {OP_STATE_INVALID_HOST, 0};
 gop_op_status_t op_cant_connect_status = {OP_STATE_FAILURE, OP_STATE_CANT_CONNECT};
 gop_op_status_t gop_error_status = {OP_STATE_ERROR, 0};
+
+//***********************************************************************
+// gop_generate_host_id - Generates a unique identifier string for use
+//   NOTE: Only heartbeast has to be supplied.  Making randum<0 or providing
+//         a NULL valure for the strings results in them being auto filled.
+//***********************************************************************
+
+char *gop_generate_host_id(char *my_name, char *exe_name, int heartbeat, int random_num)
+{
+    unsigned int n;
+    char hostname[4096];
+    char buffer[4096];
+    char exe[4096];
+
+    //** Get my hostname if nothing is supplied
+    if (!my_name) {
+        if (gethostname(hostname, sizeof(hostname)) != 0) {
+            strncpy(hostname, "UNKNOWN", sizeof(hostname)-1);
+        }
+    } else {
+        strncpy(hostname, my_name, sizeof(hostname)-1);
+    }
+
+    //** Get my executable name
+    if (!exe_name) {
+        strncpy(exe, program_invocation_short_name, sizeof(exe)-1);
+    } else {
+        strncpy(exe, exe_name, sizeof(exe)-1);
+    }
+
+    //** Handle the randum ID
+    if (random_num < 0) {
+        n = 0;
+        tbx_random_get_bytes(&n, sizeof(n));
+    } else {
+        n = random_num;
+    }
+
+    //** Form the identifier
+    snprintf(buffer, sizeof(buffer), "%d:%s:%s:%u", heartbeat, hostname, exe, n);
+
+    return(strdup(buffer));
+}
+
 
 //*************************************************************
 //  gop_callback_append
