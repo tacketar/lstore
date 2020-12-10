@@ -118,13 +118,15 @@ for DISTRO in "${DISTROS[@]}"; do
         *)
             fatal "Unrecognized packaging system: ${PACKAGER}"
     esac
-    if [ "$DISTRO" == "ubuntu-bionic" ]; then
-        ADDITIONAL_PACKAGES+=( clang
-                             )
-    fi
     case $RELEASE in
+        bionic)
+            ADDITIONAL_PACKAGES+=( clang )
+            ;;
         vivid|wily|xenial|yakkety|jessie)
             ADDITIONAL_PACKAGES+=( libtool-bin )
+            ;;
+        focal)
+            ADDITIONAL_PACKAGES+=( libfuse3-dev )
             ;;
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then
