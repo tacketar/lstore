@@ -503,7 +503,7 @@ tbx_inip_element_t *_parse_ele(bfile_t *bfd)
         }
     }
 
-    log_printf(15, "_parse_ele: END text=%s\n", text);
+    if (text) log_printf(15, "_parse_ele: END text=%s\n", text);
 
     return(NULL);
 

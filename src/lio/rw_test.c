@@ -421,7 +421,8 @@ void io_open(target_t *t, rw_config_t *rwc)
             return;
         case RW_LOCAL:
             if (rwc->n_targets == 1) {
-                strncpy(fname, rwc->local_fname, sizeof(fname));
+                strncpy(fname, rwc->local_fname, sizeof(fname)-1);
+                fname[sizeof(fname)-1] = '\0';
 printf("fname=%s local=%s\n", fname, rwc->local_fname);
             } else {
                 snprintf(fname, sizeof(fname), "%s.%d", rwc->local_fname, t->index);

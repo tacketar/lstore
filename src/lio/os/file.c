@@ -1357,6 +1357,7 @@ char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int
 
     if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) != 0) {
         strncpy(fname, path, OS_PATH_MAX);
+        fname[OS_PATH_MAX-1] = '\0';
         lio_os_path_split(fname, &dir, &base);
         n = strlen(dir);
         if (dir[n-1] == '/') dir[n-1] = 0; //** Peel off a trialing /

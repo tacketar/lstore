@@ -3163,10 +3163,10 @@ void *_send_alog_thread(apr_thread_t *th, void *arg)
         log_printf(10, "_send_alog_thread: fname=%s\n", fname);
 
         err = 0;
-        if (fname != NULL)
+        if (fname != NULL) {
             err = _alog_transfer_data(fname);
-
-        log_printf(10, "_send_alog_thread: err=%d fname=%s\n", err, fname);
+            log_printf(10, "_send_alog_thread: err=%d fname=%s\n", err, fname);
+        }
 
         apr_thread_mutex_lock(_alog_send_lock);
         if (err == 0) {         //** Only Delete it if there were no errors

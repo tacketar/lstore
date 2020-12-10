@@ -633,8 +633,10 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
         fname = strdup(lpath);
         is_lio = 0;
         strncpy(uri, lio_gc->obj_name, sizeof(uri));
+        uri[sizeof(uri)-1] = '\0';
     } else if ((lio_gc) && (!pp_mq) && (!pp_host) && (!pp_cfg) && (!pp_section) && (pp_port == 0)) { //** Check if we just have defaults if so use the global context
-        strncpy(uri, lio_gc->obj_name, sizeof(uri));
+        strncpy(uri, lio_gc->obj_name, sizeof(uri)-1);
+        uri[sizeof(uri)-1] = '\0';
     } else {
         if (!pp_mq) pp_mq = strdup("RC");
         if (pp_port == 0) pp_port = 6711;
@@ -687,6 +689,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
             }
 
             strncpy(uri, obj_name, sizeof(uri));
+            uri[sizeof(uri)-1] = '\0';
             free(obj_name);
 
             ifd = tbx_inip_string_read(config);

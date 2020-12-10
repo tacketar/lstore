@@ -564,7 +564,7 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
     //** Start the child RS.   The update above should have dumped a RID config for it to load
     rsrs->rs_local_section = tbx_inip_get_string(fd, section, "rs_local", rsrs_default_options.rs_local_section);
     if (rsrs->rs_local_section == NULL) {  //** Oops missing child RS
-        log_printf(0, "ERROR: Mising child RS  section=%s key=rs_local!\n", rsrs->rs_local_section);
+        log_printf(0, "ERROR: Mising child RS  section=NULL key=rs_local!\n");
         tbx_log_flush();
         abort();
     }

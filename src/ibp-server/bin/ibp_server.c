@@ -194,8 +194,10 @@ void *resource_health_check(apr_thread_t *th, void *data)
                 if (err == 0) {
                     r->last_good_check = apr_time_now();        //** this should be done in resource.c But I'm the only one that ever touches the routine
                 } else if (apr_time_now() > (r->last_good_check + dt)) {
-                    strncpy(cmd->crid, global_config->rl->res[r->rl_index].crid, sizeof(cmd->crid));
-                    strncpy(cmd->msg, "Health check failed. Ejecting drive.", sizeof(cmd->msg));
+                    strncpy(cmd->crid, global_config->rl->res[r->rl_index].crid, sizeof(cmd->crid)-1);
+                    cmd->crid[sizeof(cmd->crid)-1] = '\0';
+                    strncpy(cmd->msg, "Health check failed. Ejecting drive.", sizeof(cmd->msg)-1);
+                    cmd->msg[sizeof(cmd->msg)-1] = '\0';
 
                     //** Push the failed drive on the ejected stack
                     j++;

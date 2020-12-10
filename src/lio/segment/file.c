@@ -547,7 +547,7 @@ int segfile_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange
 
     if (strcmp(s->fname, "") == 0) {
         s->fname = NULL;
-        log_printf(5, "segfile_deserialize_text: Error opening file %s for segment " XIDT "\n", s->fname, id);
+        log_printf(5, "segfile_deserialize_text: Error missing the filename for segment " XIDT "\n", id);
         err = 1;
     }
 

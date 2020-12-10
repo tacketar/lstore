@@ -319,7 +319,8 @@ int64_t tbx_stk_string_get_integer(char *value)
     char string[100];
     int64_t scale, n;
 
-    strncpy(string, value, sizeof(string));
+    strncpy(string, value, sizeof(string)-1);
+    string[sizeof(string)-1] = '\0';
     scale = split_token_into_number_and_scale(string);
     sscanf(string, I64T, &n);
     n = scale * n;
@@ -337,7 +338,8 @@ double tbx_stk_string_get_double(char *value)
     char string[100];
     double scale, n;
 
-    strncpy(string, value, sizeof(string));
+    strncpy(string, value, sizeof(string)-1);
+    string[sizeof(string)-1] = '\0';
     scale = split_token_into_number_and_scale(string);
     sscanf(string, "%lf", &n);
     n = scale * n;
@@ -358,7 +360,8 @@ apr_time_t tbx_stk_string_get_time(char *value)
     int i, j, n, t;
     apr_time_t dt;
 
-    strncpy(string, value, sizeof(string));
+    strncpy(string, value, sizeof(string)-1);
+    string[sizeof(string)-1] = '\0';
     n = strlen(string);
 
     dt = 0;
