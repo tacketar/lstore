@@ -106,6 +106,9 @@ int main(int argc, char **argv)
     object_t obj[N_MAX], object;
     tbx_lru_t *lru;
 
+    tbx_log_open("stdout", 1);
+    tbx_set_log_level(20);
+
     //** Make the LRU
     lru = tbx_lru_create(N_MAX, get_key, tbx_lru_clone_default, tbx_lru_copy_default, tbx_lru_free_default, (void *)&object_size);
 
