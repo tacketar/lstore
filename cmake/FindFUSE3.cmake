@@ -44,4 +44,4 @@ include ("FindPackageHandleStandardArgs")
 find_package_handle_standard_args ("FUSE3" DEFAULT_MSG
     FUSE_INCLUDE_DIR FUSE_LIBRARIES)
 
-mark_as_advanced (FUSE_INCLUDE_DIR FUSE_LIBRARIES)
+mark_as_advanced (FUSE_INCLUDE_DIR FUSE_LIBRARIES HAS_FUSE3 FUSE3_FOUND)
