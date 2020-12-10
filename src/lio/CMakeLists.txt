@@ -71,7 +71,7 @@ set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
 #Temporary hack until the packaged version of RocksDB catches up with git
 include(CheckLibraryExists)
-if(ROCKSDB_EXTRA_LIBRARY STREQUAL "")
+if("${ROCKSDB_EXTRA_LIBRARY}" STREQUAL "")
     check_library_exists(${ROCKSDB_LIBRARY} rocksdb_cancel_all_background_work ""  HAS_ROCKSDB_CANCEL)
 else()
     set(HAS_ROCKSDB_CANCEL "YES")
