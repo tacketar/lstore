@@ -955,7 +955,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     ex_off_t lo, hi, lo_stripe, hi_stripe;
     gop_op_status_t status;
     tbx_stack_t *ranges;
-    int option, total_stripes, child_replaced, loop, i, migrate_errors;
+    int option, total_stripes, child_replaced, loop, i, j, migrate_errors;
     gop_op_generic_t *gop;
     int max_loops = 10;
 
@@ -963,7 +963,17 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     info_printf(si->fd, 1, XIDT ": segment information: method=%s data_devs=%d parity_devs=%d chunk_size=%d  used_size=" XOT " magic_cksum=%d write_errors=%d mode=%d\n",
                 segment_id(si->seg), JE_method[s->method], s->n_data_devs, s->n_parity_devs, s->chunk_size, segment_size(s->child_seg),  s->magic_cksum, s->write_errors, si->inspect_mode);
 
-    ranges = tbx_stack_new();
+    //** Parse out the inspect option
+    option = si->inspect_mode & INSPECT_COMMAND_BITS;
+
+    ranges = tbx_stack_new();  //** Where to storethe ranges to process
+    
+    //** See if we do a full check
+    i = ((option == INSPECT_FULL_CHECK) || (option == INSPECT_FULL_REPAIR)) ? 1 : 0;
+    j = ((option == INSPECT_QUICK_CHECK) || (option == INSPECT_QUICK_REPAIR)) ? 1 : 0;
+    if (((s->write_errors > 0) && (j == 1)) || (i == 1)) {
+        tbx_range_stack_overlap2(&ranges, 0, segment_size(si->seg)-1);
+    }
 
     //** Issue the inspect for the underlying LUN
     info_printf(si->fd, 1, XIDT ": Inspecting child segment...\n", segment_id(si->seg));
@@ -979,7 +989,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     log_printf(5, "status: %d %d migerr=%d\n", status.op_status, status.error_code, migrate_errors);
 
     //** Kick out if we can't fix anything
-    if (((status.op_status != OP_STATE_SUCCESS) && (child_replaced > s->n_parity_devs)) || (migrate_errors != 0)) {
+    if (((status.op_status != OP_STATE_SUCCESS) && (child_replaced > s->n_parity_devs)) || ((migrate_errors != 0) && (option != INSPECT_FULL_CHECK))) {
         status.op_status = OP_STATE_FAILURE;
         goto fail;
     }
@@ -988,7 +998,6 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     total_stripes = segment_size(si->seg) / s->data_size;
 
     //** The INSPECT_QUICK_* options are handled by the LUN driver. If force_reconstruct is set then we probably need to do a scan
-    option = si->inspect_mode & INSPECT_COMMAND_BITS;
     log_printf(5, "child_replaced=%d option=%d inspect_mode=%d INSPECT_QUICK_REPAIR=%d\n", child_replaced, option, si->inspect_mode, INSPECT_QUICK_REPAIR);
     if (((child_replaced > 0) || (s->magic_cksum == 0) || (s->write_errors > 0)) && (option == INSPECT_QUICK_REPAIR)) {
         info_printf(si->fd, 1, XIDT ": Child segment repaired or existing write errors.  Forcing a full file check.\n", segment_id(si->seg));
@@ -1101,6 +1110,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
 
 fail:
     tbx_stack_free(ranges, 1);
+    if (si->args->bad_ranges) tbx_stack_free(si->args->bad_ranges, 1);
 
     if (si->max_replaced > s->n_data_devs) {
         status.op_status = OP_STATE_FAILURE;
