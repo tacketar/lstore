@@ -1141,6 +1141,9 @@ int main(int argc, char **argv)
         printf("slun_row_placement_check status codes:\n");
         printf("       0   No issues\n");
         printf("       1   Missing allocation\n");
+        printf("       2   Incorrect Size\n");
+        printf("       4   Encountered a read error\n");
+        printf("       8   Encountered a write error\n");
         printf("    -101   Didn't find enough RIDs for the request\n");
         printf("    -102   The fixed RID failed to match the request\n");
         printf("    -103   The fixed RID couldn't be located in the RID table\n");
