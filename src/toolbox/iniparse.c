@@ -64,6 +64,8 @@ struct tbx_inip_file_t {  //File
     int n_groups;
     int n_substitution_checks;
     tbx_atomic_int_t ref_count;
+    int auto_free_string;
+    char *string;
 };
 
 struct tbx_inip_hint_t {  //** Overriding hint
@@ -80,6 +82,10 @@ static int used_random = 0;
 void apply_params(tbx_inip_file_t  *fd);
 
 // Accessors
+void tbx_inip_string_auto_destroy(tbx_inip_file_t *ifd) {
+    ifd->auto_free_string = 1;
+}
+
 tbx_inip_file_t *tbx_inip_dup(tbx_inip_file_t *ifd) {
     tbx_atomic_inc(ifd->ref_count);
     return(ifd);
@@ -198,7 +204,7 @@ char *substitute_params(tbx_inip_file_t *fd, char *text)
             tbx_type_malloc(value, char, 20);
             snprintf(value, 20, "%ld", random());
         } else {    //** Look it up
-            value = tbx_inip_get_string(fd, PARAMS, param, "oops!arg!is!missing");
+            value = tbx_inip_get_string(fd, PARAMS, param, NULL);
         }
 
 finished:
@@ -425,7 +431,7 @@ again:
     if (comment != NULL) comment[0] = '\0';
 
     if (strncmp(bfd->curr->buffer, "%include ", 9) == 0) { //** In include so open and recurse
-        fname = tbx_stk_string_token(&(bfd->curr->buffer[8]), " \n", &last, &fin);
+        fname = tbx_stk_escape_string_token(&(bfd->curr->buffer[8]), " \n", '\\', 1, &last, &fin);
         log_printf(10, "_get_line: Opening include file %s\n", fname);
 
         tbx_type_malloc(entry, bfile_entry_t, 1);
@@ -444,7 +450,7 @@ again:
 
         return(_get_line(bfd, err));
     } else if (strncmp(bfd->curr->buffer, "%include_path ", 14) == 0) { //** Add an include path to the search list
-        fname = tbx_stk_string_token(&(bfd->curr->buffer[13]), " \n", &last, &fin);
+        fname = tbx_stk_escape_string_token(&(bfd->curr->buffer[13]), " \n", '\\', 1, &last, &fin);
         log_printf(10, "_get_line: Adding include path %s\n", fname);
         tbx_stack_move_to_bottom(bfd->include_paths);
         tbx_stack_insert_below(bfd->include_paths, strdup(fname));
@@ -484,7 +490,7 @@ tbx_inip_element_t *_parse_ele(bfile_t *bfd)
     tbx_inip_element_t *ele;
 
     while ((text = _get_line(bfd, &err)) != NULL) {
-        isgroup = strchr(text, '[');  //** Start of a new group
+        isgroup = tbx_stk_escape_strchr('\\', text, '[');  //** Start of a new group
         if (isgroup != NULL) {
             log_printf(15, "_parse_ele: New group! text=%s\n", text);
             return(NULL);
@@ -492,10 +498,10 @@ tbx_inip_element_t *_parse_ele(bfile_t *bfd)
 
         bfd->curr->used = 0;
 
-        key = tbx_stk_string_token(text, " =\r\n", &last, &fin);
+        key = tbx_stk_escape_string_token(text, " =\r\n", '\\', 1, &last, &fin);
         log_printf(15, "_parse_ele: key=!%s!\n", key);
         if (fin == 0) {
-            val = tbx_stk_string_token(NULL, " =\r\n", &last, &fin);
+            val = tbx_stk_escape_string_token(NULL, " =\r\n", '\\', 1, &last, &fin);
 
             ele = new_ele(strdup(key), (val ? strdup(val) : NULL));
             log_printf(15, "_parse_ele: key=%s value=%s\n", ele->key, ele->value);
@@ -562,9 +568,9 @@ tbx_inip_group_t *_next_group(bfile_t *bfd)
     while ((text = _get_line(bfd, &err)) != NULL) {
         bfd->curr->used = 0;
 
-        start = strchr(text, '[');
+        start = tbx_stk_escape_strchr('\\', text, '[');
         if (start != NULL) {   //** Got a match!
-            end = strchr(start, ']');
+            end = tbx_stk_escape_strchr('\\', text, ']');
             if (end == NULL) {
                 printf("_next_group: ERROR: missing ] for group heading.  Parsing line: %s\n", text);
                 fprintf(stderr, "_next_group: ERROR: missing ] for group heading.  Parsing line: %s\n", text);
@@ -650,6 +656,8 @@ void tbx_inip_destroy(tbx_inip_file_t *inip)
         _free_group(group);
         group = next;
     }
+
+    if ((inip->auto_free_string) && (inip->string)) free(inip->string);
 
     free(inip);
 
@@ -830,11 +838,12 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix)
     tbx_stack_push(bfd.include_paths, strdup("."));  //** By default always look in the CWD 1st
     if (prefix) tbx_stack_push(bfd.include_paths, strdup(prefix));  //** By default always look in the CWD 1st
 
-    tbx_type_malloc(inip, tbx_inip_file_t, 1);
+    tbx_type_malloc_clear(inip, tbx_inip_file_t, 1);
 
     group = _next_group(&bfd);
     inip->tree = NULL;
     inip->n_groups = 0;
+    if (text) inip->string = (char *)text;
     tbx_atomic_set(inip->ref_count, 1);
 
     prev = NULL;
