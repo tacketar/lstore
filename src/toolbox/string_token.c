@@ -168,6 +168,7 @@ char *tbx_stk_escape_strchr(char escape_char, char *data, char match)
         n++;
     }
 
+    if (n >= ndata) return(NULL);
     return(&(data[n]));
 }
 
@@ -451,12 +452,12 @@ char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer)
 
     if (base == 1024) {
         if ( i == 0) {
-            sprintf(buffer, I64T "%c ", n, unit[i]);
+            sprintf(buffer, I64T "%c", n, unit[i]);
         } else {
             sprintf(buffer, I64T "%ci", n, unit[i]);
         }
     } else {
-        sprintf(buffer, I64T "%c ", n, unit[i]);
+        sprintf(buffer, I64T "%c", n, unit[i]);
     }
 
 //printf("prettyprint: value=" I64T " (%s)\n", value, buffer);
@@ -481,10 +482,16 @@ char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffe
 {
     double n;
     int i;
-    char *unit=" KMGTPE";
+    char *unit="\0KMGTPE";
 
     if (buffer == NULL) {
         tbx_type_malloc(buffer, char, 30);
+    }
+
+    if (value == 0) {
+//        sprintf(buffer, "         0");
+        sprintf(buffer, "0");
+        return(buffer);
     }
 
     if (base == 1) {
@@ -503,12 +510,12 @@ char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffe
 
     if (base == 1024) {
         if (i == 0) {
-            sprintf(buffer, "%7.3lf%c ", n, unit[i]);
+            sprintf(buffer, "%7.3lf%c", n, unit[i]);
         } else {
             sprintf(buffer, "%7.3lf%ci", n, unit[i]);
         }
     } else {
-        sprintf(buffer, "%7.3lf%c ", n, unit[i]);
+        sprintf(buffer, "%7.3lf%c", n, unit[i]);
     }
 
     return(buffer);
