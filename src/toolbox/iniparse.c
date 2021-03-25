@@ -255,6 +255,8 @@ void resolve_params(tbx_inip_file_t  *fd)
         if (strcmp(g->group, PARAMS) == 0) break;
     }
 
+    if (!g) return;  //** Nothing to do so kick out
+
     //** We need to loop over the params repeatedly reapplying the substitions until
     //** nothing is done or we encounter a loop.  Fixed the number of iterations
     //** is an easy way to detect a loop:)
