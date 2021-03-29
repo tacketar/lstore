@@ -1391,7 +1391,9 @@ int main(int argc, char **argv)
     ibp_errno_init();
 
     tbx_random_startup();
-
+    tbx_log_open("ibp.log", 0);
+    tbx_set_log_level(1);
+    tbx_set_log_maxsize(1024*1024*1024);
 
     printf("1111111111111111111111111111111111111111111111111111111111111111\n");
     fflush(stdout);
