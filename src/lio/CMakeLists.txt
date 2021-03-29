@@ -28,14 +28,15 @@ if(NOT USE_SUPERBUILD)
         find_package(FUSE REQUIRED)
     endif()
     find_package(RocksDB REQUIRED)
+    find_package(LibSodium REQUIRED)
     include_directories(
         ${JERASURE_INCLUDE_DIR} ${TOOLBOX_INCLUDE_DIR} ${GOP_INCLUDE_DIR}
-        ${IBP_INCLUDE_DIR} ${FUSE_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR}
+        ${IBP_INCLUDE_DIR} ${FUSE_INCLUDE_DIR} ${ROCKSDB_INCLUDE_DIR} ${LIBSODIUM_INCLUDE_DIR}
     )
 
     list(APPEND LIBS
         ${IBP_LIBRARY} ${GOP_LIBRARY} ${TOOLBOX_LIBRARY}
-        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY} ${ROCKSDB_EXTRA_LIBRARY}
+        ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY} ${ROCKSDB_EXTRA_LIBRARY} ${LIBSODIUM_LIBRARY}
     )
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FILE_OFFSET_BITS=64")
@@ -57,6 +58,7 @@ set(LSTORE_LIBS toolbox
                 ${JERASURE_LIBRARY}
                 ${ROCKSDB_LIBRARY}
                 ${ROCKSDB_EXTRA_LIBRARY}
+                ${LIBSODIUM_LIBRARY}
                 dl
                 )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
@@ -66,7 +68,8 @@ set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${ZLIB_INCLUDE_DIR}
                     ${FUSE_INCLUDE_DIR}
                     ${JERASURE_INCLUDE_DIR}
-                    ${ROCKSDB_INCLUDE_DIR})
+                    ${ROCKSDB_INCLUDE_DIR}
+                    ${LIBSODIUM_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
 #Temporary hack until the packaged version of RocksDB catches up with git
