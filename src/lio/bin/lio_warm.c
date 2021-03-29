@@ -24,6 +24,7 @@
 #include <gop/opque.h>
 #include <gop/tp.h>
 #include <gop/types.h>
+#include <ibp/types.h>
 #include <lio/authn.h>
 #include <lio/ds.h>
 #include <lio/ex3.h>
@@ -34,17 +35,43 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tbx/apr_wrapper.h>
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
-#include <tbx/stack.h>
+#include <tbx/que.h>
 #include <tbx/stdinarray_iter.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "warmer_helpers.h"
 
+typedef struct {
+    char *fname;
+    char *exnode;
+    ex_id_t inode;
+    int write_err;
+    int n_left;
+    int n_good;
+    int n_bad;
+} inode_entry_t;
+
+typedef struct {
+    int n_used;
+    int curr_slot;
+    int n_running;
+    int running_slot;
+    int n_failed;
+    int serial_max;
+    int *failed;
+    char **cap;
+    inode_entry_t **inode;
+    ex_off_t *nbytes;
+    char *key;
+    ibp_depot_t depot;
+    gop_op_generic_t *gop;
+} rid_warm_t;
 
 typedef struct {
     char *rid_key;
@@ -52,12 +79,28 @@ typedef struct {
     ex_off_t bad;
     ex_off_t nbytes;
     ex_off_t dtime;
+    rid_warm_t *warm;
 } warm_hash_entry_t;
 
 typedef struct {
    char *cap;
    ex_off_t nbytes;
 } warm_cap_info_t;
+
+typedef struct {
+    apr_thread_t *thread;
+    tbx_que_t *que;
+    tbx_que_t *que_setattr;
+    apr_hash_t *hash;
+    apr_pool_t *mpool;
+    inode_entry_t **inode;
+    gop_opque_t *q;
+    int write_err;
+    ex_off_t good;
+    ex_off_t bad;
+    ex_off_t werr;
+    int n_bulk;
+} warm_thread_t;
 
 typedef struct {
     lio_path_tuple_t tuple;
@@ -79,6 +122,8 @@ rocksdb_t *db_rid = NULL;
 rocksdb_t *db_inode = NULL;
 int verbose = 0;
 
+ibp_context_t *ic = NULL;
+int bulk_mode = 1;
 static int dt = 86400;
 
 //*************************************************************************
@@ -128,32 +173,270 @@ void parse_tag_file(char *fname)
 }
 
 //*************************************************************************
+// object_warm_finish - Does the final steps in warming a file
+//*************************************************************************
+
+void object_warm_finish(warm_thread_t *w, inode_entry_t *inode)
+{
+    int state;
+
+    state = (inode->write_err == 0) ? 0 : WFE_WRITE_ERR;
+    if (inode->n_bad == 0) {
+        w->good++;
+        state |= WFE_SUCCESS;
+        if (verbose == 1) info_printf(lio_ifd, 0, "Succeeded with file %s with %d allocations\n", inode->fname, inode->n_good);
+    } else {
+        w->bad++;
+        state |= WFE_FAIL;
+        info_printf(lio_ifd, 0, "Failed with file %s on %d out of %d allocations\n", inode->fname, inode->n_bad, inode->n_good+inode->n_bad);
+    }
+    warm_put_inode(db_inode, inode->inode, state, inode->n_bad, inode->fname);
+
+    tbx_que_put(w->que_setattr, &(inode->fname), TBX_QUE_BLOCK);
+    free(inode);
+}
+
+//*************************************************************************
+// process_warm_op - Processes the results of the warming op
+//*************************************************************************
+
+void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
+{
+    rid_warm_t *r = wr->warm;
+    int i, j;
+    int *failed;
+    ex_off_t *nbytes;
+    inode_entry_t **inode;
+    char **cap;
+    gop_op_status_t status;
+
+    //** Set up all the pointers
+    failed = r->failed + r->running_slot;
+    nbytes = r->nbytes + r->running_slot;
+    cap = r->cap + r->running_slot;
+    inode = r->inode + r->running_slot;
+
+    //** Update the time
+    wr->dtime += gop_time_exec(r->gop);
+
+    //** First handle all the failed allocations
+    //** Since the next step after this assumes all the allocations are good we
+    //** do some odd inc/dec to account for that
+    status = gop_get_status(r->gop);
+    if (status.op_status == OP_STATE_SUCCESS) {
+        for (i=0; i<r->n_failed; i++) {
+            j = failed[i];
+            info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", inode[j]->fname, cap[j]);
+            inode[j]->n_bad++;
+            free(cap[j]);
+            cap[j] = NULL; //** Flag that it's bad
+            wr->bad++;
+        }
+    } else { //** Everything failed
+        for (i=0; i<r->n_running; i++) {
+            info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", inode[i]->fname, cap[i]);
+            inode[i]->n_bad++;
+            free(cap[i]);
+            cap[i] = NULL; //** Flag that it's bad
+            wr->bad++;
+        }
+    }
+
+    //** Now process all the allocations and clean up as we go
+    for (i=0; i<r->n_running; i++) {
+        if (cap[i] != NULL) {
+            free(cap[i]);
+            wr->good++;
+            inode[i]->n_good++;
+        }
+        warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], 0);
+
+        inode[i]->n_left--;
+        if (inode[i]->n_left == 0) object_warm_finish(w, inode[i]);
+    }
+
+    gop_free(r->gop, OP_DESTROY);
+    r->gop = NULL;
+}
+
+//*************************************************************************
+// warm_serial_fn - Performs the serial warming
+//*************************************************************************
+
+gop_op_status_t warm_serial_fn(void *arg, int id)
+{
+    warm_hash_entry_t *wr = (warm_hash_entry_t *)arg;
+    rid_warm_t *r = wr->warm;
+    int i, slot, nbad;
+    gop_op_status_t status = gop_success_status;
+    gop_op_status_t gs;
+    gop_op_generic_t *gop;
+    gop_opque_t *q = gop_opque_new();
+
+    //** Submit tasks and process them as needed
+    nbad = 0;
+    opque_start_execution(q);
+    for (i=0; i<r->n_running; i++) {
+        gop = ibp_modify_alloc_gop(ic, r->cap[r->running_slot + i], -1, dt, -1, lio_gc->timeout);
+        gop_set_myid(gop, i);
+        gop_opque_add(q, gop);
+
+        if (i>r->serial_max) { //** Reap a task
+            gop = opque_waitany(q);
+            slot = gop_get_myid(gop);
+            gs = gop_get_status(gop);
+            if (gs.op_status != OP_STATE_SUCCESS) {
+                r->failed[r->running_slot + nbad] = slot;
+                nbad++;
+            }
+            gop_free(gop, OP_DESTROY);
+        }
+    }
+
+    //** Finish the processing
+    while ((gop = opque_waitany(q)) != NULL) {
+        slot = gop_get_myid(gop);
+        gs = gop_get_status(gop);
+        if (gs.op_status != OP_STATE_SUCCESS) {
+            r->failed[r->running_slot + nbad] = slot;
+            nbad++;
+        }
+        gop_free(gop, OP_DESTROY);
+    }
+    r->n_failed = nbad;
+
+    if (nbad == r->n_running) status = gop_failure_status;
+
+    gop_opque_free(q, OP_DESTROY);
+
+    return(status);
+}
+
+//*************************************************************************
+// submit_warm_op - Warming op
+//*************************************************************************
+
+void submit_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
+{
+    rid_warm_t *r = wr->warm;
+
+    r->n_running = r->n_used;
+    if (bulk_mode == 1) {
+        r->gop = ibp_rid_bulk_warm_gop(ic, &(r->depot), dt, r->n_running, &(r->cap[r->curr_slot]), &(r->n_failed), &(r->failed[r->curr_slot]), lio_gc->timeout);
+    } else {
+        r->gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, warm_serial_fn, (void *)wr, NULL, 1);
+    }
+    r->running_slot = r->curr_slot;
+    r->curr_slot = (r->curr_slot == 0) ? w->n_bulk : 0;
+    r->n_used = 0;  //** Reset the todo count
+    gop_set_private(r->gop, wr);
+    gop_opque_add(w->q, r->gop);
+}
+
+//*************************************************************************
+// warm_rid_wait - Waits for the current warming gop fo rthe rid to complete and cleans up
+//*************************************************************************
+
+void warm_rid_wait(warm_thread_t *w, rid_warm_t *r)
+{
+    warm_hash_entry_t *wr2;
+    gop_op_generic_t *gop;
+
+    while (r->gop) { //** Already have a task running so we have to wait
+        gop = opque_waitany(w->q);
+        wr2 = gop_get_private(gop);
+        process_warm_op(wr2, w);
+    }
+}
+
+//*************************************************************************
+// rid_todo_slot - Gets the next free slot to use
+//        If needed the routine will force a warming call if needed.
+//*************************************************************************
+
+int rid_todo_slot(warm_hash_entry_t *wr, warm_thread_t *w)
+{
+    rid_warm_t *r = wr->warm;
+    int slot;
+
+    if (r->n_used == w->n_bulk) { //** Generate a warm task
+        warm_rid_wait(w, r);  //** Already have a task running so we have to wait
+
+        //** Generate the new operation and submit it
+        submit_warm_op(wr, w);
+    }
+
+    slot = r->curr_slot + r->n_used;
+    r->n_used++;
+
+    return(slot);
+}
+
+//*************************************************************************
+// rid_todo_create - Creates a todo structure for the RID
+//*************************************************************************
+
+rid_warm_t *rid_todo_create(char *rid_key, int n, char *cap)
+{
+    rid_warm_t *rid;
+
+    tbx_type_malloc_clear(rid, rid_warm_t, 1);
+    tbx_type_malloc_clear(rid->cap, char *, 2*n);
+    tbx_type_malloc_clear(rid->inode, inode_entry_t *, 2*n);
+    tbx_type_malloc_clear(rid->nbytes, ex_off_t, 2*n);
+    tbx_type_malloc_clear(rid->failed, int, 2*n);
+    rid->curr_slot = 0;
+    rid->n_running = 0;
+    rid->n_used = 0;
+    rid->serial_max = 20;
+    rid->key = rid_key;
+    ibp_cap2depot(cap, &(rid->depot));
+
+    return(rid);
+}
+
+//*************************************************************************
+// rid_todo_destroy - Destroys the RID todo structure
+//*************************************************************************
+
+void rid_todo_destroy(rid_warm_t *rid)
+{
+    free(rid->cap);
+    free(rid->inode);
+    free(rid->nbytes);
+    free(rid->failed);
+    free(rid);
+}
+
+//*************************************************************************
 //  gen_warm_task
 //*************************************************************************
 
-gop_op_status_t gen_warm_task(void *arg, int id)
-{
-    warm_t *w = (warm_t *)arg;
-    gop_op_status_t status;
-    gop_op_generic_t *gop;
-    tbx_inip_file_t *fd;
-    int i, nfailed, state;
-    warm_hash_entry_t *wrid = NULL;
-    char *etext;
-    gop_opque_t *q;
+int total_gen_caps=0;
 
-    log_printf(15, "warming fname=%s, dt=%d\n", w->tuple.path, dt);
-    fd = tbx_inip_string_read(w->exnode);
+void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
+{
+    tbx_inip_file_t *fd;
+    warm_hash_entry_t *wrid = NULL;
+    rid_warm_t *r;
+    char *etext, *mcap;
+    int slot, cnt;
+    char *exnode = inode->exnode;  //** We save this just in case the blocks are all warmed and the inode is destroyed during the call
+
+    log_printf(15, "warming fname=%s, dt=%d\n", inode->fname, dt);
+    fd = tbx_inip_string_read(exnode);
     tbx_inip_group_t *g;
 
-    q = gop_opque_new();
-    opque_start_execution(q);
-
-    tbx_type_malloc(w->cap, warm_cap_info_t, tbx_inip_group_count(fd));
+    cnt = 0;
     g = tbx_inip_group_first(fd);
-    w->n = 0;
+    inode->n_left = 1;  //** Offset it to keep it from getting reaped during the processing
     while (g) {
         if (strncmp(tbx_inip_group_get(g), "block-", 6) == 0) { //** Got a data block
+            //** Get the manage cap first
+            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", "");
+            mcap = tbx_stk_unescape_text('\\', etext);
+            free(etext);
+
             //** Get the RID key
             etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "rid_key", NULL);
             if (etext != NULL) {
@@ -162,96 +445,187 @@ gop_op_status_t gen_warm_task(void *arg, int id)
                     tbx_type_malloc_clear(wrid, warm_hash_entry_t, 1);
                     wrid->rid_key = etext;
                     apr_hash_set(w->hash, wrid->rid_key, APR_HASH_KEY_STRING, wrid);
+
+                    wrid->warm = rid_todo_create(etext, w->n_bulk, mcap);
                 } else {
                     free(etext);
                 }
             }
+            r = wrid->warm;
 
             //** Get the data size and update the counts
-            w->cap[w->n].nbytes += tbx_inip_get_integer(fd, tbx_inip_group_get(g), "max_size", 0);
-            wrid->nbytes += w->cap[w->n].nbytes;
+            wrid->nbytes += tbx_inip_get_integer(fd, tbx_inip_group_get(g), "max_size", 0);
 
-            //** Get the manage cap
-            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", "");
-            w->cap[w->n].cap = tbx_stk_unescape_text('\\', etext);
-            free(etext);
+            inode->n_left++;  //** Incr this before the todo_slot call in case we flush all the existing caps so it won't be reaped
+            cnt++;
 
-            //** Add the task
-            gop = ibp_modify_alloc_gop(w->ic, w->cap[w->n].cap, -1, dt, -1, lio_gc->timeout);
-            gop_set_myid(gop, w->n);
-            gop_set_private(gop, wrid);
-            gop_opque_add(q, gop);
-            w->n++;
+            //** Get the slot
+            slot = rid_todo_slot(wrid, w);
+
+            //** Fill in the rest of the fields
+            r->inode[slot] = inode;
+            r->cap[slot] = mcap;
 
             //** Check if it was tagged
             if (tagged_rids != NULL) {
                 if (apr_hash_get(tagged_rids, wrid->rid_key, APR_HASH_KEY_STRING) != NULL) {
-                    info_printf(lio_ifd, 0, "RID_TAG: %s  rid_key=%s\n", w->tuple.path, wrid->rid_key);
+                    info_printf(lio_ifd, 0, "RID_TAG: %s  rid_key=%s\n", inode->fname, wrid->rid_key);
                 }
             }
         }
         g = tbx_inip_group_next(g);
     }
 
+    inode->n_left--; //** Undo our offset so we can reap the inode
     tbx_inip_destroy(fd);
 
-    nfailed = 0;
-    while ((gop = opque_waitany(q)) != NULL) {
-        status = gop_get_status(gop);
-        wrid = gop_get_private(gop);
-        i = gop_get_myid(gop);
+    free(exnode);
 
-        wrid->dtime += gop_time_exec(gop);
-        if (status.op_status == OP_STATE_SUCCESS) {
-            wrid->good++;
-         } else {
-            nfailed++;
-            wrid->bad++;
-            info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", w->tuple.path, w->cap[i].cap);
+    //** Check if there was nothing to do. If so go ahead and mark the inode as complete
+    if (cnt == 0) object_warm_finish(w, inode);
+}
+
+//*************************************************************************
+// setattr_thread - Sets the warming attribute
+//*************************************************************************
+
+void *setattr_thread(apr_thread_t *th, void *data)
+{
+    tbx_que_t *que = (tbx_que_t *)data;
+    gop_opque_t *q = gop_opque_new();
+    gop_op_generic_t *gop;
+    int i, n, running;
+    int running_max = 1000;
+    int n_max = 1000;
+    char *fname[n_max];
+    char *etext, *fn;
+
+    etext = NULL;
+    opque_start_execution(q);
+
+    running = 0;
+    while (!tbx_que_is_finished(que)) {
+        n = tbx_que_bulk_get(que, n_max, fname, TBX_QUE_BLOCK);
+
+        //** Clean up any oustanding setattr calls
+        while ((gop = opque_get_next_finished(q)) != NULL) {
+            running--;
+            fn = gop_get_private(gop);
+            free(fn);
+            gop_free(gop, OP_DESTROY);
         }
-        warm_put_rid(db_rid, wrid->rid_key, w->inode, w->cap[i].nbytes, 0);
 
+        if (n <= 0) continue;  //** Loop back if we got nothing
+
+        //** process the next round
+        for (i=0; i<n; i++) {
+            //** Make sure we don't flood the system
+            while (running > running_max) {
+                gop = opque_waitany(q);
+                running--;
+                fn = gop_get_private(gop);
+                free(fn);
+                gop_free(gop, OP_DESTROY);
+            }
+
+            running++;
+            gop = lio_setattr_gop(lio_gc, lio_gc->creds, fname[i], NULL, "os.timestamp.system.warm", (void *)etext, 0);
+            gop_set_private(gop, fname[i]);
+            gop_opque_add(q, gop);
+        }
+    }
+
+    //** Wait for the rest to complete
+    opque_finished_submission(q);
+    while ((gop = opque_waitany(q)) != NULL) {
+        fn = gop_get_private(gop);
+        free(fn);
         gop_free(gop, OP_DESTROY);
     }
 
-    state = (w->write_err == 0) ? 0 : WFE_WRITE_ERR;
-    if (nfailed == 0) {
-        status = gop_success_status;
-        state |= WFE_SUCCESS;
-        if (verbose == 1) info_printf(lio_ifd, 0, "Succeeded with file %s with %d allocations\n", w->tuple.path, w->n);
-    } else {
-        status = gop_failure_status;
-        state |= WFE_FAIL;
-        info_printf(lio_ifd, 0, "Failed with file %s on %d out of %d allocations\n", w->tuple.path, nfailed, w->n);
-    }
-    warm_put_inode(db_inode, w->inode, state, nfailed, w->tuple.path);
-
-    etext = NULL;
-    i = 0;
-    lio_setattr(lio_gc, w->tuple.creds, w->tuple.path, NULL, "os.timestamp.system.warm", (void *)etext, i);
-
     gop_opque_free(q, OP_DESTROY);
 
-    lio_path_release(&w->tuple);
-
-    free(w->exnode);
-    for (i=0; i<w->n; i++) free(w->cap[i].cap);
-    free(w->cap);
-
-    return(status);
+    return(NULL);
 }
 
+//*************************************************************************
+// warming_thread - Main work thread for submitting warming operations
+//*************************************************************************
+
+void *warming_thread(apr_thread_t *th, void *data)
+{
+    warm_thread_t *w = (warm_thread_t *)data;
+    int n, i;
+    gop_op_generic_t *gop;
+    warm_hash_entry_t *wr;
+
+    w->q = gop_opque_new();
+
+    while (!tbx_que_is_finished(w->que)) {
+        n = tbx_que_bulk_get(w->que, w->n_bulk, w->inode, TBX_QUE_BLOCK);
+
+        //** Process any submitted tasks that occurred during the warming
+        while ((gop = opque_get_next_finished(w->q)) != NULL) {
+            wr = gop_get_private(gop);
+            process_warm_op(wr, w);
+        }
+
+        if (n <= 0) continue;  //** Loop back if we got nothing
+
+        //** Submit all the tasks
+        for (i=0; i<n; i++) {
+            gen_warm_tasks(w, w->inode[i]);
+        }
+    }
+
+    //** Flush all remaining RIDs to be warmed
+    apr_ssize_t hlen;
+    apr_hash_index_t *hi;
+    i = 0;
+    for (hi=apr_hash_first(NULL, w->hash); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, NULL, &hlen, (void **)&wr);
+        if (wr->warm->n_used > 0) {
+            if (wr->warm->gop) warm_rid_wait(w, wr->warm);  //** Already have a task running so we have to wait
+
+            submit_warm_op(wr, w);
+            i++;
+            if (i > 20) {
+                gop = opque_waitany(w->q);
+                wr = gop_get_private(gop);
+                process_warm_op(wr, w);
+            }
+        }
+    }
+
+    //** Process the results
+    opque_finished_submission(w->q);
+    while ((gop = opque_waitany(w->q)) != NULL) {
+        wr = gop_get_private(gop);
+        process_warm_op(wr, w);
+    }
+
+    //** And clean up
+    for (hi=apr_hash_first(NULL, w->hash); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, NULL, &hlen, (void **)&wr);
+        rid_todo_destroy(wr->warm);
+    }
+    gop_opque_free(w->q, OP_DESTROY);
+
+    free(w->inode);
+    return(NULL);
+}
 
 //*************************************************************************
 //*************************************************************************
 
 int main(int argc, char **argv)
 {
-    int i, j, start_option, rg_mode, ftype, prefix_len, return_code;
+    int i, j, start_option, rg_mode, ftype, prefix_len, return_code, n_warm, n_bulk, n_put, n, nleft;
     char *fname, *path;
-    gop_opque_t *q;
-    gop_op_generic_t *gop;
-    gop_op_status_t status;
+    inode_entry_t *inode;
+    inode_entry_t **inode_list;
+    tbx_que_t *que, *que_setattr;
+    apr_thread_t *sa_thread;
     char *keys[] = { "system.exnode", "system.write_errors", "system.inode" };
     char *vals[3];
     char *db_base = "/lio/log/warm";
@@ -275,17 +649,25 @@ int main(int argc, char **argv)
     tbx_stack_t *stack;
     int recurse_depth = 10000;
     int summary_mode;
-    warm_t *w;
+    warm_thread_t *w;
     double dtime, dtime_total;
+
+    n_bulk = 1000;
+    n_warm = 2;
+    n_put = 1000;
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-dt time] [-sb] [-sf] [ -v] LIO_PATH_OPTIONS\n");
+        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-serial] [-dt time] [-sb] [-sf] [-v] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
         printf("    -db DB_output_dir   - Output Directory for the DBes. Default is %s\n", db_base);
         printf("    -t tag.cfg         - INI file with RID to tag by printing any files usign the RIDs\n");
         printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
+        printf("    -serial            - Use the IBP individual warming operation.\n");
+        printf("    -n_bulk            - Number of allocations to warn at a time for bulk operations.\n");
+        printf("                         NOTE: This is evenly divided among the warming threads. Default is %d\n", n_bulk);
+        printf("    -n_warm            - Number of warming threads. Default is %d\n", n_warm);
         printf("    -dt time           - Duration time in sec.  Default is %d sec\n", dt);
         printf("    -sb                - Print the summary but only list the bad RIDs\n");
         printf("    -sf                - Print the the full summary\n");
@@ -310,9 +692,20 @@ int main(int argc, char **argv)
             i++;
             db_base = argv[i];
             i++;
+        } else if (strcmp(argv[i], "-serial") == 0) { //** Serial warming mode
+            i++;
+            bulk_mode = 0;
         } else if (strcmp(argv[i], "-dt") == 0) { //** Time
             i++;
             dt = atoi(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-n_bulk") == 0) { //** Time
+            i++;
+            n_bulk = atoi(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-n_warm") == 0) { //** Time
+            i++;
+           n_warm = atoi(argv[i]);
             i++;
         } else if (strcmp(argv[i], "-rd") == 0) { //** Recurse depth
             i++;
@@ -349,17 +742,37 @@ int main(int argc, char **argv)
     piter = tbx_stdinarray_iter_create(argc-start_option, (const char **)&(argv[start_option]));
 
     create_warm_db(db_base, &db_inode, &db_rid);  //** Create the DB
+    ic = hack_ds_ibp_context_get(lio_gc->ds);
 
-    q = gop_opque_new();
-    opque_start_execution(q);
+    n_bulk = n_bulk / n_warm;  //** Rescale the # of bulk caps to warn at a time
 
-    tbx_type_malloc_clear(w, warm_t, lio_parallel_task_count);
-    for (j=0; j<lio_parallel_task_count; j++) {
+    tbx_type_malloc(inode_list, inode_entry_t *, n_put);
+
+    //** Launch the warming threads
+    que = tbx_que_create(4*n_bulk*n_warm, sizeof(inode_entry_t *));
+    que_setattr = tbx_que_create(10000, sizeof(char *));
+    tbx_type_malloc_clear(w, warm_thread_t, n_warm);
+    for (j=0; j<n_warm; j++) {
+        w[j].n_bulk = n_bulk;
         apr_pool_create(&(w[j].mpool), NULL);
         w[j].hash = apr_hash_make(w[j].mpool);
+        w[j].que = que;
+        w[j].que_setattr = que_setattr;
+        tbx_type_malloc(w[j].inode, inode_entry_t *, w[j].n_bulk);
+
+        // ** Launch the backend thread
+        tbx_thread_create_assert(&(w[j].thread), NULL, warming_thread,
+                                 (void *)(&w[j]), lio_gc->mpool);
     }
 
+    //** And the setattr thread
+    tbx_thread_create_assert(&sa_thread, NULL, setattr_thread,
+                                 (void *)que_setattr, lio_gc->mpool);
+
+
+    //** Process all the files
     submitted = good = bad = werr = missing_err = 0;
+    slot = 0;
     return_code = 0;
     while ((path = tbx_stdinarray_iter_next(piter)) != NULL) {
         if (rg_mode == 0) {
@@ -385,8 +798,6 @@ int main(int argc, char **argv)
             goto finished;
         }
 
-
-        slot = 0;
         while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
             if ((ftype & OS_OBJECT_SYMLINK) || (v_size[0] == -1)) { //** We skip symlinked files and files missing exnodes
                 info_printf(lio_ifd, 0, "MISSING_EXNODE_ERROR for file %s\n", fname);
@@ -397,14 +808,17 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
-            w[slot].exnode = vals[0];
-            w[slot].ic = hack_ds_ibp_context_get(tuple.lc->ds);
-            w[slot].write_err = 0;
-            w[slot].tuple = lio_path_tuple_copy(&tuple, fname);
+
+            tbx_type_malloc(inode, inode_entry_t, 1);
+            inode_list[slot] = inode;
+            slot++;
+            inode->fname = fname;
+            inode->exnode = vals[0];
+            inode->write_err = 0;
 
             if (v_size[1] != -1) {
                 werr++;
-                w[slot].write_err = 1;
+                inode->write_err = 1;
                 info_printf(lio_ifd, 0, "WRITE_ERROR for file %s\n", fname);
                 if (vals[1] != NULL) {
                     free(vals[1]);
@@ -412,9 +826,9 @@ int main(int argc, char **argv)
                 }
             }
 
-            w[slot].inode = 0;
+            inode->inode = 0;
             if (v_size[2] > 0) {
-               sscanf(vals[2], XIDT, &(w[slot].inode));
+               sscanf(vals[2], XIDT, &(inode->inode));
                free(vals[2]);
                vals[2] = NULL;
             }
@@ -423,22 +837,13 @@ int main(int argc, char **argv)
             fname = NULL;
             submitted++;
 
-            gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, gen_warm_task, (void *)&(w[slot]), NULL, 1);
-            gop_set_myid(gop, slot);
-            gop_opque_add(q, gop);
-
-            if (submitted >= lio_parallel_task_count) {
-                gop = opque_waitany(q);
-                status = gop_get_status(gop);
-                if (status.op_status == OP_STATE_SUCCESS) {
-                    good++;
-                } else {
-                    bad++;
-                }
-                slot = gop_get_myid(gop);
-                gop_free(gop, OP_DESTROY);
-            } else {
-                slot++;
+            if (slot == n_put) {
+                nleft = slot;
+                do {
+                    n = tbx_que_bulk_put(que, nleft, inode_list + slot - nleft, TBX_QUE_BLOCK);
+                    if (n > 0) nleft = nleft - n;
+                } while (nleft > 0);
+                slot = 0;
             }
         }
 
@@ -446,16 +851,6 @@ int main(int argc, char **argv)
         if (ftype < 0) {
             fprintf(stderr, "ERROR getting the next object!\n");
             return_code = EIO;
-        }
-
-        while ((gop = opque_waitany(q)) != NULL) {
-            status = gop_get_status(gop);
-            if (status.op_status == OP_STATE_SUCCESS) {
-                good++;
-            } else {
-                bad++;
-            }
-            gop_free(gop, OP_DESTROY);
         }
 
         lio_path_release(&tuple);
@@ -469,7 +864,33 @@ int main(int argc, char **argv)
         }
     }
 
-    gop_opque_free(q, OP_DESTROY);
+    //** dump any remaining files to be processed
+    if (slot > 0) {
+        nleft = slot;
+        do {
+            n = tbx_que_bulk_put(que, nleft, inode_list + slot - nleft, TBX_QUE_BLOCK);
+            if (n > 0) nleft = nleft - n;
+        } while (nleft > 0);
+    }
+
+    tbx_que_set_finished(que);  //** Let the warming threads know we are done
+
+    //** and wait for them to complete
+    apr_status_t val;
+    good = bad = werr = missing_err = 0;
+    for (i=0; i<n_warm; i++) {
+        apr_thread_join(&val, w[i].thread);
+        good += w[i].good;
+        bad += w[i].bad;
+        werr += w[i].werr;
+    }
+
+    tbx_que_set_finished(que_setattr);  //** Let the setattr thread know we are done
+    apr_thread_join(&val, sa_thread);
+
+    //** Cleanup the que's
+    tbx_que_destroy(que);
+    tbx_que_destroy(que_setattr);
 
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
     info_printf(lio_ifd, 0, "Submitted: " XOT "   Success: " XOT "   Fail: " XOT "    Write Errors: " XOT "   Missing Exnodes: " XOT "\n", submitted, good, bad, werr, missing_err);
@@ -487,7 +908,7 @@ int main(int argc, char **argv)
 
     //** Merge the data from all the tables
     master = tbx_list_create(0, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
-    for (i=0; i<lio_parallel_task_count; i++) {
+    for (i=0; i<n_warm; i++) {
         hi = apr_hash_first(NULL, w[i].hash);
         while (hi != NULL) {
             apr_hash_this(hi, (const void **)&rkey, &klen, (void **)&wrid);
@@ -583,7 +1004,7 @@ int main(int argc, char **argv)
     }
     tbx_stack_free(stack, 0);
 cleanup:
-    for (j=0; j<lio_parallel_task_count; j++) {
+    for (j=0; j<n_warm; j++) {
         apr_pool_destroy(w[j].mpool);
     }
 
@@ -597,8 +1018,8 @@ finished:
 
     close_warm_db(db_inode, db_rid);  //** Close the DBs
 
+    free(inode_list);
     tbx_stdinarray_iter_destroy(piter);
-
     lio_shutdown();
 
     return(return_code);
