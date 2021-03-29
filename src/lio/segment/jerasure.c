@@ -1773,7 +1773,11 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                         log_printf(5, "seg=" XIDT " recoverable write error off=" XOT " len= "XOT " n_parity=%d n_failed=%d\n",
                                    segment_id(sw->seg), sw->iov[j].offset, sw->iov[j].len, s->n_parity_devs, op_status.error_code);
                         status.error_code = op_status.error_code;
-                        soft_error = 1;
+                        if (op_status.error_code == s->n_parity_devs) {  //** If we are at the RS limit then let's try again
+                            soft_error = 2;
+                        } else if (soft_error != 2) {
+                            soft_error = 1;
+                        }
                     }
                 }
 
@@ -1823,11 +1827,11 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                 poff = 0;
                 for (k=0; k<s->n_data_devs; k++) {
                     if (tbv.buffer[0].iov_base != NULL) {
-			if (quick == 1) {
+                        if (quick == 1) {
 	                        ptr[pstripe + k] = tbv.buffer[0].iov_base + poff;
-			} else {
+                        } else {
 	                        ptr[pstripe + k] = straddle_ptr + poff;
-			}
+                        }
                     } else { //** Got an error page
                         if (empty == NULL) {
                             empty = &(parity[parity_len]);
@@ -1887,7 +1891,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     gop_opque_free(q, OP_DESTROY);
 
     //** See if we need to retry without blacklisting enabled
-    if ((hard_error > 0) && (s->blacklist) && (loop == 0)) {
+    if (((soft_error == 2) || (hard_error > 0)) && (s->blacklist) && (loop == 0)) {
         log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
