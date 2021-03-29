@@ -55,7 +55,6 @@
 static lio_osrc_priv_t osrc_default_options = {
     .section = "os_remote_client",
     .temp_section = NULL,
-    .authn_section = NULL,
     .timeout = 60,
     .heartbeat = 600,
     .remote_host_string = "${osrc_host}",
@@ -77,6 +76,11 @@ typedef struct {
     void *data;
     int size;
 } osrc_object_fd_t;
+
+typedef struct {
+    lio_object_service_fn_t *os;
+    char *realpath;
+} osrc_realpath_t;
 
 typedef struct {
     uint64_t id;
@@ -171,7 +175,7 @@ int osrc_add_creds(lio_object_service_fn_t *os, lio_creds_t *creds, mq_msg_t *ms
     void *chandle;
     int len;
 
-    chandle = an_cred_get_type_field(creds, AUTHN_INDEX_SHARED_HANDLE, &len);
+    chandle = an_cred_get_handle(creds, &len);
     gop_mq_msg_append_mem(msg, chandle, len, MQF_MSG_KEEP_DATA);
 
     return(0);
@@ -679,7 +683,6 @@ gop_op_generic_t *osrc_abort_regex_object_set_multiple_attrs(lio_object_service_
     return(g);
 }
 
-
 //***********************************************************************
 //  osrc_exists - Returns the object type  and 0 if it doesn't exist
 //***********************************************************************
@@ -697,6 +700,104 @@ gop_op_generic_t *osrc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
     gop_mq_msg_append_mem(msg, OSR_EXISTS_KEY, OSR_EXISTS_SIZE, MQF_MSG_KEEP_DATA);
     osrc_add_creds(os, creds, msg);
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+
+    log_printf(5, "END\n");
+
+    return(gop);
+}
+
+//***********************************************************************
+// osrc_response_realpath - Handles the response for a realpath call
+//***********************************************************************
+
+gop_op_status_t osrc_response_realpath(void *task_arg, int tid)
+{
+    gop_mq_task_t *task = (gop_mq_task_t *)task_arg;
+    osrc_realpath_t *arg = (osrc_realpath_t *)task->arg;
+    gop_op_status_t status;
+    char *data;
+    int n;
+
+    log_printf(5, "START\n");
+
+    //** Parse the response
+    gop_mq_remove_header(task->response, 1);
+
+    status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
+    if (status.op_status == OP_STATE_SUCCESS) {
+        gop_mq_get_frame(gop_mq_msg_next(task->response), (void **)&data, &n);
+        memcpy(arg->realpath, data, n);
+        arg->realpath[n] = '\0';
+    } else {
+        arg->realpath[0] = '\0';
+    }
+    log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
+
+    return(status);
+}
+
+
+//***********************************************************************
+//  osrc_realpath - Returns the real path of the object type
+//***********************************************************************
+
+gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, char *realpath)
+{
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
+    mq_msg_t *msg;
+    gop_op_generic_t *gop;
+    osrc_realpath_t *arg;
+
+    log_printf(5, "START fname=%s\n", path);
+
+    tbx_type_malloc(arg, osrc_realpath_t, 1);
+    arg->os = os;
+    arg->realpath = realpath;
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
+    gop_mq_msg_append_mem(msg, OSR_REALPATH_KEY, OSR_REALPATH_SIZE, MQF_MSG_KEEP_DATA);
+    osrc_add_creds(os, creds, msg);
+    gop_mq_msg_append_mem(msg, (char *)path, strlen(path)+1, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, free, osrc->timeout);
+
+    log_printf(5, "END\n");
+
+    return(gop);
+}
+
+//***********************************************************************
+// osrc_object_exec_modify - Updates eh executable flag
+//***********************************************************************
+
+gop_op_generic_t *osrc_object_exec_modify(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type)
+{
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
+    mq_msg_t *msg;
+    gop_op_generic_t *gop;
+    unsigned char buffer[10], *sent;
+    int n;
+
+    log_printf(5, "START fname=%s\n", path);
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
+    gop_mq_msg_append_mem(msg, OSR_OBJECT_EXEC_MODIFY_KEY, OSR_OBJECT_EXEC_MODIFY_SIZE, MQF_MSG_KEEP_DATA);
+    osrc_add_creds(os, creds, msg);
+    gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
+
+    n = tbx_zigzag_encode(type, buffer);
+    tbx_type_malloc(sent, unsigned char, n);
+    memcpy(sent, buffer, n);
+    gop_mq_msg_append_frame(msg, gop_mq_frame_new(sent, n, MQF_MSG_AUTO_FREE));
+
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
@@ -2412,43 +2513,6 @@ void osrc_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 
 
 //***********************************************************************
-// osrc_cred_init - Intialize a set of credentials
-//***********************************************************************
-
-lio_creds_t *osrc_cred_init(lio_object_service_fn_t *os, int type, void **args)
-{
-    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
-    lio_creds_t *creds;
-
-    if (osrc->os_temp == NULL) {
-        creds = authn_cred_init(osrc->authn, type, args);
-
-        //** Right now this is filled with dummy routines until we get an official authn/authz implementation
-        an_cred_set_id(creds, args[1]);
-
-        return(creds);
-    }
-
-    return(os_cred_init(osrc->os_temp, type, args));
-}
-
-//***********************************************************************
-// osrc_cred_destroy - Destroys a set ot credentials
-//***********************************************************************
-
-void osrc_cred_destroy(lio_object_service_fn_t *os, lio_creds_t *creds)
-{
-    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
-
-    if (osrc->os_temp == NULL) {
-        an_cred_destroy(creds);
-        return;
-    }
-
-    return(os_cred_destroy(osrc->os_temp, creds));
-}
-
-//***********************************************************************
 // osrc_print_running_config - Prints the running config
 //***********************************************************************
 
@@ -2460,7 +2524,6 @@ void osrc_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_
     if (print_section_heading) fprintf(fd, "[%s]\n", osrc->section);
     fprintf(fd, "type = %s\n", OS_TYPE_REMOTE_CLIENT);
     fprintf(fd, "os_temp = %s\n", osrc->temp_section);
-    fprintf(fd, "authn_section = %s\n", osrc->authn_section);
     fprintf(fd, "remote_address = %s\n", osrc->remote_host_string);
     fprintf(fd, "timeout = %d #seconds\n", osrc->timeout);
     fprintf(fd, "heartbeat = %d #seconds\n", osrc->heartbeat);
@@ -2485,13 +2548,9 @@ void osrc_destroy(lio_object_service_fn_t *os)
         os_destroy(osrc->os_remote);
     }
 
-    if (osrc->authn != NULL) authn_destroy(osrc->authn);
-
-    free(osrc->host_id);
     gop_mq_msg_destroy(osrc->remote_host);
     free(osrc->section);
     if (osrc->temp_section) free(osrc->temp_section);
-    if (osrc->authn_section) free(osrc->authn_section);
     free(osrc->remote_host_string);
     free(osrc);
     free(os);
@@ -2506,10 +2565,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 {
     lio_object_service_fn_t *os;
     lio_osrc_priv_t *osrc;
-    unsigned int n;
-    char *str, *atype;
-    char hostname[1024], buffer[1024];
-    authn_create_t *authn_create;
+    char *str;
 
     log_printf(10, "START\n");
     if (section == NULL) section = osrc_default_options.section;
@@ -2528,12 +2584,9 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
         osrc->os_temp = ((lio_osrs_priv_t *)(osrc->os_remote->priv))->os_child;
         free(str);
     } else {
-        osrc->authn_section = tbx_inip_get_string(fd, section, "authn", NULL);
-        atype = (osrc->authn_section == NULL) ? strdup(AUTHN_TYPE_FAKE) : tbx_inip_get_string(fd, osrc->authn_section, "type", AUTHN_TYPE_FAKE);
-        authn_create = lio_lookup_service(ess, AUTHN_AVAILABLE, atype);
-        osrc->authn = (*authn_create)(ess, fd, osrc->authn_section);
-        free(atype);
+        osrc->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     }
+
 
     osrc->timeout = tbx_inip_get_integer(fd, section, "timeout", osrc_default_options.timeout);
     osrc->heartbeat = tbx_inip_get_integer(fd, section, "heartbeat", osrc_default_options.heartbeat);
@@ -2548,14 +2601,10 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     apr_pool_create(&osrc->mpool, NULL);
     apr_thread_mutex_create(&(osrc->lock), APR_THREAD_MUTEX_DEFAULT, osrc->mpool);
     apr_thread_cond_create(&(osrc->cond), osrc->mpool);
-    apr_gethostname(hostname, sizeof(hostname), osrc->mpool);
-    n = 0;
-    tbx_random_get_bytes(&n, sizeof(n));
-    snprintf(buffer, sizeof(buffer), "%d:%s:%s:%u", osrc->heartbeat, hostname, _lio_exe_name, n);
-    osrc->host_id = strdup(buffer);
-    osrc->host_id_len = strlen(osrc->host_id)+1;
 
-    log_printf(1, "My host_id=%s\n", osrc->host_id);
+    //** Get the host ID
+    osrc->host_id = lio_lookup_service(ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);FATAL_UNLESS(osrc->host_id != NULL);
+    osrc->host_id_len = strlen(osrc->host_id)+1;
 
     //** Get the MQC
     osrc->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ);FATAL_UNLESS(osrc->mqc != NULL);
@@ -2571,9 +2620,9 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 
     os->print_running_config = osrc_print_running_config;
     os->destroy_service = osrc_destroy;
-    os->cred_init = osrc_cred_init;
-    os->cred_destroy = osrc_cred_destroy;
     os->exists = osrc_exists;
+    os->realpath = osrc_realpath;
+    os->exec_modify = osrc_object_exec_modify;
     os->create_object = osrc_create_object;
     os->remove_object = osrc_remove_object;
     os->remove_regex_object = osrc_remove_regex_object;

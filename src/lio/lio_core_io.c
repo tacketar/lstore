@@ -243,7 +243,6 @@ int lio_update_exnode_attrs(lio_config_t *lc, lio_creds_t *creds, lio_exnode_t *
     n = 3;
     val[0] = exp->text.text;
     v_size[0] = strlen(val[0]);
-    log_printf(0, "fname=%s exnode_size=%d exnode=%s\n", fname, v_size[0], exp->text.text);
     sprintf(buffer, XOT, ssize);
     val[1] = buffer;
     v_size[1] = strlen(val[1]);
@@ -447,16 +446,19 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     ex_id_t ino, vid;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
-    int dtype, err;
+    int dtype, err, exec_flag;
+    lio_segment_errors_t serr;
 
     status = gop_success_status;
 
     //** Check if it exists
     dtype = lio_exists(lc, op->creds, op->path);
 
+    exec_flag = OS_OBJECT_EXEC_FLAG & op->mode;  //** Peel off the exec flag for use on new files only
+
     if ((op->mode & (LIO_WRITE_MODE|LIO_CREATE_MODE)) != 0) {  //** Writing and they want to create it if it doesn't exist
         if (dtype == 0) { //** Need to create it
-            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, OS_OBJECT_FILE_FLAG, NULL, NULL));
+            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, OS_OBJECT_FILE_FLAG|exec_flag, NULL, NULL));
             if (err != OP_STATE_SUCCESS) {
                 info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
                 log_printf(1, "ERROR creating file(%s)!\n", op->path);
@@ -570,6 +572,13 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         if ((op->mode & LIO_TRUNCATE_MODE) > 0) { //** See if they want the file truncated also
             status = gop_sync_exec_status(lio_truncate_gop(fd, 0));
             if (status.op_status != OP_STATE_SUCCESS) goto cleanup;
+
+            //** We just truncated the file and removed all the allocations so let's update the exnode in the lserver
+            memset(&serr, 0, sizeof(serr));  //** There aren't any errors to post
+            err = lio_update_exnode_attrs(lc, fd->creds, fh->ex, fh->seg, fd->path, &serr);
+            if (err > 1) {  //** There was a problem with the update but we won't kick out since we will try again on file close
+                log_printf(0, "ERROR updating exnode during open() with truncate flag! fname=%s\n", fd->path);
+            }
         }
 
         if ((op->mode & LIO_APPEND_MODE) > 0) { //** Append to the end of the file
@@ -1245,7 +1254,9 @@ gop_op_status_t local2local_real(lio_cp_fn_t *op, char *buffer, ex_off_t bufsize
     } while (rlen > 0);
 
     if (op->truncate == 1) {  //** Truncate if wanted
-        ftruncate(fileno(op->dffd), ftell(op->dffd));
+        if (!ftruncate(fileno(op->dffd), ftell(op->dffd))) {
+            log_printf(10, "ERROR with truncate!\n");
+        }
     }
 
 finished:
@@ -1478,8 +1489,9 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
     gop_op_status_t status, close_status;
     FILE *sffd, *dffd;
     lio_fd_t *slfd, *dlfd;
-    int already_exists;
+    int already_exists, ftype, flag;
     char *buffer;
+    struct stat stat_link, stat_object;
 
     buffer = NULL;
 
@@ -1491,11 +1503,12 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
     already_exists = 0;  //** Let's us know if we remove the destination in case of a failure.
 
     if (cp->src_tuple.is_lio == 0) {  //** Source is a local file and dest is lio (or local if enabled)
+        ftype = lio_os_local_filetype(cp->src_tuple.path);
         sffd = fopen(cp->src_tuple.path, "r");
         if (sffd) tbx_dio_init(sffd);
 
         if (cp->dest_tuple.is_lio == 1) {
-            info_printf(lio_ifd, 0, "copy %s %s@%s:%s\n", cp->src_tuple.path, an_cred_get_id(cp->dest_tuple.creds), cp->dest_tuple.lc->obj_name, cp->dest_tuple.path);
+            info_printf(lio_ifd, 0, "copy %s %s@%s:%s\n", cp->src_tuple.path, an_cred_get_id(cp->dest_tuple.creds, NULL), cp->dest_tuple.lc->obj_name, cp->dest_tuple.path);
             already_exists = lio_exists(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path); //** Track if the file was already there for cleanup
             gop_sync_exec(lio_open_gop(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path, lio_fopen_flags("w"), NULL, &dlfd, 60));
 
@@ -1510,10 +1523,17 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             if (dlfd != NULL) {
                 close_status = gop_sync_exec_status(lio_close_gop(dlfd));
                 if (close_status.op_status != OP_STATE_SUCCESS) status = close_status;
+                if (status.op_status == OP_STATE_SUCCESS) {
+                    if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
+                        flag = (ftype & OS_OBJECT_EXEC_FLAG) ? 1 : 0;
+                        gop_sync_exec(os_object_exec_modify(cp->dest_tuple.lc->os, cp->dest_tuple.creds, cp->dest_tuple.path, flag));
+                    }
+                }
             }
             if (sffd != NULL) { tbx_dio_finish(sffd, 0); fclose(sffd); }
         } else if (cp->enable_local == 1) {  //** local2local copy
             info_printf(lio_ifd, 0, "copy %s %s\n", cp->src_tuple.path, cp->dest_tuple.path);
+            ftype = os_local_filetype_stat(cp->src_tuple.path, &stat_link, &stat_object);
             already_exists = lio_os_local_filetype(cp->dest_tuple.path); //** Track if the file was already there for cleanup
             dffd = fopen(cp->dest_tuple.path, "w");
             if (dffd) tbx_dio_init(dffd);
@@ -1529,10 +1549,16 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             if (dffd != NULL) { tbx_dio_finish(dffd, 0); fclose(dffd); }
             if (sffd != NULL) { tbx_dio_finish(sffd, 0); fclose(sffd); }
 
+            if (status.op_status == OP_STATE_SUCCESS) {
+                if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
+                    if (ftype & OS_OBJECT_EXEC_FLAG) chmod(cp->dest_tuple.path, stat_object.st_mode);
+                }
+            }
         }
     } else if (cp->dest_tuple.is_lio == 0) {  //** Source is lio and dest is local
-        info_printf(lio_ifd, 0, "copy %s@%s:%s %s\n", an_cred_get_id(cp->src_tuple.creds), cp->src_tuple.lc->obj_name, cp->src_tuple.path, cp->dest_tuple.path);
+        info_printf(lio_ifd, 0, "copy %s@%s:%s %s\n", an_cred_get_id(cp->src_tuple.creds, NULL), cp->src_tuple.lc->obj_name, cp->src_tuple.path, cp->dest_tuple.path);
         already_exists = lio_os_local_filetype(cp->dest_tuple.path); //** Track if the file was already there for cleanup
+        ftype = lio_exists(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path); //** Get the source's type
 
         gop_sync_exec(lio_open_gop(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, lio_fopen_flags("r"), NULL, &slfd, 60));
         dffd = fopen(cp->dest_tuple.path, "w");
@@ -1548,8 +1574,25 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
         if (dffd != NULL) { tbx_dio_finish(dffd, 0); fclose(dffd); }
+        if (status.op_status == OP_STATE_SUCCESS) {
+            if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
+                already_exists = os_local_filetype_stat(cp->dest_tuple.path, &stat_link, &stat_object);
+                if (ftype & OS_OBJECT_EXEC_FLAG)  {
+                    if (stat_object.st_mode & S_IRUSR) stat_object.st_mode |= S_IXUSR;
+                    if (stat_object.st_mode & S_IRGRP) stat_object.st_mode |= S_IXGRP;
+                    if (stat_object.st_mode & S_IROTH) stat_object.st_mode |= S_IXOTH;
+                    chmod(cp->dest_tuple.path, stat_object.st_mode);
+                } else {
+                    if (stat_object.st_mode & S_IRUSR) stat_object.st_mode ^= S_IXUSR;
+                    if (stat_object.st_mode & S_IRGRP) stat_object.st_mode ^= S_IXGRP;
+                    if (stat_object.st_mode & S_IROTH) stat_object.st_mode ^= S_IXOTH;
+                    chmod(cp->dest_tuple.path, stat_object.st_mode);
+                }
+            }
+        }
     } else {               //** both source and dest are lio
-        info_printf(lio_ifd, 0, "copy %s@%s:%s %s@%s:%s\n", an_cred_get_id(cp->src_tuple.creds), cp->src_tuple.lc->obj_name, cp->src_tuple.path, an_cred_get_id(cp->dest_tuple.creds), cp->dest_tuple.lc->obj_name, cp->dest_tuple.path);
+        info_printf(lio_ifd, 0, "copy %s@%s:%s %s@%s:%s\n", an_cred_get_id(cp->src_tuple.creds, NULL), cp->src_tuple.lc->obj_name, cp->src_tuple.path, an_cred_get_id(cp->dest_tuple.creds, NULL), cp->dest_tuple.lc->obj_name, cp->dest_tuple.path);
+        ftype = lio_exists(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path); //** Get the source's type
         already_exists = lio_exists(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path); //** Track if the file was already there for cleanup
         gop_sync_exec(lio_open_gop(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, LIO_READ_MODE, NULL, &slfd, 60));
         gop_sync_exec(lio_open_gop(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path, lio_fopen_flags("w"), NULL, &dlfd, 60));
@@ -1565,6 +1608,12 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
         if (dlfd != NULL) {
             close_status = gop_sync_exec_status(lio_close_gop(dlfd));
             if (close_status.op_status != OP_STATE_SUCCESS) status = close_status;
+            if (status.op_status == OP_STATE_SUCCESS) {
+                if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
+                    flag = (ftype & OS_OBJECT_EXEC_FLAG) ? 1 : 0;
+                    gop_sync_exec(os_object_exec_modify(cp->dest_tuple.lc->os, cp->dest_tuple.creds, cp->dest_tuple.path, flag));
+                }
+            }
         }
     }
 
@@ -1669,10 +1718,10 @@ gop_op_status_t lio_path_copy_op(void *arg, int id)
         snprintf(dname, OS_PATH_MAX, "%s/%s", cp->dest_tuple.path, &(fname[prefix_len+1]));
 
         if ((ftype & OS_OBJECT_DIR_FLAG) > 0) { //** Got a directory
-            dstate = tbx_list_search(dir_table, fname);
+            dstate = tbx_list_search(dir_table, dname);
             if (dstate == NULL) { //** New dir so have to check and possibly create it
                 create_tuple = cp->dest_tuple;
-                create_tuple.path = fname;
+                create_tuple.path = dname;
                 lio_cp_create_dir(dir_table, create_tuple);
             }
 

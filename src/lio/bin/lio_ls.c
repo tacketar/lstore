@@ -31,22 +31,32 @@
 #include <tbx/list.h>
 #include <tbx/log.h>
 #include <tbx/stdinarray_iter.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include <lio/ex3.h>
 #include <lio/lio.h>
 #include <lio/os.h>
 
+//#define OSAZ_MAX_ATTR 5 // This may need to be increased if he OSAZ needs more fields.  The case is caught and exited
+//#define USED_ATTR 5
+//#define MAX_ATTR (OSAZ_MAX_ATTR + USED_ATTR)
+
+#define MAX_ATTR 5
+
 typedef struct {
     char *fname;
     char *link;
-    char *vals[5];
-    int v_size[5];
+    char *vals[MAX_ATTR];
+    int v_size[MAX_ATTR];
     int link_size;
     int prefix_len;
     int ftype;
 } ls_entry_t;
 
+int base = 1;
+//int n_osaz_attr = 0;
+//int n_attrs_fetched;
 lio_path_tuple_t tuple;
 
 //*************************************************************************
@@ -56,24 +66,28 @@ lio_path_tuple_t tuple;
 void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
 {
     char *dtype;
-    char *perms;
+    char perms[16];
     char *owner;
     char dt_create[128], dt_modify[128];
+    char ppsize[128];
     apr_time_t dt;
     int64_t n;
-    long int fsize;
     int nlink, i;
+    char *exec;
 
+    perms[sizeof(perms)-1] = 0;
+
+    exec = (lse->ftype & OS_OBJECT_EXEC_FLAG) ? "x" : "-";
     if ((lse->ftype & OS_OBJECT_SYMLINK_FLAG) > 0) {
         if ((lse->ftype & OS_OBJECT_BROKEN_LINK_FLAG) > 0) {
-            perms = "L---------";
+            snprintf(perms, sizeof(perms), "L--%s------", exec);
         } else {
-            perms = "l---------";
+            snprintf(perms, sizeof(perms), "l--%s------", exec);
         }
     } else if ((lse->ftype & OS_OBJECT_DIR_FLAG) > 0) {
-        perms = "d---------";
+        snprintf(perms, sizeof(perms), "d---------");
     } else {
-        perms = "----------";
+        snprintf(perms, sizeof(perms), "---%s------", exec);
     }
 
     dtype = ((lse->ftype & OS_OBJECT_DIR_FLAG) > 0) ? "/" : "";
@@ -83,7 +97,11 @@ void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
 
     n = 0;
     if (lse->vals[1] != NULL) sscanf(lse->vals[1], I64T, &n);
-    fsize = n;
+    if (base == 1) {
+        sprintf(ppsize, I64T, n);
+    } else {
+        tbx_stk_pretty_print_double_with_scale(base, n, ppsize);
+    }
 
     memset(dt_create, '-', 24);
     dt_create[24] = 0;
@@ -106,9 +124,9 @@ void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
     if (lse->vals[4] != NULL) sscanf(lse->vals[4], "%d", &nlink);
 
     if (lse->link == NULL) {
-        info_printf(ifd, 0, "%s  %3d  %10s  %10ld  %s  %s  %s%s\n", perms, nlink, owner, fsize, dt_create, dt_modify, lse->fname, dtype);
+        info_printf(ifd, 0, "%s  %3d  %10s  %10s  %s  %s  %s%s\n", perms, nlink, owner, ppsize, dt_create, dt_modify, lse->fname, dtype);
     } else {
-        info_printf(ifd, 0, "%s  %3d  %10s  %10ld  %s  %s  %s%s -> %s\n", perms, nlink, owner, fsize, dt_create, dt_modify, lse->fname, dtype, lse->link);
+        info_printf(ifd, 0, "%s  %3d  %10s  %10s  %s  %s  %s%s -> %s\n", perms, nlink, owner, ppsize, dt_create, dt_modify, lse->fname, dtype, lse->link);
     }
 
     //** Cleanup the attributes
@@ -155,6 +173,8 @@ int main(int argc, char **argv)
         printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
         lio_print_object_type_options(stdout, obj_types);
         printf("    -ns                - Don't sort the output\n");
+        printf("    -h                 - Print using base 1000\n");
+        printf("    -hi                - Print using base 1024\n");
         return(1);
     }
 
@@ -184,6 +204,12 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-ns") == 0) {  //** Strip off the path prefix
             i++;
             nosort = 1;
+        } else if (strcmp(argv[i], "-h") == 0) {  //** Use base 10
+            i++;
+            base = 1000;
+        } else if (strcmp(argv[i], "-hi") == 0) {  //** Use base 2
+            i++;
+            base = 1024;
         }
 
     } while ((start_option < i) && (i<argc));
@@ -255,7 +281,7 @@ int main(int argc, char **argv)
             }
 
             if (fcount == 0) {
-                info_printf(lio_ifd, 0, "  Perms     Ref   Owner        Size           Creation date              Modify date             Filename [-> link]\n");
+                info_printf(lio_ifd, 0, "  Perms     Ref   Owner         Size          Creation date              Modify date             Filename [-> link]\n");
                 info_printf(lio_ifd, 0, "----------  ---  ----------  ----------  ------------------------  ------------------------  ------------------------------\n");
             }
             fcount++;

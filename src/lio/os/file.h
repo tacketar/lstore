@@ -69,7 +69,6 @@ struct lio_osfile_priv_t {
     char *hardlink_path;
     char *host_id;
     char *section;
-    char *authn_section;
     char *authz_section;
     gop_thread_pool_context_t *tpc;
     apr_thread_mutex_t **internal_lock;

@@ -1346,6 +1346,28 @@ gop_op_generic_t *ostc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
 }
 
 //***********************************************************************
+//  ostc_realpath - Returns the real path of the object type
+//***********************************************************************
+
+gop_op_generic_t *ostc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, char *realpath)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+
+    return(os_realpath(ostc->os_child, creds, path, realpath));
+}
+
+//***********************************************************************
+// ostc_object_exec_modify - Sets/cleares the executable bit
+//***********************************************************************
+
+gop_op_generic_t *ostc_object_exec_modify(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int exec_state)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+
+    return(os_object_exec_modify(ostc->os_child, creds, path, exec_state));
+}
+
+//***********************************************************************
 // ostc_create_object - Creates an object
 //***********************************************************************
 
@@ -2251,29 +2273,6 @@ void ostc_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
     os_destroy_fsck_iter(ostc->os_child, oit);
 }
 
-
-//***********************************************************************
-// ostc_cred_init - Intialize a set of credentials
-//***********************************************************************
-
-lio_creds_t *ostc_cred_init(lio_object_service_fn_t *os, int type, void **args)
-{
-    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
-
-    return(os_cred_init(ostc->os_child, type, args));
-}
-
-//***********************************************************************
-// ostc_cred_destroy - Destroys a set ot credentials
-//***********************************************************************
-
-void ostc_cred_destroy(lio_object_service_fn_t *os, lio_creds_t *creds)
-{
-    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
-
-    return(os_cred_destroy(ostc->os_child, creds));
-}
-
 //***********************************************************************
 // ostc_print_running_config - Prints the running config
 //***********************************************************************
@@ -2384,9 +2383,9 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
 
     os->print_running_config = ostc_print_running_config;
     os->destroy_service = ostc_destroy;
-    os->cred_init = ostc_cred_init;
-    os->cred_destroy = ostc_cred_destroy;
     os->exists = ostc_exists;
+    os->realpath = ostc_realpath;
+    os->exec_modify = ostc_object_exec_modify;
     os->create_object = ostc_create_object;
     os->remove_object = ostc_remove_object;
     os->remove_regex_object = ostc_remove_regex_object;

@@ -165,6 +165,29 @@ int lio_exists(lio_config_t *lc, lio_creds_t *creds, char *path)
 }
 
 //***********************************************************************
+// lio_realpath_gop - Returns the filetype of the object or 0 if it
+//   doesn't exist
+//***********************************************************************
+
+gop_op_generic_t *lio_realpath_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath)
+{
+    return(os_realpath(lc->os, creds, path, realpath));
+}
+
+//***********************************************************************
+// lio_realpath - Returns the filetype of the object or 0 if it
+//   doesn't exist
+//***********************************************************************
+
+int lio_realpath(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath)
+{
+    gop_op_status_t status;
+
+    status = gop_sync_exec_status(os_realpath(lc->os, creds, path, realpath));
+    return((status.op_status == OP_STATE_SUCCESS) ? 0 : -1);
+}
+
+//***********************************************************************
 // lio_free_mk_mv_rm
 //***********************************************************************
 
@@ -305,8 +328,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     }
 
     //** Now add the required attributes
-    val[0] = an_cred_get_id(op->creds);
-    v_size[0] = strlen(val[0]);
+    val[0] = an_cred_get_id(op->creds, &v_size[0]);
     val[1] = op->id;
     v_size[1] = (op->id == NULL) ? 0 : strlen(op->id);
     val[2] = op->id;
@@ -747,8 +769,7 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     gop_opque_add(q, os_symlink_multiple_attrs(op->lc->os, op->creds, spath, lkeys, dfd, lkeys, 2));
 
     //** Store the owner, inode, and dates
-    val[0] = an_cred_get_id(op->creds);
-    vsize[0] = strlen(val[0]);
+    val[0] = an_cred_get_id(op->creds, &vsize[0]);
     ino = 0;
     generate_ex_id(&ino);
     snprintf(inode, 32, XIDT, ino);

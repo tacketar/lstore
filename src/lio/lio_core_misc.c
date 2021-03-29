@@ -28,6 +28,7 @@
 #include <string.h>
 #include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
+#include <tbx/iniparse.h>
 #include <tbx/log.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
@@ -39,6 +40,7 @@
 #include "ex3.h"
 #include "ex3/types.h"
 #include "lio.h"
+#include "remote_config.h"
 #include "os.h"
 #include "os/file.h"
 
@@ -261,6 +263,57 @@ handle_path:
     return(ptype);
 }
 
+//***********************************************************************
+// lio_fetch_config - Returns a valid FD if the config can be opened.
+//     config_name - PAth to the config
+//     obj_name - Object name returned if non-NULL
+//     ts       - Time stamp for the config.  If the config hasn't changed
+//                the FD is null. On success ts set to the time of the object
+//                returned.  If the object doesn't exist the time is set to 0.
+//                On entry if ts=0 the object will always be loaded.  Otherwise
+//                it will be loaded if the object is newer.
+//***********************************************************************
+
+tbx_inip_file_t *lio_fetch_config(lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts)
+{
+    const char *local;
+    char *cfg;
+    int offset;
+    struct stat st;
+    tbx_inip_file_t *ifd = NULL;
+
+    if (strncmp("lstore://", config_name, 9) == 0) {
+        if (rc_client_get_config(creds, (char *)config_name, &cfg, obj_name, ts) == 0) {
+            if (cfg) {
+                ifd = tbx_inip_string_read(cfg);
+                if (ifd) tbx_inip_string_auto_destroy(ifd);
+                return(ifd);
+            }
+            return(NULL);
+        }
+        return(NULL);
+    }
+
+    //** If we make it here we should be dealing with a local file
+    offset = 0;
+    if (strncmp("file://", config_name, 7) == 0) {
+        offset = 7;
+    } else if (strncmp("ini://", config_name, 6) == 0) {
+        offset = 6;
+    }
+
+    //** Get the time stamp
+    local = config_name + offset;
+    if (stat(local, &st) != 0) {
+        log_printf(1, "Local file missing! Using old definition. fname=%s\n", local);
+        *ts = 0;
+    } else if (*ts != st.st_mtime) {  //** File changed so reload it
+        *ts = st.st_mtime;
+        ifd = tbx_inip_file_read(local);
+    }
+
+    return(ifd);
+}
 //***********************************************************************
 
 int strcmp_null(const char *s1, const char *s2)

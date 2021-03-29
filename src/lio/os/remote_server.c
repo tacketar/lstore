@@ -65,7 +65,7 @@
 
 static lio_osrs_priv_t osrs_default_options = {
     .section = "os_remote_server",
-    .hostname = "${osrs_host}",
+    .hostname = NULL,
     .fname_activity = NULL,
     .ongoing_interval = 30,
     .max_stream = 10*1024*1024,
@@ -215,8 +215,8 @@ void osrs_log_printf(lio_object_service_fn_t *os, lio_creds_t *creds, const char
     va_list args;
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     FILE *fd;
-    lio_authn_fake_priv_t *a;
     char date[APR_CTIME_LEN], *uid;
+    int len;
     apr_time_t now;
 
     if (osrs->fname_active == NULL) return;
@@ -227,8 +227,8 @@ void osrs_log_printf(lio_object_service_fn_t *os, lio_creds_t *creds, const char
     }
 
     //** Add the header
-    a = creds->priv;
-    uid = (a->len != 0) ? a->handle : "(null)";
+    uid = (char *)an_cred_get_descriptive_id(creds, &len);
+    if (!uid) uid = "(null)";
     now = apr_time_now();
     apr_ctime(date, now);
     fprintf(fd, "[%s (" TT ") %s] ", date, now, uid);
@@ -241,19 +241,13 @@ void osrs_log_printf(lio_object_service_fn_t *os, lio_creds_t *creds, const char
     fclose(fd);
 }
 
-
 //***********************************************************************
 // osrs_release_creds - Release the creds
-//
-// =====NOTE: this routine is a hack to pass around the userid and host ===
 //***********************************************************************
 
 void osrs_release_creds(lio_object_service_fn_t *os, lio_creds_t *creds)
 {
-    //** The handle is stored in the frame and will get released on its destruction
-    free(creds->priv);
-    free(creds);
-    return;
+    if (creds) an_cred_destroy(creds);
 }
 
 //***********************************************************************
@@ -266,15 +260,15 @@ lio_creds_t *osrs_get_creds(lio_object_service_fn_t *os, gop_mq_frame_t *f)
 {
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     lio_creds_t *creds;
-    lio_authn_fake_priv_t *a;
+    void *cred_args[2];
+    int len;
+    void *ptr;
 
-    tbx_type_malloc(creds, lio_creds_t, 1);
-    tbx_type_malloc(a, lio_authn_fake_priv_t, 1);
+    gop_mq_get_frame(f, &ptr, &len);
+    cred_args[0] = ptr;
+    cred_args[1] = &len;
 
-    *creds = *osrs->dummy_creds;
-    creds->priv = a;
-    gop_mq_get_frame(f, (void **)&(a->handle), &(a->len));
-
+    creds = authn_cred_init(osrs->authn, AUTHN_INIT_LOOKUP, cred_args);
     return(creds);
 }
 
@@ -391,6 +385,65 @@ void osrs_exists_cb(void *arg, gop_mq_task_t *task)
 }
 
 //***********************************************************************
+// osrs_realpath_cb - Processes the object realpath command
+//***********************************************************************
+
+void osrs_realpath_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    gop_mq_frame_t *fid, *fname, *fcred;
+    char *name;
+    lio_creds_t *creds;
+    int fsize;
+    mq_msg_t *msg, *response;
+    char realpath[OS_PATH_MAX];
+    gop_op_status_t status;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command. Don't have to
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fcred = mq_msg_pop(msg);  //** This has the creds
+    creds = osrs_get_creds(os, fcred);
+
+    fname = mq_msg_pop(msg);  //** This has the filename
+    gop_mq_get_frame(fname, (void **)&name, &fsize);
+
+    if (creds != NULL) {
+        status = gop_sync_exec_status(os_realpath(osrs->os_child, creds, name, realpath));
+    } else {
+        status = gop_failure_status;
+    }
+
+    osrs_release_creds(os, creds);
+
+    gop_mq_frame_destroy(fname);
+    gop_mq_frame_destroy(fcred);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+
+    if (status.op_status == OP_STATE_SUCCESS) {
+        gop_mq_msg_append_mem(response, strdup(realpath), strlen(realpath)+1, MQF_MSG_AUTO_FREE);
+    }
+
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    log_printf(5, "END\n");
+
+}
+
+//***********************************************************************
 // osrs_spin_hb_cb - Processes the Spin HB command
 //***********************************************************************
 
@@ -435,6 +488,64 @@ void osrs_spin_hb_cb(void *arg, gop_mq_task_t *task)
     gop_mq_frame_destroy(fspin);
     gop_mq_frame_destroy(fcred);
 
+    log_printf(5, "END\n");
+}
+
+//***********************************************************************
+// osrs_object_exec_modify_cb - Processes the exec bit setting
+//***********************************************************************
+
+void osrs_object_exec_modify_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    gop_mq_frame_t *fid, *fname, *fcred, *f;
+    char *name;
+    char *data;
+    lio_creds_t *creds;
+    int fsize, nbytes;
+    mq_msg_t *msg, *response;
+    gop_op_status_t status;
+    int64_t exec_mode;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command.
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fcred = mq_msg_pop(msg);  //** This has the creds
+    creds = osrs_get_creds(os, fcred);
+
+    fname = mq_msg_pop(msg);  //** This has the filename
+    gop_mq_get_frame(fname, (void **)&name, &fsize);
+
+    f = mq_msg_pop(msg);  //** This has the Object type
+    gop_mq_get_frame(f, (void **)&data, &nbytes);
+    tbx_zigzag_decode((unsigned char *)data, nbytes, &exec_mode);
+    gop_mq_frame_destroy(f);
+
+    if (creds != NULL) {
+        status = gop_sync_exec_status(os_object_exec_modify(osrs->os_child, creds, name, exec_mode));
+    } else {
+        status = gop_failure_status;
+    }
+
+    osrs_release_creds(os, creds);
+
+    gop_mq_frame_destroy(fname);
+    gop_mq_frame_destroy(fcred);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     log_printf(5, "END\n");
 }
@@ -3032,9 +3143,14 @@ void osrs_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_
 
     if (print_section_heading) fprintf(fd, "[%s]\n", osrs->section);
     fprintf(fd, "type = %s\n", OS_TYPE_REMOTE_SERVER);
-    fprintf(fd, "address = %s\n", osrs->hostname);
+    if (osrs->hostname) {
+        fprintf(fd, "address = %s\n", osrs->hostname);
+        fprintf(fd, "ongoing_interval = %d #seconds\n", osrs->ongoing_interval);
+    } else {
+        fprintf(fd, "# Using global host portal for address\n");
+        fprintf(fd, "# Using global host portal for ongoing_interval\n");
+    }
     fprintf(fd, "log_activity = %s\n", osrs->fname_activity);
-    fprintf(fd, "ongoing_interval = %d #seconds\n", osrs->ongoing_interval);
     fprintf(fd, "max_stream = %d\n", osrs->max_stream);
     fprintf(fd, "os_local = %s\n", osrs->os_local_section);
     fprintf(fd, "active_output = %s\n", osrs->fname_active);
@@ -3053,22 +3169,16 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     osrs_active_t *a;
 
-    //** Remove the server portal
-    gop_mq_portal_remove(osrs->mqc, osrs->server_portal);
-
-    //** Shutdown the ongoing thread and task
-    gop_mq_ongoing_destroy(osrs->ongoing);
-
-    //** Now destroy it
-    gop_mq_portal_destroy(osrs->server_portal);
-
-    //** Drop the fake creds
-    an_cred_destroy(osrs->dummy_creds);
-    if (osrs->authn != NULL) authn_destroy(osrs->authn);
+    //** Remove the server portal if needed)
+    if (osrs->hostname) {
+        gop_mq_portal_remove(osrs->mqc, osrs->server_portal);
+        gop_mq_ongoing_destroy(osrs->ongoing);  //** Shutdown the ongoing thread and task
+        gop_mq_portal_destroy(osrs->server_portal);
+        free(osrs->hostname);
+    }
 
     //** Free the log string
     if (osrs->fname_activity != NULL) free(osrs->fname_activity);
-
 
     //** Cleanup the activity log
     tbx_stack_move_to_top(osrs->active_lru);
@@ -3090,7 +3200,6 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
 
 
     free(osrs->section);
-    free(osrs->hostname);
     free(osrs->os_local_section);
 
     if (osrs->fname_active) free(osrs->fname_active);
@@ -3110,8 +3219,6 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     os_create_t *os_create;
     gop_mq_command_table_t *ctable;
     char *stype, *ctype;
-    authn_create_t *authn_create;
-    char *cred_args[2];
 
     log_printf(0, "START\n");
     if (section == NULL) section = osrs_default_options.section;
@@ -3131,20 +3238,17 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     apr_thread_mutex_create(&(osrs->abort_lock), APR_THREAD_MUTEX_DEFAULT, osrs->mpool);
 
     osrs->abort = apr_hash_make(osrs->mpool);
-   FATAL_UNLESS(osrs->abort != NULL);
+    FATAL_UNLESS(osrs->abort != NULL);
 
     osrs->spin = apr_hash_make(osrs->mpool);
-   FATAL_UNLESS(osrs->spin != NULL);
+    FATAL_UNLESS(osrs->spin != NULL);
 
-    //** Get the host name we bind to
+    //** Get the host name we bind to NULL is global default
     osrs->hostname= tbx_inip_get_string(fd, section, "address", osrs_default_options.hostname);
 
     //** Get the activity log file
     osrs->fname_activity = tbx_inip_get_string(fd, section, "log_activity", osrs_default_options.fname_activity);
     log_printf(5, "section=%s log_activity=%s\n", section, osrs->fname_activity);
-
-    //** Ongoing check interval
-    osrs->ongoing_interval = tbx_inip_get_integer(fd, section, "ongoing_interval", osrs_default_options.ongoing_interval);
 
     //** Max Stream size
     osrs->max_stream = tbx_inip_get_integer(fd, section, "max_stream", osrs_default_options.max_stream);
@@ -3170,23 +3274,23 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     }
     free(ctype);
 
-    //** Make the dummy credentials
-    cred_args[0] = NULL;
-    cred_args[1] = "FIXME_tacketar";
-    authn_create = lio_lookup_service(ess, AUTHN_AVAILABLE, AUTHN_TYPE_FAKE);
-    osrs->authn = (*authn_create)(ess, fd, "missing");
-    osrs->dummy_creds = authn_cred_init(osrs->authn, OS_CREDS_INI_TYPE, (void **)cred_args);
-    an_cred_set_id(osrs->dummy_creds, cred_args[1]);
-
+    //** Get the AuthN server
+    osrs->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
 
     //** Get the MQC
-    osrs->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ);FATAL_UNLESS(osrs->mqc != NULL);
+    osrs->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ); FATAL_UNLESS(osrs->mqc != NULL);
 
     //** Make the server portal
-    osrs->server_portal = gop_mq_portal_create(osrs->mqc, osrs->hostname, MQ_CMODE_SERVER);
+    if (osrs->hostname) {
+        osrs->server_portal = gop_mq_portal_create(osrs->mqc, osrs->hostname, MQ_CMODE_SERVER);
+    } else {
+        osrs->server_portal = lio_lookup_service(ess, ESS_RUNNING, ESS_SERVER_PORTAL); FATAL_UNLESS(osrs->server_portal != NULL);
+    }
     ctable = gop_mq_portal_command_table(osrs->server_portal);
     gop_mq_command_set(ctable, OSR_SPIN_HB_KEY, OSR_SPIN_HB_SIZE, os, osrs_spin_hb_cb);
     gop_mq_command_set(ctable, OSR_EXISTS_KEY, OSR_EXISTS_SIZE, os, osrs_exists_cb);
+    gop_mq_command_set(ctable, OSR_REALPATH_KEY, OSR_REALPATH_SIZE, os, osrs_realpath_cb);
+    gop_mq_command_set(ctable, OSR_OBJECT_EXEC_MODIFY_KEY, OSR_OBJECT_EXEC_MODIFY_SIZE, os, osrs_object_exec_modify_cb);
     gop_mq_command_set(ctable, OSR_CREATE_OBJECT_KEY, OSR_CREATE_OBJECT_SIZE, os, osrs_create_object_cb);
     gop_mq_command_set(ctable, OSR_REMOVE_OBJECT_KEY, OSR_REMOVE_OBJECT_SIZE, os, osrs_remove_object_cb);
     gop_mq_command_set(ctable, OSR_REMOVE_REGEX_OBJECT_KEY, OSR_REMOVE_REGEX_OBJECT_SIZE, os, osrs_remove_regex_object_cb);
@@ -3210,12 +3314,16 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     gop_mq_command_set(ctable, OSR_FSCK_ITER_KEY, OSR_FSCK_ITER_SIZE, os, osrs_fsck_iter_cb);
     gop_mq_command_set(ctable, OSR_FSCK_OBJECT_KEY, OSR_FSCK_OBJECT_SIZE, os, osrs_fsck_object_cb);
 
-    //** Make the ongoing checker
-    osrs->ongoing = gop_mq_ongoing_create(osrs->mqc, osrs->server_portal, osrs->ongoing_interval, ONGOING_SERVER);
-   FATAL_UNLESS(osrs->ongoing != NULL);
+     //** Make the ongoing checker if needed or use the global one
+     if (osrs->hostname) {
+        osrs->ongoing = gop_mq_ongoing_create(osrs->mqc, osrs->server_portal, osrs->ongoing_interval, ONGOING_SERVER);
+        FATAL_UNLESS(osrs->ongoing != NULL);
 
-    //** This is to handle client stream responses
-    gop_mq_command_set(ctable, MQS_MORE_DATA_KEY, MQS_MORE_DATA_SIZE, osrs->ongoing, gop_mqs_server_more_cb);
+        //** This is to handle client stream responses
+        gop_mq_command_set(ctable, MQS_MORE_DATA_KEY, MQS_MORE_DATA_SIZE, osrs->ongoing, gop_mqs_server_more_cb);
+    } else {
+        osrs->ongoing = lio_lookup_service(ess, ESS_RUNNING, ESS_ONGOING_SERVER); FATAL_UNLESS(osrs->ongoing != NULL);
+    }
 
     //** Set up the fn ptrs.  This is just for shutdown
     //** so very little is implemented
@@ -3232,8 +3340,8 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     _os_global = os;
     tbx_siginfo_handler_add(SIGUSR1, osrs_siginfo_fn, os);
 
-    //** Activate it
-    gop_mq_portal_install(osrs->mqc, osrs->server_portal);
+    //** Start it if needed
+    if (osrs->hostname) gop_mq_portal_install(osrs->mqc, osrs->server_portal);
 
     log_printf(0, "END\n");
 

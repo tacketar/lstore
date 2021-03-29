@@ -1,4 +1,5 @@
 /*
+
    Copyright 2016 Vanderbilt University
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -69,7 +70,6 @@ static lio_osfile_priv_t osf_default_options = {
     .max_copy = 1024*1024,
     .hardlink_dir_size = 256,
     .authz_section = NULL,
-    .authn_section = NULL,
 };
 
 typedef struct {
@@ -276,6 +276,73 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id);
 int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, void *val, int v_size);
 char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int ftype);
 
+//*************************************************************
+// osaz_attr_filter_apply - Applies any OSAZ filter required on the attr
+//*************************************************************
+
+void osaz_attr_filter_apply(lio_os_authz_t *osa, char *key, int mode, void **value, int *len, osaz_attr_filter_t filter)
+{
+    void *v_out;
+    int len_out;
+
+    if (filter == NULL) return;
+
+    filter(osa, key, mode, *value, *len, &v_out, &len_out);
+    free(*value);
+    *value = v_out;
+    *len = len_out;
+    return;
+}
+
+
+//*************************************************************
+//  _osf_realpath - Takes the user path and converts it to the
+//      "realpath" in LStore
+//*************************************************************
+
+char *_osf_realpath(lio_object_service_fn_t *os, const char *path, char *rpath, int include_basename)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    char fname[OS_PATH_MAX], real_path[OS_PATH_MAX];
+    char *rp, *dir, *file;
+    int n;
+
+retry:
+    //** Check the Path ACL
+    //** Split out the parent directory
+    if (include_basename == 1) {
+        dir = (char *)path;
+    } else {
+        lio_os_path_split(path, &dir, &file);
+        if (include_basename != 2) {
+            if (file) free(file);
+        }
+    }
+
+    snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, dir);
+    if (dir != path) free(dir);
+    rp = realpath(fname, real_path);
+    if (!rp) {  //** This could be a bad symlink. If so retry but drop the basename
+        if (include_basename == 0) return(NULL);
+        include_basename = 0;
+        goto retry;
+    }
+    strcpy(rpath, rp+osf->file_path_len);
+    if ((include_basename == 2) && file) {  //** Need to now add the file name afte rresolving the parent
+        n = strlen(rpath);
+        snprintf(rpath + n, OS_PATH_MAX-n, "/%s", file);
+        free(file);
+    }
+    log_printf(15, "fname=%s  realpath=%s rp=%s strlen(realpath)=" ST "\n", path, rpath, rp, strlen(rpath));
+
+    if (rpath[0] == '\0') {
+        if ((strlen(path) == 1) && (path[0] == '/')) {
+            rpath[0] = '/'; rpath[1] = 0;
+        }
+    }
+
+    return(rpath);
+}
 
 //*************************************************************
 //  osf_store_val - Stores the return attribute value
@@ -1349,7 +1416,6 @@ int safe_remove(lio_object_service_fn_t *os, char *path)
 
 char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int ftype)
 {
-//  lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char fname[OS_PATH_MAX];
     char *dir, *base;
     char *attr_dir = NULL;
@@ -1496,13 +1562,15 @@ void my_seekdir(osf_dir_t *d, long offset)
 int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
-    int i, rmatch, tweak, do_recurse;
+    int i, rmatch, tweak, do_recurse, can_access;
     struct stat link_stat, object_stat;
     ino_t *ino_sys;
     osf_obj_level_t *itl;
     osf_obj_level_t *it_top = NULL;
     char fname[OS_PATH_MAX];
     char fullname[OS_PATH_MAX];
+
+    char rp[OS_PATH_MAX];
     char *obj_fixed = NULL;
 
     *prefix_len = 0;
@@ -1546,7 +1614,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
             itl = &(it->level_info[it->curr_level]);
         }
 
-        log_printf(0, "curr_level=%d table->n=%d path=%s\n", it->curr_level, it->table->n, itl->path);
+        log_printf(15, "curr_level=%d table->n=%d path=%s\n", it->curr_level, it->table->n, itl->path);
 
         while ((itl->entry = my_readdir(itl->d)) != NULL) {
             itl->prev_pos = itl->curr_pos;
@@ -1557,25 +1625,23 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
                 if ((strncmp(itl->entry, FILE_ATTR_PREFIX, FILE_ATTR_PREFIX_LEN) == 0) ||
                         (strcmp(itl->entry, ".") == 0) || (strcmp(itl->entry, "..") == 0)) i = 1;
             }
-log_printf(0, "regexec=%d entry=%s\n", i, itl->entry);
             if (i == 0) { //** Regex match
                 snprintf(fname, OS_PATH_MAX, "%s/%s", itl->path, itl->entry);
                 snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fname);
                 log_printf(15, "POSSIBLE MATCH level=%d table->n=%d fname=%s max_level=%d\n", it->curr_level, it->table->n, fname, it->max_level);
 
-                if (osaz_object_access(osf->osaz, it->creds, fname, OS_MODE_READ_IMMEDIATE) == 1) { //** See if I can access it
+                can_access = osaz_object_access(osf->osaz, it->creds, NULL, _osf_realpath(it->os, fname, rp, 1), OS_MODE_READ_IMMEDIATE);
+                if (can_access > 0) { //** See if I can access it
                     if (it->curr_level < it->max_level) {     //** Cap the recurse depth
                         if (it->curr_level < it->table->n-1) { //** Still on the static table
                             i = lio_os_local_filetype(fullname);
-                            if (i & OS_OBJECT_DIR_FLAG) {  //*  Skip normal files since we still have static levels left
-                                if (osaz_object_access(osf->osaz, it->creds, fname, OS_MODE_READ_IMMEDIATE) == 1) {  //** Make sure I can access it
-                                    it->curr_level++;  //** Move to the next level
-                                    itl = &(it->level_info[it->curr_level]);
+                            if ((i & OS_OBJECT_DIR_FLAG) && (can_access == 2)) {  //*  Skip normal files since we still have static levels left
+                                it->curr_level++;  //** Move to the next level
+                                itl = &(it->level_info[it->curr_level]);
 
-                                    //** Initialize the level for use
-                                    strncpy(itl->path, fname, OS_PATH_MAX);
-                                    itl->d = my_opendir(fullname, itl->fragment);
-                                }
+                                //** Initialize the level for use
+                                strncpy(itl->path, fname, OS_PATH_MAX);
+                                itl->d = my_opendir(fullname, itl->fragment);
                             }
                         } else { //** Off the static table or on the last level.  From here on all hits are matches. Just have to check ftype
                             i = os_local_filetype_stat(fullname, &link_stat, &object_stat);
@@ -1597,10 +1663,9 @@ log_printf(0, "regexec=%d entry=%s\n", i, itl->entry);
                             }
 
                             //** See if we have a match: either it's a file or a symlink to a file or dir we don't recurse into
-                            if ((i & OS_OBJECT_FILE_FLAG) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0))) {
+                            if ((i & OS_OBJECT_FILE_FLAG) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0)) || (can_access == 1)) {
                                 if ((i & it->object_types) > 0) {
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
-
                                     if (rmatch == 0) { //** IF a match return
                                         *myfname=strdup(fname);
                                         if (*prefix_len == 0) {
@@ -1723,6 +1788,100 @@ void osfile_free_mk_mv_rm(void *arg)
 }
 
 //***********************************************************************
+// osfile_free_realpath
+//***********************************************************************
+
+void osfile_free_realpath(void *arg)
+{
+    osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
+
+    if (op->src_path != NULL) free(op->src_path);
+    if (op->id != NULL) free(op->id);
+
+    free(op);
+}
+
+//***********************************************************************
+// osf_object_exec_modify - Sets/clears the exec bit for the file
+//***********************************************************************
+
+int osf_object_exec_modify(lio_object_service_fn_t *os, char *path, int mode)
+{
+    int ftype, err;
+    struct stat stat_obj, stat_link;
+
+    ftype = os_local_filetype_stat(path, &stat_link, &stat_obj);
+
+    log_printf(15, "ftype=%d path=%s\n", ftype, path);
+
+    if (ftype & OS_OBJECT_DIR_FLAG) return(0);  //** It's a directory so nothing to do
+    if (ftype == 0) return(1);  //** Doesn't exist
+
+    //** If we made it here it's a normal file or a symlink to a file
+    err = 0;
+    if (ftype & OS_OBJECT_EXEC_FLAG) {
+        if (mode == 0) {
+            stat_obj.st_mode ^= S_IXUSR;
+            err = chmod(path, stat_obj.st_mode);
+        }
+    } else if (mode == 1) {
+        stat_obj.st_mode |= S_IXUSR;
+        err = chmod(path, stat_obj.st_mode);
+    }
+
+    return(err);
+}
+
+//***********************************************************************
+// osfile_object_exec_modify_fn - Sets/clears the exec bit for the file called via the GOP
+//***********************************************************************
+
+gop_op_status_t osfile_object_exec_modify_fn(void *arg, int id)
+{
+    osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    char fname[OS_PATH_MAX];
+    char rp[OS_PATH_MAX];
+    gop_op_status_t status;
+    apr_thread_mutex_t *lock;
+
+    if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1), OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
+    snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
+
+    lock = osf_retrieve_lock(op->os, op->src_path, NULL);
+    osf_obj_lock(lock);
+
+    if (osf_object_exec_modify(op->os, fname, op->type) == 0) {
+        status = gop_success_status;
+    } else {
+        status = gop_failure_status;
+    }
+
+    osf_obj_unlock(lock);
+
+    return(status);
+}
+
+//***********************************************************************
+// osfile_object_exec_modify - Sets/clears the exec bit
+//***********************************************************************
+
+gop_op_generic_t *osfile_object_exec_modify(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int exec_mode)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_mk_mv_rm_t *op;
+
+    tbx_type_malloc_clear(op, osfile_mk_mv_rm_t, 1);
+
+    op->os = os;
+    op->creds = creds;
+    op->src_path = strdup(path);
+    op->type = exec_mode;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_object_exec_modify_fn, (void *)op, osfile_free_mk_mv_rm, 1));
+}
+
+//***********************************************************************
 // osf_object_remove - Removes the current dir or object (non-recursive)
 //***********************************************************************
 
@@ -1787,10 +1946,11 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     int ftype;
     char fname[OS_PATH_MAX];
+    char rp[OS_PATH_MAX];
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
-    if (osaz_object_remove(osf->osaz, op->creds, op->src_path) == 0)  return(gop_failure_status);
+    if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1)) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
     lock = osf_retrieve_lock(op->os, op->src_path, NULL);
@@ -1849,6 +2009,7 @@ gop_op_status_t osfile_remove_regex_fn(void *arg, int id)
     os_object_iter_t *it;
     int prefix_len, count;
     char *fname;
+    char rp[OS_PATH_MAX];
     gop_op_status_t status, op_status;
 
     rm_op.os = op->os;
@@ -1861,7 +2022,7 @@ gop_op_status_t osfile_remove_regex_fn(void *arg, int id)
     count = 0;
     while (osfile_next_object(it, &fname, &prefix_len) > 0) {
         log_printf(15, "removing fname=%s\n", fname);
-        if (osaz_object_remove(osf->osaz, op->creds, fname) == 0) {
+        if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, fname, rp, 1)) == 0) {
             status.op_status = OP_STATE_FAILURE;
             status.error_code++;
         } else {
@@ -1950,6 +2111,7 @@ gop_op_status_t osfile_regex_object_set_multiple_attrs_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     os_object_iter_t *it;
     char *fname;
+    char rp[OS_PATH_MAX];
     gop_op_status_t status, op_status;
     osfile_attr_op_t op_attr;
     osfile_fd_t *fd;
@@ -1980,8 +2142,7 @@ gop_op_status_t osfile_regex_object_set_multiple_attrs_fn(void *arg, int id)
     it = osfile_create_object_iter(op->os, op->creds, op->rpath, op->object_regex, op->object_types, NULL, op->recurse_depth, NULL, 0);
     count = 0;
     while (osfile_next_object(it, &fname, &prefix_len) > 0) {
-
-        if (osaz_object_access(osf->osaz, op->creds, fname, OS_MODE_WRITE_IMMEDIATE) == 0) {
+        if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, fname, rp, 1), OS_MODE_WRITE_IMMEDIATE) < 2) {
             status.op_status = OP_STATE_FAILURE;
             status.error_code += op->n_keys;
         } else {
@@ -2086,9 +2247,10 @@ gop_op_status_t osfile_exists_fn(void *arg, int id)
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     char fname[OS_PATH_MAX];
+    char rp[OS_PATH_MAX];
     gop_op_status_t status = gop_success_status;
 
-    if (osaz_object_access(osf->osaz, op->creds, op->src_path, OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
+    if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1), OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
     status.error_code = lio_os_local_filetype(fname);
@@ -2118,6 +2280,50 @@ gop_op_generic_t *osfile_exists(lio_object_service_fn_t *os, lio_creds_t *creds,
     return(gop_tp_op_new(osf->tpc, NULL, osfile_exists_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
 
+//***********************************************************************
+// osfile_realpath_fn - Returns the realpath
+//***********************************************************************
+
+gop_op_status_t osfile_realpath_fn(void *arg, int id)
+{
+    osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    char rpath[OS_PATH_MAX];
+    char *rp;
+    gop_op_status_t status = gop_success_status;
+
+    rp = _osf_realpath(op->os, op->src_path, rpath, 1);
+    if (!rp) return(gop_failure_status);
+
+    if (osaz_object_access(osf->osaz, op->creds, NULL, rp, OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
+
+    strcpy(op->dest_path, rp);
+    log_printf(15, "fname=%s  realpath=%s\n", op->src_path, op->dest_path);
+
+    return(status);
+}
+
+//***********************************************************************
+//  osfile_realpath - Returns the realpath
+//***********************************************************************
+
+gop_op_generic_t *osfile_realpath(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, char *realpath)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_mk_mv_rm_t *op;
+
+    if (path == NULL) return(gop_dummy(gop_failure_status));
+
+    tbx_type_malloc_clear(op, osfile_mk_mv_rm_t, 1);
+
+    op->os = os;
+    op->creds = creds;
+    op->src_path = strdup(path);
+    op->dest_path = realpath;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_realpath_fn, (void *)op, osfile_free_realpath, 1));
+}
+
 
 
 //***********************************************************************
@@ -2133,18 +2339,19 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     char *dir, *base;
     char fname[OS_PATH_MAX];
     char fattr[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     apr_thread_mutex_t *lock;
 
-    if (osaz_object_create(osf->osaz, op->creds, op->src_path) == 0)  return(gop_failure_status);
+    if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rpath, 2)) == 0)  return(gop_failure_status);
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
-    log_printf(0, "base=%s src=%s fname=%s\n", osf->file_path, op->src_path, fname);
+    log_printf(15, "base=%s src=%s fname=%s\n", osf->file_path, op->src_path, fname);
 
     lock = osf_retrieve_lock(op->os, op->src_path, NULL);
     osf_obj_lock(lock);
 
-    if (op->type == OS_OBJECT_FILE_FLAG) {
+    if (op->type & OS_OBJECT_FILE_FLAG) {
         fd = fopen(fname, "w");
         if (fd == NULL) {
             osf_obj_unlock(lock);
@@ -2152,6 +2359,10 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         }
 
         fclose(fd);
+
+        if (op->type & OS_OBJECT_EXEC_FLAG) { //** See if we need to set the executable bit
+            osf_object_exec_modify(op->os, fname, op->type);
+        }
 
         //** Also need to make the attributes directory
         lio_os_path_split(fname, &dir, &base);
@@ -2223,17 +2434,10 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     gop_op_status_t status;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     int err;
 
-    if (osaz_object_create(osf->osaz, op->creds, op->dest_path) == 0) return(gop_failure_status);
-
-    //** Verify the source exists
-//  snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
-//  err = lio_os_local_filetype(sfname);
-//  if (err == 0) {
-//     log_printf(15, "ERROR source file missing sfname=%s dfname=%s\n", op->src_path, op->dest_path);
-//     return(gop_failure_status);
-//  }
+    if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
 
     //** Create the object like normal
     dop.os = op->os;
@@ -2411,11 +2615,12 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     int hslot, dslot;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     char *sapath, *dapath, *link_path;
     int err, ftype;
 
-    if ((osaz_object_access(osf->osaz, op->creds, op->src_path, OS_MODE_READ_IMMEDIATE) == 0) ||
-            (osaz_object_create(osf->osaz, op->creds, op->dest_path) == 0)) return(gop_failure_status);
+    if ((osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rpath, 1), OS_MODE_READ_IMMEDIATE) < 2) ||
+            (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0)) return(gop_failure_status);
 
     //** Verify the source exists
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
@@ -2531,12 +2736,13 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
     char dfname2[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     char *dir, *base;
     int err;
     gop_op_status_t status;
 
-    if ((osaz_object_remove(osf->osaz, creds, src_path) == 0) ||
-            (osaz_object_create(osf->osaz, creds, dest_path) == 0)) return(gop_failure_status);
+    if ((osaz_object_remove(osf->osaz, creds, NULL,  _osf_realpath(os, src_path, rpath, 1)) == 0) ||
+            (osaz_object_create(osf->osaz, creds, NULL, _osf_realpath(os, dest_path, rpath, 0)) == 0)) return(gop_failure_status);
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
     if (dolock == 1) {
@@ -2657,7 +2863,9 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     gop_op_status_t status;
     apr_thread_mutex_t *lock_src, *lock_dest;
+    osaz_attr_filter_t filter;
     void *val;
+    char rpath[OS_PATH_MAX];
     int v_size;
     int slot_src, slot_dest;
     int i, err, atype;
@@ -2680,12 +2888,14 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
         log_printf(15, " fsrc=%s (lock=%d) fdest=%s (lock=%d)   n=%d key_src[0]=%s key_dest[0]=%s\n", op->fd_src->object_name, slot_src, op->fd_dest->object_name, slot_dest, op->n, op->key_src[i], op->key_dest[i]);
-        if ((osaz_attr_access(osf->osaz, op->creds, op->fd_src->object_name, op->key_src[i], OS_MODE_READ_IMMEDIATE) == 1) &&
-                (osaz_attr_create(osf->osaz, op->creds, op->fd_dest->object_name, op->key_dest[i]) == 1)) {
+        _osf_realpath(op->os, op->fd_src->object_name, rpath, 1);  //** It's used twice.
+        if ((osaz_attr_access(osf->osaz, op->creds, NULL, rpath, op->key_src[i], OS_MODE_READ_IMMEDIATE, &filter) == 1) &&
+                (osaz_attr_create(osf->osaz, op->creds, NULL, rpath, op->key_dest[i]) == 1)) {
 
             v_size = -osf->max_copy;
             val = NULL;
             err = osf_get_attr(op->os, op->creds, op->fd_src, op->key_src[i], &val, &v_size, &atype);
+            osaz_attr_filter_apply(osf->osaz, op->key_src[i], OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
             if (err == 0) {
                 err = osf_set_attr(op->os, op->creds, op->fd_dest, op->key_dest[i], val, v_size, &atype, 0);
                 free(val);
@@ -2769,6 +2979,7 @@ gop_op_status_t osfile_symlink_multiple_attrs_fn(void *arg, int id)
     apr_thread_mutex_t *lock_dest;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     int slot_dest;
     int i, err;
 
@@ -2780,7 +2991,7 @@ gop_op_status_t osfile_symlink_multiple_attrs_fn(void *arg, int id)
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        if (osaz_attr_create(osf->osaz, op->creds, op->fd_dest->object_name, op->key_dest[i]) == 1) {
+        if (osaz_attr_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->fd_dest->object_name, rpath, 1), op->key_dest[i]) == 1) {
 
             osf_make_attr_symlink(op->os, sfname, op->src_path[i], op->key_src[i]);
             snprintf(dfname, OS_PATH_MAX, "%s/%s", op->fd_dest->attr_dir, op->key_dest[i]);
@@ -2869,14 +3080,16 @@ gop_op_status_t osfile_move_multiple_attrs_fn(void *arg, int id)
     int i, err;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
 
     lock = osf_retrieve_lock(op->os, op->fd->object_name, NULL);
     osf_obj_lock(lock);
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        if ((osaz_attr_create(osf->osaz, op->creds, op->fd->object_name, op->key_new[i]) == 1) &&
-                (osaz_attr_remove(osf->osaz, op->creds, op->fd->object_name, op->key_old[i]) == 1)) {
+        _osf_realpath(op->os, op->fd->object_name, rpath, 1);  //** It's used twice
+        if ((osaz_attr_create(osf->osaz, op->creds, NULL, rpath, op->key_new[i]) == 1) &&
+                (osaz_attr_remove(osf->osaz, op->creds, NULL, rpath, op->key_old[i]) == 1)) {
 
             //** Do a Virtual Attr check
             va1 = apr_hash_get(osf->vattr_hash, op->key_old[i], APR_HASH_KEY_STRING);
@@ -2956,16 +3169,23 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     lio_os_virtual_attr_t *va;
+    osaz_attr_filter_t filter;
     tbx_list_iter_t it;
     char *ca;
     FILE *fd;
     char fname[OS_PATH_MAX];
-    int n, bsize;
+    char rpath[OS_PATH_MAX];
+    int n, bsize, err;
 
-    if (osaz_attr_access(osf->osaz, creds, ofd->object_name, attr, OS_MODE_READ_BLOCKING) == 0) {
+log_printf(0, "BEFORE attr=%s\n", attr);
+
+    err = 0;
+    if (osaz_attr_access(osf->osaz, creds, NULL, _osf_realpath(os, ofd->object_name, rpath, 1), attr, OS_MODE_READ_BLOCKING, &filter) == 0) {
         *atype = 0;
         return(1);
     }
+
+log_printf(0, "AFTER  attr=%s\n", attr);
 
     //** Do a Virtual Attr check
     //** Check the prefix VA's first
@@ -2975,14 +3195,16 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     if (va != NULL) {
         n = (int)(long)va->priv;  //*** HACKERY **** to get the attribute length
         if (strncmp(attr, va->attribute, n) == 0) {  //** Prefix matches
-            return(va->get(va, os, creds, ofd, attr, val, v_size, atype));
+            err = va->get(va, os, creds, ofd, attr, val, v_size, atype);
+            goto done;
         }
     }
 
     //** Now check the normal VA's
     va = apr_hash_get(osf->vattr_hash, attr, APR_HASH_KEY_STRING);
     if (va != NULL) {
-        return(va->get(va, os, creds, ofd, attr, val, v_size, atype));
+        err = va->get(va, os, creds, ofd, attr, val, v_size, atype);
+        goto done;
     }
 
 
@@ -3029,11 +3251,14 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         ca[*v_size] = 0;
     }
 
-    log_printf(15, "PTR val=%p *val=%s\n", val, (char *)(*val));
-
     fclose(fd);
 
-    return(0);
+done:
+    osaz_attr_filter_apply(osf->osaz, attr, OS_MODE_READ_BLOCKING, val, v_size, filter);
+
+    log_printf(15, "PTR val=%p *val=%s\n", val, (char *)(*val));
+
+    return(err);
 }
 
 //***********************************************************************
@@ -3206,11 +3431,16 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     tbx_list_iter_t it;
     FILE *fd;
     lio_os_virtual_attr_t *va;
+    osaz_attr_filter_t filter;
     int n;
     char *ca;
     char fname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
+    char *rp;
 
-    if (osaz_attr_access(osf->osaz, creds, ofd->object_name, attr, OS_MODE_READ_BLOCKING) == 0) {
+    rp = _osf_realpath(os, ofd->object_name, rpath, 1);
+
+    if (osaz_attr_access(osf->osaz, creds, NULL, rp, attr, OS_MODE_WRITE_BLOCKING, &filter) == 0) {
         *atype = 0;
         return(1);
     }
@@ -3233,7 +3463,7 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     }
 
     if (v_size < 0) { //** Want to remove the attribute
-        if (osaz_attr_remove(osf->osaz, creds, ofd->object_name, attr) == 0) return(1);
+        if (osaz_attr_remove(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
         snprintf(fname, OS_PATH_MAX, "%s/%s", ofd->attr_dir, attr);
         safe_remove(os, fname);
         return(0);
@@ -3247,7 +3477,7 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
 
     //** Store the value
     if (lio_os_local_filetype(fname) != OS_OBJECT_FILE_FLAG) {
-        if (osaz_attr_create(osf->osaz, creds, ofd->object_name, attr) == 0) return(1);
+        if (osaz_attr_create(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
     }
 
     fd = fopen(fname, (append_val == 0) ? "w" : "a");
@@ -3349,7 +3579,9 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
     int i, n, atype;
     apr_ssize_t klen;
     lio_os_virtual_attr_t *va;
+    osaz_attr_filter_t filter;
     struct dirent *entry;
+    char rpath[OS_PATH_MAX];
     lio_os_regex_table_t *rex = it->regex;
 
     //** Check the VA's 1st
@@ -3359,9 +3591,10 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
         for (i=0; i<rex->n; i++) {
             n = (rex->regex_entry[i].fixed == 1) ? strcmp(rex->regex_entry[i].expression, va->attribute) : regexec(&(rex->regex_entry[i].compiled), va->attribute, 0, NULL, 0);
             if (n == 0) { //** got a match
-                if (osaz_attr_access(osf->osaz, it->creds, it->fd->object_name, va->attribute, OS_MODE_READ_BLOCKING) == 1) {
+                if (osaz_attr_access(osf->osaz, it->creds, NULL, _osf_realpath(it->os, it->fd->object_name, rpath, 1), va->attribute, OS_MODE_READ_BLOCKING, &filter) == 1) {
                     *v_size = it->v_max;
                     osf_get_attr(it->fd->os, it->creds, it->fd, va->attribute, val, v_size, &atype);
+                    osaz_attr_filter_apply(osf->osaz, va->attribute, OS_MODE_READ_BLOCKING, val, v_size, filter);
                     *key = strdup(va->attribute);
                     return(0);
                 }
@@ -3384,9 +3617,10 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
             }
 
             if (n == 0) { //** got a match
-                if (osaz_attr_access(osf->osaz, it->creds, it->fd->object_name, entry->d_name, OS_MODE_READ_BLOCKING) == 1) {
+                if (osaz_attr_access(osf->osaz, it->creds, NULL, _osf_realpath(it->os, it->fd->object_name, rpath, 1), entry->d_name, OS_MODE_READ_BLOCKING, &filter) == 1) {
                     *v_size = it->v_max;
                     osf_get_attr(it->fd->os, it->creds, it->fd, entry->d_name, val, v_size, &atype);
+                    osaz_attr_filter_apply(osf->osaz, entry->d_name, OS_MODE_READ_BLOCKING, val, v_size, filter);
                     *key = strdup(entry->d_name);
                     log_printf(15, "key=%s val=%s\n", *key, (char *)(*val));
                     return(0);
@@ -3695,6 +3929,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     osfile_fd_t *fd;
     int ftype, err;
     char fname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
@@ -3707,7 +3942,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         return(gop_failure_status);
     }
 
-    if (osaz_object_access(osf->osaz, op->creds, op->path, op->mode) == 0)  {
+    if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->path, rpath, 1), op->mode) == 0)  {
         return(gop_failure_status);
     }
 
@@ -3858,23 +4093,6 @@ gop_op_generic_t *osfile_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
 }
 
 //***********************************************************************
-// osfile_cred_init - Intialize a set of credentials
-//***********************************************************************
-
-lio_creds_t *osfile_cred_init(lio_object_service_fn_t *os, int type, void **args)
-{
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    lio_creds_t *creds;
-
-    creds = authn_cred_init(osf->authn, type, args);
-
-    //** Right now this is filled with dummy routines until we get an official authn/authz implementation
-    an_cred_set_id(creds, args[1]);
-
-    return(creds);
-}
-
-//***********************************************************************
 // osf_fsck_check_file - Checks the file integrity
 //***********************************************************************
 
@@ -3882,12 +4100,13 @@ int osf_fsck_check_file(lio_object_service_fn_t *os, lio_creds_t *creds, char *f
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char fullname[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     char *faname;
     int ftype;
     FILE *fd;
 
     //** Check if we can access it.  If not flag success and return
-    if (osaz_object_access(osf->osaz, creds, fname, OS_MODE_READ_IMMEDIATE) != 1) return(OS_FSCK_GOOD);
+    if (osaz_object_access(osf->osaz, creds, NULL, _osf_realpath(os, fname, rpath, 1), OS_MODE_READ_IMMEDIATE) != 2) return(OS_FSCK_GOOD);
 
     //** Make sure the proxy entry exists
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fname);
@@ -3946,10 +4165,11 @@ int osf_fsck_check_dir(lio_object_service_fn_t *os, lio_creds_t *creds, char *fn
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char *faname;
+    char rpath[OS_PATH_MAX];
     int ftype;
 
     //** Check if we can access it.  If not flag success and return
-    if (osaz_object_access(osf->osaz, creds, fname, OS_MODE_READ_IMMEDIATE) != 1) return(OS_FSCK_GOOD);
+    if (osaz_object_access(osf->osaz, creds,NULL,  _osf_realpath(os, fname, rpath, 1), OS_MODE_READ_IMMEDIATE) != 2) return(OS_FSCK_GOOD);
 
     //** Make sure the FA directory exists
     faname = object_attr_dir(os, osf->file_path, fname, OS_OBJECT_DIR_FLAG);
@@ -4160,15 +4380,6 @@ void osfile_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 }
 
 //***********************************************************************
-// osfile_cred_destroy - Destroys a set ot credentials
-//***********************************************************************
-
-void osfile_cred_destroy(lio_object_service_fn_t *os, lio_creds_t *creds)
-{
-    an_cred_destroy(creds);
-}
-
-//***********************************************************************
 // osfile_print_running_config - Prints the running config
 //***********************************************************************
 
@@ -4183,8 +4394,10 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "max_copy = %d\n", osf->max_copy);
     fprintf(fd, "hardlink_dir_size = %d\n", osf->hardlink_dir_size);
     fprintf(fd, "authz = %s\n", osf->authz_section);
-    fprintf(fd, "authn = %s\n", osf->authn_section);
     fprintf(fd, "\n");
+
+    //** Print the AuthZ configuration
+    osaz_print_running_config(osf->osaz, fd, 1);
 }
 
 //***********************************************************************
@@ -4208,11 +4421,9 @@ void osfile_destroy(lio_object_service_fn_t *os)
     tbx_pc_destroy(osf->task_pc);
 
     osaz_destroy(osf->osaz);
-    authn_destroy(osf->authn);
 
     apr_pool_destroy(osf->mpool);
 
-    if (osf->authn_section) free(osf->authn_section);
     if (osf->authz_section) free(osf->authz_section);
     if (osf->section) free(osf->section);
     free(osf->host_id);
@@ -4232,7 +4443,6 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     lio_object_service_fn_t *os;
     lio_osfile_priv_t *osf;
     osaz_create_t *osaz_create;
-    authn_create_t *authn_create;
     char pname[OS_PATH_MAX], pattr[OS_PATH_MAX];
     char *atype, *asection;
     int i, err;
@@ -4247,12 +4457,12 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
 
     osf->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);
     osf->base_path = NULL;
+    osf->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     if (fd == NULL) {
         osf->base_path = strdup("./osfile");
+
         osaz_create = lio_lookup_service(ess, OSAZ_AVAILABLE, OSAZ_TYPE_FAKE);
         osf->osaz = (*osaz_create)(ess, NULL, NULL, os);
-        authn_create = lio_lookup_service(ess, AUTHN_AVAILABLE, AUTHN_TYPE_FAKE);
-        osf->authn = (*authn_create)(ess, NULL, NULL);
         osf->internal_lock_size = 200;
         osf->max_copy = 1024*1024;
         osf->hardlink_dir_size = 256;
@@ -4261,7 +4471,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         osf->internal_lock_size = tbx_inip_get_integer(fd, section, "lock_table_size", osf_default_options.internal_lock_size);
         osf->max_copy = tbx_inip_get_integer(fd, section, "max_copy", osf_default_options.max_copy);
         osf->hardlink_dir_size = tbx_inip_get_integer(fd, section, "hardlink_dir_size", osf_default_options.hardlink_dir_size);
-        asection = tbx_inip_get_string(fd, section, "authz", osf_default_options.authn_section);
+        asection = tbx_inip_get_string(fd, section, "authz", osf_default_options.authz_section);
         osf->authz_section = asection;
         atype = (asection == NULL) ? strdup(OSAZ_TYPE_FAKE) : tbx_inip_get_string(fd, asection, "type", OSAZ_TYPE_FAKE);
         osaz_create = lio_lookup_service(ess, OSAZ_AVAILABLE, atype);
@@ -4269,20 +4479,6 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         free(atype);
         if (osf->osaz == NULL) {
             free(osf->base_path);
-            free(osf);
-            free(os);
-            return(NULL);
-        }
-
-        asection = tbx_inip_get_string(fd, section, "authn", osf_default_options.authn_section);
-        osf->authn_section = asection;
-        atype = (asection == NULL) ? strdup(AUTHN_TYPE_FAKE) : tbx_inip_get_string(fd, asection, "type", AUTHN_TYPE_FAKE);
-        authn_create = lio_lookup_service(ess, AUTHN_AVAILABLE, atype);
-        osf->authn = (*authn_create)(ess, fd, asection);
-        free(atype);
-        if (osf->osaz == NULL) {
-            free(osf->base_path);
-            osaz_destroy(osf->osaz);
             free(osf);
             free(os);
             return(NULL);
@@ -4387,9 +4583,9 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
 
     os->print_running_config = osfile_print_running_config;
     os->destroy_service = osfile_destroy;
-    os->cred_init = osfile_cred_init;
-    os->cred_destroy = osfile_cred_destroy;
     os->exists = osfile_exists;
+    os->realpath = osfile_realpath;
+    os->exec_modify = osfile_object_exec_modify;
     os->create_object = osfile_create_object;
     os->remove_object = osfile_remove_object;
     os->remove_regex_object = osfile_remove_regex_object;
@@ -4502,9 +4698,9 @@ int local_next_object(local_object_iter_t *it, char **myfname, int *prefix_len)
 //  Dummy OSAZ routine for the local iter
 //***********************************************************************
 
-int local_osaz_access(lio_os_authz_t *osa, lio_creds_t *c, char *path, int mode)
+int local_osaz_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, int mode)
 {
-    return(1);
+    return(2);
 }
 
 //***********************************************************************

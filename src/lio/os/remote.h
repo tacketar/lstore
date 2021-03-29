@@ -40,8 +40,12 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 //*** List the various OS commands
 #define OSR_EXISTS_KEY             "os_exists"
 #define OSR_EXISTS_SIZE            9
+#define OSR_REALPATH_KEY           "os_realpath"
+#define OSR_REALPATH_SIZE          11
 #define OSR_CREATE_OBJECT_KEY      "os_create_object"
 #define OSR_CREATE_OBJECT_SIZE     16
+#define OSR_OBJECT_EXEC_MODIFY_KEY "os_object_exec_modify"
+#define OSR_OBJECT_EXEC_MODIFY_SIZE  21
 #define OSR_REMOVE_OBJECT_KEY      "os_remove_object"
 #define OSR_REMOVE_OBJECT_SIZE     16
 #define OSR_REMOVE_REGEX_OBJECT_KEY  "os_remove_regex_object"
@@ -110,12 +114,11 @@ struct lio_osrs_priv_t {
     char *hostname;             //** Addres to bind to
     gop_mq_portal_t *server_portal;
     gop_thread_pool_context_t *tpc;
-    int ongoing_interval;       //** Ongoing command check interval
+    int ongoing_interval;       //** Ongoing command check interval. Only used if hostname is defined
     int shutdown;
     int max_stream;
     int max_active;             //** Max size of the active table.
     lio_authn_t *authn;
-    lio_creds_t *dummy_creds;       //** Dummy creds. Should be replaced when proper AuthN/AuthZ is added
     char *fname_active;         //** Filename for logging ACTIVE operations.
     char *fname_activity;       //** Filename for logging create/remove/move operations.
 };
@@ -123,7 +126,6 @@ struct lio_osrs_priv_t {
 struct lio_osrc_priv_t {
     char *section;
     char *temp_section;
-    char *authn_section;
     lio_object_service_fn_t *os_temp;  //** Used only for initial debugging of the client/server
     lio_object_service_fn_t *os_remote;//** Used only for initial debugging of the client/server
     apr_thread_mutex_t *lock;
@@ -139,7 +141,6 @@ struct lio_osrc_priv_t {
     lio_os_authz_t *osaz;
     lio_authn_t *authn;
     apr_pool_t *mpool;
-    apr_thread_t *heartbeat_thread;
     gop_thread_pool_context_t *tpc;
     int stream_timeout;
     int timeout;

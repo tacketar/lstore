@@ -504,6 +504,7 @@ int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat
             if (S_ISREG(stat_object->st_mode)) {
                 ftype |= OS_OBJECT_FILE_FLAG;
                 if (stat_object->st_nlink > 1) ftype |= OS_OBJECT_HARDLINK_FLAG;
+                if (S_IXUSR & stat_object->st_mode) ftype |= OS_OBJECT_EXEC_FLAG;
             } else if (S_ISDIR(stat_object->st_mode)) {
                 ftype |= OS_OBJECT_DIR_FLAG;
             }
