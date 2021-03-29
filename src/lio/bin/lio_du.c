@@ -248,7 +248,7 @@ int main(int argc, char **argv)
 
                 tbx_type_malloc_clear(de, du_entry_t, 1);
                 de->fname = make_fname(fname, ftype);
-                log_printf(15, "sumonly inserting fname=%s\n", fname);
+                log_printf(15, "sumonly inserting fname=%s\n", de->fname);
                 de->ftype = ftype;
                 de->flen = strlen(de->fname);
 
