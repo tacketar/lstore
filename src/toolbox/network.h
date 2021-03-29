@@ -20,14 +20,13 @@
 #ifndef __NETWORK_H_
 #define __NETWORK_H_
 
-#define N_BUFSIZE  1024
-
 #include <apr_network_io.h>
 #include <apr_pools.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
 #include <apr_time.h>
+#include <sodium.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -41,6 +40,13 @@
 extern "C" {
 #endif
 
+#define N_ENCRYPT_PACKET_DATA_SIZE (256*1024)
+#define N_BUFSIZE  N_ENCRYPT_PACKET_DATA_SIZE
+#define N_ENCRYPT_INT_SIZE 3
+#define N_ENCRYPT_PACKET_HEADER_SIZE crypto_secretstream_xchacha20poly1305_HEADERBYTES
+#define N_ENCRYPT_PACKET_ENV_SIZE crypto_secretstream_xchacha20poly1305_ABYTES
+#define N_ENCRYPT_PACKET_SIZE (N_ENCRYPT_INT_SIZE + N_ENCRYPT_PACKET_ENV_SIZE  + N_ENCRYPT_PACKET_DATA_SIZE)
+
 #define NETWORK_MON_MAX 10   //** Max number of ports allowed to monitor
 
 typedef int ns_native_fd_t;
@@ -49,16 +55,36 @@ typedef void net_sock_t;
 
 struct ns_monitor_s;   //** Forward declaration
 
+typedef struct {
+    int start;
+    int end;
+    crypto_secretstream_xchacha20poly1305_state state_write;
+    crypto_secretstream_xchacha20poly1305_state state_read;
+    unsigned char header_read[N_ENCRYPT_PACKET_HEADER_SIZE];
+    unsigned char header_write[N_ENCRYPT_PACKET_HEADER_SIZE];
+    unsigned char remote_key_pk[crypto_kx_PUBLICKEYBYTES];  //** These are all the keys for encryption
+    unsigned char my_key_pk[crypto_kx_PUBLICKEYBYTES];
+    unsigned char my_key_sk[crypto_kx_SECRETKEYBYTES];
+    unsigned char my_key_tx[crypto_kx_SESSIONKEYBYTES];
+    unsigned char my_key_rx[crypto_kx_SESSIONKEYBYTES];
+    unsigned char enc_packet_write_buf[N_ENCRYPT_PACKET_SIZE];
+    unsigned char enc_packet_write_cipher[N_ENCRYPT_PACKET_SIZE];
+    unsigned char enc_packet_read_buf[N_ENCRYPT_PACKET_SIZE];
+    unsigned char enc_packet_read_cipher[N_ENCRYPT_PACKET_SIZE];
+} tbx_ns_encrypt_t;
+
 struct tbx_ns_t {
     int id;                  //ID for tracking purposes
     int cuid;                //Unique ID for the connection.  Changes each time the connection is open/closed
     int start;               //Starting position of buffer data
     int end;                 //End position of buffer data
+    int encrypted;           //** Use encrption.  Enabled at connection time
     tbx_net_type_t sock_type;//Socket type
     net_sock_t *sock;        //Private socket data.  Depends on socket type
     apr_time_t last_read;        //Last time this connection was used
     apr_time_t last_write;        //Last time this connection was used
     char buffer[N_BUFSIZE];  //intermediate buffer for the conection
+    tbx_ns_encrypt_t *enc;   //** Encryption structure if enabled
     apr_pool_t *mpool;       //** Memory pool for the connection (workaround since APR pools aren't thread safe)
     apr_thread_mutex_t *read_lock;    //Read lock
     apr_thread_mutex_t *write_lock;   //Write lock

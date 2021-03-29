@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sodium.h>
 
 // Private implementation
 #include "debug.h"
@@ -39,6 +40,11 @@
 #include "tbx/type_malloc.h"
 #include "transfer_buffer.h"
 
+#define ENCRYPT_STRING      "ENCYRPT:"
+#define ENCRYPT_STRING_SIZE 8
+#define ENCRYPT_KEY_SIZE    crypto_kx_PUBLICKEYBYTES
+#define ENCRYPT_PACKET_SIZE (ENCRYPT_STRING_SIZE+ENCRYPT_KEY_SIZE)
+
 // Accessors
 int tbx_ns_getid(tbx_ns_t *ns) {
     return ns->id;
@@ -47,6 +53,8 @@ void tbx_ns_setid(tbx_ns_t *ns, int id) {
     ns->id = id;
 }
 
+void tbx_ns_encrypt_enable(tbx_ns_t *ns) { ns->encrypted = 1; }
+int tbx_ns_encrypt_status(tbx_ns_t *ns) { return(ns->encrypted); }
 char *tbx_nm_host_get(tbx_ns_monitor_t *nm) {return(nm->address); }
 int tbx_nm_port_get(tbx_ns_monitor_t *nm) {return(nm->port); }
 tbx_ns_monitor_t *tbx_ns_monitor_get(tbx_ns_t *ns) { return (ns->nm); }
@@ -121,6 +129,7 @@ void set_network_tcpsize(int tcpsize)
 {
     tcp_bufsize = tcpsize;
 }
+
 int get_network_tcpsize(int tcpsize)
 {
     return(tcp_bufsize);
@@ -390,6 +399,7 @@ void _ns_init(tbx_ns_t *ns, int incid)
     ns->last_write = apr_time_now();
     ns->start = 0;
     ns->end = -1;
+    ns->encrypted = 0;
     memset(ns->peer_address, 0, sizeof(ns->peer_address));
 
     memset(&(ns->write_chksum), 0, sizeof(tbx_ns_chksum_t));
@@ -439,12 +449,161 @@ void ns_clone(tbx_ns_t *dest_ns, tbx_ns_t *src_ns)
 }
 
 //*********************************************************************
+// _ns_encrypt_client - Performs the handshake for doing encryption
+//*********************************************************************
+
+int _ns_encrypt_client(tbx_ns_t *ns)
+{
+    tbx_tbuf_t ns_tb;
+    tbx_ns_timeout_t to;
+    int nbytes = 0;
+
+    ns->encrypted = 0;  //** We disable if for the handshake
+
+    //** Make the encryption object
+    tbx_type_malloc_clear(ns->enc, tbx_ns_encrypt_t, 1);
+
+    //** Make my keys and send my public key to the server
+    //** Make the keys
+    crypto_kx_keypair(ns->enc->my_key_pk, ns->enc->my_key_sk);
+
+    //** Send them my public key
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_BUFSIZE, ns->buffer);
+    memcpy(ns->buffer, ENCRYPT_STRING, ENCRYPT_STRING_SIZE);
+    memcpy(ns->buffer + ENCRYPT_STRING_SIZE, ns->enc->my_key_pk, crypto_kx_PUBLICKEYBYTES);
+    nbytes = _tbx_ns_write(ns, &ns_tb, 0, ENCRYPT_PACKET_SIZE, to, 0);
+    if (nbytes != ENCRYPT_PACKET_SIZE) {
+        log_printf(0, "ERROR: Failed sending encrypt initial packet! ns=%d\n", ns->id);
+        return(1);
+    }
+
+    //** Attempt to Read the server's public key
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, crypto_kx_PUBLICKEYBYTES, (char *)ns->enc->remote_key_pk);
+    nbytes = _tbx_ns_read(ns, &ns_tb, 0, crypto_kx_PUBLICKEYBYTES, to, 0);  //**there should be 0 bytes in buffer now since this si the 1st read
+    if (nbytes != crypto_kx_PUBLICKEYBYTES) {
+        log_printf(0, "ERROR: Failed getting server public key! ns=%d\n", ns->id);
+        return(1);
+    }
+
+    //** Make the session keys
+    if (crypto_kx_client_session_keys(ns->enc->my_key_rx, ns->enc->my_key_tx, ns->enc->my_key_pk, ns->enc->my_key_sk, ns->enc->remote_key_pk) != 0) {
+        log_printf(0, "ERROR: Failed generating session keys! ns=%d\n", ns->id);
+        return(1);
+    }
+
+    //** Initialize the 2 separate encryption streams. We have to exchange the TX header/nonces
+    crypto_secretstream_xchacha20poly1305_init_push(&(ns->enc->state_write), ns->enc->header_write, ns->enc->my_key_tx);
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_HEADER_SIZE , (char *)ns->enc->header_write);
+    nbytes = _tbx_ns_write(ns, &ns_tb, 0, N_ENCRYPT_PACKET_HEADER_SIZE , to, 0);
+    if (nbytes != N_ENCRYPT_PACKET_HEADER_SIZE ) {
+        log_printf(0, "ERROR: Failed sending header nonce packet! ns=%d\n", ns->id);
+        return(1);
+    }
+
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_HEADER_SIZE , (char *)ns->enc->header_read);
+    nbytes = _tbx_ns_read(ns, &ns_tb, 0, N_ENCRYPT_PACKET_HEADER_SIZE , to, 0);
+    if (nbytes != N_ENCRYPT_PACKET_HEADER_SIZE) {
+        log_printf(0, "ERROR: Failed getting reading header nonce packet! ns=%d\n", ns->id);
+        return(1);
+    }
+    crypto_secretstream_xchacha20poly1305_init_pull(&(ns->enc->state_read), ns->enc->header_read, ns->enc->my_key_rx);
+
+    ns->encrypted = 1;  //** Flag the connection as encrypted
+
+    return(0);
+}
+
+//*********************************************************************
+// _ns_encrypt_server_handshake - Performs the handshake for doing encryption on the server
+//    if the client requests it.  This is accomplished by checking for the handshake
+//    encrypt command in the first few seconds of the connections
+//*********************************************************************
+
+int _ns_encrypt_server_handshake(tbx_ns_t *ns)
+{
+    tbx_tbuf_t ns_tb;
+    tbx_ns_timeout_t to;
+    int nbytes = 0;
+    int err = 0;
+
+    //** Attempt to Read the first packet and dump it into the stream buffer
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_BUFSIZE, ns->buffer);
+    nbytes = _tbx_ns_read(ns, &ns_tb, 0, ENCRYPT_PACKET_SIZE, to, 0);  //**there should be 0 bytes in buffer now since this si the 1st read
+    if (nbytes != ENCRYPT_PACKET_SIZE) goto done; //** Not enough characters to enable encryption
+
+    //** check if they are requesting encryption
+    if (memcmp(ns->buffer, ENCRYPT_STRING, ENCRYPT_STRING_SIZE) != 0) goto done;  //** No match so kick out
+
+    //** If we made it here then we're going to try and use encyption
+    nbytes = 0;  //** We've consumed the initial packet
+    tbx_type_malloc_clear(ns->enc, tbx_ns_encrypt_t, 1);
+
+    //** Store the public key of the client
+    memcpy(ns->enc->remote_key_pk, ns->buffer + ENCRYPT_STRING_SIZE, crypto_kx_PUBLICKEYBYTES);
+
+    //** Make the keys
+    crypto_kx_keypair(ns->enc->my_key_pk, ns->enc->my_key_sk);
+
+    //** Send them my public key
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_BUFSIZE, (char *)ns->enc->my_key_pk);
+    nbytes = _tbx_ns_write(ns, &ns_tb, 0, crypto_kx_PUBLICKEYBYTES, to, 0);
+    err = (nbytes == crypto_kx_PUBLICKEYBYTES) ? 0 : 1;
+    nbytes = 0;
+
+    //** Make the session keys
+    memcpy(ns->enc->remote_key_pk, ns->buffer + ENCRYPT_STRING_SIZE, crypto_kx_PUBLICKEYBYTES);
+    if (crypto_kx_server_session_keys(ns->enc->my_key_rx, ns->enc->my_key_tx, ns->enc->my_key_pk, ns->enc->my_key_sk, ns->enc->remote_key_pk) != 0) {
+        log_printf(0, "ERROR: Failed generating session keys! ns=%d\n", ns->id);
+        err = 1;
+        goto done;
+
+    }
+
+    //** Initialize the 2 separate encryption streams. We have to exchange the TX header/nonces
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_HEADER_SIZE , (char *)ns->enc->header_read);
+    nbytes = _tbx_ns_read(ns, &ns_tb, 0, N_ENCRYPT_PACKET_HEADER_SIZE , to, 0);
+    if (nbytes != N_ENCRYPT_PACKET_HEADER_SIZE) {
+        log_printf(0, "ERROR: Failed getting reading header nonce packet! ns=%d\n", ns->id);
+        return(1);
+    }
+    crypto_secretstream_xchacha20poly1305_init_pull(&(ns->enc->state_read), ns->enc->header_read, ns->enc->my_key_rx);
+
+    crypto_secretstream_xchacha20poly1305_init_push(&(ns->enc->state_write), ns->enc->header_write, ns->enc->my_key_tx);
+    tbx_ns_timeout_set(&to, 5, 0);
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_HEADER_SIZE , (char *)ns->enc->header_write);
+    nbytes = _tbx_ns_write(ns, &ns_tb, 0, N_ENCRYPT_PACKET_HEADER_SIZE , to, 0);
+    if (nbytes != N_ENCRYPT_PACKET_HEADER_SIZE ) {
+        log_printf(0, "ERROR: Failed sending header nonce packet! ns=%d\n", ns->id);
+        return(1);
+    }
+
+    ns->encrypted = 1;  //** Flag the connection as encrypted
+
+done:
+    if (ns->encrypted == 0) {
+        if (nbytes > 0) {
+            ns->start = 0;
+            ns->end = nbytes-1;
+        }
+    }
+
+    return(err);
+}
+
+//*********************************************************************
 // net_connect - Creates a connection to a remote host.
 //*********************************************************************
 
 int tbx_ns_connect(tbx_ns_t *ns, const char *hostname, int port, tbx_ns_timeout_t timeout)
 {
-    int err;
+    int err, encrypted;
 
     lock_ns(ns);
 
@@ -461,6 +620,7 @@ int tbx_ns_connect(tbx_ns_t *ns, const char *hostname, int port, tbx_ns_timeout_
         return(1);
     }
 
+    encrypted = ns->encrypted; //** This get's cleared in the following call
     err = ns->connect(ns->sock, hostname, port, timeout);
     if (err != 0) {
         log_printf(5, "net_connect: select failed.  Hostname: %s  Port: %d select=%d errno: %d error: %s\n", hostname, port, err, errno, strerror(errno));
@@ -471,13 +631,16 @@ int tbx_ns_connect(tbx_ns_t *ns, const char *hostname, int port, tbx_ns_timeout_
     ns->set_peer(ns->sock, ns->peer_address, sizeof(ns->peer_address));
 
     ns->id = tbx_ns_generate_id();
+    ns->encrypted = encrypted; //** Restore it
 
     log_printf(10, "net_connect:  Made connection to %s:%d on ns=%d address=%s\n", hostname, port, ns->id, ns->peer_address);
+
+    err = (ns->encrypted) ? _ns_encrypt_client(ns) : 0;
 
     log_printf(10, "net_connect: final ns=%d\n", ns->id);
     unlock_ns(ns);
 
-    return(0);
+    return(err);
 }
 
 //*********************************************************************
@@ -745,6 +908,10 @@ void tbx_ns_close(tbx_ns_t *ns)
 void teardown_netstream(tbx_ns_t *ns)
 {
     tbx_ns_close(ns);
+    if (ns->enc) {
+        free(ns->enc);
+        ns->enc = NULL;
+    }
     apr_thread_mutex_destroy(ns->read_lock);
     apr_thread_mutex_destroy(ns->write_lock);
     apr_pool_destroy(ns->mpool);
@@ -817,7 +984,73 @@ void tbx_network_destroy(tbx_network_t *net)
 }
 
 //*********************************************************************
-// write_netstream - Writes characters to the stream with a max wait
+// _ns_encrypt_packet_write - Writes an encrypted packet
+//*********************************************************************
+
+int _ns_encrypt_packet_write(tbx_ns_t *ns, int bsize, tbx_ns_timeout_t timeout)
+{
+    int nbytes, n, nleft, err;
+    unsigned char *c = ns->enc->enc_packet_write_cipher;
+    tbx_tbuf_t tb;
+
+    if (bsize == 0) return(0);
+
+    if (ns->sock_status(ns->sock) != 1) {
+        log_printf(15, "write_netstream: connection closed!  ns=%d\n", ns->id);
+        return(-1);
+    }
+
+    //** Store the size in the buffer
+    n = bsize;
+    c[0] = n % 256; n = n / 256;
+    c[1] = n % 256; n = n / 256;
+    c[2] = n;
+
+    //** Make the ciphertext
+    crypto_secretstream_xchacha20poly1305_push(&(ns->enc->state_write), c + N_ENCRYPT_INT_SIZE, NULL, ns->enc->enc_packet_write_buf, bsize, NULL, 0, 0);
+
+    //** Send it
+    nleft = N_ENCRYPT_INT_SIZE + N_ENCRYPT_PACKET_ENV_SIZE + bsize;
+    n = 0;
+    tbx_tbuf_single(&tb, nleft, (char *)c);
+    do {
+        nbytes = ns->write(ns->sock, &tb, n, nleft, timeout);
+        if (nbytes > 0) {
+            nleft -= nbytes;
+            n += nbytes;
+        }
+    } while ((nleft > 0) && (nbytes >= 0));
+
+    err = (nbytes >= 0) ? bsize : nbytes;
+
+    return(err);
+}
+
+//*********************************************************************
+// _ns_encrypt_write - Writes data to an encrypted stream
+//*********************************************************************
+
+int _ns_encrypt_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize, tbx_ns_timeout_t timeout)
+{
+    int i, n, dn, nbytes, err;
+    tbx_tbuf_t ns_tb;
+
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_DATA_SIZE, (char *)ns->enc->enc_packet_write_buf);
+    nbytes = 0;
+    for (i=0; i<bsize; i = i + N_ENCRYPT_PACKET_DATA_SIZE) {
+        dn = ((i+N_ENCRYPT_PACKET_DATA_SIZE) < bsize) ? N_ENCRYPT_PACKET_DATA_SIZE : bsize - i;
+        err = tbx_tbuf_copy(buffer, boff + i, &ns_tb, 0, dn, 0);
+        if (err) return(-1);
+        n = _ns_encrypt_packet_write(ns, dn, timeout);
+        if (n < 0) return(n);  //** Kick out on error
+        nbytes += n;
+    }
+
+    return(nbytes);
+}
+
+//*********************************************************************
+// _tbx_ns_write - Writes characters to the stream with a max wait
 //*********************************************************************
 
 int _tbx_ns_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize, tbx_ns_timeout_t timeout, int dolock)
@@ -844,7 +1077,7 @@ int _tbx_ns_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize
         }
     }
 
-    total_bytes = ns->write(ns->sock, buffer, boff, bsize, timeout);
+    total_bytes = (ns->encrypted == 0) ? ns->write(ns->sock, buffer, boff, bsize, timeout) : _ns_encrypt_write(ns, buffer, boff, bsize, timeout);
 
     if (total_bytes == -1) {
         log_printf(10, "write_netstream:  Dead connection! ns=%d\n", tbx_ns_getid(ns));
@@ -871,7 +1104,7 @@ int _tbx_ns_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize
 }
 
 //*********************************************************************
-// write_netstream - Writes characters to the stream with a max wait
+// tbx_ns_write - Writes characters to the stream with a max wait
 //*********************************************************************
 
 int tbx_ns_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize, tbx_ns_timeout_t timeout)
@@ -1022,6 +1255,113 @@ int scan_and_copy_stream(char *inbuf, int insize, char *outbuf, int outsize, int
 }
 
 //*********************************************************************
+
+int _ns_read(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize, tbx_ns_timeout_t timeout)
+{
+    int nbytes, nleft, n;
+
+    nleft = bsize;
+    n = 0;
+    do {
+        nbytes = ns->read(ns->sock, buffer, boff+n, nleft, timeout);
+        if (nbytes > 0) {
+            nleft -= nbytes;
+            n += nbytes;
+        }
+    } while ((nleft > 0) && (nbytes >= 0));
+
+    return(((n==nbytes) ? n : nbytes));
+}
+
+//*********************************************************************
+// _ns_encrypt_packet_read - Reads an encrypted packet
+//*********************************************************************
+
+int _ns_encrypt_packet_read(tbx_ns_t *ns, tbx_ns_timeout_t timeout)
+{
+    int nbytes, n;
+    unsigned char tag;
+    unsigned char *c = ns->enc->enc_packet_read_cipher;
+    tbx_tbuf_t tb;
+
+    //** Make sure the socket is working
+    if (ns->sock_status(ns->sock) != 1) {
+        log_printf(15, "connection closed!  ns=%d\n", ns->id);
+        return(-1);
+    }
+
+    //** Get a fresh packet
+    //** Read the size
+    tbx_tbuf_single(&tb, N_ENCRYPT_PACKET_ENV_SIZE + N_ENCRYPT_PACKET_DATA_SIZE, (char *)c);
+    n = _ns_read(ns, &tb, 0, N_ENCRYPT_INT_SIZE, timeout);
+    if (n <= 0) return(n);  //** Kick out early if nothing is available or an error
+
+    //** If we made it here we're commited to reading a full packet
+    nbytes = c[0] + 256*c[1] + 256*256*c[2];
+    if (nbytes > N_ENCRYPT_PACKET_DATA_SIZE) return(-1);
+
+    //** And the packet
+    n = _ns_read(ns, &tb, 0, nbytes + N_ENCRYPT_PACKET_ENV_SIZE, timeout);
+    if (n <= 0) return(-1);
+
+    //** Decrypt it
+    if (crypto_secretstream_xchacha20poly1305_pull(&(ns->enc->state_read), ns->enc->enc_packet_read_buf, NULL, &tag, c, nbytes+N_ENCRYPT_PACKET_ENV_SIZE, NULL, 0) != 0) {
+        log_printf(0, "ERROR: Bad encrypted packet! ns=%d\n", ns->id);
+        return(-1);
+    }
+
+    return(nbytes);
+}
+
+//*********************************************************************
+// _ns_encrypt_read - Reads data from an ecrypted stream
+//*********************************************************************
+
+int _ns_encrypt_read(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize, tbx_ns_timeout_t timeout)
+{
+    int n, err;
+    tbx_tbuf_t ns_tb;
+
+    //** See if there is data in the buffer already
+    if (ns->enc->end > 0) {
+        n = ns->enc->end - ns->enc->start + 1;
+        tbx_tbuf_single(&ns_tb, n, (char *)&(ns->enc->enc_packet_read_buf[ns->enc->start]));
+        if (n > bsize) {  //** Got plenty in the buffer
+            tbx_tbuf_copy(&ns_tb, 0, buffer, boff, bsize, 1);
+            ns->enc->start += bsize;
+            n = bsize;
+        } else {   //** Copy what we have and return
+            tbx_tbuf_copy(&ns_tb, 0, buffer, boff, n, 1);
+            ns->enc->start = 0;
+            ns->enc->end = -1;
+        }
+        return(n);
+    }
+
+    //** See if we can get a packet
+    n = _ns_encrypt_packet_read(ns, timeout);
+    if (n <= 0) return(n);  //** Kick out on error or nothing to read
+
+    //** Copy over some data
+    tbx_tbuf_single(&ns_tb, N_ENCRYPT_PACKET_DATA_SIZE, (char *)ns->enc->enc_packet_read_buf);
+    if (n > bsize) {
+        err = tbx_tbuf_copy(&ns_tb, 0, buffer, boff, bsize, 0);
+        if (err) return(-1);
+
+        if (n > bsize) {   //** Anything else stays in the buffer for next time
+            ns->enc->start = bsize;
+            ns->enc->end = n - 1;
+            n = bsize;
+        }
+    } else {
+        err = tbx_tbuf_copy(&ns_tb, 0, buffer, boff, n, 0);
+        if (err) return(-1);
+    }
+
+    return(n);
+}
+
+//*********************************************************************
 // read_netstream - Reads characters from the stream with a max wait
 //*********************************************************************
 
@@ -1062,20 +1402,8 @@ int _tbx_ns_read(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int size, 
             ns->end = -1;
         }
     } else {  //*** Now grab some data off the network port ****
-        total_bytes = ns->read(ns->sock, buffer, boff, size, timeout);
+        total_bytes = (ns->encrypted == 0) ? ns->read(ns->sock, buffer, boff, size, timeout) : _ns_encrypt_read(ns, buffer, boff, size, timeout);
     }
-
-    debug_code(
-    if (total_bytes > 0) {
-//        debug_printf(10, "read_netstream: Command : !");
-//        for (i=0; i< total_bytes; i++) debug_printf(10, "%c", buffer[i]);
-//        debug_printf(10, "! * nbytes =%d\n", total_bytes); flush_debug();
-} else if (total_bytes == 0) {
-    debug_printf(10, "read_netstream: No data!\n");
-    } else {
-        log_printf(10, "read_netstream:  Dead connection! ns=%d\n", tbx_ns_getid(ns));
-    }
-    )
 
     ns->last_read = apr_time_now();
 
@@ -1134,7 +1462,6 @@ int tbx_ns_readline_raw(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int
     total_bytes = 0;
     lock_read_ns(ns);
     i = ns->end - ns->start + 1;
-    debug_printf(15, "ns=%d buffer pos start=%d end=%d\n", ns->id, ns->start, ns->end);
     if (i > 0) {
         //** Assumes buffer has a single iovec element
         total_bytes = scan_and_copy_stream(&(ns->buffer[ns->start]), i, buf, size, &finished);
@@ -1292,6 +1619,8 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
         ns->set_peer(ns->sock, ns->peer_address, sizeof(ns->peer_address));
 
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
+
+        err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
     } else {
         log_printf(10, "accept_pending_connection: Failed getting a new connection\n");
     }

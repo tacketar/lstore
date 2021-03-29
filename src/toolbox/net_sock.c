@@ -471,7 +471,7 @@ void tbx_ns_sock_config(tbx_ns_t *ns, int tcpsize)
 {
     tbx_net_sock_t *sock;
 
-    log_printf(10, "ns_config_sock: ns=%d, \n", ns->id);
+    log_printf(10, "ns_config_sock: ns=%d\n", ns->id);
 
     _ns_init(ns, 0);
 

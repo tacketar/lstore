@@ -228,6 +228,7 @@ find_package(ZMQ REQUIRED)
 find_package(RocksDB REQUIRED)
 find_package(APR REQUIRED)
 find_package(APRUtil REQUIRED)
+find_package(LibSodium REQUIRED)
 
 # Find external deps we might build
 find_package(Jerasure)

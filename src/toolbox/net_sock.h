@@ -20,8 +20,6 @@
 #ifndef __NET_SOCK_H_
 #define __NET_SOCK_H_
 
-#define N_BUFSIZE  1024
-
 #include <apr_network_io.h>
 #include <apr_poll.h>
 #include <apr_pools.h>

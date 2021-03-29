@@ -99,11 +99,13 @@ set(LSTORE_LIBS ${APR_LIBRARY}
                     ${APRUTIL_LIBRARY}
                     ${ZLIB_LIBRARY}
                     ${OPENSSL_LIBRARIES}
+                    ${LIBSODIUM_LIBRARY}
     )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${APRUTIL_INCLUDE_DIR}
                     ${OPENSSL_INCLUDE_DIR}
                     ${ZLIB_INCLUDE_DIR}
+                    ${LIBSODIUM_INCLUDE_DIR}
     )
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 

@@ -11,7 +11,7 @@
 
 # Inspired by https://github.com/docker/docker/blob/master/contrib/builder/rpm/generate.sh
 
-set -eu 
+set -eu
 ABSOLUTE_PATH=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)
 source $ABSOLUTE_PATH/functions.sh
 
@@ -32,14 +32,13 @@ for DISTRO in "${DISTROS[@]}"; do
     FROM="${PARENT}:${RELEASE}"
     ROCKSDB_MANUAL=""  #Default is to install it from a package
 
-    
     mkdir -p $DISTRO
 
     GLOBAL_INSTALL=""
     case $PARENT in
         centos|fedora)
-            # Fedora claims: 
-            # Yum command has been deprecated, redirecting to 
+            # Fedora claims:
+            # Yum command has been deprecated, redirecting to
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
             # Should I rewrite this again to include dnf as a different packager
             # When does dnf first exist?
@@ -78,6 +77,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     expat-devel
                                     fuse3-devel
                                     libtool
+                                    libsodium-devel
                                     openssl-devel
                                     python
                                     rsync
@@ -105,6 +105,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libexpat1-dev
                                     libfuse-dev
                                     librocksdb-dev
+                                    libsodium-dev
                                     libssl-dev
                                     libtool
                                     libz-dev

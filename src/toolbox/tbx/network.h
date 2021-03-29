@@ -61,6 +61,8 @@ enum tbx_net_type_t {
 
 // Functions
 TBX_API void  tbx_ns_setid(tbx_ns_t *ns, int id);
+TBX_API void tbx_ns_encrypt_enable(tbx_ns_t *ns);
+TBX_API int tbx_ns_encrypt_status(tbx_ns_t *ns);
 TBX_API char *tbx_ns_peer_address_get(tbx_ns_t *ns);
 TBX_API char *tbx_nm_host_get(tbx_ns_monitor_t *nm);
 TBX_API int tbx_nm_port_get(tbx_ns_monitor_t *nm);
