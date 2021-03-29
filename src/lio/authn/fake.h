@@ -31,13 +31,6 @@ extern "C" {
 
 #define AUTHN_TYPE_FAKE "fake"
 
-//*** HAck for getting userid@hosntam passed around to be romved with proper authn/z
-struct lio_authn_fake_priv_t {
-    char *handle;
-    int len;
-};
-//--------------------------
-
 lio_authn_t *authn_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
 
 #ifdef __cplusplus

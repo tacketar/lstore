@@ -32,14 +32,8 @@
 #include <unistd.h>
 
 #include "authn.h"
+#include "fake.h"
 #include "service_manager.h"
-
-extern char *_lio_exe_name;  //** This is set by lio_init long before we would ever be called.
-
-struct lio_authn_fake_priv_t {
-    char *handle;
-    int len;
-};
 
 //***********************************************************************
 // authn_fake_get_type - Returns the type
@@ -47,68 +41,7 @@ struct lio_authn_fake_priv_t {
 
 char *authn_fake_get_type(lio_creds_t *c)
 {
-    return("FAKE");
-}
-
-//***********************************************************************
-// authn_fake_get_type_filed - Returns the requested type field
-//***********************************************************************
-
-void *authn_fake_get_type_field(lio_creds_t *c, int index, int *len)
-{
-    lio_authn_fake_priv_t *a = (lio_authn_fake_priv_t *)c->priv;
-
-    if (index == AUTHN_INDEX_SHARED_HANDLE) {
-        *len = a->len;
-        return(a->handle);
-    }
-
-    *len = 0;
-    return(NULL);
-}
-
-//***********************************************************************
-// authn_fake_set_id - Sets the user ID and also makes the shared handle.
-//  In this case the shared handle is really just string with the format
-//     id:pid:userid@hostname
-//***********************************************************************
-
-void authn_fake_set_id(lio_creds_t *c, char *id)
-{
-    lio_authn_fake_priv_t *a = (lio_authn_fake_priv_t *)c->priv;
-    char buffer[1024], buf2[256], buf3[512];
-    uint64_t pid;
-    int err;
-
-    c->id = strdup(id);
-
-    pid = getpid();
-    err = getlogin_r(buf2, sizeof(buf2));
-    if (err != 0) snprintf(buf2, sizeof(buf2), "ERROR(%d)", err);
-    gethostname(buf3, sizeof(buf3));
-    snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, buf2, buf3, _lio_exe_name);
-    a->handle = strdup(buffer);
-    log_printf(5, "handle=%s\n", a->handle);
-    a->len = strlen(a->handle)+1;
-
-    return;
-}
-
-
-//***********************************************************************
-// authn_fake_cred_destroy - Destroy the fake credentials
-//***********************************************************************
-
-void authn_fake_cred_destroy(lio_creds_t *c)
-{
-    lio_authn_fake_priv_t *a = (lio_authn_fake_priv_t *)c->priv;
-
-    if (a->handle != NULL) free(a->handle);
-    free(a);
-
-    if (c->handle_destroy != NULL) c->handle_destroy(c);
-    if (c->id != NULL) free(c->id);
-    free(c);
+    return(AUTHN_TYPE_FAKE);
 }
 
 //***********************************************************************
@@ -118,16 +51,38 @@ void authn_fake_cred_destroy(lio_creds_t *c)
 lio_creds_t *authn_fake_cred_init(lio_authn_t *an, int type, void **args)
 {
     lio_creds_t *c;
+    char *account;
+    char buf[128];
 
-    c = cred_default_create();
+    if (args[0] == NULL) { //** Default to using the local username
+        if (getlogin_r(buf, sizeof(buf)) == 0) {
+            account = buf;
+        } else {
+            account = "default";
+        }
+    } else {
+        account = args[0];
+    }
 
-    tbx_type_malloc_clear(c->priv, lio_authn_fake_priv_t, 1);
+    c = cred_default_create(account);
     c->get_type = authn_fake_get_type;
-    c->get_type_field = authn_fake_get_type_field;
-    c->set_id = authn_fake_set_id;
-    c->destroy = authn_fake_cred_destroy;
+    c->handle = c->descriptive_id;
+    c->handle_len = strlen(c->descriptive_id)+1;
 
     return(c);
+}
+
+//***********************************************************************
+// apsk_server_print_running_config - Prints the running config
+//***********************************************************************
+
+void authn_fake_print_running_config(lio_authn_t *an, FILE *fd, int print_section_heading)
+{
+    char *section = an->priv;
+
+    if (print_section_heading) fprintf(fd, "[%s]\n", section);
+    fprintf(fd, "type = %s\n", AUTHN_TYPE_FAKE );
+    fprintf(fd, "\n");
 }
 
 //***********************************************************************
@@ -136,6 +91,7 @@ lio_creds_t *authn_fake_cred_init(lio_authn_t *an, int type, void **args)
 
 void authn_fake_destroy(lio_authn_t *an)
 {
+    if (an->priv) free(an->priv);
     free(an);
 }
 
@@ -149,8 +105,10 @@ lio_authn_t *authn_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *ifd,
 
     tbx_type_malloc(an, lio_authn_t, 1);
 
+    an->print_running_config = authn_fake_print_running_config;
     an->cred_init = authn_fake_cred_init;
     an->destroy = authn_fake_destroy;
+    an->priv = strdup(section);
 
     return(an);
 }

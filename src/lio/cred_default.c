@@ -23,9 +23,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tbx/assert_result.h>
+#include <tbx/fmttypes.h>
 #include <tbx/type_malloc.h>
 
 #include "authn.h"
+
+extern char *_lio_exe_name;  //** This is set by lio_init long before we would ever be called.
 
 //***********************************************************************
 
@@ -36,68 +39,81 @@ char *cdef_get_type(lio_creds_t *c)
 
 //***********************************************************************
 
-void *cdef_get_type_field(lio_creds_t *c, int index, int *len)
-{
-    *len = 0;
-    return(NULL);
-}
-
 //***********************************************************************
 
-char *cdef_get_id(lio_creds_t *c)
+char *cdef_get_id(lio_creds_t *c, int *len)
 {
+    if (len) *len = c->id_len;
     return(c->id);
 }
 
 //***********************************************************************
 
-void cdef_set_id(lio_creds_t *c, char *id)
+char *cdef_get_descriptive_id(lio_creds_t *c, int *len)
 {
-    c->id = strdup(id);
-    return;
+    if (len) *len = c->descriptive_id_len;
+    return(c->descriptive_id);
 }
 
 //***********************************************************************
 
-void cdef_set_private_handle(lio_creds_t *c, void *handle, void (*destroy)(void *))
+void *cdef_get_handle(lio_creds_t *c, int *len)
 {
-    c->handle = handle;
-    c->handle_destroy = destroy;
-    return;
-}
-
-//***********************************************************************
-
-void *cdef_get_private_handle(lio_creds_t *c)
-{
+    if (len) *len = c->handle_len;
     return(c->handle);
 }
 
+//***********************************************************************
+// _set_id - Sets the user ID and also makes the shared handle.
+//  In this case the shared handle is really just string with the format
+//     id:pid:userid@hostname
+//***********************************************************************
+
+void cred_default_set_ids(lio_creds_t *c, char *id)
+{
+    char buffer[1024], buf2[256], buf3[512];
+    uint64_t pid;
+    int err;
+
+    pid = getpid();
+    err = getlogin_r(buf2, sizeof(buf2));
+    if (err != 0) snprintf(buf2, sizeof(buf2), "ERROR(%d)", err);
+    gethostname(buf3, sizeof(buf3));
+    snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, buf2, buf3, _lio_exe_name);
+    c->descriptive_id = strdup(buffer); c->descriptive_id_len = strlen(c->descriptive_id);
+    c->id = strdup(id); c->id_len = strlen(c->id);
+    return;
+}
 
 //***********************************************************************
 
 void cdef_destroy(lio_creds_t *c)
 {
-    if (c->handle_destroy != NULL) c->handle_destroy(c);
     if (c->id != NULL) free(c->id);
+    if (c->descriptive_id) free(c->descriptive_id);
     free(c);
 }
 
 //***********************************************************************
 
-lio_creds_t *cred_default_create()
+void cred_default_init(lio_creds_t *c, char *id)
+{
+    if (id) cred_default_set_ids(c, id);
+    c->get_type = cdef_get_type;
+    c->get_id = cdef_get_id;
+    c->get_descriptive_id = cdef_get_descriptive_id;
+    c->get_handle = cdef_get_handle;
+    c->destroy = cdef_destroy;
+}
+
+//***********************************************************************
+
+lio_creds_t *cred_default_create(char *id)
 {
     lio_creds_t *c;
     tbx_type_malloc_clear(c, lio_creds_t, 1);
 
-    c->get_type = cdef_get_type;
-    c->get_type_field = cdef_get_type_field;
-    c->get_id = cdef_get_id;
-    c->set_id = cdef_set_id;
-    c->set_private_handle = cdef_set_private_handle;
-    c->get_private_handle = cdef_get_private_handle;
-    c->destroy = cdef_destroy;
-
+    cred_default_init(c, id);
     return(c);
 }
 

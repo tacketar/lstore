@@ -30,8 +30,6 @@ extern "C" {
 // Typedefs
 typedef struct lio_authn_t lio_authn_t;
 typedef struct lio_creds_t lio_creds_t;
-//! FIXME: leaky
-typedef struct lio_authn_fake_priv_t lio_authn_fake_priv_t;
 
 // Functions
 

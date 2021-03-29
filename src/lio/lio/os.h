@@ -22,6 +22,7 @@ limitations under the License.
 #define ACCRE_LIO_OBJECT_SERVICE_ABSTRACT_H_INCLUDED
 
 #include <gop/gop.h>
+#include <gop/mq.h>
 #include <lio/authn.h>
 #include <lio/visibility.h>
 #include <lio/service_manager.h>
@@ -46,13 +47,14 @@ typedef void os_fsck_iter_t;
 
 typedef enum lio_object_type_t lio_object_type_t;
 enum lio_object_type_t {
-    OS_OBJECT_FILE           = 0,  //** File object or attribute
-    OS_OBJECT_DIR            = 1,  //** Directory object
-    OS_OBJECT_SYMLINK        = 2,  //** A symlinked object or attribute
-    OS_OBJECT_HARDLINK       = 3,  //** A hard linked object
-    OS_OBJECT_BROKEN_LINK    = 4,  //** Signifies a broken link
-    OS_OBJECT_VIRTUAL        = 5,  //** A virtual attribute
-    OS_OBJECT_FOLLOW_SYMLINK = 6,  //** Follow symbolic links. Default is to skip them
+    OS_OBJECT_FILE           = 0,  // ** File object or attribute
+    OS_OBJECT_DIR            = 1,  // ** Directory object
+    OS_OBJECT_SYMLINK        = 2,  // ** A symlinked object or attribute
+    OS_OBJECT_HARDLINK       = 3,  // ** A hard linked object
+    OS_OBJECT_BROKEN_LINK    = 4,  // ** Signifies a broken link
+    OS_OBJECT_EXEC           = 5,  // ** Executable
+    OS_OBJECT_VIRTUAL        = 6,  // ** A virtual attribute
+    OS_OBJECT_FOLLOW_SYMLINK = 7,  // ** Follow symbolic links. Default is to skip them
 };
 
 typedef enum lio_object_type_flag_t lio_object_type_flag_t;
@@ -62,20 +64,22 @@ enum lio_object_type_flag_t {
     OS_OBJECT_SYMLINK_FLAG        = (1 << OS_OBJECT_SYMLINK),
     OS_OBJECT_HARDLINK_FLAG       = (1 << OS_OBJECT_HARDLINK),
     OS_OBJECT_BROKEN_LINK_FLAG    = (1 << OS_OBJECT_BROKEN_LINK),
+    OS_OBJECT_EXEC_FLAG           = (1 << OS_OBJECT_EXEC),
     OS_OBJECT_VIRTUAL_FLAG        = (1 << OS_OBJECT_VIRTUAL),
     OS_OBJECT_FOLLOW_SYMLINK_FLAG = (1 << OS_OBJECT_FOLLOW_SYMLINK),
-    OS_OBJECT_ANY_FLAG         = (0x3F) // 6 bits AKA 0x3F. Doesn't include FOLLOW_SYMLINK
+    OS_OBJECT_ANY_FLAG         = (0x7F) // 7 bits AKA 0x7F. Doesn't include FOLLOW_SYMLINK
 };
 
 typedef void (*lio_os_print_running_config_fn_t)(lio_object_service_fn_t *rs, FILE *fd, int print_section_heading);
+typedef void (*lio_os_portal_install_fn_t)(lio_object_service_fn_t *os, gop_mq_command_table_t *ctable);
 typedef void (*lio_os_destroy_service_fn_t)(lio_object_service_fn_t *os);
 typedef os_fsck_iter_t *(*lio_os_create_fsck_iter_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int mode);
 typedef void (*lio_os_destroy_fsck_iter_fn_t)(lio_object_service_fn_t *os, os_fsck_iter_t *it);
 typedef int (*lio_os_next_fsck_fn_t)(lio_object_service_fn_t *os, os_fsck_iter_t *it, char **fname, int *ftype);
 typedef gop_op_generic_t *(*lio_os_fsck_object_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *fname, int ftype, int resolution);
-typedef lio_creds_t *(*lio_os_cred_init_fn_t)(lio_object_service_fn_t *os, int type, void **arg);
-typedef void (*lio_os_cred_destroy_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds);
 typedef gop_op_generic_t *(*lio_os_exists_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path);
+typedef gop_op_generic_t *(*lio_os_realpath_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, char *realpath);
+typedef gop_op_generic_t *(*lio_os_object_exec_modify_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type);
 typedef gop_op_generic_t *(*lio_os_create_object_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type, char *id);
 typedef gop_op_generic_t *(*lio_os_remove_object_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path);
 typedef gop_op_generic_t *(*lio_os_remove_regex_object_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *object_regex, int obj_types, int recurse_depth);
@@ -107,7 +111,7 @@ typedef int (*lio_os_next_attr_fn_t)(os_attr_iter_t *it, char **key, void **val,
 typedef int (*lio_os_add_virtual_attr_fn_t)(lio_os_virtual_attr_t *va, char *key, int type);
 typedef void (*lio_os_destroy_attr_iter_fn_t)(os_attr_iter_t *it);
 
-//* FIXME: leaky
+// FIXME: leaky
 typedef struct lio_osfile_priv_t lio_osfile_priv_t;
 typedef struct local_object_iter_t local_object_iter_t;
 typedef struct lio_osrc_priv_t lio_osrc_priv_t;
@@ -128,21 +132,24 @@ LIO_API int os_attribute_tests(char *prefix);
 LIO_API int os_locking_tests(char *prefix);
 
 // Preprocessor constants
-#define OS_PATH_MAX  32768    //** Max path length
+#define OS_PATH_MAX  32768    // ** Max path length
 
 
-#define OS_FSCK_MANUAL    0   //** Manual resolution via fsck_resolve() or user control
-#define OS_FSCK_REMOVE    1   //** Removes the problem object
-#define OS_FSCK_REPAIR    2   //** Repairs the problem object
+#define OS_FSCK_MANUAL    0   // ** Manual resolution via fsck_resolve() or user control
+#define OS_FSCK_REMOVE    1   // ** Removes the problem object
+#define OS_FSCK_REPAIR    2   // ** Repairs the problem object
 
-#define OS_FSCK_GOOD            0 //** Nothing wrong with the object
-#define OS_FSCK_MISSING_ATTR    1 //** Missing the object attributes
-#define OS_FSCK_MISSING_OBJECT  2 //** Missing file entry
+#define OS_FSCK_GOOD            0 // ** Nothing wrong with the object
+#define OS_FSCK_MISSING_ATTR    1 // ** Missing the object attributes
+#define OS_FSCK_MISSING_OBJECT  2 // ** Missing file entry
 
-#define OS_FSCK_FINISHED  0   //** FSCK scan is finished
-#define OS_FSCK_ERROR    -1   //** FSCK internal error
+#define OS_FSCK_FINISHED  0   // ** FSCK scan is finished
+#define OS_FSCK_ERROR    -1   // ** FSCK internal error
 
-#define OS_MODE_READ_IMMEDIATE  0
+#define OS_MODE_READ_IMMEDIATE  1
+#define OS_MODE_WRITE_IMMEDIATE 2
+#define OS_MODE_READ_BLOCKING   4
+#define OS_MODE_WRITE_BLOCKING  8
 
 // Preprocessor macros
 #define os_close_object(os, fd) (os)->close_object(os, fd)
@@ -158,14 +165,15 @@ struct lio_object_service_fn_t {
     void *priv;
     char *type;
     lio_os_print_running_config_fn_t print_running_config;
+    lio_os_portal_install_fn_t portal_install;
     lio_os_destroy_service_fn_t destroy_service;
     lio_os_create_fsck_iter_fn_t create_fsck_iter;
     lio_os_destroy_fsck_iter_fn_t destroy_fsck_iter;
     lio_os_next_fsck_fn_t next_fsck;
     lio_os_fsck_object_fn_t fsck_object;
-    lio_os_cred_init_fn_t cred_init;
-    lio_os_cred_destroy_fn_t cred_destroy;
     lio_os_exists_fn_t exists;
+    lio_os_realpath_fn_t realpath;
+    lio_os_object_exec_modify_fn_t exec_modify;
     lio_os_create_object_fn_t create_object;
     lio_os_remove_object_fn_t remove_object;
     lio_os_remove_regex_object_fn_t remove_regex_object;
@@ -213,4 +221,4 @@ struct lio_os_regex_table_t {
 }
 #endif
 
-#endif /* ^ ACCRE_LIO_OBJECT_SERVICE_ABSTRACT_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_LIO_OBJECT_SERVICE_ABSTRACT_H_INCLUDED ^ */

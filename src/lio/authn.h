@@ -32,43 +32,46 @@ extern "C" {
 
 #define AUTHN_AVAILABLE "authn_available"
 
-#define AUTHN_INDEX_SHARED_HANDLE 0
+#define AUTHN_INIT_DEFAULT 0   //** Normal methof for initializing creds for a client
+#define AUTHN_INIT_LOOKUP  1   //** Typically used for the Server to get creds from the AuthN server
 
 struct lio_creds_t {
     void *priv;
-    void *handle;
-    char *id;
-    void (*handle_destroy)(void *);
+    char *id;             //** User ID
+    char *descriptive_id;  //** User ID along with other info about the process, etc
+    void *handle;         //** Handle used for interprocess communication
+    int id_len;           //** Length of the ID
+    int descriptive_id_len;  //** Length of the Descriptive ID
+    int handle_len;       //** Length of the handle
     char *(*get_type)(lio_creds_t *creds);
-    void *(*get_type_field)(lio_creds_t *creds, int index, int *len);
-    char *(*get_id)(lio_creds_t *creds);
-    void (*set_id)(lio_creds_t *creds, char *id);
-    void *(*get_private_handle)(lio_creds_t *creds);
-    void (*set_private_handle)(lio_creds_t *creds, void *handle, void (*destroy)(void *));
+    char *(*get_id)(lio_creds_t *creds, int *len);
+    char *(*get_descriptive_id)(lio_creds_t *creds, int *len);
+    void *(*get_handle)(lio_creds_t *creds, int *len);
     void (*destroy)(lio_creds_t *creds);
 };
 
-lio_creds_t *cred_default_create();
-
 #define an_cred_get_type(c) (c)->get_type(c)
-#define an_cred_get_type_field(c, index, len) (c)->get_type_field(c, index, len)
-#define an_cred_get_id(c) (c)->get_id(c)
-#define an_cred_set_id(c, id) (c)->set_id(c, id)
-#define an_cred_get_private_handle(c) (c)->get_private_handle(c)
-#define an_cred_set_private_handle(c, handle, destroy) (c)->set_private_handle(c, handle, destroy)
+#define an_cred_get_id(c, len) (c)->get_id(c, len)
+#define an_cred_get_descriptive_id(c, len) (c)->get_descriptive_id(c, len)
+#define an_cred_get_handle(c, len) (c)->get_handle(c, len)
 #define an_cred_destroy(c) (c)->destroy(c)
-
 
 struct lio_authn_t {
     void *priv;
+    void (*print_running_config)(lio_authn_t *an, FILE *fd, int print_section_heading);
     lio_creds_t *(*cred_init)(lio_authn_t *an, int type, void **args);
     void (*destroy)(lio_authn_t *an);
 };
 
 typedef lio_authn_t *(authn_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
 
+void cred_default_init(lio_creds_t *c, char *id);
+lio_creds_t *cred_default_create(char *id);
+void cred_default_set_ids(lio_creds_t *c, char *id);
+
 #define authn_cred_init(an, type, args) (an)->cred_init(an, type, args)
 #define authn_destroy(an) (an)->destroy(an)
+#define authn_print_running_config(an, fd, psh) (an)->print_running_config(an, fd, psh)
 
 #ifdef __cplusplus
 }
