@@ -161,6 +161,7 @@ struct gop_portal_context_t {             //** Handle for maintaining all the ec
     int max_conn;              //** Max allowed number of connections to a host
     int finished;              //** Got a shutdown request
     int dead_disable;          //** Disable flagging and host as dead.  Useful in environments with high churn
+    int encrypt_conn;          //** Encrypt the connection
     apr_time_t dt_connect;     //** Max time to wait when making a connection to a host
     apr_time_t dt_dead_timeout; //** How long to keep a connection as dead before trying again
     apr_time_t dt_dead_check;  //** Check interval between host health checks
@@ -186,6 +187,7 @@ static gop_portal_context_t  hpc_default_options = {
     .wait_stable_time = apr_time_from_sec(1*60),
     .min_conn = 1,
     .max_conn = 4,
+    .encrypt_conn = 0,
     .dt_connect = apr_time_from_sec(10),
     .max_workload = 10*1024*1024,
     .mix_latest_fraction = 0.5,
@@ -1448,6 +1450,7 @@ hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing, apr_pool_t *mpool)
     hc->incoming = tbx_que_create(1000, sizeof(hpc_cmd_t));
     hc->internal = tbx_que_create(10000, sizeof(hpc_cmd_t));
     hc->ns = tbx_ns_new();
+    if (hp->hpc->encrypt_conn) tbx_ns_encrypt_enable(hc->ns);
     hc->start_time = apr_time_now();
 
     hc->outgoing = hp->hpc->que;
@@ -1642,6 +1645,7 @@ void gop_hpc_print_running_config(gop_portal_context_t *hpc, FILE *fd, int print
     fprintf(fd, "dt_dead_timeout = %s\n", tbx_stk_pretty_print_time(hpc->dt_dead_timeout, 0, text));
     fprintf(fd, "dead_check = %s\n", tbx_stk_pretty_print_time(hpc->dt_dead_check, 0, text));
     fprintf(fd, "dead_disable = %d\n", hpc->dead_disable);
+    fprintf(fd, "encrypt_conn = %d\n", hpc->encrypt_conn);
     fprintf(fd, "min_bw_fraction = %s\n", tbx_stk_pretty_print_double_with_scale(1000, hpc->min_bw_fraction, text));
     fprintf(fd, "max_total_conn = %d\n", hpc->max_total_conn);
     fprintf(fd, "max_idle = %s\n", tbx_stk_pretty_print_time(hpc->max_idle, 0, text));
@@ -1678,6 +1682,7 @@ gop_portal_context_t *gop_hp_context_create(gop_portal_fn_t *imp, char *name)
     hpc->dead_disable = hpc_default_options.dead_disable;
     hpc->dt_dead_timeout = hpc_default_options.dt_dead_timeout;
     hpc->dt_dead_check = hpc_default_options.dt_dead_check;
+    hpc->encrypt_conn = hpc_default_options.encrypt_conn;
     hpc->min_bw_fraction = hpc_default_options.min_bw_fraction;
     hpc->max_total_conn = hpc_default_options.max_total_conn;
     hpc->max_idle = hpc_default_options.max_idle;
@@ -1706,6 +1711,7 @@ void gop_hpc_load(gop_portal_context_t *hpc, tbx_inip_file_t *fd, char *section)
 {
     char text[1024];
 
+    hpc->encrypt_conn = tbx_inip_get_integer(fd, section, "encrypt_conn", hpc_default_options.encrypt_conn);
     hpc->dead_disable = tbx_inip_get_integer(fd, section, "dead_disable", hpc_default_options.dead_disable);
     hpc->dt_dead_timeout = tbx_inip_get_time(fd, section, "dead_timeout", tbx_stk_pretty_print_time(hpc_default_options.dt_dead_timeout, 0, text));
     hpc->dt_dead_check = tbx_inip_get_time(fd, section, "dead_check", tbx_stk_pretty_print_time(hpc_default_options.dt_dead_check, 0, text));

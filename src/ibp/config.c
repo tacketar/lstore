@@ -469,10 +469,11 @@ int _ibp_connect(tbx_ns_t *ns, void *connect_context, char *host, int port, tbx_
 {
     ibp_connect_context_t *cc = (ibp_connect_context_t *)connect_context;
     int i, n;
-
+    int encrypted;
     int to = timeout;
     log_printf(0, "HOST host=%s to=%d\n", host, to);
 
+    encrypted = tbx_ns_encrypt_status(ns); //** Store the ecryption setting since it can get overwritten in the creation
     if (cc != NULL) {
         switch(cc->type) {
         case NS_TYPE_SOCK:
@@ -485,6 +486,8 @@ int _ibp_connect(tbx_ns_t *ns, void *connect_context, char *host, int port, tbx_
     } else {
         tbx_ns_sock_config(ns, 0);
     }
+
+    if (encrypted) tbx_ns_encrypt_enable(ns);
 
     //** See if we have an RID if so peel it off
     i = 0;
