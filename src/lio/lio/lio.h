@@ -97,6 +97,8 @@ LIO_API void lio_destroy_object_iter(lio_config_t *lc, os_object_iter_t *it);
 LIO_API int lio_encode_error_counts(lio_segment_errors_t *serr, char **key, char **val, char *buf, int *v_size, int mode);
 LIO_API int lio_exists(lio_config_t *lc, lio_creds_t *creds, char *path);
 LIO_API gop_op_generic_t *lio_exists_gop(lio_config_t *lc, lio_creds_t *creds, char *path);
+LIO_API int lio_realpath(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath);
+LIO_API gop_op_generic_t *lio_realpath_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath);
 LIO_API gop_op_status_t lio_file_copy_op(void *arg, int id);
 LIO_API int lio_fopen_flags(char *sflags);
 LIO_API gop_op_generic_t *lio_fsck_gop(lio_config_t *lc, lio_creds_t *creds, char *fname, int ftype, int owner_mode, char *owner, int exnode_mode);
@@ -181,18 +183,19 @@ enum lio_copy_hint_t {
 LIO_API extern lio_config_t *lio_gc;
 LIO_API extern tbx_log_fd_t *lio_ifd;
 LIO_API extern int lio_parallel_task_count;
-LIO_API extern FILE *_lio_ifd;  //** Default information log device
+LIO_API extern FILE *_lio_ifd;  // ** Default information log device
 
 // Exported structures. To be obscured
 struct lio_config_t {
     lio_data_service_fn_t *ds;
     lio_object_service_fn_t *os;
     lio_resource_service_fn_t *rs;
+    lio_authn_t *authn;
     gop_thread_pool_context_t *tpc_unlimited;
     gop_thread_pool_context_t *tpc_cache;
     gop_mq_context_t *mqc;
     lio_service_manager_t *ess;
-    lio_service_manager_t *ess_nocache;  //** Copy of ess but missing cache.  Kind of a kludge...
+    lio_service_manager_t *ess_nocache;  // ** Copy of ess but missing cache.  Kind of a kludge...
     tbx_stack_t *plugin_stack;
     lio_cache_t *cache;
     data_attr_t *da;
@@ -202,9 +205,11 @@ struct lio_config_t {
     apr_thread_mutex_t *lock;
     apr_pool_t *mpool;
     char *obj_name;
+    char *server_address;
     char *section_name;
     char *ds_section;
     char *mq_section;
+    char *authn_section;
     char *os_section;
     char *rs_section;
     char *tpc_unlimited_section;

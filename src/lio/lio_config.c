@@ -28,6 +28,7 @@
 #include <apr_time.h>
 #include <ctype.h>
 #include <gop/mq_ongoing.h>
+#include <gop/mq_stream.h>
 #include <gop/mq.h>
 #include <gop/tp.h>
 #include <malloc.h>
@@ -47,6 +48,7 @@
 #include <tbx/type_malloc.h>
 
 #include "authn.h"
+#include "authn/fake.h"
 #include "blacklist.h"
 #include "cache.h"
 #include "cache/amp.h"
@@ -93,8 +95,10 @@ lio_config_t lio_default_options = {
     .ds_section = DS_TYPE_IBP,
     .rs_section = "rs_simple",
     .os_section = "os_remote_client",
+    .authn_section = "authn",
     .cache_section = "cache_amp",
-    .creds_user = "guest"
+    .creds_user = NULL
+//    .creds_user = "guest"
 };
 
 // ** Define the global LIO config
@@ -184,6 +188,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "ds = %s\n", lio->ds_section);
     fprintf(fd, "rs = %s\n", lio->rs_section);
     fprintf(fd, "os = %s\n", lio->os_section);
+    fprintf(fd, "server_address = %s\n", (lio->server_address == NULL) ? "<CLIENT-MODE>" : lio->server_address);
     fprintf(fd, "remote_config = %s\n", lio->rc_section);
     fprintf(fd, "cache = %s\n", lio->cache_section);
     fprintf(fd, "user = %s\n", lio->creds_user);
@@ -195,6 +200,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     os_print_running_config(lio->os, fd, 1);
     ds_print_running_config(lio->ds, fd, 1);
     rs_print_running_config(lio->rs, fd, 1);
+    authn_print_running_config(lio->authn, fd, 1);
 
     memory_usage_dump(fd);
 }
@@ -237,7 +243,7 @@ void check_for_section(tbx_inip_file_t *fd, char *section, char *err_string)
 //       when 0 is returned.
 //***************************************************************
 
-int _lc_object_destroy(char *key)
+int _lc_object_destroy_ptr(char *key, void **obj)
 {
     int count = 0;
     lc_object_container_t *lcc;
@@ -249,15 +255,31 @@ int _lc_object_destroy(char *key)
         log_printf(15, "REMOVE key=%s count=%d lcc=%p\n", key, count, lcc);
 
         if (lcc->count <= 0) {
+            *obj = lcc->object;
             tbx_list_remove(_lc_object_list, key, lcc);
             free(lcc->key);
             free(lcc);
         }
     } else {
+        *obj = NULL;
         log_printf(15, "REMOVE-FAIL key=%s\n", key);
     }
 
     return(count);
+}
+
+//***************************************************************
+//  _lc_object_destroy - Decrements the LC object and removes it
+//       if no other references exist.  It returns the number of
+//       remaining references.  So it can be safely destroyed
+//       when 0 is returned.
+//***************************************************************
+
+int _lc_object_destroy(char *key)
+{
+    void *obj;
+
+    return(_lc_object_destroy_ptr(key, &obj));
 }
 
 //***************************************************************
@@ -453,17 +475,30 @@ void lio_find_lfs_mounts()
 void lio_path_release(lio_path_tuple_t *tuple)
 {
     char buffer[1024];
+    lio_path_tuple_t *tuple2;
+    int anon = 0;
 
-    if (tuple->path != NULL) free(tuple->path);
+    if (tuple->path != NULL) {
+        if (strcmp(tuple->path, "ANONYMOUS") == 1) {
+            anon = 1;
+        } else {
+            free(tuple->path);
+        }
+    }
     if (tuple->lc == NULL) return;
 
     apr_thread_mutex_lock(_lc_lock);
-    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(tuple->creds), tuple->lc->obj_name);
+    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(tuple->creds, NULL), tuple->lc->obj_name);
 
-    log_printf(15, "START object=%s\n", buffer);
+    log_printf(15, "START object=%s\n", buffer); tbx_log_flush();
 
-    if (_lc_object_destroy(buffer) <= tuple->lc->anonymous_creation) {
+    if (_lc_object_destroy_ptr(buffer, (void **)&tuple2) <= tuple->lc->anonymous_creation) {
         lio_destroy_nl(tuple->lc);
+        if (strcmp(tuple2->path, "ANONYMOUS") == 0) {
+            an_cred_destroy(tuple2->creds);
+            free(tuple2);
+        }
+        if (anon) free(tuple);
     }
 
     log_printf(15, "END object=%s\n", buffer);
@@ -587,7 +622,7 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
     tuple = *curr;
     tuple.path = fname;
 
-    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(curr->creds), curr->lc->obj_name);
+    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(curr->creds, NULL), curr->lc->obj_name);
     apr_thread_mutex_lock(_lc_lock);
     t2 = _lc_object_get(buffer);
     apr_thread_mutex_unlock(_lc_lock);
@@ -614,7 +649,9 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
     char uri[1024];
     char buffer[1024];
     int n, is_lio, pp_port;
+    time_t ts;
 
+    ts = 0;
     userid = NULL;
     pp_mq = NULL;
     pp_host = NULL;
@@ -657,7 +694,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
     apr_thread_mutex_lock(_lc_lock);
 
     if (userid == NULL) {
-        snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(lio_gc->creds), uri);
+        snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(lio_gc->creds, NULL), uri);
     } else {
         snprintf(buffer, sizeof(buffer), "tuple:%s@%s", userid, uri);
     }
@@ -682,7 +719,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
             }
             tuple.lc->ifd = tbx_inip_dup(tuple.lc->ifd);  //** Dup the ifd
         } else { //** Look up using the remote config query
-            if (rc_client_get_config(uri, &config, &obj_name) != 0) {
+            if (rc_client_get_config(NULL, uri, &config, &obj_name, &ts) != 0) {
                 memset(&tuple, 0, sizeof(tuple));
                 if (fname != NULL) free(fname);
                 goto finished;
@@ -714,20 +751,19 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
 
     //** Now determine the user
     if (userid == NULL) {
-        userid = an_cred_get_id(tuple.lc->creds);  //** IF not specified default to the one in the LC
+        userid = an_cred_get_id(tuple.lc->creds, NULL);  //** IF not specified default to the one in the LC
     }
 
     snprintf(buffer, sizeof(buffer), "tuple:%s@%s", userid, uri);
     tuple2 = _lc_object_get(buffer);
     if (tuple2 == NULL) { //** Doesn't exist so insert the tuple
-        cred_args[0] = tuple.lc->ifd;
-        cred_args[1] = strdup(userid);
-        tuple.creds = os_cred_init(tuple.lc->os, OS_CREDS_INI_TYPE, (void **)cred_args);
+        cred_args[0] = userid;
+        tuple.creds = authn_cred_init(tuple.lc->authn, AUTHN_INIT_DEFAULT, (void **)cred_args);
         tbx_type_malloc_clear(tuple2, lio_path_tuple_t, 1);
         tuple2->creds = tuple.creds;
         tuple2->lc = tuple.lc;
         tuple2->path = "ANONYMOUS";
-        log_printf(15, "adding anon creds tuple=%s\n", buffer);
+        log_printf(15, "adding anon creds tuple=%s ptr=%p\n", buffer, tuple2);
         _lc_object_put(buffer, tuple2);  //** Add it to the table
     } else if (n==1) {//** This is default user tuple just created so mark it as anon as well
         log_printf(15, "marking anon creds tuple=%s\n", buffer);
@@ -744,6 +780,7 @@ finished:
     if (pp_host != NULL) free(pp_host);
     if (pp_cfg != NULL) free(pp_cfg);
     if (pp_section != NULL) free(pp_section);
+    if (userid != NULL) free(userid);
 
     tuple.is_lio = is_lio;
     log_printf(15, "END: uri=%s path=%s is_lio=%d\n", tuple.path, uri, tuple.is_lio);
@@ -852,8 +889,9 @@ void lc_object_remove_unused(int remove_all_unused)
     while ((lcc = tbx_stack_pop(stack)) != NULL) {
         tuple = lcc->object;
         _lc_object_destroy(lcc->key);
-//     if (strcmp(tuple->path, "ANONYMOUS") == 0) os_cred_destroy(tuple->lc->os, tuple->creds);
-        os_cred_destroy(tuple->lc->os, tuple->creds);
+//        if (strcmp(tuple->path, "ANONYMOUS") == 0) os_cred_destroy(tuple->lc->os, tuple->creds);
+        an_cred_destroy(tuple->creds);
+//        free(tuple);
     }
 
     //** Now iterate through all the LC's
@@ -936,7 +974,7 @@ void lio_destroy_nl(lio_config_t *lio)
     lcc = tbx_list_search(_lc_object_list, lio->creds_name);
     tuple = (lcc != NULL) ? lcc->object : NULL;
     if (_lc_object_destroy(lio->creds_name) <= 0) {
-        os_cred_destroy(lio->os, lio->creds);
+        if (lio->creds) an_cred_destroy(lio->creds);
         free(tuple);
     }
 
@@ -960,27 +998,35 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->os_section);
 
-    if (_lc_object_destroy(lio->tpc_unlimited_section) <= 0) {
-        gop_tp_context_destroy(lio->tpc_unlimited);
-    }
-    free(lio->tpc_unlimited_section);
-
-    if (_lc_object_destroy(lio->tpc_cache_section) <= 0) {
-        gop_tp_context_destroy(lio->tpc_cache);
-    }
-    free(lio->tpc_cache_section);
-
     if (_lc_object_destroy(ESS_ONGOING_CLIENT) <= 0) {
         gop_mq_ongoing_t *on = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT);
         if (on != NULL) {  //** And also the ongoing client
             gop_mq_ongoing_destroy(on);
         }
+        char *host_id = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);
+        if (host_id) free(host_id);
     }
 
     if (_lc_object_destroy(lio->mq_section) <= 0) {  //** Destroy the MQ context
+        //** Also shutdown the server portal and ongoing server if loaded
+        gop_mq_portal_t *portal = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_SERVER_PORTAL);
+        if (portal) {
+            gop_mq_portal_remove(lio->mqc, portal);
+            gop_mq_ongoing_t *ons = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_SERVER);
+            if (ons) gop_mq_ongoing_destroy(ons);
+            gop_mq_portal_destroy(portal);
+        }
         gop_mq_destroy_context(lio->mqc);
     }
     free(lio->mq_section);
+
+    if (_lc_object_destroy(lio->authn_section) <= 0) {  //** Destroy the AuthN
+        if (lio->authn) {
+            authn_destroy(lio->authn);
+        }
+    }
+    free(lio->authn_section);
+
 
     if (lio->section_name != NULL) free(lio->section_name);
 
@@ -1016,6 +1062,19 @@ void lio_destroy_nl(lio_config_t *lio)
     if (lio->cache_section) free(lio->cache_section);
     if (lio->creds_user) free(lio->creds_user);
 
+    if (lio->server_address) free(lio->server_address);
+
+    //** Shutdown the thread pools after everything using it has been stopped
+    if (_lc_object_destroy(lio->tpc_unlimited_section) <= 0) {
+        gop_tp_context_destroy(lio->tpc_unlimited);
+    }
+    free(lio->tpc_unlimited_section);
+
+    if (_lc_object_destroy(lio->tpc_cache_section) <= 0) {
+        gop_tp_context_destroy(lio->tpc_cache);
+    }
+    free(lio->tpc_cache_section);
+
     apr_thread_mutex_destroy(lio->lock);
     apr_pool_destroy(lio->mpool);
 
@@ -1048,10 +1107,12 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     char buffer[1024];
     void *cred_args[2];
     char *ctype, *stype;
+    authn_create_t *authn_create;
     ds_create_t *ds_create;
     rs_create_t *rs_create;
     os_create_t *os_create;
     cache_load_t *cache_create;
+    gop_mq_portal_t *portal;
     lio_path_tuple_t *tuple;
     gop_mq_ongoing_t *on = NULL;
     int *val;
@@ -1180,8 +1241,47 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     } else {
         on = _lc_object_get(ESS_ONGOING_CLIENT);
     }
-
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT, on);
+    char *host_id = gop_generate_host_id(NULL, NULL, 60, -1);
+    add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID, host_id);
+
+    //** check if we're running as a server
+    portal = NULL;
+    lio->server_address = tbx_inip_get_string(lio->ifd, section, "server_address", NULL);
+    if (lio->server_address) {
+        //** Make the Server Portal
+        portal = gop_mq_portal_create(lio->mqc, lio->server_address, MQ_CMODE_SERVER);
+        add_service(lio->ess, ESS_RUNNING, ESS_SERVER_PORTAL, portal);
+
+        //** And the ongoing stream object
+        gop_mq_ongoing_t *ons = gop_mq_ongoing_create(lio->mqc, portal, 30, ONGOING_SERVER);
+        add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_SERVER, ons);
+
+        //** This is to handle client stream responses
+        gop_mq_command_table_t *ctable = gop_mq_portal_command_table(portal);
+        gop_mq_command_set(ctable, MQS_MORE_DATA_KEY, MQS_MORE_DATA_SIZE, ons, gop_mqs_server_more_cb);
+    }
+
+    //** Load the authentication service
+    stype = tbx_inip_get_string(lio->ifd, section, "authn", lio_default_options.authn_section);
+    if (strcmp(stype,lio_default_options.authn_section) != 0) check_for_section(lio->ifd, stype, "No AuthN Service (authn) found in LIO config!\n");
+    lio->authn_section = stype;
+    lio->authn = _lc_object_get(stype);
+    if (lio->authn == NULL) {  //** Need to load it
+        ctype = tbx_inip_get_string(lio->ifd, stype, "type", AUTHN_TYPE_FAKE);
+        authn_create = lio_lookup_service(lio->ess, AUTHN_AVAILABLE, ctype);
+        lio->authn = (*authn_create)(lio->ess, lio->ifd, stype);
+        if (lio->authn == NULL) {
+            log_printf(1, "Error loading Authentication service!  type=%s section=%s\n", ctype, stype);
+            fprintf(stderr, "Error loading Authentication service!  type=%s section=%s\n", ctype, stype);
+            fflush(stderr);
+            abort();
+        }
+        free(ctype);
+
+        _lc_object_put(stype, lio->authn);  //** Add it to the table
+    }
+    add_service(lio->ess, ESS_RUNNING, ESS_AUTHN, lio->authn);
 
     stype = tbx_inip_get_string(lio->ifd, section, "ds", lio_default_options.ds_section);
     if (strcmp(stype, lio_default_options.ds_section) != 0) check_for_section(lio->ifd, stype, "No primary Data Service (ds) found in LIO config!\n");
@@ -1250,23 +1350,48 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     }
     add_service(lio->ess, ESS_RUNNING, ESS_OS, lio->os);
 
-    cred_args[0] = lio->ifd;
-    cred_args[1] = (user == NULL) ? tbx_inip_get_string(lio->ifd, section, "user", lio_default_options.creds_user) : strdup(user);
-    lio->creds_user = strdup(cred_args[1]);
-    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", (char *)cred_args[1], lio->obj_name);
-    stype = buffer;
-    lio->creds_name = strdup(buffer);
-    tuple = _lc_object_get(stype);
+    //** Launch the server portal if enabled
+    if (portal) gop_mq_portal_install(lio->mqc, portal);
+
+//    ctype = NULL;
+//    n = 0;
+    ctype = user;
+    if (!user) {
+        ctype = tbx_inip_get_string(lio->ifd, section, "user", lio_default_options.creds_user);
+    }
+    n = (ctype) ? strlen(ctype) : 0;
+
+//    ctype = (user == NULL) ? tbx_inip_get_string(lio->ifd, section, "user", lio_default_options.creds_user) : strdup(user);
+//    n = (ctype) ? strlen(ctype) : 0;
+    cred_args[0] = ctype; cred_args[1] = &n;
+//    lio->creds_user = strdup(cred_args[0]);
+    snprintf(buffer, sizeof(buffer), "tuple:%s@%s", (char *)cred_args[0], lio->obj_name);
+log_printf(0, "creds_obj=%s\n", buffer);
+//    lio->creds_name = strdup(buffer);
+    tuple = _lc_object_get(buffer);
     if (tuple == NULL) {  //** Need to load it
-        lio->creds = os_cred_init(lio->os, OS_CREDS_INI_TYPE, (void **)cred_args);
+        lio->creds = authn_cred_init(lio->authn, AUTHN_INIT_DEFAULT, (void **)cred_args);
+log_printf(0, "tuple=NULL. creds=%p\n", lio->creds);
+        if (lio->creds == NULL) {
+            log_printf(0, "ERROR: Failed getting creds! creds_user=%s\n", lio->creds_user); tbx_log_flush();
+            fprintf(stderr, "ERROR: Failed getting creds! creds_user=%s\n", lio->creds_user); fflush(stderr);
+//FIXME            abort();
+        }
         tbx_type_malloc_clear(tuple, lio_path_tuple_t, 1);
         tuple->creds = lio->creds;
         tuple->lc = lio;
-        _lc_object_put(stype, tuple);  //** Add it to the table
+        if (tuple->creds) snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_id(lio->creds, NULL), lio->obj_name);
+        lio->creds_name = strdup(buffer);
+        _lc_object_put(lio->creds_name, tuple);  //** Add it to the table
     } else {
+log_printf(0, "Got a tuple. tuple=%p\n", tuple->creds);
         lio->creds = tuple->creds;
+        lio->creds_name = strdup(buffer);
     }
-    if (cred_args[1] != NULL) free(cred_args[1]);
+    if (cred_args[0] != NULL) free(cred_args[0]);
+
+    lio->creds_user = (lio->creds) ? strdup(an_cred_get_id(lio->creds, NULL)) : strdup("NONE");
+log_printf(0, "user from CREDS=%s\n", lio->creds_user);
 
     if (_lio_cache == NULL) {
         stype = tbx_inip_get_string(lio->ifd, section, "cache", lio_default_options.cache_section);
@@ -1346,8 +1471,8 @@ void lio_print_path_options(FILE *fd)
 void lio_print_object_type_options(FILE *fd, int obj_type_default)
 {
     fprintf(fd, "    -t  object_types   - Types of objects to list or traverse. Bitwise OR of:\n");
-    fprintf(fd, "                             1=Files, 2=Directories, 4=symlink, 8=hardlink.\n");
-    fprintf(fd, "                             16=broken link, 32=virtual attribute, 64=Follow symlinks\n");
+    fprintf(fd, "                             1=Files, 2=Directories, 4=symlink, 8=hardlink,\n");
+    fprintf(fd, "                             16=broken link, 32=executable, 64=virtual attribute, 128=Follow symlinks\n");
     fprintf(fd, "                             Default is %d.\n", obj_type_default);
 }
 
@@ -1447,6 +1572,7 @@ int env2args(char *env, int *argc, char ***eargv)
 int lio_init(int *argc, char ***argvp)
 {
     int i, j, k, ll, ll_override, neargs, nargs, auto_mode, ifll, if_mode, print_config;
+    time_t ts;
     FILE *fd;
     tbx_inip_file_t *ifd;
     tbx_stack_t *hints;
@@ -1550,6 +1676,10 @@ int lio_init(int *argc, char ***argvp)
             i++;
             ll_override = atoi(argv[i]);
             tbx_set_log_level(ll_override);
+            i++;
+        } else if (strcmp(argv[i], "-u") == 0) { //** Default UserID/Account
+            i++;
+            userid = strdup(argv[i]);
             i++;
         } else if (strcmp(argv[i], "-log") == 0) { //** Override log file output
             i++;
@@ -1688,7 +1818,8 @@ no_args:
         dummy = NULL;
         snprintf(obj_name, i, "lstore://%s|%s:%d:%s:%s", "RC", dummy, 6711, "LOCAL", section_name);
     } else {            //** Try and load a remote config
-        if (rc_client_get_config(cfg_name, &config, &obj_name) == 0) {
+        ts = 0;
+        if (rc_client_get_config(NULL, cfg_name, &config, &obj_name, &ts) == 0) {
             ifd = tbx_inip_string_read(config);
             free(config);
         } else {
@@ -1734,7 +1865,7 @@ no_args:
 
     if (auto_mode != -1) lio_gc->auto_translate = auto_mode;
 
-    if (userid != NULL) free(userid);
+//    if (userid != NULL) free(userid);
 
     lio_find_lfs_mounts();  //** Make the global mount prefix table
 
@@ -1759,6 +1890,11 @@ no_args:
     _tcfree = (tcfree_t *)dlsym(RTLD_DEFAULT, "MallocExtension_ReleaseFreeMemory");
 
     log_printf(1, "INIT completed\n");
+
+char public_key[41];
+char secret_key[41];
+int rc = zmq_curve_keypair(public_key, secret_key);
+log_printf(0, "CURVE: rc=%d public=%s secret=%s\n", rc, public_key, secret_key);
 
     return(0);
 }

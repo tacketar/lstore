@@ -54,7 +54,7 @@
 
 static lio_rs_remote_server_priv_t rsrs_default_options = {
     .section = "rs_remote_server",
-    .hostname = "${rsrs_host}",
+    .hostname = NULL,
     .rs_local_section = "rs_simple"
 };
 
@@ -486,7 +486,11 @@ void rsrs_print_running_config(lio_resource_service_fn_t *rs, FILE *fd, int prin
 
         if (print_section_heading) fprintf(fd, "[%s]\n", rsrs->section);
         fprintf(fd, "type = %s\n", RS_TYPE_REMOTE_SERVER);
-        fprintf(fd, "address = %s\n", rsrs->hostname);
+        if (rsrs->hostname) {
+            fprintf(fd, "address = %s\n", rsrs->hostname);
+        } else {
+            fprintf(fd, "#Using default host portal address\n");
+        }
         fprintf(fd, "rs_local = %s\n", rsrs->rs_local_section);
         fprintf(fd, "\n");
 
@@ -508,9 +512,12 @@ void rs_remote_server_destroy(lio_resource_service_fn_t *rs)
     apr_thread_mutex_unlock(rsrs->lock);
     apr_thread_join(&dummy, rsrs->monitor_thread);
 
-    //** Remove and destroy the server portal
-    gop_mq_portal_remove(rsrs->mqc, rsrs->server_portal);
-    gop_mq_portal_destroy(rsrs->server_portal);
+    //** Remove and destroy the server portal if needed
+    if (rsrs->hostname) {
+        gop_mq_portal_remove(rsrs->mqc, rsrs->server_portal);
+        gop_mq_portal_destroy(rsrs->server_portal);
+        free(rsrs->hostname);
+    }
 
     //** Shutdown the child RS
     rs_destroy_service(rsrs->rs_child);
@@ -518,7 +525,6 @@ void rs_remote_server_destroy(lio_resource_service_fn_t *rs)
     //** Now do the normal cleanup
     apr_pool_destroy(rsrs->mpool);
     tbx_stack_free(rsrs->pending, 0);
-    free(rsrs->hostname);
     free(rsrs->section);
     free(rsrs->rs_local_section);
     free(rsrs);
@@ -558,7 +564,7 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
     rsrs->notify_map_version.lock = rsrs->lock;
     rsrs->notify_map_version.cond = rsrs->cond;
 
-    //** Get the host name we bind to
+    //** Get the host name we bind to or use the global if NULL
     rsrs->hostname= tbx_inip_get_string(fd, section, "address", rsrs_default_options.hostname);
 
     //** Start the child RS.   The update above should have dumped a RID config for it to load
@@ -583,13 +589,19 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
     //** Get the MQC
     rsrs->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ);FATAL_UNLESS(rsrs->mqc != NULL);
 
-    //** Make the server portal
-    rsrs->server_portal = gop_mq_portal_create(rsrs->mqc, rsrs->hostname, MQ_CMODE_SERVER);
+    //** Make the server portal or use the default
+    if (rsrs->hostname) {
+        rsrs->server_portal = gop_mq_portal_create(rsrs->mqc, rsrs->hostname, MQ_CMODE_SERVER);
+    } else {
+        rsrs->server_portal = lio_lookup_service(ess, ESS_RUNNING, ESS_SERVER_PORTAL); FATAL_UNLESS(rsrs->server_portal != NULL);
+    }
     ctable = gop_mq_portal_command_table(rsrs->server_portal);
     gop_mq_command_set(ctable, RSR_GET_RID_CONFIG_KEY, RSR_GET_RID_CONFIG_SIZE, rs, rsrs_rid_config_cb);
     gop_mq_command_set(ctable, RSR_GET_UPDATE_CONFIG_KEY, RSR_GET_UPDATE_CONFIG_SIZE, rs, rsrs_rid_config_cb);
     gop_mq_command_set(ctable, RSR_ABORT_KEY, RSR_ABORT_SIZE, rs, rsrs_abort_cb);
-    gop_mq_portal_install(rsrs->mqc, rsrs->server_portal);
+
+    //** Start it if not useing the default
+    if (rsrs->hostname) gop_mq_portal_install(rsrs->mqc, rsrs->server_portal);
 
     //** Launch the config changes thread
     tbx_thread_create_assert(&(rsrs->monitor_thread), NULL, rsrs_monitor_thread, (void *)rs, rsrs->mpool);
