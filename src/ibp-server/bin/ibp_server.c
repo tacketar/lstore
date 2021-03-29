@@ -29,6 +29,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/dns_cache.h>
 #include <tbx/fork_helper.h>
+#include <tbx/siginfo.h>
 #include <tbx/type_malloc.h>
 #include "lock_alloc.h"
 #include "activity_log.h"
@@ -628,6 +629,28 @@ int ibp_shutdown(Config_t *cfg)
 }
 
 //*****************************************************************************
+// snap_all_rids - Call the DB snap for each mounted resource
+//*****************************************************************************
+
+void snap_all_rids(void *arg, FILE *fd)
+{
+    int err;
+    Resource_t *r;
+    resource_list_iterator_t it;
+
+    //** Snapping al lthe RIDs
+    fprintf(fd, "Starting SNAP of all RIDs\n");
+    it = resource_list_iterator(global_config->rl);
+    while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
+        fprintf(fd, "Snapping rid=%s\n", r->name); fflush(fd);
+        err = snap_resource(r, fd);
+        fprintf(fd, "   rid=%s snap_status=%d\n", r->name, err); fflush(fd);
+    }
+    resource_list_iterator_destroy(global_config->rl, &it);
+    fprintf(fd, "Finished SNAP of all RIDs\n");
+}
+
+//*****************************************************************************
 // configure_signals - Configures the signals
 //*****************************************************************************
 
@@ -642,6 +665,10 @@ void configure_signals()
 #ifdef SIGPIPE
     apr_signal_block(SIGPIPE);
 #endif
+
+    //** Lastly set up the handler for the doing a DB snap
+    tbx_siginfo_install("/log/snap.log", SIGRTMIN);
+    tbx_siginfo_handler_add(SIGRTMIN, snap_all_rids, NULL);
 }
 
 //*****************************************************************************

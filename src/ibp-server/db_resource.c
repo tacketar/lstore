@@ -218,6 +218,7 @@ int db_id_compare_op(void *arg, const char *a, size_t alen, const char *b, size_
 void db_id_compare_destroy(void *arg) { return; }
 const char *db_id_compare_name(void *arg) { return("ID"); }
 
+
 //***************************************************************************
 // print_db_resource - Prints the DB resource
 //***************************************************************************
@@ -231,6 +232,63 @@ int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr)
     return (i);
 }
 
+
+//***************************************************************************
+// snap_a_db - Snaps the given DB
+//***************************************************************************
+
+int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
+{
+    rocksdb_checkpoint_t *cp;
+    char *errstr = NULL;
+
+    cp = rocksdb_checkpoint_object_create(db, &errstr);
+    if (errstr != NULL) {
+        fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint object. Error:\"%s\"\n", db_name, errstr);
+        free(errstr);
+        errstr = NULL;
+        return(1);
+    }
+
+    rocksdb_checkpoint_create(cp, cp_dir, 0, &errstr);
+    rocksdb_checkpoint_object_destroy(cp);
+    if (errstr != NULL) {
+        fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint. Checkpoint loc:\"%s\" error:\"%s\"\n", db_name, cp_dir, errstr);
+        free(errstr);
+        errstr = NULL;
+        return(2);
+    }
+
+    return(0);
+}
+
+//***************************************************************************
+// snap_a_db - Snaps all the DBs for the RID
+//***************************************************************************
+
+int snap_db(DB_resource_t *dbr, FILE *fd)
+{
+    char cp_dir[4096];
+    int err;
+
+    dbr_lock(dbr);
+
+    snprintf(cp_dir, sizeof(cp_dir), "%s/id-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
+    err = snap_a_db(dbr->pdb, "id", cp_dir, fd);
+
+    snprintf(cp_dir, sizeof(cp_dir), "%s/expire-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
+    err += snap_a_db(dbr->expire, "expire", cp_dir, fd);
+
+    snprintf(cp_dir, sizeof(cp_dir), "%s/soft-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
+    err += snap_a_db(dbr->soft, "soft", cp_dir, fd);
+
+    snprintf(cp_dir, sizeof(cp_dir), "%s/history-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
+    err += snap_a_db(dbr->history, "history", cp_dir, fd);
+
+    dbr_unlock(dbr);
+
+    return(err);
+}
 
 //***************************************************************************
 // mkfs_db - Creates a new DB resource

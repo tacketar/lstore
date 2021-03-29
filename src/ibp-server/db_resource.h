@@ -71,6 +71,7 @@ void dbr_lock(DB_resource_t *dbr);
 void dbr_unlock(DB_resource_t *dbr);
 int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr);
 int mkfs_db(DB_resource_t *dbr, char *loc, const char *kgroup, FILE *fd, int n_partitions);
+int snap_db(DB_resource_t *dbres, FILE *fd);
 int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_resource_t *dbres);
 int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
                      DB_resource_t *dbres, int wipe_clean, int n_partitions);

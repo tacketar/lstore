@@ -152,6 +152,7 @@ IBPS_API int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *gro
                             int force_rebuild, int lazy_allocate,
                             int truncate_expiration);
 IBPS_API int umount_resource(Resource_t *res);
+IBPS_API int snap_resource(Resource_t *res, FILE *fd);
 IBPS_API int print_resource(char *buffer, int *used, int nbytes, Resource_t *res);
 IBPS_API int print_resource_usage(Resource_t *r, FILE *fd);
 IBPS_API int resource_get_corrupt_count(Resource_t *r);

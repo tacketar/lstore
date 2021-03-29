@@ -1020,6 +1020,21 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
 //---------------------------------------------------------------------------
 
 //***************************************************************************
+// snap_resource - Does a DB snap on the resource
+//***************************************************************************
+
+int snap_resource(Resource_t *r, FILE *fd)
+{
+    int err;
+
+    apr_thread_mutex_lock(r->mutex);
+    err = snap_db(&(r->db), fd);
+    apr_thread_mutex_unlock(r->mutex);
+
+    return(err);
+}
+
+//***************************************************************************
 //  resource_get_mode - Returns the RWM mode
 //***************************************************************************
 
