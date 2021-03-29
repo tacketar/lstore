@@ -31,6 +31,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "gop.h"
@@ -1345,7 +1346,7 @@ int mq_conn_make(gop_mq_conn_t *c)
     }
 
     size_t s = sizeof(c->mq_uuid);
-    zmq_getsockopt(c->sock->arg, ZMQ_IDENTITY, c->mq_uuid, &s);
+    zmq_getsockopt(c->sock->arg, ZMQ_ROUTING_ID, c->mq_uuid, &s);
     if (s <= 0) strncpy(c->mq_uuid, "ERROR_GETTING_IDENTITY", sizeof(c->mq_uuid));
 
     if (err != 0) return(1);
