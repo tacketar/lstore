@@ -31,11 +31,15 @@
 #include <tbx/log.h>
 #include <tbx/random.h>
 #include <tbx/stack.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
 
 #include "mq_portal.h"
 #include "mq_helpers.h"
+
+#define SERVER_CONFIG "authorized_keys"
+#define CLIENT_CONFIG "known_hosts"
 
 //*************************************************************
 //   Native routines
@@ -51,6 +55,80 @@ void zero_native_destroy(gop_mq_socket_context_t *ctx, gop_mq_socket_t *socket)
 
 //*************************************************************
 
+void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
+{
+    char fname[PATH_MAX];
+    char public_key[41], secret_key[41];
+    char *home, *section, *etext, *key;
+    tbx_inip_file_t *ifd;
+    int k;
+
+    home = getenv("HOME");
+    snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, ((server_mode) ? SERVER_CONFIG : CLIENT_CONFIG)); fname[sizeof(fname)-1] = '\0';
+
+    ifd = tbx_inip_file_read(fname);
+    if (!ifd) return;  //** No config to load so no encryption
+
+    section = tbx_inip_get_string(ifd, "mappings", id, NULL);
+    if (!section) return;  //** No mappings to load so no encryption
+
+    if (server_mode) {
+        etext = tbx_inip_get_string(ifd, section, "secret_key", NULL);
+        if (!etext) {
+            log_printf(0, "ERROR Missing secret key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR Missing secret key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        key = tbx_stk_unescape_text('\\', etext);
+        if (zmq_setsockopt(socket->arg, ZMQ_CURVE_SECRETKEY, key, strlen(key)+1) != 0) {
+            log_printf(0, "ERROR with secret key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR with secret key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        free(etext); free(key);
+
+        etext = tbx_inip_get_string(ifd, section, "public_key", NULL);
+        if (!etext) {
+            log_printf(0, "ERROR Missing public key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR Missing public key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        key = tbx_stk_unescape_text('\\', etext);
+        if (zmq_setsockopt(socket->arg, ZMQ_CURVE_PUBLICKEY, key, strlen(key)+1) != 0) {
+            log_printf(0, "ERROR with public key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR with public key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        free(etext); free(key);
+
+        k=1;
+        zmq_setsockopt(socket->arg, ZMQ_CURVE_SERVER, &k, sizeof(k));
+    } else {
+        zmq_curve_keypair(public_key, secret_key);
+        zmq_setsockopt(socket->arg, ZMQ_CURVE_PUBLICKEY, public_key, 41);
+        zmq_setsockopt(socket->arg, ZMQ_CURVE_SECRETKEY, secret_key, 41);
+
+        etext = tbx_inip_get_string(ifd, section, "public_key", NULL);
+        if (!etext) {
+            log_printf(0, "ERROR Missing public key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR Missing public key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        key = tbx_stk_unescape_text('\\', etext);
+        if (zmq_setsockopt(socket->arg, ZMQ_CURVE_SERVERKEY, key, strlen(key)+1) != 0) {
+            log_printf(0, "ERROR with server public key for host: %s  section=%s\n", id, section); tbx_log_flush();
+            fprintf(stderr, "ERROR with server public key for host: %s  section=%s\n", id, section); fflush(stderr);
+            exit(1);
+        }
+        free(etext); free(key);
+    }
+
+    free(section);
+    tbx_inip_destroy(ifd);
+}
+
+//*************************************************************
+
 int zero_native_bind(gop_mq_socket_t *socket, const char *format, ...)
 {
     va_list args;
@@ -61,7 +139,7 @@ int zero_native_bind(gop_mq_socket_t *socket, const char *format, ...)
     snprintf(id, 255, format, args);
     n = mq_id_bytes(id, strlen(id));
     if (socket->type != MQ_PAIR) {
-        err = zmq_setsockopt(socket->arg, ZMQ_IDENTITY, id, n);
+        err = zmq_setsockopt(socket->arg, ZMQ_ROUTING_ID, id, n);
         if (err != 0) {
             log_printf(0, "ERROR setting socket identity! id=%s err=%d errno=%d\n", id, err, errno);
             return(-1);
@@ -79,6 +157,9 @@ int zero_native_bind(gop_mq_socket_t *socket, const char *format, ...)
         n = 0;
     }
 
+    //** See if we should enable encryption
+    if (socket->type != MQ_PAIR) encrypt_socket(socket, id + n, 1);
+
     err = zmq_bind(socket->arg, &(id[n]));
     n = errno;
     va_end(args);
@@ -90,8 +171,7 @@ int zero_native_bind(gop_mq_socket_t *socket, const char *format, ...)
 
 //*************************************************************
 
-int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...)
-{
+int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...) {
     va_list args;
     int err, n;
     char buf[255], id[256];
@@ -108,7 +188,7 @@ int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...)
     if (socket->type != MQ_PAIR) {
         gethostname(buf, sizeof(buf));
         snprintf(id, 255, "%s:" I64T , buf, tbx_random_get_int64(1, 1000000));
-        err = zmq_setsockopt(socket->arg, ZMQ_IDENTITY, id, strlen(id));
+        err = zmq_setsockopt(socket->arg, ZMQ_ROUTING_ID, id, strlen(id));
         if (err != 0) {
             log_printf(0, "ERROR setting socket identity! id=%s err=%d errno=%d\n", id, err, errno);
             return(-1);
@@ -123,6 +203,10 @@ int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...)
     } else {
         n = 0;
     }
+
+    //** See if we should enable encryption
+    if (socket->type != MQ_PAIR) encrypt_socket(socket, id + n, 0);
+
     err = zmq_connect(socket->arg, &(id[n]));
     va_end(args);
 

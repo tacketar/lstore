@@ -135,6 +135,7 @@ struct gop_mq_context_t {      //** Main MQ context
 
 struct gop_mq_portal_t {   //** Container for managing connections to a single host
     char *host;       //** Host address
+    char *public_key; //** Optional Public key
     int connect_mode; //** Connection mode connect vs bind
     int min_conn;     //** Min connections to MQ host
     int max_conn;     //** Max number of connections to MQ host
