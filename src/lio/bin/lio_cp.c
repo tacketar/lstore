@@ -33,12 +33,33 @@
 #include <lio/lio.h>
 #include <lio/os.h>
 
+void mangle_copy_path(lio_cp_path_t *cp)
+{
+    int i;
+    char *path;
+
+    i = strlen(cp->src_tuple.path);
+    tbx_type_malloc(path, char, i+2+1);
+    if (cp->src_tuple.path[i] == '/') {
+        snprintf(path, i+2+1, "%s*", cp->src_tuple.path);
+    } else {
+        snprintf(path, i+2+1, "%s/*", cp->src_tuple.path);
+    }
+    free(cp->src_tuple.path);
+    cp->src_tuple.path = path;
+    lio_os_regex_table_destroy(cp->path_regex);
+    cp->path_regex = lio_os_path_glob2regex(cp->src_tuple.path);
+    cp->force_dest_create = 1;
+
+    return;
+}
+
 //*************************************************************************
 //*************************************************************************
 
 int main(int argc, char **argv)
 {
-    int i, start_index, start_option, n_paths, n_errors, return_code, enable_local;
+    int i, n, start_index, start_option, n_paths, n_errors, return_code, enable_local;
     int max_spawn, stype, sflag, dflag;
     int obj_types = OS_OBJECT_ANY_FLAG;
     ex_off_t bufsize;
@@ -122,6 +143,8 @@ int main(int argc, char **argv)
     }
 
     //** Make the dest tuple
+    n = strlen(path);
+    if (path[n-1] == '/') path[n-1] = '\0';
     dtuple = lio_path_resolve(lio_gc->auto_translate, path);
     if (dtuple.is_lio < 0) {
         fprintf(stderr, "Unable to parse destination path: %s\n", argv[argc-1]);
@@ -204,18 +227,7 @@ int main(int argc, char **argv)
                 if (stype & OS_OBJECT_FILE_FLAG) {
                     status = lio_file_copy_op(&cpf, 0);
                 } else if (stype & OS_OBJECT_DIR_FLAG) {
-                    i = strlen(cp->src_tuple.path);
-                    tbx_type_malloc(path, char, i+2+1);
-                    if (cp->src_tuple.path[i] == '/') {
-                        snprintf(path, i+2+1, "%s*", cp->src_tuple.path);
-                    } else {
-                        snprintf(path, i+2+1, "%s/*", cp->src_tuple.path);
-                    }
-                    free(cp->src_tuple.path);
-                    cp->src_tuple.path = path;
-                    lio_os_regex_table_destroy(cp->path_regex);
-                    cp->path_regex = lio_os_path_glob2regex(cp->src_tuple.path);
-                    cp->force_dest_create = 1;
+                    mangle_copy_path(cp);
                     status = lio_path_copy_op(cp, 0);
                 }
             } else {                                        //** Destination already exists
