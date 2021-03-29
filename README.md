@@ -35,6 +35,7 @@ You will need to bring your own copies of:
 * zeromq3-devel
 * rocksdb-devel
 * libsodium-devel
+* libacl-devel
 
 In addition, LStore has build-time dependencies on
 
@@ -45,7 +46,7 @@ For centos, at least, these dependencies can be installed with:
 
 ```
 yum groupinstall "Development Tools"
-yum install cmake openssl-devel libsodium-devel zeromq3-devel zlib-devel fuse3-devel rocksdb-devel apr-devel apr-util-devel
+yum install cmake openssl-devel libacl-devel libsodium-devel zeromq3-devel zlib-devel fuse3-devel rocksdb-devel apr-devel apr-util-devel
 ```
 
 Although RocksDB is only available via Fedora on RedHat/CentOS and will need to be built

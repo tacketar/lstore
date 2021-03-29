@@ -31,6 +31,7 @@
 
 #include "ex3.h"
 #include "lio.h"
+#include "path_acl.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,7 @@ struct lio_fuse_t;
 
 struct lio_fuse_t {
     int enable_tape;
+    int enable_osaz_acl_mappings;
     int shutdown;
     int mount_point_len;
     int n_merge;
@@ -67,6 +69,10 @@ struct lio_fuse_t {
     char *id;
     char *mount_point;
     lio_segment_rw_hints_t *rw_hints;
+    lio_os_authz_t *osaz;
+    char *authz_section;
+    char *lfs_section;
+    struct fuse_conn_info *conn;
 };
 
 #ifdef HAS_FUSE3

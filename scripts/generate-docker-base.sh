@@ -77,6 +77,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     expat-devel
                                     fuse3-devel
                                     libtool
+                                    libacl-devel
                                     libsodium-devel
                                     openssl-devel
                                     python
@@ -99,6 +100,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     dpkg-dev
                                     git-buildpackage
                                     git-core
+                                    libacl1-dev
                                     libapr1-dev
                                     libaprutil1-dev
                                     libdistro-info-perl

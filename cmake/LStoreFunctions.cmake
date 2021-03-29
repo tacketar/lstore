@@ -28,7 +28,7 @@ macro(lstore_project_common LSTORE_PROJECT_NAME)
     configure_file(${LSTORE_PROJECT_NAME}.pc.in ${LSTORE_PROJECT_NAME}.pc @ONLY)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${LSTORE_PROJECT_NAME}.pc" DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
-    target_link_libraries(${LSTORE_PROJECT_NAME} LINK_PUBLIC ${LSTORE_LIBS} m pthread)
+    target_link_libraries(${LSTORE_PROJECT_NAME} LINK_PUBLIC ${LSTORE_LIBS} acl m pthread)
 
     if(NOT BUILD_SHARED_LIBS)
         target_link_libraries(${LSTORE_PROJECT_NAME} LINK_PUBLIC ${LSTORE_LIBS} dl)

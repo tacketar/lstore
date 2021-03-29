@@ -26,6 +26,7 @@
 
 #include "authn.h"
 #include "authn/fake.h"
+#include "authn/psk.h"
 #include "cache.h"
 #include "cache/amp.h"
 #include "cache/direct.h"
@@ -39,6 +40,7 @@
 #include "os/remote.h"
 #include "os/timecache.h"
 #include "osaz/fake.h"
+#include "osaz/path_acl.h"
 #include "rs.h"
 #include "rs/remote.h"
 #include "rs/simple.h"
@@ -88,8 +90,11 @@ lio_service_manager_t *lio_exnode_service_set_create()
     add_service(ess, OS_AVAILABLE, OS_TYPE_TIMECACHE, object_service_timecache_create);
 
     add_service(ess, AUTHN_AVAILABLE, AUTHN_TYPE_FAKE, authn_fake_create);
+    add_service(ess, AUTHN_AVAILABLE, AUTHN_TYPE_PSK_CLIENT, authn_psk_client_create);
+    add_service(ess, AUTHN_AVAILABLE, AUTHN_TYPE_PSK_SERVER, authn_psk_server_create);
 
     add_service(ess, OSAZ_AVAILABLE, OSAZ_TYPE_FAKE, osaz_fake_create);
+    add_service(ess, OSAZ_AVAILABLE, OSAZ_TYPE_PATH_ACL, osaz_path_acl_create);
 
     add_service(ess, CACHE_LOAD_AVAILABLE, CACHE_TYPE_AMP, amp_cache_load);
     add_service(ess, CACHE_CREATE_AVAILABLE, CACHE_TYPE_AMP, amp_cache_create);

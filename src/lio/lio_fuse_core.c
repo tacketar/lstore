@@ -18,6 +18,9 @@
 
 #include "config.h"
 
+#include <sys/types.h>
+#include <sys/acl.h>
+
 #include <apr_hash.h>
 #include <apr_network_io.h>
 #include <apr_pools.h>
@@ -50,6 +53,7 @@
 #include <zlib.h>
 
 #include "blacklist.h"
+#include "osaz/fake.h"
 #include "cache.h"
 #include "ex3.h"
 #include "ex3/types.h"
@@ -124,14 +128,157 @@ mode_t ftype_lio2fuse(int ftype)
     mode_t mode;
 
     if (ftype & OS_OBJECT_SYMLINK_FLAG) {
-        mode = S_IFLNK | 0777;
+        mode = S_IFLNK | 0770;
     } else if (ftype & OS_OBJECT_DIR_FLAG) {
-        mode = S_IFDIR | 0755;
+        mode = S_IFDIR | 0770;
     } else {
-        mode = S_IFREG | 0666;  //** Make it so that everything has RW access
+        mode = S_IFREG | 0660;  //** Make it so that everything has RW access
     }
 
     return(mode);
+}
+
+
+//*************************************************************************
+// LFS OSAZ Wrapper routines.  Basically they just force getting the
+//    realpath before passing to the OSAZ
+//*************************************************************************
+
+//***********************************************************************
+
+char *_lfs_realpath(lio_fuse_t *lfs, const char *path, char *rpath, int include_basename)
+{
+    char *dir, *file = NULL;
+
+    //** Check the Path ACL
+    //** Split out the parent directory
+    if (include_basename) {
+        dir = (char *)path;
+    } else {
+        lio_os_path_split(path, &dir, &file);
+        if (file) free(file);
+    }
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, dir, rpath) != 0) {
+        if ((!include_basename) && (dir)) free(dir);
+        if (file) free(file);
+        return(NULL);
+    }
+
+    if ((!include_basename) && (dir)) free(dir);
+
+    return(rpath);
+}
+
+//***********************************************************************
+
+void lfs_osaz_attr_filter_apply(lio_fuse_t *lfs, const char *key, int mode, char **value, int *len, osaz_attr_filter_t filter)
+{
+    void *v_out;
+    int len_out;
+
+    if (filter == NULL) return;
+
+    filter(lfs->osaz, (char *)key, mode, *value, *len, &v_out, &len_out);
+    free(*value);
+    *value = v_out;
+    *len = len_out;
+    return;
+}
+
+//***********************************************************************
+
+int lfs_osaz_object_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *path)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_object_create(lfs->osaz, lfs->lc->creds, &ug, realpath));
+}
+
+//***********************************************************************
+
+int lfs_osaz_object_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char *path)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_object_remove(lfs->osaz, lfs->lc->creds, &ug, path));
+}
+
+//***********************************************************************
+
+int lfs_osaz_object_access(lio_fuse_t *lfs, struct fuse_context *fc, const char *path, int mode)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_object_access(lfs->osaz, lfs->lc->creds, &ug, path, mode));
+}
+
+//***********************************************************************
+
+int lfs_osaz_attr_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *path, const char *key)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_attr_create(lfs->osaz, lfs->lc->creds, &ug, path, key));
+}
+
+//***********************************************************************
+
+int lfs_osaz_attr_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char *path, const char *key)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_attr_remove(lfs->osaz, lfs->lc->creds, &ug, path, key));
+}
+
+//***********************************************************************
+
+int lfs_osaz_posix_acl(lio_fuse_t *lfs, struct fuse_context *fc, const char *path, int lio_ftype, char *val, size_t size, uid_t *uid, gid_t *gid, mode_t *mode)
+{
+    char realpath[OS_PATH_MAX];
+
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    return(osaz_posix_acl(lfs->osaz, lfs->lc->creds, path, lio_ftype, val, size, uid, gid, mode));
+}
+
+//***********************************************************************
+
+int lfs_osaz_attr_access(lio_fuse_t *lfs, struct fuse_context *fc, const char *path, const char *key, int mode, osaz_attr_filter_t *filter)
+{
+    char realpath[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
+
+    ug.uid = fc->uid; ug.gid = fc->gid;
+    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+
+    *filter = NULL;
+    return(osaz_attr_access(lfs->osaz, lfs->lc->creds, &ug, path, key, mode, filter));
 }
 
 //*************************************************************************
@@ -181,8 +328,7 @@ void _lfs_parse_stat_vals(lio_fuse_t *lfs, char *fname, struct stat *stat, char 
     //** File types
     n = 0;
     if (val[4] != NULL) sscanf(val[4], "%d", &n);
-    stat->st_mode = ftype_lio2fuse(n);
-
+    osaz_posix_acl(lfs->osaz, lfs->lc->creds, fname, n, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
     //** Size
     ino = 0;
     len = -1;
@@ -201,9 +347,11 @@ void _lfs_parse_stat_vals(lio_fuse_t *lfs, char *fname, struct stat *stat, char 
         if (val[3] != NULL) sscanf(val[3], XOT, &len);
     }
 
+    if (n & OS_OBJECT_DIR_FLAG) len = 1;
     stat->st_size = (n & OS_OBJECT_SYMLINK_FLAG) ? readlink : len;
     stat->st_blksize = 6*16*1024;
     stat->st_blocks = stat->st_size / stat->st_blksize;
+    if (stat->st_blocks <= 0) stat->st_blocks = 1;
     if (stat->st_size < 1024) stat->st_blksize = 1024;
 
     //** N-links
@@ -292,7 +440,7 @@ int lfs_closedir_real(lfs_dir_iter_t *dit)
     if (dit->stack) {
         //** Cyle through releasing all the entries
         while ((de = (lfs_dir_entry_t *)tbx_stack_pop(dit->stack)) != NULL) {
-            log_printf(0, "fname=%s\n", de->dentry);
+            log_printf(15, "fname=%s\n", de->dentry);
             tbx_log_flush();
             free(de->dentry);
             free(de);
@@ -513,9 +661,42 @@ int lfs_object_create(lio_fuse_t *lfs, const char *fname, mode_t mode, int ftype
 int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 {
     lio_fuse_t *lfs = lfs_get_context();
+
+    //** Make sure we can access it
+    if (!lfs_osaz_object_create(lfs, fuse_get_context(), fname)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
+
     return(lfs_object_create(lfs, fname, mode, OS_OBJECT_FILE_FLAG));
 }
 
+
+//*************************************************************************
+// lfs_chmod - Currently this only changes the exec bit for a FILE
+//*************************************************************************
+
+#ifdef HAS_FUSE3
+int lfs_chmod(const char *fname, mode_t mode, struct fuse_file_info *fi)
+#else
+int lfs_chmod(const char *fname, mode_t mode)
+#endif
+{
+    lio_fuse_t *lfs = lfs_get_context();
+    gop_op_status_t status;
+    int exec_mode, err;
+
+    //** Make sure we can access it
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
+
+    exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
+    status = gop_sync_exec_status(os_object_exec_modify(lfs->lc->os, lfs->lc->creds, (char *)fname, exec_mode));
+    err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+    return(err);
+}
 
 //*************************************************************************
 // lfs_mkdir - Makes a directory
@@ -524,6 +705,13 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 int lfs_mkdir(const char *fname, mode_t mode)
 {
     lio_fuse_t *lfs = lfs_get_context();
+
+    //** Make sure we can access it
+    if (!lfs_osaz_object_create(lfs, fuse_get_context(), fname)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
+
     return(lfs_object_create(lfs, fname, mode, OS_OBJECT_DIR_FLAG));
 }
 
@@ -556,6 +744,12 @@ int lfs_object_remove(lio_fuse_t *lfs, const char *fname)
 
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
+
+    //** Make sure we can access it
+    if (!lfs_osaz_object_remove(lfs, fuse_get_context(), fname)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
 
     //** Check if it's open.  If so do a delayed removal
     lfs_lock(lfs);
@@ -614,6 +808,13 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     if (fi->flags & O_CREAT) mode |= LIO_CREATE_MODE;
     if (fi->flags & O_TRUNC) mode |= LIO_TRUNCATE_MODE;
 
+    //** Make sure we can access it
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, mode)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
+
+    //** Ok we can access the file if we made it here
     fi->fh = 0;
     gop_sync_exec(lio_open_gop(lfs->lc, lfs->lc->creds, (char *)fname, mode, NULL, &fd, 60));
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
@@ -903,6 +1104,11 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
 
     if (flags) return(-EINVAL);  //** We don't currently do anything with the flags
 
+    //** Make sure we can access it
+    if (!(lfs_osaz_object_remove(lfs, fuse_get_context(), oldname) && lfs_osaz_object_create(lfs, fuse_get_context(), newname))) {
+        return(-EACCES);
+    }
+
     lfs_lock(lfs);
     fop = apr_hash_get(lfs->open_files, oldname, APR_HASH_KEY_STRING);
     if (fop) {  //** Got an open file so need to mve the entry there as well.
@@ -945,6 +1151,12 @@ int lfs_truncate(const char *fname, off_t new_size)
 
     ts = new_size;
     log_printf(15, "adjusting size=" XOT "\n", ts);
+
+    //** Make sure we can access it
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_WRITE_MODE)) {
+        log_printf(0, "Invalid access: path=%s\n", fname);
+        return(-EACCES);
+    }
 
     gop_sync_exec(lio_open_gop(lfs->lc, lfs->lc->creds, (char *)fname, LIO_RW_MODE, NULL, &fd, 60));
     if (fd == NULL) {
@@ -1327,22 +1539,43 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
 #  endif
 {
     lio_fuse_t *lfs = lfs_get_context();
+    osaz_attr_filter_t filter;
     char *val;
-    int v_size, err;
+    int v_size, err, ftype;
+    uid_t uid;
+    gid_t gid;
+    mode_t mode;
 
     v_size= size;
     log_printf(1, "fname=%s size=%zu attr_name=%s\n", fname, size, name);
     tbx_log_flush();
 
+    if (lfs->enable_osaz_acl_mappings) {
+        if (strcmp("system.posix_acl_access", name) == 0) {
+            ftype = lio_exists(lfs->lc, lfs->lc->creds, (char *)fname);
+            if (ftype <= 0) {
+                log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
+                return(-ENODATA);
+            }
+            return(osaz_posix_acl(lfs->osaz, lfs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode));
+        }
+    }
+
     v_size = (size == 0) ? -lfs->lc->max_attr : -(int)size;
     val = NULL;
     if ((lfs->enable_tape == 1) && (strcmp(name, LFS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
+        //** Make sure we can access it
+        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
         lfs_get_tape_attr(lfs, (char *)fname, &val, &v_size);
+        lfs_osaz_attr_filter_apply(lfs, name, LIO_READ_MODE, &val, &v_size, filter);
     } else {
+        //** Make sure we can access it
+        if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
         err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (err != OP_STATE_SUCCESS) {
-            return(-ENOENT);
+            return(-ENOATTR);
         }
+        lfs_osaz_attr_filter_apply(lfs, name, LIO_READ_MODE, &val, &v_size, filter);
     }
 
     err = 0;
@@ -1350,7 +1583,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
         v_size = 0;  //** No attribute
         err = -ENODATA;
     }
-    
+
     if (size == 0) {
         log_printf(1, "SIZE bpos=%d buf=%.*s\n", v_size, v_size, val);
     } else if ((int)size >= v_size) {
@@ -1376,12 +1609,15 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
 #  endif
 {
     lio_fuse_t *lfs = lfs_get_context();
+    osaz_attr_filter_t filter;
     char *val;
     int v_size, err;
 
     v_size= size;
     log_printf(1, "fname=%s flags=%d size=%zu attr_name=%s\n", fname, flags, size, name);
     tbx_log_flush();
+
+    if (strcmp("system.posix_acl_access", name) == 0) return(0);  //** We don't allow setting that now
 
     if (flags != 0) { //** Got an XATTR_CREATE/XATTR_REPLACE
         v_size = 0;
@@ -1400,9 +1636,15 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
 
     v_size = size;
     if ((lfs->enable_tape == 1) && (strcmp(name, LFS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
+        //** Make sure we can access it
+        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_WRITE_MODE, &filter)) return(-EACCES);
         lfs_set_tape_attr(lfs, (char *)fname, (char *)fval, v_size);
         return(0);
     } else {
+        //** Make sure we can access it
+        if (strcmp(name, "system.exnode") == 0) {
+           if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_WRITE_MODE, &filter)) return(-EACCES);
+        }
         err = lio_setattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
             return(-ENOENT);
@@ -1428,6 +1670,9 @@ int lfs_removexattr(const char *fname, const char *name)
         return(0);
     }
 
+    //** Not allowed to remove the exnode
+    if (strcmp(name, "system.exnode") == 0) return(-EACCES);
+
     v_size = -1;
     err = lio_setattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, NULL, v_size);
     if (err != OP_STATE_SUCCESS) {
@@ -1448,6 +1693,11 @@ int lfs_hardlink(const char *oldname, const char *newname)
 
     log_printf(1, "oldname=%s newname=%s\n", oldname, newname);
     tbx_log_flush();
+
+    //** Make sure we can access it
+    if (!(lfs_osaz_object_remove(lfs, fuse_get_context(), oldname) && lfs_osaz_object_create(lfs, fuse_get_context(), newname))) {
+        return(-EACCES);
+    }
 
     //** Now do the hard link
     err = gop_sync_exec(lio_link_gop(lfs->lc, lfs->lc->creds, 0, (char *)oldname, (char *)newname, lfs->id));
@@ -1522,6 +1772,11 @@ int lfs_symlink(const char *link, const char *newname)
         }
     }
 
+    //** Make sure we can access it
+    if (!(lfs_osaz_object_create(lfs, fuse_get_context(), link2) && lfs_osaz_object_create(lfs,fuse_get_context(), newname))) {
+        return(-EACCES);
+    }
+
     //** Now do the sym link
     err = gop_sync_exec(lio_link_gop(lfs->lc, lfs->lc->creds, 1, (char *)link2, (char *)newname, lfs->id));
     if (err != OP_STATE_SUCCESS) {
@@ -1560,6 +1815,7 @@ int lfs_statfs(const char *fname, struct statvfs *fs)
     fs->f_ffree = 10*1024*1024;
     fs->f_namemax = 4096 - 100;
 
+log_printf(0, "free space=" LU "\n", space.free_up/1024/1024/1024/1024);
     return(0);
 }
 
@@ -1574,14 +1830,28 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     char ppbuf[100];
 
     fprintf(fd, "---------------------------------- LFS config start --------------------------------------------\n");
+    fprintf(fd, "[%s]\n", lfs->lfs_section);
+    fprintf(fd, "authz = %s\n", lfs->authz_section);
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_tape = %d\n", lfs->enable_tape);
+    fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
     fprintf(fd, "n_merge = %d\n", lfs->n_merge);
-    n = tbx_atomic_get(lfs->write_cmds_inflight); fprintf(fd, "write_cmds_inflight = %d\n", n);
-    n = tbx_atomic_get(lfs->write_bytes_inflight); fprintf(fd, "write_bytes_inflight = %s\n", tbx_stk_pretty_print_double_with_scale(1024, n, ppbuf));
-    n = tbx_atomic_get(lfs->read_cmds_inflight); fprintf(fd, "read_cmds_inflight = %d\n", n);
-    n = tbx_atomic_get(lfs->read_bytes_inflight); fprintf(fd, "read_bytes_inflight = %s\n", tbx_stk_pretty_print_double_with_scale(1024, n, ppbuf));
-    fprintf(fd, "---------------------------------- LFS config end --------------------------------------------\n");
+    fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
+#ifdef HAS_FUSE3
+    fprintf(fd, "max_read = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_read, ppbuf));
+#endif
+    fprintf(fd, "max_readahead = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_readahead, ppbuf));
+    fprintf(fd, "max_background = %d\n", lfs->conn->max_background);
+    fprintf(fd, "congestion_threshold = %d\n", lfs->conn->congestion_threshold);
+
+    n = tbx_atomic_get(lfs->write_cmds_inflight);  fprintf(fd, "#write_cmds_inflight = %d\n", n);
+    n = tbx_atomic_get(lfs->write_bytes_inflight); fprintf(fd, "#write_bytes_inflight = %s\n", tbx_stk_pretty_print_double_with_scale(1024, n, ppbuf));
+    n = tbx_atomic_get(lfs->read_cmds_inflight);   fprintf(fd, "#read_cmds_inflight = %d\n", n);
+    n = tbx_atomic_get(lfs->read_bytes_inflight);  fprintf(fd, "#read_bytes_inflight = %s\n", tbx_stk_pretty_print_double_with_scale(1024, n, ppbuf));
+    fprintf(fd, "\n");
+
+    //** Print the AuthZ configuration
+    osaz_print_running_config(lfs->osaz, fd, 1);
 }
 
 //*************************************************************************
@@ -1601,8 +1871,9 @@ void *lfs_init_real(struct fuse_conn_info *conn,
 {
     lio_fuse_t *lfs;
     char *section =  "lfs";
+    char *atype;
+    osaz_create_t *osaz_create;
     ex_off_t n;
-
     lio_fuse_init_args_t *init_args;
     lio_fuse_init_args_t real_args;
 
@@ -1645,10 +1916,20 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     tbx_type_malloc_clear(lfs, lio_fuse_t, 1);
 
     lfs->lc = init_args->lc;
+    lfs->conn = conn;
+    lfs->lfs_section = strdup(section);
     lfs->mount_point = strdup(init_args->mount_point);
     lfs->mount_point_len = strlen(init_args->mount_point);
 
     lfs->enable_tape = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_tape", 0);
+    lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
+#ifdef FUSE_CAP_POSIX_ACL
+    if (lfs->enable_osaz_acl_mappings) {
+        conn->capable |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
+        conn->want |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
+    }
+#endif
+
     lfs->n_merge = tbx_inip_get_integer(lfs->lc->ifd, section, "n_merge", 0);
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "max_write", -1);
     if (n > -1) conn->max_write = n;
@@ -1667,6 +1948,13 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     apr_pool_create(&(lfs->mpool), NULL);
     apr_thread_mutex_create(&(lfs->lock), APR_THREAD_MUTEX_DEFAULT, lfs->mpool);
     lfs->open_files = apr_hash_make(lfs->mpool);
+
+    //** Load the OS AuthZ framework
+    lfs->authz_section = tbx_inip_get_string(lfs->lc->ifd, section, "authz", OSAZ_TYPE_FAKE);
+    atype = tbx_inip_get_string(lfs->lc->ifd, lfs->authz_section, "type", OSAZ_TYPE_FAKE);
+    osaz_create = lio_lookup_service(lfs->lc->ess, OSAZ_AVAILABLE, atype);
+    lfs->osaz = (*osaz_create)(lfs->lc->ess, lfs->lc->ifd, lfs->authz_section, NULL);
+    free(atype);
 
     //** Get the default host ID for opens
     char hostname[1024];
@@ -1724,8 +2012,13 @@ void lfs_destroy(void *private_data)
         tbx_log_flush();
     }
 
+    //** Destroy the OSAZ
+    osaz_destroy(lfs->osaz);
+
     //** Clean up everything else
-    if (lfs->id != NULL) free (lfs->id);
+    if (lfs->authz_section) free(lfs->authz_section);
+    if (lfs->lfs_section) free(lfs->lfs_section);
+    if (lfs->id) free (lfs->id);
     free(lfs->mount_point);
     apr_thread_mutex_destroy(lfs->lock);
     apr_pool_destroy(lfs->mpool);
@@ -1756,6 +2049,7 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .utimens = lfs_utimens2,
     .rename = lfs_rename2,
 #endif
+    .chmod = lfs_chmod,
     .mknod = lfs_mknod,
     .mkdir = lfs_mkdir,
     .unlink = lfs_unlink,

@@ -41,10 +41,6 @@ extern "C" {
 #define OS_AVAILABLE "os_available"
 #define OSAZ_AVAILABLE "osaz_available"
 
-#define OS_MODE_WRITE_IMMEDIATE 1
-#define OS_MODE_READ_BLOCKING   2
-#define OS_MODE_WRITE_BLOCKING  3
-
 #define OS_VATTR_NORMAL  0   //** Normal virtual attribute.  Works the same as a non-virtual attribute.
 #define OS_VATTR_PREFIX  1   //** Routine is called  whenever the VA prefix matches the attr.  Does not show up in iterators.
 
@@ -57,10 +53,10 @@ struct lio_os_attr_list_t {
 
 #define os_type(os) (os)->type
 #define os_destroy_service(os) (os)->destroy_service(os)
-#define os_cred_init(os, type, args) (os)->cred_init(os, type, args)
-#define os_cred_destroy(os, c) (os)->cred_destroy(os, c)
 
 #define os_exists(os, c, path) (os)->exists(os, c, path)
+#define os_realpath(os, c, path, realpath) (os)->realpath(os, c, path, realpath)
+#define os_object_exec_modify(os, c, path, exec_state) (os)->exec_modify(os, c, path, exec_state)
 #define os_create_object(os, c, path, type, id) (os)->create_object(os, c, path, type, id)
 #define os_remove_object(os, c, path) (os)->remove_object(os, c, path)
 #define os_remove_regex_object(os, c, path, obj_regex, obj_types, depth) (os)->remove_regex_object(os, c, path, obj_regex, obj_types, depth)
@@ -98,26 +94,37 @@ lio_os_regex_table_t *os_regex_table_create(int n);
 int os_regex_table_pack(lio_os_regex_table_t *regex, unsigned char *buffer, int bufsize);
 lio_os_regex_table_t *os_regex_table_unpack(unsigned char *buffer, int bufsize, int *used);
 
+typedef void (*osaz_attr_filter_t)(lio_os_authz_t *osa, char *key, int mode, void *value_in, int len_in, void **value_out, int *len_out);
+
+typedef struct {
+    uid_t uid;
+    gid_t gid;
+} lio_os_authz_local_t;
+
 struct lio_os_authz_t {
     void *priv;
-    int (*object_create)(lio_os_authz_t *osa, lio_creds_t *c, char *path);
-    int (*object_remove)(lio_os_authz_t *osa, lio_creds_t *c, char *path);
-    int (*object_access)(lio_os_authz_t *osa, lio_creds_t *c, char *path, int mode);
-    int (*attr_create)(lio_os_authz_t *osa, lio_creds_t *c, char *path, char *key);
-    int (*attr_remove)(lio_os_authz_t *osa, lio_creds_t *c, char *path, char *key);
-    int (*attr_access)(lio_os_authz_t *osa, lio_creds_t *c, char *path, char *key, int mode);
+    int (*object_create)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path);
+    int (*object_remove)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path);
+    int (*object_access)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, int mode);
+    int (*attr_create)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key);
+    int (*attr_remove)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key);
+    int (*attr_access)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key, int mode, osaz_attr_filter_t *filter);
+    int (*posix_acl)(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *buf, size_t size, uid_t *uid, gid_t *gid, mode_t *mode);
+    void (*print_running_config)(lio_os_authz_t *osa, FILE *fd, int print_section_heading);
     void (*destroy)(lio_os_authz_t *osa);
 };
 
 typedef lio_object_service_fn_t *(os_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
 typedef lio_os_authz_t *(osaz_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section, lio_object_service_fn_t *os);
 
-#define osaz_object_create(osa, c, path) (osa)->object_create(osa, c, path)
-#define osaz_object_remove(osa, c, path) (osa)->object_remove(osa, c, path)
-#define osaz_object_access(osa, c, path, mode) (osa)->object_access(osa, c, path, mode)
-#define osaz_attr_create(osa, c, path, key) (osa)->attr_create(osa, c, path, key)
-#define osaz_attr_remove(osa, c, path, key) (osa)->attr_remove(osa, c, path, key)
-#define osaz_attr_access(osa, c, path, key, mode) (osa)->attr_access(osa, c, path, key, mode)
+#define osaz_object_create(osa, c, ug, path) (osa)->object_create(osa, c, ug, path)
+#define osaz_object_remove(osa, c, ug, path) (osa)->object_remove(osa, c, ug, path)
+#define osaz_object_access(osa, c, ug, path, mode) (osa)->object_access(osa, c, ug, path, mode)
+#define osaz_attr_create(osa, c, ug, path, key) (osa)->attr_create(osa, c, ug, path, key)
+#define osaz_attr_remove(osa, c, ug, path, key) (osa)->attr_remove(osa, c, ug, path, key)
+#define osaz_attr_access(osa, c, ug, path, key, mode, filter) (osa)->attr_access(osa, c, ug, path, key, mode, filter)
+#define osaz_posix_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode) (osa)->posix_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode)
+#define osaz_print_running_config(osa, fd, print_section) (osa)->print_running_config(osa, fd, print_section)
 #define osaz_destroy(osa) (osa)->destroy(osa)
 
 struct lio_os_virtual_attr_t {

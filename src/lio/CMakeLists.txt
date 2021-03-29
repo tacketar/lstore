@@ -88,6 +88,8 @@ endif()
 # common objects
 set(LSTORE_PROJECT_OBJS
 		authn/fake.c
+		authn/psk_client.c
+		authn/psk_server.c
 		blacklist.c
 		cache/amp.c
 		cache/base.c
@@ -118,6 +120,8 @@ set(LSTORE_PROJECT_OBJS
 		os/test.c
 		os/timecache.c
 		osaz/fake.c
+		osaz/path_acl.c
+		path_acl.c
         raid4.c
         remote_config.c
 		rs/query_base.c
@@ -129,6 +133,7 @@ set(LSTORE_PROJECT_OBJS
 		segment.c
 		segment/cache.c
 		segment/dynfile.c
+		segment/disk_cache.c
 		segment/file.c
 		segment/jerasure.c
 		segment/linear.c
@@ -176,6 +181,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_find
 		lio_fsck
 		lio_fuse
+		lio_gen_psk
 		lio_get
 		lio_getattr
 		lio_inspect
@@ -184,6 +190,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_mkdir
 		lio_mv
 		lio_put
+		lio_realpath
 		lio_rm
 		lio_rmdir
 		lio_rs
