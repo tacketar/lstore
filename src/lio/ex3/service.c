@@ -45,6 +45,7 @@
 #include "rs/remote.h"
 #include "rs/simple.h"
 #include "segment/cache.h"
+#include "segment/disk_cache.h"
 #include "segment/file.h"
 #include "segment/jerasure.h"
 #include "segment/linear.h"
@@ -67,6 +68,8 @@ lio_service_manager_t *lio_exnode_service_set_create()
     //** Install the drivers
     add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_LINEAR, segment_linear_load);
     add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_LINEAR, segment_linear_create);
+    add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_DISK_CACHE, segment_disk_cache_load);
+    add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_DISK_CACHE, segment_disk_cache_create);
     add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_FILE, segment_file_load);
     add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_FILE, segment_file_create);
     add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_CACHE, segment_cache_load);
