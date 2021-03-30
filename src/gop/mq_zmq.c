@@ -61,13 +61,31 @@ void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
     char public_key[41], secret_key[41];
     char *home, *section, *etext, *key;
     tbx_inip_file_t *ifd;
-    int k;
+    int k, retry;
 
-    home = getenv("HOME");
-    snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, ((server_mode) ? SERVER_CONFIG : CLIENT_CONFIG)); fname[sizeof(fname)-1] = '\0';
+    retry = 0;
+again:
+    if (!server_mode) {  //** Client mode
+        home = (retry) ? getenv("HOME") : "/etc/lio";
+        if (retry == 0) {    //** Try getting them from the user's local directory first
+            home = getenv("HOME");
+            snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
+        } else {    //** and if that fails try getting the server public key from the global common location
+            snprintf(fname, sizeof(fname)-1, "/etc/lio/%s", CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
+        }
+    } else {   //** Server mode.  Keys are always in their local directory
+        home = getenv("HOME");
+        snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, SERVER_CONFIG ); fname[sizeof(fname)-1] = '\0';
+    }
 
     ifd = tbx_inip_file_read(fname);
-    if (!ifd) return;  //** No config to load so no encryption
+    if (!ifd) {
+        if ((!server_mode) || (retry == 0)) {  //** Let's try again
+            retry = 1;
+            goto again;
+        }
+        return;  //** No config to load so no encryption
+    }
 
     section = tbx_inip_get_string(ifd, "mappings", id, NULL);
     if (!section) return;  //** No mappings to load so no encryption
@@ -104,16 +122,24 @@ void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
         k=1;
         zmq_setsockopt(socket->arg, ZMQ_CURVE_SERVER, &k, sizeof(k));
     } else {
-        zmq_curve_keypair(public_key, secret_key);
-        zmq_setsockopt(socket->arg, ZMQ_CURVE_PUBLICKEY, public_key, 41);
-        zmq_setsockopt(socket->arg, ZMQ_CURVE_SECRETKEY, secret_key, 41);
-
         etext = tbx_inip_get_string(ifd, section, "public_key", NULL);
+        if ((!etext) && (retry == 0)) {  //** Let's try again
+            retry = 1;
+            free(section);
+            tbx_inip_destroy(ifd);
+            goto again;
+        }
         if (!etext) {
             log_printf(0, "ERROR Missing public key for host: %s  section=%s\n", id, section); tbx_log_flush();
             fprintf(stderr, "ERROR Missing public key for host: %s  section=%s\n", id, section); fflush(stderr);
             exit(1);
         }
+
+        //** Set our encryption keys
+        zmq_curve_keypair(public_key, secret_key);
+        zmq_setsockopt(socket->arg, ZMQ_CURVE_PUBLICKEY, public_key, 41);
+        zmq_setsockopt(socket->arg, ZMQ_CURVE_SECRETKEY, secret_key, 41);
+
         key = tbx_stk_unescape_text('\\', etext);
         if (zmq_setsockopt(socket->arg, ZMQ_CURVE_SERVERKEY, key, strlen(key)+1) != 0) {
             log_printf(0, "ERROR with server public key for host: %s  section=%s\n", id, section); tbx_log_flush();
