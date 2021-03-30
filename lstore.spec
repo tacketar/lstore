@@ -1,7 +1,7 @@
 # -*- rpm-spec -*-
 %define _basename lstore
 # Allow the version to be overridden from the command line
-%define _dist_version 0.5.1
+%define _dist_version 1.0.0
 %define _dist_release 1
 %define _version %{?my_version}%{?!my_version:%{_dist_version}}
 %define _release %{?my_release}%{?!my_release:%{_dist_release}}
@@ -49,6 +49,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/*
 
 %changelog
+* Tue Mar 30 2021 Alan Tackett <alan.tackett@vanderbilt.edu> 1.0.0
+- Initial version with Path based ACLs and local GID->LIO account mappings for FUSE
 * Sat Apr 23 2016 Andrew Melo <andrew.m.melo@vanderbilt.edu> 0.5.1-1
 - Several bug fixed.
 
