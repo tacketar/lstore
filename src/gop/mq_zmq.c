@@ -165,7 +165,7 @@ int zero_native_bind(gop_mq_socket_t *socket, const char *format, ...)
     snprintf(id, 255, format, args);
     n = mq_id_bytes(id, strlen(id));
     if (socket->type != MQ_PAIR) {
-        err = zmq_setsockopt(socket->arg, ZMQ_ROUTING_ID, id, n);
+        err = zmq_setsockopt(socket->arg, MQ_IDENTITY, id, n);
         if (err != 0) {
             log_printf(0, "ERROR setting socket identity! id=%s err=%d errno=%d\n", id, err, errno);
             return(-1);
@@ -214,7 +214,7 @@ int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...) {
     if (socket->type != MQ_PAIR) {
         gethostname(buf, sizeof(buf));
         snprintf(id, 255, "%s:" I64T , buf, tbx_random_get_int64(1, 1000000));
-        err = zmq_setsockopt(socket->arg, ZMQ_ROUTING_ID, id, strlen(id));
+        err = zmq_setsockopt(socket->arg, MQ_IDENTITY, id, strlen(id));
         if (err != 0) {
             log_printf(0, "ERROR setting socket identity! id=%s err=%d errno=%d\n", id, err, errno);
             return(-1);

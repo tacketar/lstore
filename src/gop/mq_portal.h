@@ -41,6 +41,12 @@
 #include "gop/types.h"
 #include "thread_pool.h"
 
+//***This is for 0mq v4.2 or newer
+#ifdef ZMQ_ROUTING_ID
+#define MQ_IDENTITY ZMQ_ROUTING_ID
+#else
+#define MQ_IDENTITY ZMQ_IDENTITY
+#endif
 
 #ifdef __cplusplus
 extern "C" {

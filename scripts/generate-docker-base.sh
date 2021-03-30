@@ -85,7 +85,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     tar
                                     wget
                                     which
-                                    zeromq3-devel
+                                    zeromq-devel
                                     zlib-devel
                                 )
             ;;
@@ -111,7 +111,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libssl-dev
                                     libtool
                                     libz-dev
-                                    libzmq3-dev
+                                    libzmq5-dev
                                     lsb-release
                                     python
                                     rsync
