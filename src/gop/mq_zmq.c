@@ -84,11 +84,20 @@ again:
             retry = 1;
             goto again;
         }
-        return;  //** No config to load so no encryption
+
+        goto fail;  //** No encryption to load so fail
     }
 
     section = tbx_inip_get_string(ifd, "mappings", id, NULL);
-    if (!section) return;  //** No mappings to load so no encryption
+    if (!section) {    //** No matching secion in the file
+        if (retry == 0) {  //** Retry with the other config file
+            retry = 1;
+            tbx_inip_destroy(ifd);
+            goto again;
+        } else {          //** No mappings to load so no encryption
+            goto fail;
+        }
+    }
 
     if (server_mode) {
         etext = tbx_inip_get_string(ifd, section, "secret_key", NULL);
@@ -151,6 +160,13 @@ again:
 
     free(section);
     tbx_inip_destroy(ifd);
+    return;
+
+fail:
+    //** No config to load so no encryption
+    fprintf(stderr, "ABORT: No matching entry encryption keys for: %s\n", id);
+    log_printf(-1, "ABORT: No matching entry encryption keys for: %s\n", id);
+    exit(1);
 }
 
 //*************************************************************
