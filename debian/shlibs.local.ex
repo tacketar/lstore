@@ -1,1 +1,1 @@
-liblstore 0.5.1 lstore (>> 0.5.1-0), lstore (<< 0.5.1-99)
+liblstore 1.0.0 lstore (>> 1.0.0-0), lstore (<< 1.0.0-99)
