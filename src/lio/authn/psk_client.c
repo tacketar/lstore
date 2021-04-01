@@ -114,16 +114,6 @@ gop_op_status_t psk_response_exchange(void *task_arg, int tid)
 
     //** This is the frame with the encrypted handle
     gop_mq_get_frame(gop_mq_msg_next(task->response), (void **)&data, &len);
-log_printf(0, "nonce_len=%d packet_len=%d\n", nonce_len, len); tbx_log_flush();
-fprintf(stderr, "nonce_len=%d packet_len=%d\n", nonce_len, len); fflush(stderr);
-char xbuf[256];
-tbx_chksum_bin2hex(nonce_len, nonce, xbuf);
-log_printf(0, "account=%s nonce=%s\n", an_cred_get_id(c, NULL), xbuf);
-tbx_chksum_bin2hex(len, (unsigned char *)data, xbuf);
-log_printf(0, "account=%s return=%s\n", an_cred_get_id(c, NULL), xbuf);
-tbx_chksum_bin2hex(crypto_secretbox_KEYBYTES, (unsigned char *)pxs->psk, xbuf);
-log_printf(0, "account=%s key=%s\n", an_cred_get_id(c, NULL), xbuf);
-tbx_log_flush();
     if (data == NULL) {
         log_printf(0, "ERROR: PSK exchange failed! Missing creds handle! account:%s\n", an_cred_get_id(c, NULL));
         fprintf(stderr, "ERROR: PSK exchange failed! Missing creds handle! account:%s\n", an_cred_get_id(c, NULL));
@@ -149,15 +139,10 @@ tbx_log_flush();
 
     //** Get the handle
     c->handle_len = len - crypto_secretbox_MACBYTES - SALT_BYTES;
-log_printf(0, "account=%s handle_len=%d\n", an_cred_get_id(c, NULL), c->handle_len);
     tbx_type_malloc(c->handle, char, c->handle_len);
     memcpy(c->handle, decrypted + SALT_BYTES, c->handle_len);
 
     free(decrypted);
-
-char buf[2*c->handle_len+1];
-tbx_chksum_bin2hex(c->handle_len, (unsigned char *)c->handle, buf);
-log_printf(0, "account=%s did=%s hlen=%d handle=%s\n", an_cred_get_id(c, NULL), an_cred_get_descriptive_id(c, NULL), c->handle_len, buf);
 
     //** Add it to the tracking
     gop_mq_ongoing_host_inc(ap->ongoing, ap->remote_host, ap->host_id, ap->host_id_len, ap->heartbeat);
@@ -185,12 +170,6 @@ void psk_exchange(lio_authn_t *an, lio_creds_t *c, char *key)
     //** Get the salt and make the box
     tbx_random_get_bytes(salt, SALT_BYTES);
     tbx_random_get_bytes(nonce, sizeof(nonce));
-char xbuf[1024];
-tbx_chksum_bin2hex(sizeof(nonce), nonce, xbuf);
-log_printf(0, "account=%s sizeof(nonce)=%lu nonce=%s\n", an_cred_get_id(c, &len), sizeof(nonce), xbuf);
-tbx_chksum_bin2hex(crypto_secretbox_KEYBYTES, (unsigned char *)key, xbuf);
-log_printf(0, "account=%s key=%s\n", an_cred_get_id(c, &len), xbuf);
-
     memcpy(bufin, salt, SALT_BYTES);
     ptr = an_cred_get_descriptive_id(c, &len);
     memcpy(bufin + SALT_BYTES, ptr, len+1);
@@ -200,18 +179,12 @@ log_printf(0, "account=%s key=%s\n", an_cred_get_id(c, &len), xbuf);
     pxs.salt = salt;
     pxs.c = c;
 
-tbx_chksum_bin2hex(crypto_secretbox_MACBYTES+n, (unsigned char *)bufout, xbuf);
-log_printf(0, "account=%s packet=%s\n", an_cred_get_id(c, &len), xbuf);
-
     //** Form the message
     msg = gop_mq_make_exec_core_msg(ap->remote_host, 1);
     gop_mq_msg_append_mem(msg, PSK_CLIENT_AUTHN_KEY, PSK_CLIENT_AUTHN_KEY_SIZE, MQF_MSG_KEEP_DATA);
     ptr = an_cred_get_id(c, &len); gop_mq_msg_append_mem(msg, ptr, len+1, MQF_MSG_KEEP_DATA);
-log_printf(0, "id=%s id_len=%d\n", ptr, len+1);
     ptr = an_cred_get_descriptive_id(c, &len); gop_mq_msg_append_mem(msg, ptr, len+1, MQF_MSG_KEEP_DATA);
-log_printf(0, "did=%s did_len=%d\n", ptr, len+1);
     gop_mq_msg_append_mem(msg, nonce, sizeof(nonce), MQF_MSG_KEEP_DATA);
-log_printf(0, "MACBYTES=%d package=%d box_len=%d\n", crypto_secretbox_MACBYTES,n,crypto_secretbox_MACBYTES+n);
     gop_mq_msg_append_mem(msg, bufout, crypto_secretbox_MACBYTES+n, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, ap->host_id, ap->host_id_len, MQF_MSG_KEEP_DATA);  //** Heartbeat frame
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
@@ -223,7 +196,6 @@ log_printf(0, "MACBYTES=%d package=%d box_len=%d\n", crypto_secretbox_MACBYTES,n
         exit(1);
     }
 
-log_printf(0, "SUCCESS!\n");
     return;
 }
 
@@ -243,8 +215,6 @@ void get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a)
     int n;
     char account_section[128];
     char *account, *psk, *etext, *text;
-
-log_printf(0, "PSK START account=%s\n", a);
 
     //** Check the perms
     if (stat(psk_name, &st) != 0) {
@@ -292,7 +262,6 @@ log_printf(0, "PSK START account=%s\n", a);
     n = strlen(text);
     tbx_type_malloc_clear(psk, char, n);  //** The actual size needed is 0.8*strlen(text)+1
     zmq_z85_decode((unsigned char *)psk, text);
-log_printf(0, "PSK account=%s text=%s len=%lu n=%d shouldbe=%d\n", account, text, strlen(text), n, crypto_secretbox_KEYBYTES); tbx_log_flush();
     free(etext); free(text);
 
     //** Set the default ID's
@@ -315,7 +284,6 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
 {
     lio_creds_t *c;
     char fname[PATH_MAX];
-//    char *account;
     char *home;
 
     c = cred_default_create(NULL);
@@ -324,8 +292,6 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     c->destroy = authn_psk_client_cred_destroy;
 
     //** Load the PSK Key
-//    account = (args[0] == NULL) ? "default" : (char *)args[0];
-//    snprintf(fname, sizeof(fname)-1, "~/.lio/%s.psk", fn); fname[sizeof(fname)-1] = '\0';
     home = getenv("HOME");
     snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
     get_psk(an, c, fname, (char *)args[0]);
