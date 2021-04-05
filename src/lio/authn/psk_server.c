@@ -129,8 +129,6 @@ void _psk_load(lio_authn_t *an)
     ctx->accounts = apr_hash_make(ctx->mpool);
     ctx->creds = apr_hash_make(ctx->mpool);
 
-log_printf(0, "CTX=%p\n", ctx);
-
     ig = tbx_inip_group_first(fd);
     while (ig != NULL) {
         if (strncmp("account-", tbx_inip_group_get(ig), 8) == 0) { //** Got a PSK
@@ -145,7 +143,6 @@ log_printf(0, "CTX=%p\n", ctx);
                 ele = tbx_inip_ele_next(ele);
             }
 
-//log_printf(0, "account=%s psk=%s\n", account, etpsk);
             if (account && etpsk) { //** Got a valid entry
                 //** Convert the PSK to binary
                 text = tbx_stk_unescape_text('\\', etpsk);
@@ -158,7 +155,6 @@ log_printf(0, "CTX=%p\n", ctx);
                 //** See if it exists in the old context
                 a = (ap->ctx) ? apr_hash_get(ap->ctx->accounts, account, APR_HASH_KEY_STRING) : NULL;
                 if (a) {  //** It's in the old table
-log_printf(0, "MAYBE_OLD: account=%s psk=%s a=%p memcmp(psk,old_psk)=%d\n", account, etpsk, a, memcmp(a->key, psk, n));
                     if ((n == a->key_len) && (memcmp(a->key, psk, n) == 0)) {  //** And the PSK's are the same so just move everything over
                         free(psk);
                         apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, a);  //** Add it to the new one
@@ -167,15 +163,12 @@ log_printf(0, "MAYBE_OLD: account=%s psk=%s a=%p memcmp(psk,old_psk)=%d\n", acco
                         //** Now add all the creds to the new table and remove them from the old
                         tbx_stack_move_to_top(a->creds);
 
-log_printf(0, "TRANSFER: account=%s creds_count=%d\n", account, tbx_stack_count(a->creds));
                         while ((pc = tbx_stack_get_current_data(a->creds)) != NULL) {
-log_printf(0, "TRANSFER:     creds=%s\n", an_cred_get_descriptive_id(&(pc->c), NULL));
                             apr_hash_set(ctx->creds, pc->handle, PSK_HANDLE_LEN, pc);
                             apr_hash_set(ap->ctx->creds, pc->handle, PSK_HANDLE_LEN, NULL);
                             tbx_stack_move_down(a->creds);
                         }
                     } else {
-log_printf(0, "OLD: account=%s a=%p creds_count=%d\n", account, a, tbx_stack_count(a->creds));
                         if (tbx_stack_count(a->creds) == 0) { //** No creds so can safely remove
                             apr_hash_set(ap->ctx->accounts, a->account, APR_HASH_KEY_STRING, NULL);  //** Add remove it from the old one
                             tbx_stack_free(a->creds, 0);
@@ -195,7 +188,6 @@ log_printf(0, "OLD: account=%s a=%p creds_count=%d\n", account, a, tbx_stack_cou
                     a->key = psk;
                     a->key_len = n;
                     apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, a);  //** Add it to the new one
-log_printf(0, "NEW: account=%s psk=%s a=%p\n", account, etpsk, a);
                 }
             }
         }
@@ -207,11 +199,9 @@ log_printf(0, "NEW: account=%s psk=%s a=%p\n", account, etpsk, a);
 
     //** Handle the remainders by flagging them to be purged
     if (ap->ctx) {
-log_printf(0, "apr_hash_count(old_ctx->accounts)=%d\n", apr_hash_count(ap->ctx->accounts));
         if (apr_hash_count(ap->ctx->accounts) > 0) {
             for (hi=apr_hash_first(NULL, ap->ctx->accounts); hi != NULL; hi = apr_hash_next(hi)) {
                 apr_hash_this(hi, NULL, &hlen, (void **)&a);
-log_printf(0, "old_ctx: straggler=%s n_creds=%d\n", a->account, tbx_stack_count(a->creds));
                 a->old_ctx = ap->ctx;
             }
         } else { //** We can go ahead and clean up
@@ -273,17 +263,8 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
     psk_creds_t *pc;
 
     if (type == AUTHN_INIT_LOOKUP) {
-char buf[2*PSK_HANDLE_LEN+1];
-tbx_chksum_bin2hex(PSK_HANDLE_LEN, (unsigned char *)args[0], buf);
-log_printf(0, "handle=%s\n", buf);
         apr_thread_mutex_lock(ap->lock);
         pc = apr_hash_get(ap->ctx->creds, args[0], *(int *)args[1]);
-//        pc = apr_hash_get(ap->ctx->creds, args[0], APR_HASH_KEY_STRING);
-if (pc) {
-   log_printf(0, "user=%s\n", an_cred_get_descriptive_id(&(pc->c), NULL));
-} else {
-   log_printf(0, "user=INVALID\n");
-}
         if (pc) {
             pc->count++;
             c = &(pc->c);
@@ -306,7 +287,6 @@ void apsk_cred_destroy(lio_creds_t *c)
 
     apr_thread_mutex_lock(ap->lock);
     pc->count--;
-log_printf(0, "creds destroy. did=%s count=%d old_ctx=%p\n", an_cred_get_descriptive_id(c, NULL), pc->count, pc->a->old_ctx);
     if (pc->count == 0) {  //** This one is done so reap it
         if (pc->c.id != NULL) free(pc->c.id);
         if (pc->c.descriptive_id) free(pc->c.descriptive_id);
@@ -318,7 +298,6 @@ log_printf(0, "creds destroy. did=%s count=%d old_ctx=%p\n", an_cred_get_descrip
 
         if (a->old_ctx) { //** check if we do garbage collection
             ctx = a->old_ctx;
-log_printf(0, "stack_count(old_a->creds)=%d apr_hash_count(old_ctx->accounts)=%d\n", tbx_stack_count(a->creds), apr_hash_count(ctx->accounts));
             if (tbx_stack_count(a->creds) == 0) {
                 apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, NULL);
                 free(a->account);
@@ -352,33 +331,19 @@ lio_creds_t *apsk_login(lio_authn_t *an, char *id, int id_len, char *did, int di
     char decrypted[encrypted_len+1024];
 
     apr_thread_mutex_lock(ap->lock);
-//    a = apr_hash_get(ap->ctx->accounts, id, id_len);
     a = apr_hash_get(ap->ctx->accounts, id, APR_HASH_KEY_STRING);
-char xbuf[256];
-tbx_chksum_bin2hex(nonce_len, (unsigned char *)nonce, xbuf);
-log_printf(0, "account=%s len=%d a=%p nonce=%s\n", id, id_len, a, xbuf);
-tbx_chksum_bin2hex(crypto_secretbox_KEYBYTES, (unsigned char *)a->key, xbuf);
-log_printf(0, "account=%s key=%s\n", id, xbuf);
-tbx_chksum_bin2hex(encrypted_len, (unsigned char *)encrypted, xbuf);
-log_printf(0, "account=%s packet=%s\n", id, xbuf);
-log_printf(0, "account=%s nonce_len=%d encrypted_len=%d\n", id, nonce_len, encrypted_len); tbx_log_flush();
     if (!a) goto fail;
 
-//log_printf(0, "account=%s a->key=%s client_key=%s\n", id, a->key, psk);
     //** Decrypt the message
     if (nonce_len != crypto_secretbox_NONCEBYTES) goto fail;
-log_printf(0, "1111111-account=%s\n", id);
     n = encrypted_len-crypto_secretbox_MACBYTES;
     if (n < SALT_BYTES) goto fail;
-log_printf(0, "2222222-account=%s\n", id);
     if (crypto_secretbox_open_easy((unsigned char *)decrypted, (unsigned char *)encrypted, encrypted_len, (unsigned char *)nonce, (unsigned char *)a->key) != 0) goto fail;
-log_printf(0, "33333333-account=%s\n", id);
 
     decrypted[n] = '\0';
 
     //** Validate the did matches
     if (strcmp(did, decrypted + SALT_BYTES) != 0) goto fail;
-log_printf(0, "44444444-account=%s\n", id);
 
     //** Make the new creds
     tbx_type_malloc_clear(pc, psk_creds_t, 1);
@@ -393,9 +358,6 @@ log_printf(0, "44444444-account=%s\n", id);
     pc->c.handle = pc->handle;
     pc->c.handle_len = PSK_HANDLE_LEN;
     pc->a = a;
-char buf[2*PSK_HANDLE_LEN+1];
-tbx_chksum_bin2hex(PSK_HANDLE_LEN, (unsigned char *)pc->handle, buf);
-log_printf(0, "account=%s did=%s handle=%s\n", id, did, buf);
     tbx_stack_push(a->creds, pc);
     pc->ele = tbx_stack_get_current_ptr(a->creds);
     apr_hash_set(ap->ctx->creds, pc->c.handle, pc->c.handle_len, pc);
@@ -408,12 +370,6 @@ log_printf(0, "account=%s did=%s handle=%s\n", id, did, buf);
     tbx_type_malloc_clear(*p_new, char, *p_len);
     memcpy(decrypted + SALT_BYTES, c->handle, c->handle_len);
     crypto_secretbox_easy((unsigned char *)(*p_new), (unsigned char *)decrypted, SALT_BYTES+c->handle_len, (unsigned char *)(*nonce_new), (unsigned char *)a->key);
-tbx_chksum_bin2hex(nonce_len, (unsigned char *)(*nonce_new), xbuf);
-log_printf(0, "account=%s nonce_new=%s\n", id, xbuf);
-tbx_chksum_bin2hex(*p_len, (unsigned char *)(*p_new), xbuf);
-log_printf(0, "account=%s return=%s\n", id, xbuf);
-tbx_chksum_bin2hex(crypto_secretbox_KEYBYTES, (unsigned char *)a->key, xbuf);
-log_printf(0, "account=%s key=%s\n", id, xbuf);
 
 fail:
     apr_thread_mutex_unlock(ap->lock);
@@ -428,26 +384,10 @@ fail:
 gop_op_status_t apsk_cred_logout_fn(void *arg, int id)
 {
     lio_creds_t *c = arg;
-//    psk_creds_t *pc = c->priv;
-//    lio_authn_psk_server_priv_t *ap = pc->an->priv;
-
-log_printf(0, "destroying creds: did=%s\n", an_cred_get_descriptive_id(c, NULL));
 
     an_cred_destroy(c);
 
     return(gop_success_status);
-//    apr_thread_mutex_lock(ap->lock);
-//log_printf(0, "destroying creds: did=%s\n", an_cred_get_descriptive_id(c, NULL));
-//    apr_hash_set(ap->ctx->creds, c->handle, c->handle_len, NULL);  //** Remove it from the list
-//    tbx_stack_move_to_ptr(pc->a->creds, pc->ele);
-//    tbx_stack_delete_current(pc->a->creds, 0, 0);
-//    apr_thread_mutex_unlock(ap->lock);
-
-//    if (pc->c.id != NULL) free(pc->c.id);
-//    if (pc->c.descriptive_id) free(pc->c.descriptive_id);
-//    free(pc);
-
-//    return(gop_success_status);
 }
 
 //***********************************************************************
@@ -496,11 +436,9 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
     fpacket = mq_msg_pop(msg);  //** This has the encrypted packet
     gop_mq_get_frame(fpacket, (void **)&encrypted, &encrypted_len);
 
-log_printf(0, "id_len=%d did_len=%d encrypted_len=%d\n", id_len, did_len, encrypted_len);
     //** Make the new creds
     c = apsk_login(an, id, id_len, did, did_len, encrypted, encrypted_len, nonce, nonce_len, &nonce_new, &return_packet, &return_len);
     if (c) {
-log_printf(0, "creds->account=%s\n", an_cred_get_id(c, NULL));
         status = gop_success_status;
         fhb = mq_msg_pop(msg);  //** This has the heartbeat from for tracking
         gop_mq_get_frame(fhb, (void **)&hb, &hb_len);
@@ -520,7 +458,6 @@ log_printf(0, "creds->account=%s\n", an_cred_get_id(c, NULL));
     response = gop_mq_make_response_core_msg(msg, cid);
     gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));  //** Status
     if (c) {  //** Add the nonce and creds packet
-log_printf(0, "adding nonce and return_packet return_len=%d\n", return_len);
         gop_mq_msg_append_mem(response, nonce_new, crypto_secretbox_NONCEBYTES, MQF_MSG_AUTO_FREE);  //** Nonce
         gop_mq_msg_append_mem(response, return_packet, return_len, MQF_MSG_AUTO_FREE);  //** Creds handle
     }
@@ -528,10 +465,6 @@ log_printf(0, "adding nonce and return_packet return_len=%d\n", return_len);
 
     //** Lastly send it
     gop_mq_submit(ap->server_portal, gop_mq_task_new(ap->mqc, response, NULL, NULL, 30));
-
-//char *tmp;
-//tbx_type_malloc_clear(tmp, char, id_len+1);
-//memcpy(tmp, id, id_len);
     log_printf(5, "END status=%d\n", status.op_status);
 }
 
