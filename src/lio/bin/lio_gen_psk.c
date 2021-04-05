@@ -47,7 +47,7 @@ int main(int argc, char **argv)
     if (key_pair == 0) {
         crypto_secretbox_keygen(key_secret);
         zmq_z85_encode(key_z85, key_secret, crypto_secretbox_KEYBYTES);
-        key_escaped = tbx_stk_escape_text("[]\\#${}", '\\', key_z85);
+        key_escaped = tbx_stk_escape_text("[]\\#${}%", '\\', key_z85);
 
         printf("[account-%s]\n", account);
         printf("key = %s\n\n", key_escaped);
