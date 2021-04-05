@@ -59,39 +59,59 @@ void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
 {
     char fname[PATH_MAX];
     char public_key[41], secret_key[41];
-    char *home, *section, *etext, *key;
+    char *home, *section, *etext, *key, *key_prefix;
     tbx_inip_file_t *ifd;
     int k, retry;
 
     retry = 0;
+    key_prefix = getenv(LIO_ENV_KEY_PREFIX);
 again:
     if (!server_mode) {  //** Client mode
-        home = (retry) ? getenv("HOME") : "/etc/lio";
-        if (retry == 0) {    //** Try getting them from the user's local directory first
+        if (key_prefix) {
+            snprintf(fname, sizeof(fname)-1, "%s/%s", key_prefix, CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
+        } else if (retry == 0) {    //** Try getting them from the user's local directory first
             home = getenv("HOME");
             snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
         } else {    //** and if that fails try getting the server public key from the global common location
             snprintf(fname, sizeof(fname)-1, "/etc/lio/%s", CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
         }
     } else {   //** Server mode.  Keys are always in their local directory
-        home = getenv("HOME");
-        snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, SERVER_CONFIG ); fname[sizeof(fname)-1] = '\0';
+        if (key_prefix) {
+            snprintf(fname, sizeof(fname)-1, "%s/%s", key_prefix, SERVER_CONFIG); fname[sizeof(fname)-1] = '\0';
+        } else {
+            home = getenv("HOME");
+            snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, SERVER_CONFIG ); fname[sizeof(fname)-1] = '\0';
+        }
     }
 
     ifd = tbx_inip_file_read(fname);
     if (!ifd) {
         if ((!server_mode) || (retry == 0)) {  //** Let's try again
-            retry = 1;
+            if (key_prefix) {
+                key_prefix = NULL;
+            } else {
+                retry = 1;
+            }
             goto again;
         }
 
+        if (server_mode) {
+            if (key_prefix) {    //** Try again using the normal location
+                key_prefix = NULL;
+                goto again;
+            }
+        }
         goto fail;  //** No encryption to load so fail
     }
 
     section = tbx_inip_get_string(ifd, "mappings", id, NULL);
     if (!section) {    //** No matching secion in the file
         if (retry == 0) {  //** Retry with the other config file
-            retry = 1;
+            if (key_prefix) {
+                key_prefix = NULL;
+            } else {
+                retry = 1;
+            }
             tbx_inip_destroy(ifd);
             goto again;
         } else {          //** No mappings to load so no encryption
@@ -133,7 +153,11 @@ again:
     } else {
         etext = tbx_inip_get_string(ifd, section, "public_key", NULL);
         if ((!etext) && (retry == 0)) {  //** Let's try again
-            retry = 1;
+            if (key_prefix) {
+                key_prefix = NULL;
+            } else {
+                retry = 1;
+            }
             free(section);
             tbx_inip_destroy(ifd);
             goto again;

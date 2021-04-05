@@ -33,6 +33,8 @@ limitations under the License.
 extern "C" {
 #endif
 
+#define LIO_ENV_KEY_PREFIX  "LIO_KEY_PREFIX"   // ** Environment variable for overriding where to look for encryption keys
+
 // Typedefs
 typedef struct gop_mq_command_stats_t gop_mq_command_stats_t;
 typedef struct gop_mq_command_t gop_mq_command_t;
@@ -236,4 +238,4 @@ struct gop_mq_task_t {      // ** Generic containter for MQ messages for both th
 }
 #endif
 
-#endif /* ^ ACCRE_GOP_MQ_PORTAL_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_GOP_MQ_PORTAL_H_INCLUDED ^ */

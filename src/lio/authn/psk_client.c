@@ -208,7 +208,7 @@ void psk_exchange(lio_authn_t *an, lio_creds_t *c, char *key)
 //
 //***********************************************************************
 
-void get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a)
+int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fail)
 {
     struct stat st;
     tbx_inip_file_t *fd;
@@ -218,22 +218,29 @@ void get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a)
 
     //** Check the perms
     if (stat(psk_name, &st) != 0) {
-        log_printf(0, "ERROR: PSK file missing! fname:%s\n", psk_name);
-        fprintf(stderr, "ERROR: PSK file missing! fname:%s\n", psk_name);
-        exit(1);
+        if (do_fail) {
+            log_printf(0, "ERROR: PSK file missing! fname:%s\n", psk_name);
+            fprintf(stderr, "ERROR: PSK file missing! fname:%s\n", psk_name);
+            exit(1);
+        }
+        return(1);
     }
     if ((st.st_mode & (S_IRWXO|S_IRWXG|S_IXUSR)) > 0) {
         log_printf(0, "ERROR: PSK file has pad perms! Should only have user RW perms.  fname:%s\n", psk_name);
         fprintf(stderr, "ERROR: PSK file has pad perms! Should only have user RW perms.  fname:%s\n", psk_name);
-        exit(1);
+        if (do_fail) exit(1);
+        return(1);
     }
 
     //** Get the account and PSK
     fd = tbx_inip_file_read(psk_name);
     if (!fd) {
-        log_printf(0, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
-        fprintf(stderr, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
-        exit(1);
+        if (do_fail) {
+            log_printf(0, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
+            fprintf(stderr, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
+            exit(1);
+        }
+        return(1);
     }
 
     //** Determine the account to use
@@ -242,20 +249,27 @@ void get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a)
     } else {
         account = tbx_inip_get_string(fd, "default", "account", NULL);
         if (!account) {
-            log_printf(0, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
-            fprintf(stderr, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
-            exit(1);
+            if (do_fail) {
+                log_printf(0, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
+                fprintf(stderr, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
+                exit(1);
+            }
+            return(1);
         }
     }
     snprintf(account_section, sizeof(account_section)-1, "account-%s", account); account_section[sizeof(account_section)-1] = '\0';
 
     etext = tbx_inip_get_string(fd, account_section, "key", NULL);
-    if (!etext) {
-        log_printf(0, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
-        fprintf(stderr, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
-        exit(1);
-    }
     tbx_inip_destroy(fd);
+    if (!etext) {
+        if (do_fail) {
+            log_printf(0, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
+            fprintf(stderr, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
+            exit(1);
+        }
+        free(account);
+        return(1);
+    }
 
     //** Convert the PSK to binary
     text = tbx_stk_unescape_text('\\', etext);
@@ -273,7 +287,7 @@ void get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a)
     free(account);
     memset(psk, 0, n); free(psk);  //** Clear the key before freeing it
 
-    return;
+    return(0);
 }
 
 //***********************************************************************
@@ -284,7 +298,8 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
 {
     lio_creds_t *c;
     char fname[PATH_MAX];
-    char *home;
+    char *home, *key_prefix;
+    int do_fail, err;
 
     c = cred_default_create(NULL);
     c->priv = an;
@@ -292,10 +307,21 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     c->destroy = authn_psk_client_cred_destroy;
 
     //** Load the PSK Key
-    home = getenv("HOME");
-    snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
-    get_psk(an, c, fname, (char *)args[0]);
+    do_fail = 0;
+    key_prefix = getenv(LIO_ENV_KEY_PREFIX);
+again:
+    if (key_prefix) {
+        snprintf(fname, sizeof(fname)-1, "%s/accounts.psk", key_prefix); fname[sizeof(fname)-1] = '\0';
+        key_prefix = NULL;
+    } else {
+        do_fail = 1;
+        home = getenv("HOME");
+        snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
+    }
 
+    err = get_psk(an, c, fname, (char *)args[0], do_fail);
+
+    if (err) goto again;  //** Try again if needed
 
     return(c);
 }
