@@ -308,44 +308,17 @@ int osaz_pacl_attr_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_loca
 
     *filter = NULL;
     ok = osaz_pacl_can_access(osa, c, ug, path, mode, &acl);
-log_printf(0, "path=%s key=%s can_access=%d mode=%d READ=%d acl=%d pacl_mode=%d\n", path, key, ok, mode, OS_MODE_READ_IMMEDIATE, acl, pacl_mode);
-//    status = (ok == 2) ? 1 : 0;
+    log_printf(20, "path=%s key=%s can_access=%d mode=%d READ=%d acl=%d pacl_mode=%d\n", path, key, ok, mode, OS_MODE_READ_IMMEDIATE, acl, pacl_mode);
     status = (ok > 0) ? 2 : 0;
 
     if (ok) {
         if ((acl & PACL_MODE_WRITE) > 0) return(status);  //** HAve write access so nothing special
 
-//    if ((pacl_mode & acl) == 0) return(0);
         //** If we made it here then the user only has read access so we may need to protect the exnode
         if (strcmp(key, "system.exnode") == 0) *filter = osaz_pacl_exnode_ro_filter;
     }
 
     return(status);
-}
-
-//***********************************************************************
-// OLD_pacl_load - Loads the Path ACLs
-//***********************************************************************
-
-void OLD_pacl_load(lio_os_authz_t *az)
-{
-    osaz_pacl_t *osaz = az->priv;
-    struct stat sbuf;
-    tbx_inip_file_t *ifd;
-
-    if (stat(osaz->pa_file, &sbuf) != 0) {
-        log_printf(1, "Path ACL file missing!!! Using old definition. fname=%s\n", osaz->pa_file);
-        return;
-    }
-
-    if (osaz->modify_time != sbuf.st_mtime) {  //** File changed so reload it
-        log_printf(5, "RELOADING data\n");
-        ifd = tbx_inip_file_read(osaz->pa_file);
-        if (osaz->pa) pacl_destroy(osaz->pa);
-        osaz->pa = pacl_create(ifd, osaz->lfs_tmp_prefix);
-        tbx_inip_destroy(ifd);
-        osaz->modify_time = sbuf.st_mtime;
-    }
 }
 
 //***********************************************************************
@@ -359,10 +332,10 @@ void _pacl_load(lio_os_authz_t *az)
     tbx_inip_file_t *ifd;
     lio_creds_t *creds;
 
-log_printf(0, "Loading config. pa_file=%s lio_gc=%p\n", osaz->pa_file, lio_gc);
+    log_printf(20, "Loading config. pa_file=%s lio_gc=%p\n", osaz->pa_file, lio_gc);
     creds = (lio_gc) ? lio_gc->creds : NULL;
     ifd = lio_fetch_config(creds, osaz->pa_file, &obj_name, &(osaz->modify_time));
-log_printf(0, "ifd=%p obj_name=%s\n", ifd, obj_name);
+    log_printf(20, "ifd=%p obj_name=%s\n", ifd, obj_name);
     if (ifd) {
         log_printf(5, "RELOADING data\n");
         if (osaz->pa) pacl_destroy(osaz->pa);

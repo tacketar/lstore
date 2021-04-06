@@ -304,6 +304,7 @@ tbx_inip_file_t *lio_fetch_config(lio_creds_t *creds, const char *config_name, c
 
     //** Get the time stamp
     local = config_name + offset;
+    log_printf(20, "config_name=%s local_name=%s\n", config_name, local);
     if (stat(local, &st) != 0) {
         log_printf(1, "Local file missing! Using old definition. fname=%s\n", local);
         *ts = 0;
