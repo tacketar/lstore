@@ -21,5 +21,4 @@ lio_ls @:/
 
 exit interactive docker session with ctrl+p,ctrl+q
 
-reattach with "docker attach <container>" or better yet utilize the ssh server this container starts onport 2222:
-ssh -p 2222 root@localhost
+reattach with "docker exec -it <container> /bin/bash"
