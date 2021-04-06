@@ -47,7 +47,7 @@ int main(int argc, char **argv)
     if (key_pair == 0) {
         crypto_secretbox_keygen(key_secret);
         zmq_z85_encode(key_z85, key_secret, crypto_secretbox_KEYBYTES);
-        key_escaped = tbx_stk_escape_text("[]\\#${}%", '\\', key_z85);
+        key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', key_z85);
 
         printf("[account-%s]\n", account);
         printf("key = %s\n\n", key_escaped);
@@ -58,10 +58,10 @@ int main(int argc, char **argv)
         printf("# Don't forget to add the IP/host entry to the [mappings] section of ~/.lio/authorized_keys\n");
         printf("# in addition to the section containing the key provided below\n\n");
         printf("[%s]\n", account);
-        key_escaped = tbx_stk_escape_text("=[]\\#${}", '\\', (char *)key_public);
+        key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', (char *)key_public);
         printf("public_key = %s\n", key_escaped);
         free(key_escaped);
-        key_escaped = tbx_stk_escape_text("=[]\\#${}", '\\', (char *)key_secret);
+        key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', (char *)key_secret);
         printf("secret_key = %s\n\n", key_escaped);
         free(key_escaped);
 

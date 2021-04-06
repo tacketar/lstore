@@ -28,6 +28,8 @@
 extern "C" {
 #endif
 
+#define TBX_INIP_ESCAPE_CHARS "[]\\#${}%="   //** Escape characters
+
 //** Various different hint types **
 #define TBX_INIP_HINT_ADD      0
 #define TBX_INIP_HINT_REMOVE   1
