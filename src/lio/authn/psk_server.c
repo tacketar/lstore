@@ -491,7 +491,7 @@ void apsk_server_accounts_print_running_config(lio_authn_t *an, FILE *fd)
         apr_hash_this(hi, NULL, &hlen, (void **)&pa);
         fprintf(fd, "[account-%s]\n", pa->account);
         zmq_z85_encode(key_z85, (unsigned char *)pa->key, pa->key_len);
-        key_escaped = tbx_stk_escape_text("[]\\#${}", '\\', key_z85);
+        key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', key_z85);
         n = strlen(key_escaped);
         if (n<40) {
             fprintf(fd, "ERROR: Key is to short! encrypted keylen=%d\n", pa->key_len);
