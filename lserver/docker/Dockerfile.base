@@ -55,7 +55,6 @@ RUN apt-get update && apt-get install -y --allow-unauthenticated --no-install-re
   vim \
   nano \
   man \
-  openssh-server \
   cron \
   locales \
   tzdata \
@@ -73,5 +72,5 @@ RUN /install/run-install.sh
 COPY docker_start.sh /usr/local/bin/
 ENTRYPOINT /usr/local/bin/docker_start.sh
 
-ONBUILD RUN echo "To start run: docker run -i -t --name <container-name>  --privileged --net=host --dns-search=vampire -v /vols/osfile:/osfile -v /vols/log:/log -v /vols/shared:/shared <image:name> "
+ONBUILD RUN echo "To start run: docker run -e LSERVER_HOST=<host-ip-to-use> -e LSERVER_PORT=<port-to-use> -i -t --name <container-name> -e DOCKER_NAME=<containter-name> --privileged --net=host --dns-search=vampire -v /lio/osfile:/lio/osfile -v /lio/log/<uniq-dir>:/lio/log  <image:name> "
 
