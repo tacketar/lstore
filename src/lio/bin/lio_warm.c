@@ -321,12 +321,12 @@ void submit_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
     rid_warm_t *r = wr->warm;
 
     r->n_running = r->n_used;
+    r->running_slot = r->curr_slot;
     if (bulk_mode == 1) {
         r->gop = ibp_rid_bulk_warm_gop(ic, &(r->depot), dt, r->n_running, &(r->cap[r->curr_slot]), &(r->n_failed), &(r->failed[r->curr_slot]), lio_gc->timeout);
     } else {
         r->gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, warm_serial_fn, (void *)wr, NULL, 1);
     }
-    r->running_slot = r->curr_slot;
     r->curr_slot = (r->curr_slot == 0) ? w->n_bulk : 0;
     r->n_used = 0;  //** Reset the todo count
     gop_set_private(r->gop, wr);
@@ -433,7 +433,11 @@ void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
     while (g) {
         if (strncmp(tbx_inip_group_get(g), "block-", 6) == 0) { //** Got a data block
             //** Get the manage cap first
-            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", "");
+            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", NULL);
+            if (!etext) {
+                info_printf(lio_ifd, 1, "MISSING_MCAP_ERROR: fname=%s  block=%s\n", inode->fname, tbx_inip_group_get(g));
+                goto next;
+            }
             mcap = tbx_stk_unescape_text('\\', etext);
             free(etext);
 
@@ -473,6 +477,7 @@ void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
                 }
             }
         }
+next:
         g = tbx_inip_group_next(g);
     }
 
@@ -768,7 +773,6 @@ int main(int argc, char **argv)
     //** And the setattr thread
     tbx_thread_create_assert(&sa_thread, NULL, setattr_thread,
                                  (void *)que_setattr, lio_gc->mpool);
-
 
     //** Process all the files
     submitted = good = bad = werr = missing_err = 0;
