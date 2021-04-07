@@ -1877,7 +1877,9 @@ no_args:
     remote_config = tbx_inip_get_string(lio_gc->ifd, section_name, "remote_config", NULL);
     lio_gc->rc_section = remote_config;
     if (remote_config) {
-        rc_server_install(lio_gc, remote_config);
+        if (!strcmp(remote_config, "standalone")) {   //** Skip it if running in standalone mode
+            rc_server_install(lio_gc, remote_config);
+        }
     }
 
     //** Install the signal handler hook to get info
