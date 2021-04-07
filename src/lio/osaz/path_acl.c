@@ -70,7 +70,6 @@ void map_line(char *string_start, char *string_end, char *match, char **start, c
 {
     char *curr;
 
-log_printf(0, "BACKWARD\n");
     //** Move backward
     curr = match;
     while (string_start != curr) {
@@ -82,7 +81,6 @@ log_printf(0, "BACKWARD\n");
     }
     if (string_start == curr) *start = string_start;
 
-log_printf(0, "FORWARD\n");
     //** Now find the end
     curr = match;
     while (string_end != curr) {
@@ -93,11 +91,6 @@ log_printf(0, "FORWARD\n");
         curr++;
     }
     if (string_end == curr) *end = string_end;
-
-char byte = **end;
-**end = '\0';
-log_printf(0, "byte=%d LINE=%s\n", byte, *start);
-**end = byte;
 }
 
 //*************************************************************************
@@ -118,27 +111,21 @@ void osaz_pacl_exnode_ro_filter(lio_os_authz_t *osa, char *key, int mode, void *
         return;
     }
 
-log_printf(0, "exnode_in:\n%s\n", exnode_in);
-
     tbx_type_malloc(ex, char, len_in+1);
     ex[len_in] = '\0';
 
     n = 0;
     curr = next = exnode_in;
     while ((match = strstr(next, "_cap")) != NULL) {
-log_printf(0, "MATCH=%p\n", match);
         k = match-exnode_in+1;
         if (k >= 6) {
             if (strncmp(match-6, "manage", 6) == 0) { //**Got a match
                 map_line(exnode_in, exnode_in_end, match, &start, &end);
                 k = start - curr;
-log_printf(0, "n=%d k=%d\n", n, k);
                 memcpy(ex + n, curr, k);
                 n += k;
                 curr = end + 1;
                 next = curr;
-//ex[n]=0;
-//log_printf(0, "ex_out=%s\n", ex);
                 continue;
             }
         }
@@ -146,13 +133,10 @@ log_printf(0, "n=%d k=%d\n", n, k);
             if (strncmp(match-5, "write", 5) == 0) { //**Got a match
                 map_line(exnode_in, exnode_in_end, match, &start, &end);
                 k = start - curr;
-log_printf(0, "n=%d k=%d\n", n, k);
                 memcpy(ex + n, curr, k);
                 n += k;
                 curr = end + 1;
                 next = curr;
-//ex[n]=0;
-//log_printf(0, "ex_out=%s\n", ex);
                 continue;
             }
         }
@@ -162,7 +146,6 @@ log_printf(0, "n=%d k=%d\n", n, k);
 
     if (*curr != '\0') {
         k = exnode_in + len_in - 1 - curr + 1;
-log_printf(0, "n=%d k=%d\n", n, k);
         memcpy(ex + n, curr, k);
         n += k;
     }
@@ -207,14 +190,12 @@ int osaz_pacl_can_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local
     osaz_pacl_t *osaz = osa->priv;
     int can_access, pacl_mode;
 
-log_printf(0, "path=%s creds->account=%s\n", path, an_cred_get_id(c, NULL));
     if (!path) return(0);
 
     pacl_mode = os2pacl_mode(mode);
 
     apr_thread_mutex_lock(osaz->lock);
     if (ug) {
-log_printf(0, "path=%s gid=%u uid=%u geteuid=%u\n", path, ug->gid, ug->uid, geteuid());
         if (geteuid() == ug->uid) {
             can_access = 2;
         } else {
@@ -224,7 +205,6 @@ log_printf(0, "path=%s gid=%u uid=%u geteuid=%u\n", path, ug->gid, ug->uid, gete
         can_access = pacl_can_access(osaz->pa, (char *)path, (char *)an_cred_get_id(c, NULL), pacl_mode, acl);
     }
     apr_thread_mutex_unlock(osaz->lock);
-log_printf(0, "path=%s creds->account=%s mode=%d pacl_mode=%d can_access=%d\n", path, an_cred_get_id(c, NULL), mode, pacl_mode, can_access);
 
     return(can_access);
 }
@@ -235,7 +215,6 @@ int osaz_pacl_object_create_remove(lio_os_authz_t *osa, lio_creds_t *c, lio_os_a
 {
     int acl;
 
-log_printf(0, "fname=%s\n", path);
     return((osaz_pacl_can_access(osa, c, ug, path, PACL_MODE_WRITE, &acl) == 2) ? 1 : 0);
 }
 
@@ -243,20 +222,8 @@ log_printf(0, "fname=%s\n", path);
 
 int osaz_pacl_object_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, int mode)
 {
-    int can_access;
-    int ok, acl;
-
-    can_access = osaz_pacl_can_access(osa, c, ug, path, mode, &acl);
-    ok = 0;
-    if (can_access == 2) {
-        ok = 2;
-    } else if (can_access == 1) {
-        ok = (mode == OS_MODE_READ_IMMEDIATE) ? 2 : 0;
-    }
-log_printf(0, "path=%s can_access=%d mode=%d READ=%d ok=%d\n", path, can_access, mode, OS_MODE_READ_IMMEDIATE, ok);
-return(can_access);
-//    return(ok);
-//    return(osaz_pacl_can_access(osa, c, path));
+    int acl;
+    return(osaz_pacl_can_access(osa, c, ug, path, mode, &acl));
 }
 
 //***********************************************************************
@@ -276,18 +243,6 @@ int osaz_pacl_posix_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, i
     void *data;
 
     err = pacl_lfs_get_acl(osaz->pa, (char *)path, lio_ftype, &data, &n, uid, gid, mode);
-//*uid = *gid;
-log_printf(0, "path=%s err=%d n=%d bsize=" ST " mode=%o\n", path, err, n, size, *mode);
-int i,j;
-char a2t[4096], *d;
-d = data;
-j=0;
-for (i=0; i<n; i++) {
-    tbx_append_printf(a2t, &j, sizeof(a2t), "%u:", (unsigned char)d[i]);
-}
-log_printf(0, "ACL=%s\n", a2t);
-//return(-ENODATA);
-//if (strcmp(path, "/") == 0) return(-ENODATA);
     if (err == 0) {
         if (n <= (int)size) memcpy(value, data, n);
         err = n;
@@ -377,7 +332,7 @@ void osaz_pacl_destroy(lio_os_authz_t *az)
     osaz_pacl_t *osaz = az->priv;
     apr_status_t value;
 
-log_printf(0, "Shutting down\n");
+    log_printf(5, "Shutting down\n");
     osaz->shutdown = 1;
     apr_thread_cond_broadcast(osaz->cond);
     apr_thread_mutex_unlock(osaz->lock);
@@ -406,7 +361,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     lio_os_authz_t *osaz;
     osaz_pacl_t *opa;
 
-log_printf(0, "START: section=%s\n", section);
+    log_printf(5, "START: section=%s\n", section);
 
     tbx_type_malloc(osaz, lio_os_authz_t, 1);
     tbx_type_malloc(opa, osaz_pacl_t, 1);
@@ -430,8 +385,6 @@ log_printf(0, "START: section=%s\n", section);
     opa->lfs_tmp_prefix = tbx_inip_get_string(ifd, section, "lfs_temp", NULL);
     opa->check_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);
 
-log_printf(0, "pa_file=%s\n", opa->pa_file);
-log_printf(0, "osaz->priv=%p\n", osaz->priv); tbx_log_flush();
     //** Load the initial config
     opa->modify_time = 0;
     _pacl_load(osaz);
