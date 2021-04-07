@@ -1353,29 +1353,20 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     //** Launch the server portal if enabled
     if (portal) gop_mq_portal_install(lio->mqc, portal);
 
-//    ctype = NULL;
-//    n = 0;
     ctype = user;
     if (!user) {
         ctype = tbx_inip_get_string(lio->ifd, section, "user", lio_default_options.creds_user);
     }
     n = (ctype) ? strlen(ctype) : 0;
 
-//    ctype = (user == NULL) ? tbx_inip_get_string(lio->ifd, section, "user", lio_default_options.creds_user) : strdup(user);
-//    n = (ctype) ? strlen(ctype) : 0;
     cred_args[0] = ctype; cred_args[1] = &n;
-//    lio->creds_user = strdup(cred_args[0]);
     snprintf(buffer, sizeof(buffer), "tuple:%s@%s", (char *)cred_args[0], lio->obj_name);
-log_printf(0, "creds_obj=%s\n", buffer);
-//    lio->creds_name = strdup(buffer);
     tuple = _lc_object_get(buffer);
     if (tuple == NULL) {  //** Need to load it
         lio->creds = authn_cred_init(lio->authn, AUTHN_INIT_DEFAULT, (void **)cred_args);
-log_printf(0, "tuple=NULL. creds=%p\n", lio->creds);
         if (lio->creds == NULL) {
             log_printf(0, "ERROR: Failed getting creds! creds_user=%s\n", lio->creds_user); tbx_log_flush();
             fprintf(stderr, "ERROR: Failed getting creds! creds_user=%s\n", lio->creds_user); fflush(stderr);
-//FIXME            abort();
         }
         tbx_type_malloc_clear(tuple, lio_path_tuple_t, 1);
         tuple->creds = lio->creds;
@@ -1384,14 +1375,12 @@ log_printf(0, "tuple=NULL. creds=%p\n", lio->creds);
         lio->creds_name = strdup(buffer);
         _lc_object_put(lio->creds_name, tuple);  //** Add it to the table
     } else {
-log_printf(0, "Got a tuple. tuple=%p\n", tuple->creds);
         lio->creds = tuple->creds;
         lio->creds_name = strdup(buffer);
     }
     if (cred_args[0] != NULL) free(cred_args[0]);
 
     lio->creds_user = (lio->creds) ? strdup(an_cred_get_id(lio->creds, NULL)) : strdup("NONE");
-log_printf(0, "user from CREDS=%s\n", lio->creds_user);
 
     if (_lio_cache == NULL) {
         stype = tbx_inip_get_string(lio->ifd, section, "cache", lio_default_options.cache_section);
