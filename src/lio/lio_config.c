@@ -1877,7 +1877,7 @@ no_args:
     remote_config = tbx_inip_get_string(lio_gc->ifd, section_name, "remote_config", NULL);
     lio_gc->rc_section = remote_config;
     if (remote_config) {
-        if (!strcmp(remote_config, "standalone")) {   //** Skip it if running in standalone mode
+        if (strcmp(remote_config, "standalone") != 0) {   //** Skip it if running in standalone mode
             rc_server_install(lio_gc, remote_config);
         }
     }
@@ -1892,11 +1892,6 @@ no_args:
     _tcfree = (tcfree_t *)dlsym(RTLD_DEFAULT, "MallocExtension_ReleaseFreeMemory");
 
     log_printf(1, "INIT completed\n");
-
-char public_key[41];
-char secret_key[41];
-int rc = zmq_curve_keypair(public_key, secret_key);
-log_printf(0, "CURVE: rc=%d public=%s secret=%s\n", rc, public_key, secret_key);
 
     return(0);
 }
