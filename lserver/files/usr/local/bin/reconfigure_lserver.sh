@@ -31,8 +31,9 @@ echo_info() {
     echo " "
     echo "[_parameters]"
     echo "hostname=${HOST}"
+    echo "port=${BPORT}"
     echo 'host=tcp://${hostname}'
-    echo 'hostport=${host}:'${BPORT}
+    echo 'hostport=${host}:${port}'
     echo 'the_host=THE|${hostport}'
 }
 
