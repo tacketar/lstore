@@ -943,6 +943,7 @@ void lio_print_options(FILE *fd)
     fprintf(fd, "          file:///path/to/file\n");
     fprintf(fd, "                            File with a single line containing either an lstore or init URI\n");
     fprintf(fd, "       -lc user@config    - Use the user and config section specified for making the default LIO\n");
+    fprintf(fd, "       -u userid          - User account to use\n");
     fprintf(fd, "       -np N              - Number of simultaneous operations. Default is %d.\n", lio_parallel_task_count);
     fprintf(fd, "       -i N               - Print information messages of level N or greater. No header is printed\n");
     fprintf(fd, "       -it N              - Print information messages of level N or greater. Thread ID header is used\n");
