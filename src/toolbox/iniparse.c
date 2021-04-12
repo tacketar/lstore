@@ -871,6 +871,7 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix)
     tbx_stack_free(bfd.stack, 1);
     tbx_stack_free(bfd.include_paths, 1);
 
+    if (inip) apply_params(inip);  //** Apply the parameters
     return(inip);
 }
 
