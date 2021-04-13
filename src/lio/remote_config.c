@@ -154,8 +154,11 @@ gop_op_status_t rcc_response_get_config(void *task_arg, int tid)
     //** Config frame
     f = gop_mq_msg_next(task->response);
     gop_mq_get_frame(f, (void **)&config, &n_config);
-    log_printf(5, "n_config=%d config=%s\n", n_config, config);
-
+    if (n_config > 0) {
+        log_printf(5, "n_config=%d config=%s\n", n_config, config);
+    } else {
+        log_printf(5, "n_config=%d config=NULL\n", n_config);
+    }
     if ((n_config <= 0) && (ts == 0)) {
         log_printf(0, " ERROR: Empty config! n=%d\n", n_config);
         status = gop_failure_status;
@@ -206,8 +209,10 @@ gop_op_generic_t *rcc_get_config_op(rc_t *rc, lio_creds_t *creds, mq_msg_t *rc_h
     gop_mq_msg_append_mem(msg, rc_fname, strlen(rc_fname), MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, arg->zbuf, len, MQF_MSG_KEEP_DATA);
     if (creds) {
+        log_printf(5, "creds=%s\n", an_cred_get_descriptive_id(creds, &len));
         chandle = an_cred_get_handle(creds, &len);
     } else {
+        log_printf(5, "creds=NULL\n");
         chandle = NULL; len = 0;
     }
     gop_mq_msg_append_mem(msg, chandle, len, MQF_MSG_KEEP_DATA);
@@ -241,8 +246,10 @@ int rc_can_access(rc_t *rc, lio_creds_t *creds, char *fname)
             if (creds) {
                 account = an_cred_get_id(creds, &i);
                 for (i=0; i<obj->n_account; i++) {
+                    log_printf(5, "RCS: account[%d]=%s\n", i, obj->account[i]);
                     if (strcmp(account, obj->account[i]) == 0) {
                         can_access = 1;
+                        log_printf(5, "RCS: can_access=1\n");
                         break;
                     }
                 }
@@ -253,6 +260,7 @@ int rc_can_access(rc_t *rc, lio_creds_t *creds, char *fname)
     }
     apr_thread_mutex_unlock(rc->lock);
 
+    log_printf(5, "RCS: can_access=%d\n", can_access);
     return(can_access);
 }
 
@@ -279,7 +287,11 @@ void rcs_config_send(rc_t *rc, lio_creds_t *creds, gop_mq_frame_t *fid, mq_msg_t
     nbytes = strlen(rc->prefix) + 1 + strlen(fname) + 4 + 1;
     tbx_type_malloc(path, char, nbytes);
     snprintf(path, nbytes, "%s/%s.cfg", rc->prefix, fname);
-    log_printf(5, "rcs_config_send: full_path=%s\n", path);
+    if (creds) {
+        log_printf(5, "RCS: full_path=%s creds=%s\n", path, an_cred_get_descriptive_id(creds, &n));
+    } else {
+        log_printf(5, "RCS: full_path=%s creds=NULL\n", path);
+    }
 
     //** Add the config and timestamp
     if (rc_can_access(rc, creds, fname)) {
@@ -287,7 +299,7 @@ void rcs_config_send(rc_t *rc, lio_creds_t *creds, gop_mq_frame_t *fid, mq_msg_t
         config = NULL;
         nbytes = 0;
         if (stat(path, &st) == 0) {
-            log_printf(5, "RC: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp, st.st_mtime);
+            log_printf(5, "RCS: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp, st.st_mtime);
             if (timestamp != st.st_mtime) {
                 tbx_inip_file2string(path, &config, &nbytes);
                 if (nbytes > 0) nbytes++; //** Make sure and send the NULL terminator
@@ -399,11 +411,13 @@ void rcs_get_config_cb(void *arg, gop_mq_task_t *task)
     //** Get the creds
     f = mq_msg_pop(msg);
     gop_mq_get_frame(f, &ptr, &len);
-    if (len == 0) {
-log_printf(0, "attempting to lookup handle handle_len=%d\n", len);
+    if (len != 0) {
+        log_printf(5, "RCS: attempting to lookup handle handle_len=%d\n", len);
         cred_args[0] = ptr;
         cred_args[1] = &len;
         creds = authn_cred_init(rc_server->authn, AUTHN_INIT_LOOKUP, cred_args);
+    } else {
+        log_printf(5, "RCS: No creds provided\n");
     }
     gop_mq_frame_destroy(f);
 

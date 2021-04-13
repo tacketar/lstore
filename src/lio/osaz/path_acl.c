@@ -286,9 +286,15 @@ void _pacl_load(lio_os_authz_t *az)
     char *obj_name = NULL;
     tbx_inip_file_t *ifd;
     lio_creds_t *creds;
+    int n;
 
     log_printf(20, "Loading config. pa_file=%s lio_gc=%p\n", osaz->pa_file, lio_gc);
     creds = (lio_gc) ? lio_gc->creds : NULL;
+    if (creds) {
+        log_printf(20, "creds=%s\n", an_cred_get_descriptive_id(creds, &n));
+    } else {
+        log_printf(20, "creds=NULL\n");
+    }
     ifd = lio_fetch_config(creds, osaz->pa_file, &obj_name, &(osaz->modify_time));
     log_printf(20, "ifd=%p obj_name=%s\n", ifd, obj_name);
     if (ifd) {
