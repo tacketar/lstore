@@ -400,6 +400,7 @@ void _ns_init(tbx_ns_t *ns, int incid)
     ns->start = 0;
     ns->end = -1;
     ns->encrypted = 0;
+    ns->enc = NULL;
     memset(ns->peer_address, 0, sizeof(ns->peer_address));
 
     memset(&(ns->write_chksum), 0, sizeof(tbx_ns_chksum_t));
@@ -513,6 +514,7 @@ int _ns_encrypt_client(tbx_ns_t *ns)
     crypto_secretstream_xchacha20poly1305_init_pull(&(ns->enc->state_read), ns->enc->header_read, ns->enc->my_key_rx);
 
     ns->encrypted = 1;  //** Flag the connection as encrypted
+    log_printf(10, "ENCRYPTED: ns=%d\n", ns->id);
 
     return(0);
 }
@@ -585,6 +587,7 @@ int _ns_encrypt_server_handshake(tbx_ns_t *ns)
     }
 
     ns->encrypted = 1;  //** Flag the connection as encrypted
+    log_printf(10, "ENCRYPTED: ns=%d\n", ns->id);
 
 done:
     if (ns->encrypted == 0) {
