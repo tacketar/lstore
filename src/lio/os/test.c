@@ -1892,7 +1892,7 @@ int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pendin
 
     err = 0;
 
-    ifd = tbx_inip_string_read(lval);
+    ifd = tbx_inip_string_read(lval, 1);
     grp = tbx_inip_group_find(ifd, "os.lock");
 
     ele = tbx_inip_ele_first(grp);

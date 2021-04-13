@@ -79,8 +79,6 @@ struct tbx_inip_hint_t {  //** Overriding hint
 
 static int used_random = 0;
 
-void apply_params(tbx_inip_file_t  *fd);
-
 // Accessors
 void tbx_inip_string_auto_destroy(tbx_inip_file_t *ifd) {
     ifd->auto_free_string = 1;
@@ -106,7 +104,6 @@ tbx_inip_element_t *tbx_inip_ele_next(tbx_inip_element_t *ele) {
     return ((ele) == NULL) ? NULL : (ele)->next;
 }
 tbx_inip_group_t *tbx_inip_group_first(tbx_inip_file_t *inip) {
-    if (inip->n_substitution_checks > 0) apply_params(inip);  //** Apply the params if needed
     return inip->tree;
 }
 char *tbx_inip_group_get(tbx_inip_group_t *g) {
@@ -281,10 +278,10 @@ void resolve_params(tbx_inip_file_t  *fd)
 
 
 //***********************************************************************
-// apply_params - Applies the parameters to all the groups and elements
+// tbx_inip_apply_params - Applies the parameters to all the groups and elements
 //***********************************************************************
 
-void apply_params(tbx_inip_file_t  *fd)
+void tbx_inip_apply_params(tbx_inip_file_t  *fd)
 {
     tbx_inip_group_t  *g;
     tbx_inip_element_t  *ele;
@@ -818,7 +815,7 @@ char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *
 //    NOTE:  Either fd or text showld be non-NULL but not both.
 //***********************************************************************
 
-tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix)
+tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int resolve_params)
 {
     tbx_inip_file_t *inip;
     tbx_inip_group_t *group, *prev;
@@ -871,7 +868,10 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix)
     tbx_stack_free(bfd.stack, 1);
     tbx_stack_free(bfd.include_paths, 1);
 
-    if (inip) apply_params(inip);  //** Apply the parameters
+    if (inip && resolve_params) {
+        if (inip->n_substitution_checks) tbx_inip_apply_params(inip);  //** Apply the parameters
+    }
+
     return(inip);
 }
 
@@ -879,7 +879,7 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix)
 //  tbx_inip_file_read - Reads a .ini file from disk
 //***********************************************************************
 
-tbx_inip_file_t *tbx_inip_file_read(const char *fname)
+tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params)
 {
     FILE *fd;
     char *prefix;
@@ -906,7 +906,7 @@ tbx_inip_file_t *tbx_inip_file_read(const char *fname)
         }
     }
 
-    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix);
+    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, resolve_params);
 
     if (prefix) free(prefix);
     return ret;
@@ -915,9 +915,9 @@ tbx_inip_file_t *tbx_inip_file_read(const char *fname)
 //***********************************************************************
 //  tbx_inip_string_read - Loads a string and parses it into a INI structure
 //***********************************************************************
-tbx_inip_file_t *tbx_inip_string_read(const char *text)
+tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params)
 {
-    return(inip_load(NULL, text, NULL));
+    return(inip_load(NULL, text, NULL, resolve_params));
 }
 
 //***********************************************************************

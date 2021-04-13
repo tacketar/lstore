@@ -3343,7 +3343,7 @@ int handle_internal_mount(ibp_task_t *task)
     start = apr_time_now();
 
     //* Load the config file
-    keyfile = tbx_inip_file_read(global_config->config_file);
+    keyfile = tbx_inip_file_read(global_config->config_file, 1);
     if (keyfile == NULL) {
         log_printf(0, "handle_internal_mount:  Error parsing config file! file=%s\n",
                    global_config->config_file);

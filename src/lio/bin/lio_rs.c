@@ -80,7 +80,7 @@ void print_rid_summary(char *config, int base)
     table = tbx_list_create(0, &tbx_list_string_compare, NULL, NULL, free);
 
     //** Open the file
-    kf = tbx_inip_string_read(config);FATAL_UNLESS(kf);
+    kf = tbx_inip_string_read(config, 1); FATAL_UNLESS(kf);
 
     //** And load it
     ig = tbx_inip_group_first(kf);

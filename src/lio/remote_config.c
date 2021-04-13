@@ -287,7 +287,7 @@ void rcs_config_send(rc_t *rc, lio_creds_t *creds, gop_mq_frame_t *fid, mq_msg_t
         config = NULL;
         nbytes = 0;
         if (stat(path, &st) == 0) {
-log_printf(0, "RC: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp, st.st_mtime);
+            log_printf(5, "RC: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp, st.st_mtime);
             if (timestamp != st.st_mtime) {
                 tbx_inip_file2string(path, &config, &nbytes);
                 if (nbytes > 0) nbytes++; //** Make sure and send the NULL terminator
@@ -297,8 +297,6 @@ log_printf(0, "RC: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp,
             timestamp = 0;
         }
     } else {
-//        config = strdup("#Config missing or bad credentials\n");
-//        nbytes = strlen(config);
         config = NULL;
         nbytes = 0;
         timestamp = 0;
@@ -470,7 +468,7 @@ int rc_client_get_config(lio_creds_t *creds, char *rc_string, char **config, cha
 log_printf(0, "address=%s file=%s section=%s\n", s, rc_file, rc_section);
     address = gop_mq_string_to_address(s);
 
-    ifd = tbx_inip_string_read(mq_config);
+    ifd = tbx_inip_string_read(mq_config, 1);
     rc->mqc = gop_mq_create_context(ifd, "mq");
     tbx_inip_destroy(ifd);
 
@@ -631,7 +629,7 @@ void _rc_configs_load(rc_t *rc)
 
     if (rc->modify_time != sbuf.st_mtime) {  //** File changed so reload it
         log_printf(5, "RELOADING data\n");
-        ifd = tbx_inip_file_read(rc->config_file);
+        ifd = tbx_inip_file_read(rc->config_file, 1);
         if (rc->cfgs) _rc_configs_destroy(rc->cfgs);
         rc->cfgs = _rc_configs_create(ifd);
         tbx_inip_destroy(ifd);

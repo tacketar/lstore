@@ -116,7 +116,7 @@ void _psk_load(lio_authn_t *an)
     char *psk, *text;
     int n;
 
-    fd = tbx_inip_file_read(ap->fname);
+    fd = tbx_inip_file_read(ap->fname, 1);
     if (!fd) {
         log_printf(0, "ERROR: Can't open the PSK file! fname:%s\n", ap->fname);
         fprintf(stderr, "ERROR: Can't open the PSK file! fname:%s\n", ap->fname);

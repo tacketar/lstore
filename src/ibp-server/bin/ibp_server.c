@@ -725,7 +725,7 @@ int main(int argc, const char **argv)
     tbx_log_open("/log/ibp.log", 1);
 
     //* Load the config file
-    keyfile = tbx_inip_file_read(config_file);
+    keyfile = tbx_inip_file_read(config_file, 1);
     if (keyfile == NULL) {
         log_printf(0, "ibp_load_config:  Error parsing config file! file=%s\n", config_file);
         return (-1);

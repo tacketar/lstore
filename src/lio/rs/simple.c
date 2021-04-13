@@ -950,7 +950,7 @@ int _rs_simple_load(lio_resource_service_fn_t *res, char *fname)
     err = 0;
 
     //** Open the file
-    kf = tbx_inip_file_read(fname);
+    kf = tbx_inip_file_read(fname, 1);
     if (!kf) return(-1);
 
     //** Load the blacklist if available

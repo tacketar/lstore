@@ -213,7 +213,7 @@ gop_mq_context_t *client_make_context()
     gop_mq_context_t *mqc;
 
     snprintf(buffer, sizeof(buffer), text_params, 100*nparallel);
-    ifd = tbx_inip_string_read(buffer);
+    ifd = tbx_inip_string_read(buffer, 1);
     mqc = gop_mq_create_context(ifd, "mq_context");
     assert(mqc != NULL);
     tbx_inip_destroy(ifd);
@@ -578,7 +578,7 @@ gop_mq_context_t *server_make_context()
     gop_mq_context_t *mqc;
 
     snprintf(buffer, sizeof(buffer), text_params, 100*nparallel);
-    ifd = tbx_inip_string_read(buffer);
+    ifd = tbx_inip_string_read(buffer, 1);
     mqc = gop_mq_create_context(ifd, "mq_context");
     assert(mqc != NULL);
     tbx_inip_destroy(ifd);

@@ -265,7 +265,7 @@ handle_path:
 
 //***********************************************************************
 // lio_fetch_config - Returns a valid FD if the config can be opened.
-//     config_name - PAth to the config
+//     config_name - Path to the config
 //     obj_name - Object name returned if non-NULL
 //     ts       - Time stamp for the config.  If the config hasn't changed
 //                the FD is null. On success ts set to the time of the object
@@ -285,7 +285,7 @@ tbx_inip_file_t *lio_fetch_config(lio_creds_t *creds, const char *config_name, c
     if (strncmp("lstore://", config_name, 9) == 0) {
         if (rc_client_get_config(creds, (char *)config_name, &cfg, obj_name, ts) == 0) {
             if (cfg) {
-                ifd = tbx_inip_string_read(cfg);
+                ifd = tbx_inip_string_read(cfg, 1);
                 if (ifd) tbx_inip_string_auto_destroy(ifd);
                 return(ifd);
             }
@@ -310,7 +310,7 @@ tbx_inip_file_t *lio_fetch_config(lio_creds_t *creds, const char *config_name, c
         *ts = 0;
     } else if (*ts != st.st_mtime) {  //** File changed so reload it
         *ts = st.st_mtime;
-        ifd = tbx_inip_file_read(local);
+        ifd = tbx_inip_file_read(local, 1);
     }
 
     return(ifd);

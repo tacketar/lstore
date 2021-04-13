@@ -729,7 +729,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
             uri[sizeof(uri)-1] = '\0';
             free(obj_name);
 
-            ifd = tbx_inip_string_read(config);
+            ifd = tbx_inip_string_read(config, 1);
             if (config) free(config);
             if (ifd == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
@@ -949,8 +949,9 @@ void lio_print_options(FILE *fd)
     fprintf(fd, "       -it N              - Print information messages of level N or greater. Thread ID header is used\n");
     fprintf(fd, "       -if N              - Print information messages of level N or greater. Full header is used\n");
     fprintf(fd, "       -ilog info_log_out - Where to send informational log output.\n");
-    fprintf(fd, "       --print-config     - Print the parsed config.\n");
-    fprintf(fd, "       --print-running-config  - Print the running config.\n");
+    fprintf(fd, "       --print-config     - Print the parsed config with hints applied but not substitutions.\n");
+    fprintf(fd, "       --print-config-with-subs - Print the parsed config with substitutions applied.\n");
+    fprintf(fd, "       --print-running-config   - Print the running config.\n");
     fprintf(fd, "\n");
     tbx_inip_print_hint_options(fd);
 }
@@ -1712,9 +1713,12 @@ int lio_init(int *argc, char ***argvp)
         } else if (strcmp(argv[i], "--print-config") == 0) { //** Print the parsed config file
             i++;
             print_config |= 1;
-        } else if (strcmp(argv[i], "--print-running-config") == 0) { //** Print the running config
+        } else if (strcmp(argv[i], "--print-config-with-subs") == 0) { //** Print the parsed config file
             i++;
             print_config |= 2;
+        } else if (strcmp(argv[i], "--print-running-config") == 0) { //** Print the running config
+            i++;
+            print_config |= 4;
         } else {
             myargv[nargs] = argv[i];
             nargs++;
@@ -1802,7 +1806,7 @@ no_args:
 
     //** See what we load for default
     if ((strncasecmp(cfg_name, "ini://", 6) == 0) || (cfg_name[0] == '/')) { //** It's a local file to load
-        ifd = (cfg_name[0] == '/') ? tbx_inip_file_read(cfg_name) : tbx_inip_file_read(cfg_name+6);
+        ifd = (cfg_name[0] == '/') ? tbx_inip_file_read(cfg_name, 0) : tbx_inip_file_read(cfg_name+6, 0);
         i = 9 + 2 + 1 + 6 + 1 + 6 + 6 + 1 + sizeof(section_name) + 20;
         tbx_type_malloc(obj_name, char, i);
         dummy = NULL;
@@ -1810,7 +1814,7 @@ no_args:
     } else {            //** Try and load a remote config
         ts = 0;
         if (rc_client_get_config(NULL, cfg_name, &config, &obj_name, &ts) == 0) {
-            ifd = tbx_inip_string_read(config);
+            ifd = tbx_inip_string_read(config, 0);
             free(config);
         } else {
             printf("Failed loading config: %s\n", cfg_name);
@@ -1826,9 +1830,21 @@ no_args:
     tbx_inip_hint_list_apply(ifd, hints);  //** Apply the hints
     tbx_inip_hint_list_destroy(hints);     //** and cleanup
 
-    if ((print_config & 1) == 1) {
+    if (print_config & 1) {
         char *cfg_dump = tbx_inip_serialize(ifd);
         fprintf(stdout, "------------------- Dumping input LStore configuration file -------------------\n");
+        fprintf(stdout, "Config string: %s   Section: %s\n", cfg_name, section_name);
+        fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
+        fprintf(stdout, "%s", cfg_dump);
+        fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
+        if (cfg_dump) free(cfg_dump);
+    }
+
+    tbx_inip_apply_params(ifd);
+
+    if (print_config & 2) {
+        char *cfg_dump = tbx_inip_serialize(ifd);
+        fprintf(stdout, "------------------- Dumping input LStore configuration file after substitutions -------------------\n");
         fprintf(stdout, "Config string: %s   Section: %s\n", cfg_name, section_name);
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
         fprintf(stdout, "%s", cfg_dump);
@@ -1843,7 +1859,7 @@ no_args:
         return 1;
     }
 
-    if ((print_config & 2) == 2) {
+    if (print_config & 4) {
         fprintf(stdout, "--------------------- Dumping running LStore configuration --------------------\n");
         lio_print_running_config(stdout, lio_gc);
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");

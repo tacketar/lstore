@@ -45,7 +45,7 @@ lio_rs_space_t rs_space(char *config)
 
     if (config == NULL) return(space);
 
-    fd = tbx_inip_string_read(config);FATAL_UNLESS(fd);
+    fd = tbx_inip_string_read(config, 1);FATAL_UNLESS(fd);
 
     grp = tbx_inip_group_first(fd);
     while (grp != NULL) {

@@ -137,7 +137,7 @@ void parse_tag_file(char *fname)
     tbx_inip_element_t *ele;
     char *key, *value, *v;
 
-    fd = tbx_inip_file_read(fname);
+    fd = tbx_inip_file_read(fname, 1);
     if (fd == NULL) return;
 
     apr_pool_create(&tagged_pool, NULL);
@@ -424,7 +424,7 @@ void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
     char *exnode = inode->exnode;  //** We save this just in case the blocks are all warmed and the inode is destroyed during the call
 
     log_printf(15, "warming fname=%s, dt=%d\n", inode->fname, dt);
-    fd = tbx_inip_string_read(exnode);
+    fd = tbx_inip_string_read(exnode, 1);
     tbx_inip_group_t *g;
 
     cnt = 0;
@@ -936,7 +936,7 @@ int main(int argc, char **argv)
 
     //** Get the RID config which is used in the summary
     config = rs_get_rid_config(lio_gc->rs);
-    ifd = tbx_inip_string_read(config);FATAL_UNLESS(ifd);
+    ifd = tbx_inip_string_read(config, 1); FATAL_UNLESS(ifd);
 
     //** Convert it for easier lookup
     ig = tbx_inip_group_first(ifd);

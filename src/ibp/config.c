@@ -741,7 +741,7 @@ int ibp_config_load_file(ibp_context_t *ic, char *fname, char *section)
     int err;
 
     //* Load the config file
-    keyfile = tbx_inip_file_read(fname);
+    keyfile = tbx_inip_file_read(fname, 1);
     if (keyfile == NULL) {
         log_printf(0, "Error parsing config file! file=%s\n", fname);
         return(-1);

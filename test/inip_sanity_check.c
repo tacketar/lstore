@@ -115,7 +115,7 @@ int main(int argc, char **argv)
     }
 
     //** Open the file
-    ifd = tbx_inip_file_read(fname);
+    ifd = tbx_inip_file_read(fname, 0);
     if (ifd == NULL) {
         fprintf(stderr, "ERROR: parsing file!\n");
         return(1);
@@ -131,9 +131,7 @@ int main(int argc, char **argv)
 
     if (do_print & 2) print_file(ifd, stdout, "Hints applied version");
 
-    if (tbx_inip_group_first(ifd) == NULL) { //** This will trigger the parameter substitution
-        fprintf(stderr, "ERROR getting first group!\n");
-    }
+    tbx_inip_apply_params(ifd);  //** Apply the paramters
 
     if (do_print & 4) print_file(ifd, stdout, "Final version");
 

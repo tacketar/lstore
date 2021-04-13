@@ -112,10 +112,9 @@ lio_trace_t *trace_load(lio_service_manager_t *exs, lio_exnode_t *tex, data_attr
     char buffer[1024];
     char *bstate, *str;
     double log2, d;
-//  char *template;
     lio_segment_t *tseg;
 
-    tfd = tbx_inip_file_read(fname);
+    tfd = tbx_inip_file_read(fname, 1);
 
     n_files = tbx_inip_get_integer(tfd, "trace", "n_files", -1);
     n_ops = tbx_inip_get_integer(tfd, "trace", "n_ops", -1);

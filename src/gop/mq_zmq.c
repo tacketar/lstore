@@ -84,7 +84,7 @@ again:
         }
     }
 
-    ifd = tbx_inip_file_read(fname);
+    ifd = tbx_inip_file_read(fname, 1);
     if (!ifd) {
         if ((!server_mode) || (retry == 0)) {  //** Let's try again
             if (key_prefix) {

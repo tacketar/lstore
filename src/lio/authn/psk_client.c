@@ -233,7 +233,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     }
 
     //** Get the account and PSK
-    fd = tbx_inip_file_read(psk_name);
+    fd = tbx_inip_file_read(psk_name, 1);
     if (!fd) {
         if (do_fail) {
             log_printf(0, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);

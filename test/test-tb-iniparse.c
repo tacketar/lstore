@@ -4,7 +4,7 @@
 
 TEST_IMPL(tb_iniparse) {
     const char *buf = "[foo]\nbar = baz\n";
-    tbx_inip_file_t *inip = tbx_inip_string_read(buf); 
+    tbx_inip_file_t *inip = tbx_inip_string_read(buf, 1);
     ASSERT(inip != NULL);
     ASSERT(tbx_inip_group_count(inip) == 1);
     tbx_inip_group_t *group = tbx_inip_group_first(inip);
