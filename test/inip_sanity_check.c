@@ -58,13 +58,40 @@ void print_file(tbx_inip_file_t *ifd, FILE *fd, char *header)
     free(text);
 }
 
+//*************************************************************************
+//  Doesn't actually load the file into an INI struct but instead just tries and
+//     resolves any dependencies and converts it to a string for transport.
+//*************************************************************************
+
+void print_file2string(char *fname, FILE *fd)
+{
+    char *text = NULL;
+    int n = 0;
+
+    tbx_inip_file2string(fname, &text, &n);
+    if (text == NULL) {
+        fprintf(stderr, "ERROR Converting file to string!\n");
+        return;
+    }
+
+    n = strlen(text);
+    fprintf(fd, "#--------------------------------------------------------------------\n");
+    fprintf(fd, "# %s (nbytes=%d)\n", fname, n);
+    fprintf(fd, "#--------------------------------------------------------------------\n");
+    fprintf(fd, "%s", text);
+    free(text);
+}
+
 void print_help()
 {
     printf("\n");
-    printf("inip_sanity_check [-p] [INI_OPTIONS] -f INI-file\n");
+    printf("inip_sanity_check [INI_OPTIONS] -f INI-file\n");
+    printf("inip_sanity_check  -f2s INI-file\n");
     printf("     -pi   Print the initial INI before any hints or variables substititions are made\n");
     printf("     -ph   Print the INI after hints are applied but before variables substititions are made\n");
     printf("     -pf   Print the final INI after all hints and variables substititions are made\n");
+    printf("     -f    Init file to use\n");
+    printf("     -f2s  Just convert the given INI file into a string without loading it into an ifd\n");
     printf("\n");
     tbx_inip_print_hint_options(stdout);
 }
@@ -106,6 +133,10 @@ int main(int argc, char **argv)
             i++;
             fname = argv[i];
             i++;
+        } else if (strcmp(argv[i], "-f2s") == 0) {  //** Just do a file to string conversion
+            i++;
+            print_file2string(argv[i], stdout);
+            return(0);
         }
     } while ((start_option < i) && (i<argc));
 

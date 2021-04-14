@@ -954,13 +954,19 @@ int inip_convert2string(FILE *fd_in, const char *text_in, char **text_out, int *
     while ((line = _get_line(&bfd, &err)) != NULL) {
         bfd.curr->used = 0;
         n = strlen(line);
-        if ((n_total+n) > n_max) {
+        if ((n_total+n+1) > n_max) {
             n_max = 1.5*n_max;
             tbx_type_realloc(text, char, n_max);
         }
 
-        memcpy(text + n_total, line, n);
-        n_total += n;
+        if (n > 0) {
+            memcpy(text + n_total, line, n);
+            n_total += n;
+            if (line[n-1] != '\n') {  //** See if we need to a a CR to the end of the line due to a comment
+                text[n_total] = '\n';
+                n_total++;
+            }
+        }
     }
 
     if (bfd.error != 0) {  //** Got an internal parsing error
