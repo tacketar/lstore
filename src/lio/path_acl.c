@@ -168,7 +168,6 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact)
     low = 0; high = pa->n_path_acl-1;
     while (low <= high) {
         mid = low + (high-low)/2;
-log_printf(0, "path=%s low=%d mid=%d hi=%d\n", path, low, mid, high); tbx_log_flush();
         cmp = strncmp(acl[mid]->prefix, path, acl[mid]->n_prefix);
 
         //** We have a match but we need to make sure it's a full
@@ -212,18 +211,16 @@ int _pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode
     int i, exact;
     path_acl_t *acl;
 
-//    *perms = PACL_MODE_RW;
-
     //** Look for the prefix
     acl = pacl_search(pa, path, &exact);
     if (acl_mapped) *acl_mapped = acl;
-log_printf(0, "path=%s account=%s acl=%p exact=%d\n", path, account, acl, exact);
+    log_printf(10, "path=%s account=%s acl=%p exact=%d\n", path, account, acl, exact);
     if (!acl) {  //** Not mapped to any prefix so check the default
         if (pa->pacl_default) {    //** We have a default setting
             acl = pa->pacl_default;
         } else {  //** We just have to look at the default mode
             *perms = pa->pacl_default->other_mode;
-log_printf(0, "path=%s account=%s acl=%p exact=%d DEFAULT perm=%d = mode=%d\n", path, account, acl, exact, *perms, mode);
+            log_printf(10, "path=%s account=%s acl=%p exact=%d DEFAULT perm=%d = mode=%d\n", path, account, acl, exact, *perms, mode);
             return(((mode & *perms) > 0) ? 2 : 0);
         }
     }
@@ -231,31 +228,19 @@ log_printf(0, "path=%s account=%s acl=%p exact=%d DEFAULT perm=%d = mode=%d\n", 
     //** If we made it here there's an overlapping prefix
     if (account) { //** We have a valid account to check against
         for (i=0; i<acl->n_account; i++) {
-log_printf(0, "path=%s account=%s valid_acct=%s\n", path, account, acl->account[i].account);
+            log_printf(10, "path=%s account=%s valid_acct=%s\n", path, account, acl->account[i].account);
             if (strcmp(acl->account[i].account, account) == 0) {
                 *perms = acl->account[i].mode;
-log_printf(0, "path=%s account=%s valid_acct=%s mode=%d perms=%d\n", path, account, acl->account[i].account, mode, *perms);
+                log_printf(10, "path=%s account=%s valid_acct=%s mode=%d perms=%d\n", path, account, acl->account[i].account, mode, *perms);
                 return(((mode & *perms) > 0) ? 2 : 0);
             }
         }
     }
 
-//    if (acl == pa->pacl_default) {  //** We made it without a match so see if we use the default
-        *perms = acl->other_mode;
-log_printf(0, "path=%s account=%s acl=%p exact=%d DEFAULT2 perm=%d  mode=%d\n", path, account, acl, exact, *perms, mode);
-        return(((mode & *perms) > 0) ? 2 : exact);
-//    }
-
-//    if (exact == 1) { //** Exact match
-//        *perms = PACL_MODE_READ;
-//log_printf(0, "path=%s account=%s acl=%p exact=%d EXACT perm=%d = mode=%d\n", path, account, acl, exact, *perms, mode);
-//        return(1);
-//    }
-
-//    *perms = 0;
-//log_printf(0, "path=%s account=%s acl=%p exact=%d FAIL perm=%d = mode=%d\n", path, account, acl, exact, *perms, mode);
-//    return(0);
-//    return((exact == 1) ? 1 : 0);
+   //** We made it without a match so see if we use the default
+   *perms = acl->other_mode;
+    log_printf(10, "path=%s account=%s acl=%p exact=%d DEFAULT2 perm=%d  mode=%d\n", path, account, acl, exact, *perms, mode);
+   return(((mode & *perms) > 0) ? 2 : exact);
 }
 
 //**************************************************************************
@@ -299,14 +284,18 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
     int exact, slot;
 
     acl = pacl_search(pa, path, &exact);
-log_printf(0, "path=%s exact=%d acl=%p\n", path, exact, acl);
+    log_printf(10, "path=%s exact=%d acl=%p\n", path, exact, acl);
     if (acl) {
-log_printf(0, "path=%s exact=%d lfs_acl=%p\n", path, exact, acl->lfs_acl);
+        log_printf(10, "path=%s exact=%d lfs_acl=%p\n", path, exact, acl->lfs_acl);
         if (acl->lfs_acl) {
             if (exact) {
                 slot = 0;
             } else {
-                slot = (lio_ftype & OS_OBJECT_EXEC_FLAG) ? 2 : 1;
+                if (lio_ftype & OS_OBJECT_DIR_FLAG) {
+                    slot = 0;
+                } else {
+                    slot = (lio_ftype & OS_OBJECT_EXEC_FLAG) ? 2 : 1;
+                }
             }
             *lfs_acl = acl->lfs_acl->acl[slot];
             *acl_size = acl->lfs_acl->size[slot];
@@ -343,8 +332,6 @@ int pacl_sort_fn(const void *a1, const void *a2, void *arg)
     const path_acl_t *acl1 = *(const path_acl_t **)a1;
     const path_acl_t *acl2 = *(const path_acl_t **)a2;
 
-int n = strcmp(acl1->prefix, acl2->prefix);
-log_printf(0, "strcmp(%s,%s)=%d\n", acl1->prefix, acl2->prefix, n);
     return(strcmp(acl1->prefix, acl2->prefix));
 }
 
@@ -373,7 +360,7 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size)
     acl_t acl;
     char acl_buf[10*1024];
 
-log_printf(0, "acl_text=%s\n", acl_text);
+    log_printf(10, "acl_text=%s\n", acl_text);
 
     //** Convert from a string to an ACL
     acl = acl_from_text(acl_text);
@@ -381,12 +368,6 @@ log_printf(0, "acl_text=%s\n", acl_text);
         log_printf(0, "acl_from_text ERROR: acl_text=%s\n", acl_text);
         return(1);
     }
-
-//char *a2t = acl_to_text(acl, NULL);
-//log_printf(0, "a2t=%s\n", a2t);
-
-//log_printf(0, "acl_valid=%d\n", acl_valid(acl));
-//log_printf(0, "acl_size()=" ST "\n", acl_size(acl));
 
     //** Apply it to the file
     if (acl_set_fd(fd, acl) != 0) {
@@ -404,20 +385,10 @@ log_printf(0, "acl_text=%s\n", acl_text);
         return(3);
     }
 
-int i;
-fprintf(stderr, "ACL=");
-for (i=0; i<*kacl_size; i++) {
-    fprintf(stderr,"%u:",(unsigned char)acl_buf[i]);
-}
-fprintf(stderr, "\n");
-log_printf(0, "acl_size=%d\n", *kacl_size);
-//acl_t acl2 = acl_copy_int(acl_buf);
     if (acl == (acl_t)NULL) {
         log_printf(0, "ERROR: acl_copy_int acl_text=%s\n", acl_text);
         return(1);
     }
-//char *a2t2 = acl_to_text(acl2, NULL);
-//log_printf(0, "a2t2=%s\n", a2t2);
 
     tbx_type_malloc_clear(*kacl, char, *kacl_size+1);
     memcpy(*kacl, acl_buf, *kacl_size);
@@ -451,7 +422,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     //** First get the LFS primary group
     facl->gid_primary = pacl2lfs_gid_primary(pa, acl->lfs_account);
 
-log_printf(0, "gid_primary=%u lfs_account=%s n_account=%d\n", facl->gid_primary, acl->lfs_account, acl->n_account);
+    log_printf(10, "gid_primary=%u lfs_account=%s n_account=%d\n", facl->gid_primary, acl->lfs_account, acl->n_account);
     if (acl->other_mode == 0) {
         facl->mode[0] = S_IRWXU | S_IROTH;
         facl->mode[1] = S_IRUSR | S_IWUSR;
@@ -478,7 +449,7 @@ log_printf(0, "gid_primary=%u lfs_account=%s n_account=%d\n", facl->gid_primary,
     //** Find the primary account and just add it's primary GID
     for (i=0; i<acl->n_account; i++) {
         aa = &(acl->account[i]);
-log_printf(0, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
+        log_printf(10, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
         if (strcmp(aa->account, acl->lfs_account) == 0) {
             a2g = apr_hash_get(pa->a2gid_hash, aa->account, APR_HASH_KEY_STRING);
             if (!a2g) break;  //** Can't find it so kick out and use the default READ only
@@ -518,14 +489,14 @@ log_printf(0, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_fl
     //** Now cycle through all the accounts allowed to access and add them
     for (i=0; i<acl->n_account; i++) {
         aa = &(acl->account[i]);
-log_printf(0, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
+        log_printf(10, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
 
         a2g = apr_hash_get(pa->a2gid_hash, aa->account, APR_HASH_KEY_STRING);
         if (!a2g) continue;
 
         for (j=0; j<a2g->n_gid; j++) {
             gid = a2g->gid[j];
-log_printf(0, "i=%d gid=%u mode=%d\n", i, gid, aa->mode);
+            log_printf(10, "i=%d gid=%u mode=%d\n", i, gid, aa->mode);
             if (gid != facl->gid_primary) {  //** Skip over the primary since it's already done
                 if (aa->mode & PACL_MODE_WRITE) {
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
@@ -541,10 +512,8 @@ log_printf(0, "i=%d gid=%u mode=%d\n", i, gid, aa->mode);
         }
     }
 
-log_printf(0, "DIRACL=%s\n", dir_acl_text);
-fprintf(stderr, "DIRACL=%s\n", dir_acl_text);
-log_printf(0, "DIRMODE=%o\n", facl->mode[0]);
-fprintf(stderr, "DIRMODE=%o\n", facl->mode[0]);
+    log_printf(10, "DIRACL=%s\n", dir_acl_text);
+    log_printf(10, "DIRMODE=%o\n", facl->mode[0]);
 
     //** Convert it to an ACL
     _make_lfs_acl(fdd, dir_acl_text, &(facl->acl[0]), &(facl->size[0]));
@@ -573,15 +542,14 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
     }
     dir = opendir(dname);
     fdd = dirfd(dir);
-//fd = creat("/tmp/lfs_acl", S_IRWXU);
 
-log_printf(0, "Generating default ACL\n"); tbx_log_flush();
+    log_printf(10, "Generating default ACL\n"); tbx_log_flush();
     //** 1st set the default FUSE ACL
     pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd);
 
     //** And now all the Path's
     for (i=0; i<pa->n_path_acl; i++) {
-log_printf(0, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
+        log_printf(10, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
         pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd);
     }
 
@@ -675,16 +643,10 @@ void prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     //** Convert the ACL stack to an array and sort it.
     pa->n_path_acl = tbx_stack_count(acl_stack);
     tbx_type_malloc_clear(pa->path_acl, path_acl_t *, pa->n_path_acl);
-log_printf(0, "BEFORE qsort n_path_acl=%d\n", pa->n_path_acl);
     for (i=0; i<pa->n_path_acl; i++) {
         pa->path_acl[i] = tbx_stack_pop(acl_stack);
-log_printf(0, "path[%d]=%s\n", i, pa->path_acl[i]->prefix);
     }
     qsort_r(pa->path_acl, pa->n_path_acl, sizeof(path_acl_t *), pacl_sort_fn, NULL);
-log_printf(0, "AFTER qsort\n");
-    for (i=0; i<pa->n_path_acl; i++) {
-log_printf(0, "path[%d]=%s\n", i, pa->path_acl[i]->prefix);
-    }
 
     //** Clean up
     tbx_stack_free(stack, 0);
@@ -799,7 +761,8 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
 {
     path_acl_context_t *pa;
     char fname[4096];
-log_printf(0, "Loading PACL's\n");
+
+    log_printf(10, "Loading PACL's\n");
 
     //** Create the structure
     tbx_type_malloc_clear(pa, path_acl_context_t, 1);
@@ -829,7 +792,7 @@ void prefix_destroy(path_acl_t *acl)
 {
     int i;
 
-log_printf(0, "prefix=%s lfs_acl=%p\n", acl->prefix, acl->lfs_acl);
+    log_printf(10, "prefix=%s lfs_acl=%p\n", acl->prefix, acl->lfs_acl);
     if (acl->lfs_acl) {
         for (i=0; i<3; i++) {
             if (acl->lfs_acl->acl[i]) free(acl->lfs_acl->acl[i]);
@@ -855,7 +818,7 @@ void pacl_destroy(path_acl_context_t *pa)
     account2gid_t *a2g;
     int i;
 
-log_printf(0, "n_path_acl=%d\n", pa->n_path_acl);
+    log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
 
     //** Tear down the Path ACL list strcture

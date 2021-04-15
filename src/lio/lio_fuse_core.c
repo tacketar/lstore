@@ -795,14 +795,14 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_fuse_open_file_t *fop;
     int mode;
 
-    mode = 0;
-    if (fi->flags & O_RDONLY) {
-        mode = LIO_READ_MODE;
-    } else if (fi->flags & O_WRONLY) {
+    mode = LIO_READ_MODE;  //** O_RDONLY=0 so it's technically the default
+    if (fi->flags & O_WRONLY) {
         mode = LIO_WRITE_MODE;
     } else if (fi->flags & O_RDWR) {
         mode = LIO_READ_MODE | LIO_WRITE_MODE;
     }
+
+    log_printf(10, "fname=%s flags=%d lio_mode=%d O_RDONLY=%d O_WRONLY=%d O_RDWR=%d LIO_READ=%d LIO_WRITE=%d\n", fname, fi->flags, mode, O_RDONLY, O_WRONLY, O_RDWR, LIO_READ_MODE, LIO_WRITE_MODE);
 
     if (fi->flags & O_APPEND) mode |= LIO_APPEND_MODE;
     if (fi->flags & O_CREAT) mode |= LIO_CREATE_MODE;

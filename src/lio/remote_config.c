@@ -479,7 +479,7 @@ int rc_client_get_config(lio_creds_t *creds, char *rc_string, char **config, cha
     snprintf(*obj_name, n, "lstore://%s|%s:%d:%s:%s", mq, rc_host, port, rc_file, rc_section);
     tbx_type_malloc_clear(rc, rc_t, 1);
     snprintf(s, sizeof(s), "%s|tcp://%s:%d", mq, rc_host, port);
-log_printf(0, "address=%s file=%s section=%s\n", s, rc_file, rc_section);
+    log_printf(10, "address=%s file=%s section=%s\n", s, rc_file, rc_section);
     address = gop_mq_string_to_address(s);
 
     ifd = tbx_inip_string_read(mq_config, 1);
@@ -606,7 +606,7 @@ rc_configs_t  *_rc_configs_create(tbx_inip_file_t *fd)
                 ele = tbx_inip_ele_next(ele);
             }
 
-log_printf(0, "config=%s n_stack=%d\n", config, tbx_stack_count(stack));
+            log_printf(10, "config=%s n_stack=%d\n", config, tbx_stack_count(stack));
             tbx_type_malloc_clear(obj, rc_object_t, 1);
             obj->object = strdup(config);
             obj->n_account = tbx_stack_count(stack);
@@ -738,7 +738,8 @@ void rc_server_destroy()
 
     if (!rc_server) return;
 
-log_printf(0, "Shutting down\n");
+    log_printf(10, "Shutting down\n");
+
     apr_thread_mutex_lock(rc_server->lock);
     rc_server->shutdown = 1;
     apr_thread_cond_broadcast(rc_server->cond);

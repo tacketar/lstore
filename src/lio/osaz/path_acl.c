@@ -201,8 +201,10 @@ int osaz_pacl_can_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local
         } else {
             can_access = pacl_can_access_gid(osaz->pa, (char *)path, ug->gid, pacl_mode, acl, NULL);
         }
+        log_printf(10, "fname=%s gid=%d uid=%d pacl_mode=%d mode=%d can_access=%d\n", path, ug->gid, ug->uid, pacl_mode, mode, can_access);
     } else {
         can_access = pacl_can_access(osaz->pa, (char *)path, (char *)an_cred_get_id(c, NULL), pacl_mode, acl);
+        log_printf(10, "fname=%s pacl_mode=%d mode=%d can_access=%d\n", path, pacl_mode, mode, can_access);
     }
     apr_thread_mutex_unlock(osaz->lock);
 
