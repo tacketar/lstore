@@ -719,7 +719,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
             }
             tuple.lc->ifd = tbx_inip_dup(tuple.lc->ifd);  //** Dup the ifd
         } else { //** Look up using the remote config query
-            if (rc_client_get_config(NULL, uri, &config, &obj_name, &ts) != 0) {
+            if (rc_client_get_config(NULL, NULL, uri, &config, &obj_name, &ts) != 0) {
                 memset(&tuple, 0, sizeof(tuple));
                 if (fname != NULL) free(fname);
                 goto finished;
@@ -1813,7 +1813,7 @@ no_args:
         snprintf(obj_name, i, "lstore://%s|%s:%d:%s:%s", "RC", dummy, 6711, "LOCAL", section_name);
     } else {            //** Try and load a remote config
         ts = 0;
-        if (rc_client_get_config(NULL, cfg_name, &config, &obj_name, &ts) == 0) {
+        if (rc_client_get_config(NULL, NULL, cfg_name, &config, &obj_name, &ts) == 0) {
             ifd = tbx_inip_string_read(config, 0);
             free(config);
         } else {

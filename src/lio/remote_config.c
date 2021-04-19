@@ -457,9 +457,9 @@ fail:
 // rc_client_get_config - Returns the remote config if available
 //***********************************************************************
 
-int rc_client_get_config(lio_creds_t *creds, char *rc_string, char **config, char **obj_name, time_t *timestamp)
+int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_string, char **config, char **obj_name, time_t *timestamp)
 {
-    rc_t *rc;
+    rc_t rc;
     mq_msg_t *address;
     char *rc_host, *rc_file, *rc_section, *mq, s[1024];
     int err, port, n;
@@ -477,19 +477,23 @@ int rc_client_get_config(lio_creds_t *creds, char *rc_string, char **config, cha
     n = 9 + sizeof(mq) + 1 + sizeof(rc_host) + 1 + 6 + sizeof(rc_file) + 1 + sizeof(rc_section) + 20;
     tbx_type_malloc(*obj_name, char, n);
     snprintf(*obj_name, n, "lstore://%s|%s:%d:%s:%s", mq, rc_host, port, rc_file, rc_section);
-    tbx_type_malloc_clear(rc, rc_t, 1);
     snprintf(s, sizeof(s), "%s|tcp://%s:%d", mq, rc_host, port);
     log_printf(10, "address=%s file=%s section=%s\n", s, rc_file, rc_section);
     address = gop_mq_string_to_address(s);
 
-    ifd = tbx_inip_string_read(mq_config, 1);
-    rc->mqc = gop_mq_create_context(ifd, "mq");
-    tbx_inip_destroy(ifd);
+    memset(&rc, 0, sizeof(rc));
+    if (mqc) {
+        rc.mqc = mqc;
+    } else {
+        ifd = tbx_inip_string_read(mq_config, 1);
+        rc.mqc = gop_mq_create_context(ifd, "mq");
+        tbx_inip_destroy(ifd);
+    }
 
-    err = gop_sync_exec(rcc_get_config_op(rc, creds, address, rc_file, config, timestamp, 60));
+    err = gop_sync_exec(rcc_get_config_op(&rc, creds, address, rc_file, config, timestamp, 60));
     gop_mq_msg_destroy(address);
-    gop_mq_destroy_context(rc->mqc);
-    free(rc);
+
+    if (!mqc) gop_mq_destroy_context(rc.mqc);
 
     if (rc_host) free(rc_host);
     if (rc_file) free(rc_file);

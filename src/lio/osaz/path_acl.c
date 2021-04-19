@@ -30,6 +30,7 @@
 #include <tbx/type_malloc.h>
 #include "authn.h"
 #include "lio.h"
+#include "ex3/system.h"
 #include "service_manager.h"
 #include "../path_acl.h"  //** This is the generic routines
 #include "path_acl.h"  //** This is me
@@ -40,6 +41,7 @@ typedef struct {
     apr_thread_mutex_t *lock;
     apr_thread_cond_t *cond;
     apr_thread_t *check_thread;
+    gop_mq_context_t *mqc;
     char *pa_file;
     char *lfs_tmp_prefix;
     char *section;
@@ -297,7 +299,7 @@ void _pacl_load(lio_os_authz_t *az)
     } else {
         log_printf(20, "creds=NULL\n");
     }
-    ifd = lio_fetch_config(creds, osaz->pa_file, &obj_name, &(osaz->modify_time));
+    ifd = lio_fetch_config(osaz->mqc, creds, osaz->pa_file, &obj_name, &(osaz->modify_time));
     log_printf(20, "ifd=%p obj_name=%s\n", ifd, obj_name);
     if (ifd) {
         log_printf(5, "RELOADING data\n");
@@ -392,6 +394,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     opa->pa_file = tbx_inip_get_string(ifd, section, "file", "path_acl.cfg");
     opa->lfs_tmp_prefix = tbx_inip_get_string(ifd, section, "lfs_temp", NULL);
     opa->check_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);
+    opa->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ); FATAL_UNLESS(opa->mqc != NULL);
 
     //** Load the initial config
     opa->modify_time = 0;

@@ -125,7 +125,7 @@ gop_op_status_t cp_local2lio(lio_cp_file_t *cp);
 gop_op_status_t cp_lio2local(lio_cp_file_t *cp);
 int lio_cp_create_dir(tbx_list_t *table, lio_path_tuple_t tuple);
 
-tbx_inip_file_t *lio_fetch_config(lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts);
+tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts);
 void lc_object_remove_unused(int remove_all_unused);
 lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple);
 int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path);
