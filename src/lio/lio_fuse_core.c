@@ -31,7 +31,9 @@
 #include <fcntl.h>
 #include <gop/gop.h>
 #include <gop/mq.h>
+#include <grp.h>
 #include <lio/segment.h>
+#include <pwd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdio.h>
@@ -188,12 +190,46 @@ void lfs_osaz_attr_filter_apply(lio_fuse_t *lfs, const char *key, int mode, char
 
 //***********************************************************************
 
+void lfs_fill_os_authz_local(lio_fuse_t *lfs, lio_os_authz_local_t *ug, uid_t uid, gid_t gid)
+{
+    struct passwd pwd;
+    struct passwd *result;
+    char buf[32*1024];
+    int blen = sizeof(buf);
+
+    ug->uid = uid; //** This is needed for checking for a hint
+    
+    log_printf(10, "uid=%d gid=%d\n", uid, gid);
+
+    //** check if we just want to use the primary GID
+    if (lfs->enable_osaz_secondary_gids == 0) {
+oops:
+        ug->gid[0] = gid; ug->n_gid = 1;    
+        return;
+    }
+
+    //** See if we've already done the mapping
+    if (osaz_ug_hint_get(lfs->osaz, lfs->lc->creds, ug) == 0) return;    
+    
+    //** If we made it here then no hint exists so we have to make it
+    //** we're using the all the groups the user is a member of
+    if (getpwuid_r(uid, &pwd, buf, blen, &result) != 0) {
+        goto oops;  //** Buffer was to small or the UID wasn't found so do the fallback
+    }
+    ug->n_gid = OS_AUTHZ_MAX_GID;
+    if (getgrouplist(result->pw_name, result->pw_gid, ug->gid, &(ug->n_gid)) < 0) goto oops;
+
+    osaz_ug_hint_set(lfs->osaz, lfs->lc->creds, ug);  //** Make the hint
+}
+
+//***********************************************************************
+
 int lfs_osaz_object_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *path)
 {
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
@@ -207,7 +243,7 @@ int lfs_osaz_object_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char 
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
@@ -221,7 +257,7 @@ int lfs_osaz_object_access(lio_fuse_t *lfs, struct fuse_context *fc, const char 
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
@@ -235,7 +271,7 @@ int lfs_osaz_attr_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
@@ -249,7 +285,7 @@ int lfs_osaz_attr_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
@@ -274,7 +310,7 @@ int lfs_osaz_attr_access(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
 
-    ug.uid = fc->uid; ug.gid = fc->gid;
+    lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
     *filter = NULL;
@@ -1879,6 +1915,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_tape = %d\n", lfs->enable_tape);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
+    fprintf(fd, "enable_osaz_secondary_gids = %d\n", lfs->enable_osaz_secondary_gids);
     fprintf(fd, "n_merge = %d\n", lfs->n_merge);
     fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
 #ifdef HAS_FUSE3
@@ -1967,6 +2004,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
 
     lfs->enable_tape = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_tape", 0);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
+    lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", 1);
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
         conn->capable |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs

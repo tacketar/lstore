@@ -54,6 +54,7 @@ struct lio_fuse_t;
 struct lio_fuse_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
+    int enable_osaz_secondary_gids;
     int shutdown;
     int mount_point_len;
     int n_merge;

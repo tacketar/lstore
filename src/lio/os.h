@@ -96,9 +96,13 @@ lio_os_regex_table_t *os_regex_table_unpack(unsigned char *buffer, int bufsize, 
 
 typedef void (*osaz_attr_filter_t)(lio_os_authz_t *osa, char *key, int mode, void *value_in, int len_in, void **value_out, int *len_out);
 
+#define OS_AUTHZ_MAX_GID 100
 typedef struct {
     uid_t uid;
-    gid_t gid;
+    gid_t gid[OS_AUTHZ_MAX_GID];
+    int n_gid;
+    apr_time_t hint_counter;
+    void *hint;
 } lio_os_authz_local_t;
 
 struct lio_os_authz_t {
@@ -110,6 +114,8 @@ struct lio_os_authz_t {
     int (*attr_remove)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key);
     int (*attr_access)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key, int mode, osaz_attr_filter_t *filter);
     int (*posix_acl)(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *buf, size_t size, uid_t *uid, gid_t *gid, mode_t *mode);
+    int (*ug_hint_get)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
+    void (*ug_hint_set)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*print_running_config)(lio_os_authz_t *osa, FILE *fd, int print_section_heading);
     void (*destroy)(lio_os_authz_t *osa);
 };
@@ -124,6 +130,8 @@ typedef lio_os_authz_t *(osaz_create_t)(lio_service_manager_t *ess, tbx_inip_fil
 #define osaz_attr_remove(osa, c, ug, path, key) (osa)->attr_remove(osa, c, ug, path, key)
 #define osaz_attr_access(osa, c, ug, path, key, mode, filter) (osa)->attr_access(osa, c, ug, path, key, mode, filter)
 #define osaz_posix_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode) (osa)->posix_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode)
+#define osaz_ug_hint_get(osa, c, ug) (osa)->ug_hint_get(osa, c, ug)
+#define osaz_ug_hint_set(osa, c, ug) (osa)->ug_hint_set(osa, c, ug)
 #define osaz_print_running_config(osa, fd, print_section) (osa)->print_running_config(osa, fd, print_section)
 #define osaz_destroy(osa) (osa)->destroy(osa)
 

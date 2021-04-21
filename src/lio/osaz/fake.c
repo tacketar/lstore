@@ -35,6 +35,23 @@
 #include "os.h"
 #include "service_manager.h"
 
+
+//*************************************************************************
+
+void osaz_fake_ug_hint_set(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)                                                                                                                                           
+{
+    return;
+}
+        
+//*************************************************************************
+        
+int osaz_fake_ug_hint_get(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)                                                                                                                                            
+{
+    ug->hint_counter = 0;
+    ug->hint = NULL;
+    return(0);
+}
+                
 //***********************************************************************
 
 void osaz_fake_print_running_config(lio_os_authz_t *osa, FILE *fd, int print_section_heading)
@@ -117,6 +134,8 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
     osaz->attr_access = osaz_fake_attr_access;
     osaz->posix_acl = osaz_fake_posix_acl;
     osaz->destroy = osaz_fake_destroy;
+    osaz->ug_hint_set = osaz_fake_ug_hint_set;
+    osaz->ug_hint_get = osaz_fake_ug_hint_get;
 
     return(osaz);
 }

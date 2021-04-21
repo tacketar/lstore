@@ -38,6 +38,7 @@
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <lio/os.h>
+#include <os.h>
 
 #include "path_acl.h"
 
@@ -76,11 +77,25 @@ struct path_acl_context_s {    //** Context for containing the Path ACL's
     int        n_path_acl;      //** Number of entries
     apr_hash_t *gid2acct_hash; //** Mapping from GID->account
     apr_hash_t *a2gid_hash;    //** Mapping from account->GID
+    apr_hash_t *hints_hash;    //** Hash for gid->account hints
     apr_pool_t *mpool;
+    apr_time_t dt_hint_cache;  //** How long to keep the hint cache before expiring
+    apr_time_t timestamp;      //** Used to determine if a hint is old
     account2gid_t **a2gid;
     int n_a2gid;
     char *fname_acl;           //** Used for making the LFS ACLs if enabled
 };
+
+#define PA_MAX_ACCOUNT 100
+#define PA_HINT_TIMEOUT apr_time_from_sec(60)
+
+typedef struct {    //** Structure used for hints
+    uid_t uid;
+    apr_time_t ts;
+    int n_account;
+    char *account[PA_MAX_ACCOUNT];
+    gid_t gid[PA_MAX_ACCOUNT];
+} pa_hint_t;
 
 //**************************************************************************
 // pacl_print_running_config - Dumps the PATh ACL running config
@@ -147,6 +162,79 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
 }
 
 //**************************************************************************
+//  pacl_ug_hint_set - Creates a hints structure and stores it
+//**************************************************************************
+
+void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
+{
+    account2gid_t *a2g;
+    int n, i;
+    pa_hint_t *hint;    
+
+    //** See if there is alredy a struct we can reuse
+    hint = apr_hash_get(pa->hints_hash, &(ug->uid), sizeof(gid_t));    
+    if (hint == NULL) {    
+        log_printf(10, "HINT_SET: NEW uid=%d\n", ug->uid);
+        tbx_type_malloc_clear(hint, pa_hint_t, 1);
+    } else {
+        log_printf(10, "HINT_SET: REUSE uid=%d\n", ug->uid);
+        memset(hint, 0, sizeof(pa_hint_t));    
+    }
+    
+    ug->hint = hint;
+    hint->ts = apr_time_now();
+    hint->uid = ug->uid;
+    ug->hint_counter = hint->ts;
+    
+    if (ug->n_gid >= PA_MAX_ACCOUNT) ug->n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
+    
+    n = 0;
+    for (i=0; i<ug->n_gid; i++) {
+        a2g = apr_hash_get(pa->gid2acct_hash, &(ug->gid[i]), sizeof(gid_t));
+        if (a2g) {
+            hint->account[n] = a2g->account;
+            hint->gid[n] = ug->gid[i];
+            n++;
+        }
+    }
+    hint->n_account = n;
+
+    apr_hash_set(pa->hints_hash, &(hint->uid), sizeof(uid_t), hint);
+}
+
+//**************************************************************************
+//  pacl_ug_hint_get - Gets a hints structure and stores it in ther ug
+//    If no hint avail then 1 is returned otherwize 0 is returned on success
+//**************************************************************************
+
+int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug)
+{
+    pa_hint_t *hint;    
+    apr_time_t dt;
+
+    hint = apr_hash_get(pa->hints_hash, &(ug->uid), sizeof(gid_t));
+    if (hint) {
+        dt = apr_time_now() - hint->ts;
+        if (dt < pa->dt_hint_cache) {
+            ug->hint_counter = hint->ts;
+            ug->hint = hint;
+            ug->n_gid = hint->n_account; //** copying these allows us to make a best effort attempt to map ACLS if the hint is destroyed
+            memcpy(ug->gid, hint->gid, sizeof(gid_t)*hint->n_account);
+            log_printf(10, "HINT HIT! uid=%d\n", ug->uid);
+            return(0);
+        } else { //** Expired so destroy the hint and let the caller know
+            log_printf(01, "HINT EXPIRED! uid=%d\n", ug->uid);
+            apr_hash_set(pa->hints_hash, &(ug->uid), sizeof(uid_t), NULL);
+            free(hint);
+        }
+    }
+
+    log_printf(10, "HINT MISS! uid=%d\n", ug->uid);
+    ug->hint_counter = 0;    
+    return(1);
+}
+
+//**************************************************************************
 // pacl_search - Does a binary search of the ACL prefixes and returns
 //    the ACL or the default ACL if no match.
 //
@@ -157,13 +245,14 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
 //          simplifies the check
 //**************************************************************************
 
-path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact)
+path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, int *got_default)
 {
     int low, mid, high, cmp, n;
     path_acl_t **acl = pa->path_acl;
 
     n = strlen(path);
 
+    *got_default = 0;
     *exact = 0;
     low = 0; high = pa->n_path_acl-1;
     while (low <= high) {
@@ -196,50 +285,54 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact)
     }
 
     if (strcmp(path, "/") == 0) *exact = 1;
+    *got_default = 1;
     return(pa->pacl_default);
 }
 
 //**************************************************************************
-//  pacl_can_access - Verifies the account can access the object
+//  _pacl_can_access_list - Verifies an account i nthe list can access the object
 //      Returns 2 for Full access
 //      Returns 1 for visible name only. Can't do anything else other than see the object
 //      and 0 no access allowed
 //**************************************************************************
 
-int _pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode, int *perms, path_acl_t **acl_mapped)
+int _pacl_can_access_list(path_acl_context_t *pa, char *path, int n_account, char **account_list, int mode, int *perms, path_acl_t **acl_mapped)
 {
-    int i, exact;
+    int i, j, check, exact, got_default;
     path_acl_t *acl;
-
+    char *account;
+    
     //** Look for the prefix
-    acl = pacl_search(pa, path, &exact);
+    acl = pacl_search(pa, path, &exact, &got_default);
     if (acl_mapped) *acl_mapped = acl;
-    log_printf(10, "path=%s account=%s acl=%p exact=%d\n", path, account, acl, exact);
-    if (!acl) {  //** Not mapped to any prefix so check the default
-        if (pa->pacl_default) {    //** We have a default setting
-            acl = pa->pacl_default;
-        } else {  //** We just have to look at the default mode
-            *perms = pa->pacl_default->other_mode;
-            log_printf(10, "path=%s account=%s acl=%p exact=%d DEFAULT perm=%d = mode=%d\n", path, account, acl, exact, *perms, mode);
-            return(((mode & *perms) > 0) ? 2 : 0);
-        }
+    log_printf(10, "path=%s acl=%p exact=%d\n", path, acl, exact);
+    if (!acl) {  //** Not mapped to any prefix and no default
+        *perms = 0;
+        log_printf(10, "path=%s acl=%p exact=%d DEFAULT perm=%d = mode=%d\n", path, acl, exact, *perms, mode);
+        return(0);
     }
 
     //** If we made it here there's an overlapping prefix
-    if (account) { //** We have a valid account to check against
-        for (i=0; i<acl->n_account; i++) {
-            log_printf(10, "path=%s account=%s valid_acct=%s\n", path, account, acl->account[i].account);
-            if (strcmp(acl->account[i].account, account) == 0) {
-                *perms = acl->account[i].mode;
-                log_printf(10, "path=%s account=%s valid_acct=%s mode=%d perms=%d\n", path, account, acl->account[i].account, mode, *perms);
-                return(((mode & *perms) > 0) ? 2 : 0);
+    for (j=0; j<n_account; j++) {
+        account = account_list[j];    
+        if (account) { //** We have a valid account to check against
+            for (i=0; i<acl->n_account; i++) {
+                log_printf(10, "path=%s account[%d]=%s valid_acct=%s\n", path, j, account, acl->account[i].account);
+                if (strcmp(acl->account[i].account, account) == 0) {
+                    check = mode & acl->account[i].mode;
+                    log_printf(10, "path=%s account[%d]=%s valid_acct=%s mode=%d perms=%d check=%d\n", path, j, account, acl->account[i].account, mode, acl->account[i].mode, check);
+                    if (check) {
+                        *perms = acl->account[i].mode;
+                        return(2);  //** full access so kick out
+                    }
+                }
             }
         }
     }
 
    //** We made it without a match so see if we use the default
    *perms = acl->other_mode;
-    log_printf(10, "path=%s account=%s acl=%p exact=%d DEFAULT2 perm=%d  mode=%d\n", path, account, acl, exact, *perms, mode);
+    log_printf(10, "path=%s acl=%p exact=%d DEFAULT2 perm=%d  mode=%d\n", path, acl, exact, *perms, mode);
    return(((mode & *perms) > 0) ? 2 : exact);
 }
 
@@ -252,12 +345,15 @@ int _pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode
 
 int pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode, int *perms)
 {
-    return(_pacl_can_access(pa, path, account, mode, perms, NULL));
+    char *account_list[1];
+    
+    account_list[0] = account;
+    return(_pacl_can_access_list(pa, path, 1, account_list, mode, perms, NULL));
 }
 
 //**************************************************************************
 //  pacl_can_access_gid - Verifies the gid can access the object
-//      Returns 1 for success and 0 otherwise
+//      Returns 2,1 for success and 0 otherwise
 //**************************************************************************
 
 int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode, int *acl, char **acct)
@@ -275,15 +371,64 @@ int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode,
 }
 
 //**************************************************************************
+//  pacl_can_access_gid_list -Checks if one of the gid's provided can access the object
+//      Returns 2,1 for success and 0 otherwise
+//**************************************************************************
+
+int pacl_can_access_gid_list(path_acl_context_t *pa, char *path, int n_gid, gid_t *gid_list, int mode, int *acl)
+{
+    account2gid_t *a2g;
+    int n, i;
+    char *account_list[PA_MAX_ACCOUNT];
+    
+    if (n_gid >= PA_MAX_ACCOUNT) n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
+    
+    n = 0;
+    for (i=0; i<n_gid; i++) {
+        a2g = apr_hash_get(pa->gid2acct_hash, &gid_list[i], sizeof(gid_t));
+        if (a2g) {
+            account_list[n] = a2g->account;
+            n++;
+        }
+    }
+
+    log_printf(10, "path=%s n_gid=%d n_account=%d\n", path, n_gid, n);    
+    if (n == 0) {
+        return(pacl_can_access(pa, path, NULL, mode, acl));  //** Basically only "other" ACL's are checked
+    }
+    
+    i = _pacl_can_access_list(pa, path, n, account_list, mode, acl, NULL);
+    return(i);
+}
+
+
+//**************************************************************************
+//  pacl_can_access_hint -Checks if the accounts in the hints provided can access the object
+//      Returns 2,1 for success and 0 otherwise
+//**************************************************************************
+
+int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl)
+{
+    pa_hint_t *hint;
+
+    if (ug->hint_counter < pa->timestamp) { //** It's an old hint so do the fallback using GIDs stored i nteh hint
+        return(pacl_can_access_gid_list(pa, path, ug->n_gid, ug->gid, mode, acl));
+    }
+    
+    hint = ug->hint;
+    return(_pacl_can_access_list(pa, path, hint->n_account, hint->account, mode, acl, NULL));
+}
+
+//**************************************************************************
 // pacl_lfs_get_acl - Returns the LFS ACL
 //**************************************************************************
 
 int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode)
 {
     path_acl_t *acl;
-    int exact, slot;
+    int exact, slot, got_default;
 
-    acl = pacl_search(pa, path, &exact);
+    acl = pacl_search(pa, path, &exact, &got_default);
     log_printf(10, "path=%s exact=%d acl=%p\n", path, exact, acl);
     if (acl) {
         log_printf(10, "path=%s exact=%d lfs_acl=%p\n", path, exact, acl->lfs_acl);
@@ -769,6 +914,8 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
     assert_result(apr_pool_create(&(pa->mpool), NULL), APR_SUCCESS);
     pa->gid2acct_hash = apr_hash_make(pa->mpool);
     pa->a2gid_hash = apr_hash_make(pa->mpool);
+    pa->hints_hash = apr_hash_make(pa->mpool);
+    pa->dt_hint_cache = PA_HINT_TIMEOUT;
 
     //**Now populate it
     prefix_account_parse(pa, fd);  //** Add the prefix/account associations
@@ -780,6 +927,8 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
         pa->fname_acl = strdup(fname);
         pacl_lfs_acls_generate(pa);
     }
+
+    pa->timestamp = apr_time_now();
 
     return(pa);
 }
@@ -817,7 +966,10 @@ void pacl_destroy(path_acl_context_t *pa)
 {
     account2gid_t *a2g;
     int i;
-
+    apr_ssize_t hlen;
+    apr_hash_index_t *hi;
+    pa_hint_t *hint;
+    
     log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
 
@@ -837,6 +989,12 @@ void pacl_destroy(path_acl_context_t *pa)
     }
     free(pa->a2gid);
 
+    //** Also have to free all the hints
+    for (hi=apr_hash_first(NULL, pa->hints_hash); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, NULL, &hlen, (void **)&hint);
+        free(hint);  //** The interior strings are just pointers to fields in a2g above
+    }
+    
     //** This also destroys the hash
     apr_pool_destroy(pa->mpool);
 

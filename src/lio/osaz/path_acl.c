@@ -160,6 +160,34 @@ void osaz_pacl_exnode_ro_filter(lio_os_authz_t *osa, char *key, int mode, void *
 }
 
 //*************************************************************************
+// osaz_pacl_ug_hint_set - Sets a hint
+//*************************************************************************
+
+void osaz_pacl_ug_hint_set(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    osaz_pacl_t *osaz = osa->priv;
+
+    apr_thread_mutex_lock(osaz->lock);
+    pacl_ug_hint_set(osaz->pa, ug);
+    apr_thread_mutex_unlock(osaz->lock);
+}
+
+//*************************************************************************
+// osaz_pacl_ug_hint_set - Sets a hint
+//*************************************************************************
+
+int osaz_pacl_ug_hint_get(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    osaz_pacl_t *osaz = osa->priv;
+    int n;
+
+    apr_thread_mutex_lock(osaz->lock);
+    n = pacl_ug_hint_get(osaz->pa, ug);
+    apr_thread_mutex_unlock(osaz->lock);
+    return(n);
+}
+
+//*************************************************************************
 // osaz_pacl_print_running_config - Dumps the running config
 //*************************************************************************
 
@@ -201,9 +229,9 @@ int osaz_pacl_can_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local
         if (geteuid() == ug->uid) {
             can_access = 2;
         } else {
-            can_access = pacl_can_access_gid(osaz->pa, (char *)path, ug->gid, pacl_mode, acl, NULL);
+            can_access = pacl_can_access_gid_list(osaz->pa, (char *)path, ug->n_gid, ug->gid, pacl_mode, acl);
         }
-        log_printf(10, "fname=%s gid=%d uid=%d pacl_mode=%d mode=%d can_access=%d\n", path, ug->gid, ug->uid, pacl_mode, mode, can_access);
+        log_printf(10, "fname=%s n_gid=%d gid[0]=%d uid=%d pacl_mode=%d mode=%d can_access=%d\n", path, ug->n_gid, ug->gid[0], ug->uid, pacl_mode, mode, can_access);
     } else {
         can_access = pacl_can_access(osaz->pa, (char *)path, (char *)an_cred_get_id(c, NULL), pacl_mode, acl);
         log_printf(10, "fname=%s pacl_mode=%d mode=%d can_access=%d\n", path, pacl_mode, mode, can_access);
@@ -390,7 +418,9 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     osaz->posix_acl = osaz_pacl_posix_acl;
     osaz->destroy = osaz_pacl_destroy;
     osaz->print_running_config = osaz_pacl_print_running_config;
-
+    osaz->ug_hint_set = osaz_pacl_ug_hint_set;
+    osaz->ug_hint_get = osaz_pacl_ug_hint_get;
+    
     opa->pa_file = tbx_inip_get_string(ifd, section, "file", "path_acl.cfg");
     opa->lfs_tmp_prefix = tbx_inip_get_string(ifd, section, "lfs_temp", NULL);
     opa->check_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);

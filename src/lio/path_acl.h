@@ -39,6 +39,9 @@ char *pacl_gid2account(path_acl_context_t *pa, gid_t gid);
 int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode);
 int pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode, int *perms);
 int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode, int *perms, char **acct);
+int pacl_can_access_gid_list(path_acl_context_t *pa, char *path, int n_gid, gid_t *gid_list, int mode, int *acl);
+void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls);
 void pacl_destroy(path_acl_context_t *pa);
 
