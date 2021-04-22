@@ -311,6 +311,7 @@ int lfs_osaz_attr_access(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
     lio_os_authz_local_t ug;
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
+
     if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
 
     *filter = NULL;
@@ -1642,6 +1643,9 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
         lfs_get_tape_attr(lfs, (char *)fname, &val, &v_size);
         lfs_osaz_attr_filter_apply(lfs, name, LIO_READ_MODE, &val, &v_size, filter);
     } else {
+        //** Short circuit the Linux Security ACLs we don't support
+        if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) return(-ENOATTR);
+        
         //** Make sure we can access it
         if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
         err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
@@ -2005,6 +2009,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     lfs->enable_tape = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_tape", 0);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
     lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", 1);
+
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
         conn->capable |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
