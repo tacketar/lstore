@@ -1238,7 +1238,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         _lc_object_put(stype, lio->mqc);  //** Add it to the table
 
         //** Add the shared ongoing object
-        on = gop_mq_ongoing_create(lio->mqc, NULL, 1, ONGOING_CLIENT);
+        on = gop_mq_ongoing_create(lio->mqc, NULL, 5, ONGOING_CLIENT);
         _lc_object_put(ESS_ONGOING_CLIENT, on);  //** Add it to the table
     } else {
         on = _lc_object_get(ESS_ONGOING_CLIENT);
