@@ -121,7 +121,11 @@ int tbx_lru_get(tbx_lru_t *lru, void *key, int klen, void *object)
     if (entry == NULL) goto finished;  //** Not found;
 
     //** Got it so copy it
-    lru->copy(lru->global_arg, entry->object, object);
+    if (lru->copy) {
+        lru->copy(lru->global_arg, entry->object, object);
+    } else {
+        object = lru->clone(lru->global_arg, entry->object);
+    }
 
     //** Move it to the top
     tbx_stack_move_to_ptr(lru->que, entry->ele);
@@ -219,8 +223,11 @@ void tbx_lru_put(tbx_lru_t *lru, void *object)
     //** Got it so copy it
     if (entry->object == NULL) {
         entry->object = lru->clone(lru->global_arg, object);
+    } else if (lru->copy) {
+            lru->copy(lru->global_arg, object, entry->object);
     } else {
-        lru->copy(lru->global_arg, object, entry->object);
+        lru->free(lru->global_arg, entry->object);
+        entry->object = lru->clone(lru->global_arg, object);
     }
 
     lru->key(lru->global_arg, entry->object, &key, &klen);
