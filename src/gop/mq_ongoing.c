@@ -49,13 +49,13 @@ gop_op_status_t ongoing_response_status(void *task_arg, int tid)
     gop_mq_task_t *task = (gop_mq_task_t *)task_arg;
     gop_op_status_t status;
 
-    log_printf(2, "START\n");
+    log_printf(5, "START\n");
 
     //** Parse the response
     gop_mq_remove_header(task->response, 1);
 
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
-    log_printf(2, "END status=%d %d\n", status.op_status, status.error_code);
+    log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
 
     return(status);
 }
@@ -86,24 +86,23 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         now = apr_time_now() - apr_time_from_sec(5);  //** Give our selves a little buffer
         log_printf(5, "Loop Start now=" TT "\n", apr_time_now());
         q = gop_opque_new();
-//     opque_start_execution(q);
         for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
             apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
 
             k = apr_hash_count(table->table);
             if (tbx_log_level() > 1) {
                 remote_host_string = mq_address_to_string(table->remote_host);
-                log_printf(1, "host=%s count=%d\n", remote_host_string, k);
+                log_printf(5, "host=%s count=%d\n", remote_host_string, k);
                 free(remote_host_string);
             }
 
             for (hi = apr_hash_first(NULL, table->table); hi != NULL; hi = apr_hash_next(hi)) {
                 apr_hash_this(hi, (const void **)&id, &id_len, (void **)&oh);
-                log_printf(1, "id=%s now=" TT " next_check=" TT "\n", oh->id,
+                log_printf(5, "id=%s now=" TT " next_check=" TT "\n", oh->id,
                                     ((apr_time_t) apr_time_sec(apr_time_now())),
                                     ((apr_time_t) apr_time_sec(oh->next_check)));
                 if (now > oh->next_check) {
-                    log_printf(1, "id=%s sending HEARTBEAT EXEC SUBMIT nows=" TT "hb=%d\n",
+                    log_printf(5, "id=%s sending HEARTBEAT EXEC SUBMIT nows=" TT "hb=%d\n",
                                         oh->id,
                                         ((apr_time_t) apr_time_sec(apr_time_now())),
                                         oh->heartbeat);
@@ -133,7 +132,7 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
 
         //** Dec the counters
         while ((gop = opque_waitany(q)) != NULL) {
-            log_printf(0, "gid=%d gotone status=%d now=" TT "\n", gop_id(gop), (gop_get_status(gop)).op_status,
+            log_printf(5, "gid=%d gotone status=%d now=" TT "\n", gop_id(gop), (gop_get_status(gop)).op_status,
                     ((apr_time_t) apr_time_sec(apr_time_now())));
             table = gop_get_private(gop);
             table->count--;
@@ -157,18 +156,18 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         gop_opque_free(q, OP_DESTROY);
 
         now = apr_time_now();
-        log_printf(2, "sleeping %d now=%" APR_TIME_T_FMT "\n", on->check_interval, now);
+        log_printf(5, "sleeping %d now=%" APR_TIME_T_FMT "\n", on->check_interval, now);
 
         //** Sleep until time for the next heartbeat or time to exit
         if (on->shutdown == 0) apr_thread_cond_timedwait(on->cond, on->lock, timeout);
         n = on->shutdown;
 
         now = apr_time_now() - now;
-        log_printf(2, "main loop bottom n=%d dt=%" APR_TIME_T_FMT " sec=" TT "\n", n, now,
+        log_printf(5, "main loop bottom n=%d dt=%" APR_TIME_T_FMT " sec=" TT "\n", n, now,
                         ((apr_time_t) apr_time_sec(now)));
     } while (n == 0);
 
-    log_printf(2, "CLEANUP\n");
+    log_printf(5, "CLEANUP\n");
 
     for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
         apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
@@ -185,7 +184,7 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         free(table);
     }
 
-    log_printf(2, "EXITING\n");
+    log_printf(5, "EXITING\n");
 
     apr_thread_mutex_unlock(on->lock);
 

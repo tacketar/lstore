@@ -333,7 +333,7 @@ disable_too_full:
             log_printf(15, "i=%d j=%d slot=%d rse->rid_key=%s rse->status=%d rse->too_full=%d\n", i, j, slot, rse->rid_key, rse->status, rse->too_full);
             if ((rse->status != RS_STATUS_UP) && (i>=fixed_size)) continue;  //** Skip this if disabled and not in the fixed list
             if ((i>=fixed_size) && (full_skip_retry == 0) && (rse->too_full == 1)) {  //** Skip this if disabled and not in the fixed list
-log_printf(0, "i=%d full skip full_skip_retry=%d too_full=%d\n", i, full_skip_retry, rse->too_full);
+                log_printf(2, "i=%d full skip full_skip_retry=%d too_full=%d\n", i, full_skip_retry, rse->too_full);
                 avg_full_skip = 1;
                 continue;
             }
@@ -399,7 +399,7 @@ log_printf(0, "i=%d full skip full_skip_retry=%d too_full=%d\n", i, full_skip_re
                 free(op_state);
             }
 
-log_printf(1, "i=%d fixed_size=%d state=%d avg_full_skip=%d\n", i, fixed_size, state, avg_full_skip);
+            log_printf(2, "i=%d fixed_size=%d state=%d avg_full_skip=%d\n", i, fixed_size, state, avg_full_skip);
             if (op_state == NULL) {
                 log_printf(1, "rs_simple_request: ERROR processing i=%d EMPTY STACK\n", i);
                 found = 0;
@@ -994,7 +994,7 @@ int _rs_simple_load(lio_resource_service_fn_t *res, char *fname)
         rss->avg_fraction = space_used / total_space; //** Update the avg used
         global_avg = rss->over_avg_fraction + rss->avg_fraction;
 
-log_printf(0, "over_avg_fraction=%lf avg_fraction=%lf global_avg=%lf used=%lf total=%lf\n", rss->over_avg_fraction, rss->avg_fraction, rss->avg_fraction, space_used, total_space);
+        log_printf(2, "over_avg_fraction=%lf avg_fraction=%lf global_avg=%lf used=%lf total=%lf\n", rss->over_avg_fraction, rss->avg_fraction, rss->avg_fraction, space_used, total_space);
         tbx_type_malloc_clear(rss->random_array, lio_rss_rid_entry_t *, rss->n_rids);
         it = tbx_list_iter_search(rss->rid_table, (tbx_list_key_t *)NULL, 0);
         for (i=0; i < rss->n_rids; i++) {
@@ -1008,9 +1008,9 @@ log_printf(0, "over_avg_fraction=%lf avg_fraction=%lf global_avg=%lf used=%lf to
             rss->random_array[n] = rse;
 
             //** check if too full
-            avg = (double)rse->space_used / (double)rse->space_total;
+            avg = (rse->space_total > 0) ? (double)rse->space_used / (double)rse->space_total : 0;
             rse->too_full = (avg <= global_avg) ? 0 : 1;
-log_printf(0, "rid_key=%s status=%d too_full=%d used=" XOT " total=" XOT " avg=%lf\n", rse->rid_key, rse->status, rse->too_full, rse->space_used, rse->space_total, avg);
+            log_printf(2, "rid_key=%s status=%d too_full=%d used=" XOT " total=" XOT " avg=%lf\n", rse->rid_key, rse->status, rse->too_full, rse->space_used, rse->space_total, avg);
         }
     }
 

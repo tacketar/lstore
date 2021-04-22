@@ -448,7 +448,6 @@ int osf_resolve_attr_path(lio_object_service_fn_t *os, char *real_path, char *pa
         return(1);
     }
 
-//  attr = object_attr_dir(os, "", &(fullname[osf->file_path_len]), dtype);
     attr = object_attr_dir(os, "", fullname, dtype);
     snprintf(real_path, OS_PATH_MAX, "%s/%s", attr, dkey);
 
@@ -2534,7 +2533,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
     i = symlink(hattr, sattr);
     log_printf(0, "symlink(%s,%s)=%d!\n", hattr, sattr, i);
     if (i != 0) {
-        log_printf(0, "symlink(%s,%s) FAILED!\n", hattr, sattr);
+        log_printf(5, "symlink(%s,%s) FAILED!\n", hattr, sattr);
         free(hattr);
         free(sattr);
         return(1);
@@ -2545,7 +2544,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
 
     //** Move the source to the hardlink proxy
     i = rename(sfname, fullname);
-    log_printf(0, "rename(%s,%s)=%d\n", sfname, fullname, i);
+    log_printf(5, "rename(%s,%s)=%d\n", sfname, fullname, i);
     if (i != 0) {
         log_printf(0, "rename(%s,%s) FAILED!\n", sfname, fullname);
         return(1);
@@ -2553,7 +2552,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
 
     //** Link the src file to the hardlink proxy
     i = link(fullname, sfname);
-    log_printf(0, "link(%s,%s)=%d\n", fullname, sfname, i);
+    log_printf(5, "link(%s,%s)=%d\n", fullname, sfname, i);
     if (i != 0) {
         log_printf(0, "link(%s,%s) FAILED!\n", fullname, sfname);
         return(1);
@@ -3177,15 +3176,11 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     char rpath[OS_PATH_MAX];
     int n, bsize, err;
 
-log_printf(0, "BEFORE attr=%s\n", attr);
-
     err = 0;
     if (osaz_attr_access(osf->osaz, creds, NULL, _osf_realpath(os, ofd->object_name, rpath, 1), attr, OS_MODE_READ_BLOCKING, &filter) == 0) {
         *atype = 0;
         return(1);
     }
-
-log_printf(0, "AFTER  attr=%s\n", attr);
 
     //** Do a Virtual Attr check
     //** Check the prefix VA's first
