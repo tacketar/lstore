@@ -38,20 +38,35 @@
 
 //*************************************************************************
 
-void osaz_fake_ug_hint_set(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)                                                                                                                                           
+void osaz_fake_ug_hint_init(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    memset(ug, 0, sizeof(lio_os_authz_local_t));
+    return;
+}
+
+//*************************************************************************
+
+void osaz_fake_ug_hint_free(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
 {
     return;
 }
-        
+
 //*************************************************************************
-        
-int osaz_fake_ug_hint_get(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)                                                                                                                                            
+
+void osaz_fake_ug_hint_set(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    return;
+}
+
+//*************************************************************************
+
+int osaz_fake_ug_hint_get(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
 {
     ug->hint_counter = 0;
     ug->hint = NULL;
     return(0);
 }
-                
+
 //***********************************************************************
 
 void osaz_fake_print_running_config(lio_os_authz_t *osa, FILE *fd, int print_section_heading)
@@ -136,6 +151,8 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
     osaz->destroy = osaz_fake_destroy;
     osaz->ug_hint_set = osaz_fake_ug_hint_set;
     osaz->ug_hint_get = osaz_fake_ug_hint_get;
+    osaz->ug_hint_init = osaz_fake_ug_hint_init;
+    osaz->ug_hint_free = osaz_fake_ug_hint_free;
 
     return(osaz);
 }
