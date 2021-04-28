@@ -270,7 +270,7 @@ void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     ug->hint = hint;
     hint->ts = apr_time_now();
     hint->uid = ug->uid;
-    hint->prev_search.search_hint = -1;
+    hint->prev_search.search_hint = -2;
     ug->hint_counter = hint->ts;
 
 }
