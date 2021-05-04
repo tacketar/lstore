@@ -753,6 +753,7 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
     ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
     tbx_stack_t tree;
     ostcdb_object_t *obj, *parent;
+    ostcdb_attr_t *attr;
     int i;
 
     tbx_stack_init(&tree);
@@ -774,6 +775,13 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
         free(obj->fname);
         obj->fname = strdup(&(dest_path[i]));
         log_printf(0, "src=%s dest=%s dname=%s\n", src_path, dest_path, obj->fname);
+
+        //** The os.realpath has changed to remove that attribute
+        attr = apr_hash_get(obj->attrs, "os.realpath", APR_HASH_KEY_STRING);
+        if (attr) {
+            free_ostcdb_attr(attr);
+            apr_hash_set(obj->attrs, "os.realpath", APR_HASH_KEY_STRING, NULL);
+        }
 
         //** Do the walk and add it back
         tbx_stack_empty(&tree, 0);
@@ -1006,15 +1014,16 @@ gop_op_status_t ostc_cache_fetch(lio_object_service_fn_t *os, char *fname, char 
     int i, oops;
 
     tbx_stack_init(&tree);
-    oops = 0;
+    oops = 1;
 
+i=0;
 //log_printf(5, "fname=%s\n", fname);
     OSTC_LOCK(ostc);
     if (_ostc_lio_cache_tree_walk(os, fname, &tree, NULL, 0, OSTC_MAX_RECURSE) != 0) goto finished;
 
     tbx_stack_move_to_bottom(&tree);
     obj = tbx_stack_get_current_data(&tree);
-    oops = 1;
+//    oops = 1;
     for (i=0; i<n; i++) {
         attr = apr_hash_get(obj->attrs, key[i], APR_HASH_KEY_STRING);
         if (attr == NULL) goto finished;  //** Not in cache so need to pull it
@@ -1040,8 +1049,10 @@ gop_op_status_t ostc_cache_fetch(lio_object_service_fn_t *os, char *fname, char 
 
 finished:
     if (oops == 0) {
+log_printf(0, "CACHE_HIT: fname=%s n_attrs=%d i=%d\n", fname, n, i);
         ostc->n_attrs_hit += n;
     } else {
+log_printf(0, "CACHE_MISS: fname=%s n_attrs=%d i=%d attr=%s\n", fname, n, i, key[i]);
         ostc->n_attrs_miss += n;
     }
 
@@ -1703,7 +1714,6 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     int ftype;
     ostc_cacheprep_t cp;
 
-
     //** 1st see if we can satisfy everything from cache
     status = ostc_cache_fetch(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
 
@@ -1781,6 +1791,7 @@ gop_op_generic_t *ostc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->val = val;
     ma->v_size = v_size;
     ma->n = 1;
+log_printf(0, "VAL=%p\n", val);
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
 }
