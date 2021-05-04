@@ -754,6 +754,12 @@ gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     log_printf(5, "START fname=%s\n", path);
 
+    if (strcmp(path, "/") == 0) {
+        log_printf(5, "Short circuiting the root path\n");
+        strncpy(realpath, path, 2);
+        return(gop_dummy(gop_success_status));
+    }
+
     tbx_type_malloc(arg, osrc_realpath_t, 1);
     arg->os = os;
     arg->realpath = realpath;
