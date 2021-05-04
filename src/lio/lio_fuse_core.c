@@ -85,10 +85,11 @@
 #define lfs_lock(lfs)    apr_thread_mutex_lock((lfs)->lock)
 #define lfs_unlock(lfs)  apr_thread_mutex_unlock((lfs)->lock)
 
-#define _inode_key_size 11
-#define _inode_fuse_attr_start 7
+#define _inode_key_size 12
+#define _inode_key_os_realpath_index 7
+#define _inode_fuse_attr_start 8
 static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",
-                               "security.selinux",  "system.posix_acl_access", "system.posix_acl_default", "security.capability"
+                               "os.realpath", "security.selinux",  "system.posix_acl_access", "system.posix_acl_default", "security.capability"
                              };
 
 #define _tape_key_size  2
@@ -146,34 +147,6 @@ mode_t ftype_lio2fuse(int ftype)
 //    realpath before passing to the OSAZ
 //*************************************************************************
 
-//***********************************************************************
-
-char *_lfs_realpath(lio_fuse_t *lfs, const char *path, char *rpath, int include_basename)
-{
-    char *dir, *file = NULL;
-
-    //** Check the Path ACL
-    //** Split out the parent directory
-    if (include_basename) {
-        dir = (char *)path;
-    } else {
-        lio_os_path_split(path, &dir, &file);
-        if (file) free(file);
-    }
-
-    if (lio_realpath(lfs->lc, lfs->lc->creds, dir, rpath) != 0) {
-        if ((!include_basename) && (dir)) free(dir);
-        if (file) free(file);
-        return(NULL);
-    }
-
-    if ((!include_basename) && (dir)) free(dir);
-
-    return(rpath);
-}
-
-//***********************************************************************
-
 void lfs_osaz_attr_filter_apply(lio_fuse_t *lfs, const char *key, int mode, char **value, int *len, osaz_attr_filter_t filter)
 {
     void *v_out;
@@ -198,19 +171,19 @@ void lfs_fill_os_authz_local(lio_fuse_t *lfs, lio_os_authz_local_t *ug, uid_t ui
     int blen = sizeof(buf);
 
     ug->uid = uid; //** This is needed for checking for a hint
-    
+
     log_printf(10, "uid=%d gid=%d\n", uid, gid);
 
     //** check if we just want to use the primary GID
     if (lfs->enable_osaz_secondary_gids == 0) {
 oops:
-        ug->gid[0] = gid; ug->n_gid = 1;    
+        ug->gid[0] = gid; ug->n_gid = 1;
         return;
     }
 
     //** See if we've already done the mapping
-    if (osaz_ug_hint_get(lfs->osaz, lfs->lc->creds, ug) == 0) return;    
-    
+    if (osaz_ug_hint_get(lfs->osaz, lfs->lc->creds, ug) == 0) return;
+
     //** If we made it here then no hint exists so we have to make it
     //** we're using the all the groups the user is a member of
     if (getpwuid_r(uid, &pwd, buf, blen, &result) != 0) {
@@ -224,6 +197,41 @@ oops:
 
 //***********************************************************************
 
+int lfs_realpath(lio_fuse_t *lfs, const char *path, char *realpath)
+{
+    int err, v_size;
+
+    v_size = OS_PATH_MAX;
+    err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)path, NULL, "os.realpath", (void **)&realpath, &v_size);
+log_printf(0, "path=%s realpath=%s err=%d\n", path, realpath, err);
+    if (err != OP_STATE_SUCCESS) {
+        return(-ENOATTR);
+    }
+
+    return(0);
+}
+
+//***********************************************************************
+
+int lfs_exists(lio_fuse_t *lfs, const char *path)
+{
+    int err, v_size;
+    char ftype[1024];
+    void *vlist = ftype;
+
+    v_size = 1024;
+    ftype[0] = 0;
+    err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)path, NULL, "os.type", &vlist, &v_size);
+log_printf(0, "path=%s type=%s err=%d\n", path, ftype, err);
+    if (err != OP_STATE_SUCCESS) {
+        return(0);
+    }
+
+    return(atoi(ftype));
+}
+
+//***********************************************************************
+
 int lfs_osaz_object_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *path)
 {
     char realpath[OS_PATH_MAX];
@@ -231,7 +239,7 @@ int lfs_osaz_object_create(lio_fuse_t *lfs, struct fuse_context *fc, const char 
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_object_create(lfs->osaz, lfs->lc->creds, &ug, realpath));
 }
@@ -245,7 +253,7 @@ int lfs_osaz_object_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char 
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_object_remove(lfs->osaz, lfs->lc->creds, &ug, path));
 }
@@ -259,7 +267,7 @@ int lfs_osaz_object_access(lio_fuse_t *lfs, struct fuse_context *fc, const char 
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_object_access(lfs->osaz, lfs->lc->creds, &ug, path, mode));
 }
@@ -273,7 +281,7 @@ int lfs_osaz_attr_create(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_attr_create(lfs->osaz, lfs->lc->creds, &ug, path, key));
 }
@@ -287,7 +295,7 @@ int lfs_osaz_attr_remove(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_attr_remove(lfs->osaz, lfs->lc->creds, &ug, path, key));
 }
@@ -298,7 +306,7 @@ int lfs_osaz_posix_acl(lio_fuse_t *lfs, struct fuse_context *fc, const char *pat
 {
     char realpath[OS_PATH_MAX];
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     return(osaz_posix_acl(lfs->osaz, lfs->lc->creds, path, lio_ftype, val, size, uid, gid, mode));
 }
@@ -312,7 +320,7 @@ int lfs_osaz_attr_access(lio_fuse_t *lfs, struct fuse_context *fc, const char *p
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lio_realpath(lfs->lc, lfs->lc->creds, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
 
     *filter = NULL;
     return(osaz_attr_access(lfs->osaz, lfs->lc->creds, &ug, path, key, mode, filter));
@@ -437,10 +445,6 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
 
-    if (lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE) == 0) {
-        return(-EACCES);
-    }
-
     //** The whole remote fetch and merging with open files is locked to
     //** keep quickly successive stat calls to not get stale information
     lfs_lock(lfs);
@@ -453,6 +457,10 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     }
     _lfs_parse_stat_vals(lfs, (char *)fname, stat, val, v_size, 0);
     lfs_unlock(lfs);
+
+    if (lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE) == 0) {
+        return(-EACCES);
+    }
 
     log_printf(1, "END fname=%s err=%d\n", fname, err);
     tbx_log_flush();
@@ -679,7 +687,7 @@ int lfs_object_create(lio_fuse_t *lfs, const char *fname, mode_t mode, int ftype
     tbx_log_flush();
 
     //** Make sure it doesn't exists
-    n = lio_exists(lfs->lc, lfs->lc->creds, (char *)fname);
+    n = lfs_exists(lfs, (char *)fname);
     if (n != 0) {  //** File already exists
         log_printf(15, "File already exist! fname=%s\n", fullname);
         return(-EEXIST);
@@ -1412,7 +1420,7 @@ void lfs_set_tape_attr(lio_fuse_t *lfs, char *fname, char *mytape_val, int tape_
     log_printf(15, "fname=%s tape_size=%d\n", fname, tape_size);
     log_printf(15, "Tape attribute follows:\n%s\n", tape_val);
 
-    ftype = lio_exists(lfs->lc, lfs->lc->creds, fname);
+    ftype = lfs_exists(lfs, fname);
     if (ftype <= 0) {
         log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
         return;
@@ -1552,7 +1560,7 @@ void lfs_get_tape_attr(lio_fuse_t *lfs, char *fname, char **tape_val, int *tape_
         return;
     }
 
-    ftype = lio_exists(lfs->lc, lfs->lc->creds, fname);
+    ftype = lfs_exists(lfs, fname);
     if (ftype <= 0) {
         log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
         return;
@@ -1626,7 +1634,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
 
     if (lfs->enable_osaz_acl_mappings) {
         if (strcmp("system.posix_acl_access", name) == 0) {
-            ftype = lio_exists(lfs->lc, lfs->lc->creds, (char *)fname);
+            ftype = lfs_exists(lfs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
                 return(-ENODATA);
@@ -1645,7 +1653,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     } else {
         //** Short circuit the Linux Security ACLs we don't support
         if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) return(-ENOATTR);
-        
+
         //** Make sure we can access it
         if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
         err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
