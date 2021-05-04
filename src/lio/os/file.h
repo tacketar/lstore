@@ -82,6 +82,7 @@ struct lio_osfile_priv_t {
     tbx_pc_t *fobj_pc;
     tbx_pc_t *task_pc;
     lio_os_virtual_attr_t lock_va;
+    lio_os_virtual_attr_t realpath_va;
     lio_os_virtual_attr_t link_va;
     lio_os_virtual_attr_t link_count_va;
     lio_os_virtual_attr_t type_va;

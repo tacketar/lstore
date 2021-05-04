@@ -911,6 +911,18 @@ int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
 }
 
 //***********************************************************************
+// va_realpath_attr - Returns the object realpath information
+//***********************************************************************
+
+int va_realpath_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
+{
+    osfile_fd_t *fd = (osfile_fd_t *)ofd;
+
+    *atype = OS_OBJECT_VIRTUAL_FLAG;
+    return(osf_store_val(fd->realpath, strlen(fd->realpath), val, v_size));
+}
+
+//***********************************************************************
 // va_link_get_attr - Returns the object link information
 //***********************************************************************
 
@@ -4598,6 +4610,12 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osf->lock_va.set = va_null_set_attr;
     osf->lock_va.get_link = va_null_get_link_attr;
 
+    osf->realpath_va.attribute = "os.realpath";
+    osf->realpath_va.priv = os;
+    osf->realpath_va.get = va_realpath_attr;
+    osf->realpath_va.set = va_null_set_attr;
+    osf->realpath_va.get_link = va_null_get_link_attr;
+
     osf->link_va.attribute = "os.link";
     osf->link_va.priv = os;
     osf->link_va.get = va_link_get_attr;
@@ -4623,6 +4641,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osf->create_va.get_link = va_null_get_link_attr;
 
     apr_hash_set(osf->vattr_hash, osf->lock_va.attribute, APR_HASH_KEY_STRING, &(osf->lock_va));
+    apr_hash_set(osf->vattr_hash, osf->realpath_va.attribute, APR_HASH_KEY_STRING, &(osf->realpath_va));
     apr_hash_set(osf->vattr_hash, osf->link_va.attribute, APR_HASH_KEY_STRING, &(osf->link_va));
     apr_hash_set(osf->vattr_hash, osf->link_count_va.attribute, APR_HASH_KEY_STRING, &(osf->link_count_va));
     apr_hash_set(osf->vattr_hash, osf->type_va.attribute, APR_HASH_KEY_STRING, &(osf->type_va));
