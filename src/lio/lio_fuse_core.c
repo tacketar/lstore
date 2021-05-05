@@ -236,10 +236,19 @@ int lfs_osaz_object_create(lio_fuse_t *lfs, struct fuse_context *fc, const char 
 {
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
+    char *parent_dir, *file;
+
+    //** The object shouldn't exist so make sure we can access the parent
+    lio_os_path_split(path, &parent_dir, &file);
+    if (file) free(file);
 
     lfs_fill_os_authz_local(lfs, &ug, fc->uid, fc->gid);
 
-    if (lfs_realpath(lfs, path, realpath) != 0) return(0);
+    if (lfs_realpath(lfs, parent_dir, realpath) != 0) {
+        if (parent_dir) free(parent_dir);
+        return(0);
+    }
+    if (parent_dir) free(parent_dir);
 
     return(osaz_object_create(lfs->osaz, lfs->lc->creds, &ug, realpath));
 }
