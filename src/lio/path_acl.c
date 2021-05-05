@@ -370,12 +370,12 @@ int _pacl_can_access_list(path_acl_context_t *pa, char *path, int n_account, cha
     if (ps) {
         old_seed = ps->search_hint;
         acl = pacl_search(pa, path, &exact, &got_default, &(ps->search_hint));
-log_printf(0, "HINT exact=%d seed -- start=%d end=%d\n", exact, old_seed, ps->search_hint);
+log_printf(0, "HINT exact=%d seed -- start=%d end=%d mode=%d perms=%d\n", exact, old_seed, ps->search_hint, mode, ps->perms);
 
         if (old_seed == ps->search_hint) { //** Same path ACL and accounts so use the prev hint perms
             check = mode & ps->perms;
             *perms = ps->perms;
-            return((check > 0) ? 2 : exact);
+            return((check == mode) ? 2 : exact);
         }
 log_printf(0, "HINT miss so doing full check\n");
     } else {
@@ -402,7 +402,7 @@ log_printf(10, "path=%s prefix=%s acl->n_account=%d n_account=%d\n", path, acl->
                 if (strcmp(acl->account[i].account, account) == 0) {
                     check = mode & acl->account[i].mode;
                     log_printf(10, "path=%s account[%d]=%s valid_acct=%s mode=%d perms=%d check=%d\n", path, j, account, acl->account[i].account, mode, acl->account[i].mode, check);
-                    if (check) {
+                    if (check == mode) {
                         *perms = acl->account[i].mode;
                         if (ps) ps->perms = *perms;
                         return(2);  //** full access so kick out
@@ -416,7 +416,7 @@ log_printf(10, "path=%s prefix=%s acl->n_account=%d n_account=%d\n", path, acl->
    *perms = acl->other_mode;
    if (ps) ps->perms = *perms;
    log_printf(10, "path=%s acl=%p exact=%d DEFAULT2 perm=%d  mode=%d\n", path, acl, exact, *perms, mode);
-   return(((mode & *perms) > 0) ? 2 : exact);
+   return(((mode & *perms) == mode) ? 2 : exact);
 }
 
 //**************************************************************************
