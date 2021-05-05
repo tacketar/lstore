@@ -779,8 +779,8 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
         //** The os.realpath has changed to remove that attribute
         attr = apr_hash_get(obj->attrs, "os.realpath", APR_HASH_KEY_STRING);
         if (attr) {
-            free_ostcdb_attr(attr);
             apr_hash_set(obj->attrs, "os.realpath", APR_HASH_KEY_STRING, NULL);
+            free_ostcdb_attr(attr);
         }
 
         //** Do the walk and add it back
