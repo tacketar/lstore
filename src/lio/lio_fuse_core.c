@@ -85,12 +85,9 @@
 #define lfs_lock(lfs)    apr_thread_mutex_lock((lfs)->lock)
 #define lfs_unlock(lfs)  apr_thread_mutex_unlock((lfs)->lock)
 
-#define _inode_key_size 12
+#define _inode_key_size 8
 #define _inode_key_os_realpath_index 7
-#define _inode_fuse_attr_start 8
-static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",
-                               "os.realpath", "security.selinux",  "system.posix_acl_access", "system.posix_acl_default", "security.capability"
-                             };
+static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath"};
 
 #define _tape_key_size  2
 static char *_tape_keys[] = { "system.owner", "system.exnode" };
