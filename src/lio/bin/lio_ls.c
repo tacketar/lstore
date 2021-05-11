@@ -100,7 +100,7 @@ void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
     if (base == 1) {
         sprintf(ppsize, I64T, n);
     } else {
-        tbx_stk_pretty_print_double_with_scale(base, n, ppsize);
+        tbx_stk_pretty_print_double_with_scale_full(base, n, ppsize, 1);
     }
 
     memset(dt_create, '-', 24);

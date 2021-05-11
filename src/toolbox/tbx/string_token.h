@@ -38,9 +38,14 @@ TBX_API char *tbx_stk_escape_string_token(char *str,
 TBX_API char *tbx_stk_escape_text(char *special_chars,
                                     char escape_char,
                                     char *data);
+TBX_API char *tbx_stk_pretty_print_double_with_scale_full(int base,
+                                                        double value,
+                                                        char *buffer,
+                                                        int fixed_size);
 TBX_API char *tbx_stk_pretty_print_double_with_scale(int base,
                                                         double value,
                                                         char *buffer);
+TBX_API char *tbx_stk_pretty_print_int_with_scale_full(int64_t value, char *buffer, int fixed_size);
 TBX_API char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer);
 TBX_API char *tbx_stk_pretty_print_time(apr_time_t dt, int use_days, char *buffer);
 TBX_API double tbx_stk_string_get_double(char *value);

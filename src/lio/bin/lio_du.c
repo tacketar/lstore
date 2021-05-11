@@ -85,7 +85,7 @@ void du_format_entry(tbx_log_fd_t *ifd, du_entry_t *de, int sumonly)
     if (base == 1) {
         sprintf(ppsize, I64T, de->bytes);
     } else {
-        tbx_stk_pretty_print_double_with_scale(base, fsize, ppsize);
+        tbx_stk_pretty_print_double_with_scale_full(base, fsize, ppsize, 1);
     }
 
     if (sumonly > 0) {

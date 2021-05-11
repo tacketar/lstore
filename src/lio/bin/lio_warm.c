@@ -985,7 +985,7 @@ int main(int argc, char **argv)
         line_end = (mrid->bad == 0) ? "\n" : "  RID_ERR\n";
         rkey = tbx_inip_get_string(ifd, mrid->rid_key, "ds_key", mrid->rid_key);
         info_printf(lio_ifd, 0, "%-40s  %s  %s   %10" PXOT "  %10" PXOT "  %10" PXOT "%s", rkey,
-                    tbx_stk_pretty_print_double_with_scale(1024, (double)mrid->nbytes, ppbuf),  tbx_stk_pretty_print_double_with_scale(1024, dtime, ppbuf2),
+                    tbx_stk_pretty_print_double_with_scale_full(1024, (double)mrid->nbytes, ppbuf, 1),  tbx_stk_pretty_print_double_with_scale_full(1024, dtime, ppbuf2, 1),
                     total, mrid->good, mrid->bad, line_end);
         free(rkey);
     }
@@ -995,7 +995,7 @@ int main(int argc, char **argv)
     total = good + bad;
     dtime_total = dtime_total / (double)total;
     info_printf(lio_ifd, 0, "%-40s  %s  %s   %10" PXOT "  %10" PXOT "  %10" PXOT "\n", ppbuf2,
-                tbx_stk_pretty_print_double_with_scale(1024, (double)nbytes, ppbuf), tbx_stk_pretty_print_double_with_scale(1024, dtime_total, ppbuf3), total, good, bad);
+                tbx_stk_pretty_print_double_with_scale_full(1024, (double)nbytes, ppbuf, 1), tbx_stk_pretty_print_double_with_scale_full(1024, dtime_total, ppbuf3, 1), total, good, bad);
 
     tbx_list_destroy(master);
 

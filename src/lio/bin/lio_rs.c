@@ -138,25 +138,25 @@ void print_rid_summary(char *config, int base)
     while (tbx_list_next(&it, (tbx_list_key_t **)&key, (tbx_list_data_t **)&rsum) == 0) {
         pused = ((rsum->total > 0) && (rsum->used <= rsum->total)) ? 100*(double)rsum->used / (double)rsum->total : 100;
         printf("%-20s  %8s  %-30s   %8s   %8s   %8s  %5.1lf\n", rsum->rid, state[rsum->status], rsum->host,
-               tbx_stk_pretty_print_double_with_scale(base, (double)rsum->used, ubuf),
-               tbx_stk_pretty_print_double_with_scale(base, (double)rsum->free, fbuf),
-               tbx_stk_pretty_print_double_with_scale(base, (double)rsum->total, tbuf),
+               tbx_stk_pretty_print_double_with_scale_full(base, (double)rsum->used, ubuf, 1),
+               tbx_stk_pretty_print_double_with_scale_full(base, (double)rsum->free, fbuf, 1),
+               tbx_stk_pretty_print_double_with_scale_full(base, (double)rsum->total, tbuf, 1),
                pused);
     }
 
     printf("--------------------------------------------------------------   ---------   ---------   ---------  -----\n");
     pused = ((up_total > 0) && (up_used <= up_total)) ? 100*(double)up_used / (double)up_total : 100;
     printf("Usable Resources:%4d                                            %8s   %8s   %8s  %5.1lf\n", n_usable,
-           tbx_stk_pretty_print_double_with_scale(base, (double)up_used, ubuf),
-           tbx_stk_pretty_print_double_with_scale(base, (double)up_free, fbuf),
-           tbx_stk_pretty_print_double_with_scale(base, (double)up_total, tbuf),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)up_used, ubuf, 1),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)up_free, fbuf, 1),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)up_total, tbuf, 1),
            pused);
 
     pused = ((space_total > 0) && (space_used <= space_total)) ? 100*(double)space_used / (double)space_total : 100;
     printf("Total Resources: %4d                                            %8s   %8s   %8s  %5.1lf\n", tbx_list_key_count(table),
-           tbx_stk_pretty_print_double_with_scale(base, (double)space_used, ubuf),
-           tbx_stk_pretty_print_double_with_scale(base, (double)space_free, fbuf),
-           tbx_stk_pretty_print_double_with_scale(base, (double)space_total, tbuf),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)space_used, ubuf, 1),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)space_free, fbuf, 1),
+           tbx_stk_pretty_print_double_with_scale_full(base, (double)space_total, tbuf, 1),
            pused);
 
     tbx_list_destroy(table);
@@ -179,8 +179,8 @@ int main(int argc, char **argv)
         printf("lio_rs LIO_COMMON_OPTIONS [-w] [-b2 | -b10] [-s | -f]\n");
         lio_print_options(stdout);
         printf("    -w                 - Watch for RID configuration changes. Press ^C to exit\n");
-        printf("    -b2                - Use powers of 2 for units(default)\n");
-        printf("    -b10               - Use powers of 10 for units\n");
+        printf("    -hi                - Use powers of 2 for units(default)\n");
+        printf("    -h                 - Use powers of 10 for units\n");
         printf("    -s                 - Print a RID space usage summary\n");
         printf("    -f                 - Print the full RID configuration\n");
         return(1);
@@ -205,10 +205,10 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-s") == 0) {  //** Print space summary instead of full conifg
             i++;
             summary = 1;
-        } else if (strcmp(argv[i], "-b2") == 0) {  //** base-2 units
+        } else if (strcmp(argv[i], "-hi") == 0) {  //** base-2 units
             i++;
             base = 1024;
-        } else if (strcmp(argv[i], "-b10") == 0) {  //** base-10 units
+        } else if (strcmp(argv[i], "-h") == 0) {  //** base-10 units
             i++;
             base = 1000;
         }

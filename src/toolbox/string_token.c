@@ -422,7 +422,7 @@ apr_time_t tbx_stk_string_get_time(char *value)
 //           which must be freed.
 //***********************************************************************
 
-char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer)
+char *tbx_stk_pretty_print_int_with_scale_full(int64_t value, char *buffer, int fixed_size)
 {
     int64_t base, n;
     int i;
@@ -452,19 +452,36 @@ char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer)
 
     if (base == 1024) {
         if ( i == 0) {
-            sprintf(buffer, I64T "%c", n, unit[i]);
+            if (fixed_size) {
+                sprintf(buffer, I64T "  ", n);
+            } else {
+                sprintf(buffer, I64T, n);
+            }
         } else {
             sprintf(buffer, I64T "%ci", n, unit[i]);
         }
     } else {
-        sprintf(buffer, I64T "%c", n, unit[i]);
+        if ( i == 0) {
+            if (fixed_size) {
+                sprintf(buffer, I64T " ", n);
+            } else {
+                sprintf(buffer, I64T, n);
+            }
+        } else {
+            sprintf(buffer, I64T "%c", n, unit[i]);
+        }
     }
-
-//printf("prettyprint: value=" I64T " (%s)\n", value, buffer);
 
     return(buffer);
 }
 
+
+//***********************************************************************
+
+char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer)
+{
+    return(tbx_stk_pretty_print_int_with_scale_full(value, buffer, 0));
+}
 
 //***********************************************************************
 //  pretty_print_double_with_scale - Stores the double as a string using
@@ -478,7 +495,7 @@ char *tbx_stk_pretty_print_int_with_scale(int64_t value, char *buffer)
 //           which must be freed.
 //***********************************************************************
 
-char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffer)
+char *tbx_stk_pretty_print_double_with_scale_full(int base, double value, char *buffer, int fixed_size)
 {
     double n;
     int i;
@@ -486,12 +503,6 @@ char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffe
 
     if (buffer == NULL) {
         tbx_type_malloc(buffer, char, 30);
-    }
-
-    if (value == 0) {
-//        sprintf(buffer, "         0");
-        sprintf(buffer, "0");
-        return(buffer);
     }
 
     if (base == 1) {
@@ -510,15 +521,34 @@ char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffe
 
     if (base == 1024) {
         if (i == 0) {
-            sprintf(buffer, "%7.3lf%c", n, unit[i]);
+            if (fixed_size) {
+                sprintf(buffer, "%7.3lf  ", n);
+            } else {
+                sprintf(buffer, "%7.3lf", n);
+            }
         } else {
             sprintf(buffer, "%7.3lf%ci", n, unit[i]);
         }
     } else {
-        sprintf(buffer, "%7.3lf%c", n, unit[i]);
+        if (i == 0) {
+            if (fixed_size) {
+                sprintf(buffer, "%7.3lf ", n);
+            } else {
+                sprintf(buffer, "%7.3lf", n);
+            }
+        } else {
+            sprintf(buffer, "%7.3lf%c", n, unit[i]);
+        }
     }
 
     return(buffer);
+}
+
+//***********************************************************************
+
+char *tbx_stk_pretty_print_double_with_scale(int base, double value, char *buffer)
+{
+    return(tbx_stk_pretty_print_double_with_scale_full(base, value, buffer, 0));
 }
 
 //***********************************************************************
