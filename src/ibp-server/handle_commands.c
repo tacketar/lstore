@@ -3330,7 +3330,7 @@ int handle_internal_mount(ibp_task_t *task)
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_internal_mount_t *arg = &(cmd->cargs.mount);
     int fin, found, err;
-    char *bstate;
+    char *bstate, *new_snap_prefix;
     char *str, *sgrp, *srid, *smode;
     apr_time_t start;
     tbx_inip_group_t *igrp;
@@ -3407,9 +3407,11 @@ int handle_internal_mount(ibp_task_t *task)
     //** NOTE: read_internal_mount verified the RID isn't mounted.
     tbx_type_malloc(r, Resource_t, 1);
 
+    new_snap_prefix = snap_prefix("snap", 1);
     err = mount_resource(r, keyfile, sgrp, arg->force_rebuild,
                          global_config->server.lazy_allocate,
-                         global_config->truncate_expiration);
+                         global_config->truncate_expiration,
+                         new_snap_prefix, arg->merge_snap);
 
     tbx_inip_destroy(keyfile);
 

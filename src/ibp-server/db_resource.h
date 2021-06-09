@@ -71,10 +71,11 @@ void dbr_lock(DB_resource_t *dbr);
 void dbr_unlock(DB_resource_t *dbr);
 int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr);
 int mkfs_db(DB_resource_t *dbr, char *loc, const char *kgroup, FILE *fd, int n_partitions);
-int snap_db(DB_resource_t *dbres, FILE *fd);
+int snap_db(DB_resource_t *dbres, char *prefix, FILE *fd);
+char *snap_merge_pick(DB_resource_t *dbr);
 int mount_db(tbx_inip_file_t *kf, const char *kgroup, DB_resource_t *dbres);
 int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
-                     DB_resource_t *dbres, int wipe_clean, int n_partitions);
+                     DB_resource_t *dbres, int wipe_clean, int n_partitions, char *loc_override);
 int umount_db(DB_resource_t *dbres);
 int print_db(DB_resource_t *db, FILE *fd);
 int get_num_allocations_db(DB_resource_t *db);

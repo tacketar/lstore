@@ -201,6 +201,7 @@ typedef struct {
     int force_rebuild;          //** Only used for mount command
     int delay;                  //** Only used for umount command
     char msg[1024];             //** Message to add to the log file
+    char *merge_snap;           //** Optional Snap to use
 } Cmd_internal_mount_t;
 
 typedef struct {

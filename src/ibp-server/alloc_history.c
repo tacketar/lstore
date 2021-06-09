@@ -390,6 +390,69 @@ const char *db_fill_history_key(db_history_key_t *key, osd_id_t id, int type, ap
 }
 
 //****************************************************************************
+// lru_history_populate_core_merge - Fills in an lru_history_t struct with information
+//     from the History DB from the merge DB
+//****************************************************************************
+
+void lru_history_populate_core_merge(Resource_t *r, osd_id_t id, rocksdb_iterator_t *it)
+{
+    db_history_key_t *key;
+    const char *buf;
+    size_t nbytes;
+    char *errstr;
+
+    while (rocksdb_iter_valid(it) > 0) {
+        key = (db_history_key_t *)rocksdb_iter_key(it, &nbytes);
+        if (nbytes != sizeof(db_history_key_t)) break;
+        if (key->id != id) break;
+
+        //** Skip it if an invalid key
+        if (!((key->type>=0) && (key->type<=2))) goto next;
+
+        buf = rocksdb_iter_value(it, &nbytes);
+
+        //** and the actual RID's history DB
+        errstr = NULL;
+        rocksdb_put(r->db.history, r->db.wopts, (const char *)key, sizeof(db_history_key_t), (const char *)buf, nbytes, &errstr);
+        if (errstr != NULL) {
+            log_printf(1, "ERROR Adding history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, key->date, errstr);
+            free(errstr);
+        }
+next:
+        rocksdb_iter_next(it);
+    }
+
+    return;
+}
+
+//****************************************************************************
+// lru_history_populate_merge - Copies over the history information from the
+//     history DB used for the snap merge.
+//****************************************************************************
+
+void lru_history_populate_merge(Resource_t *r, osd_id_t id)
+{
+    rocksdb_iterator_t *it;
+    db_history_key_t base_key;
+    tbx_stack_t *stack = NULL;  //** This is used for anything we need to delete
+
+    //** Create the iterator on the old DB
+    it = rocksdb_create_iterator(r->db_merge.history, r->db.ropts);
+    rocksdb_iter_seek(it, db_fill_history_key(&base_key, id, 0, 0), sizeof(base_key));
+
+    //** Copy over the entries
+    lru_history_populate_core_merge(r, id, it);
+
+    //** Cleanup
+    rocksdb_iter_destroy(it);
+
+    //** See if we have to delete something
+    if (stack) lru_history_populate_remove(r, stack);
+
+    return;
+}
+
+//****************************************************************************
 // lru_history_populate_core - Fills in an lru_history_t struct with information
 //     from the History DB
 //****************************************************************************

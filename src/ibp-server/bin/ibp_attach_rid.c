@@ -40,25 +40,34 @@ int main(int argc, char **argv)
 {
     int bufsize = 1024 * 1024;
     char buffer[bufsize], *bstate;
-    int i, port, force_rebuild, timeout, slen;
-    char *host, *rid, *msg;
+    int i, start_option, port, force_rebuild, timeout, slen;
+    char *host, *rid, *msg, *merge_snap;
     tbx_ns_t *ns;
 
     if (argc < 4) {
-        printf("ibp_attach_rid [--rebuild] host port RID [msg]\n");
+        printf("ibp_attach_rid [--rebuild] [--merge snap] host port RID [msg]\n");
         printf("--rebuild   - Rebuild RID databases added. Same as force_rebuild=1 in config file.\n");
         printf("              This takes signifcantly longer to start should\n");
         printf("              not be required unless the DB itself is corrupt\n");
+        printf("--merge     - Use this RID DB snapshot to fill in gaps if needed\n");
         printf("\n");
         return (0);
     }
 
     i = 1;
     force_rebuild = 0;
-    if (strcmp(argv[i], "--rebuild") == 0) {
-        force_rebuild = 2;
-        i++;
-    }
+    merge_snap = "-";
+    do {
+        start_option = i;
+        if (strcmp(argv[i], "--rebuild") == 0) {
+            force_rebuild = 2;
+            i++;
+        } else if (strcmp(argv[i], "--merge") == 0) {
+            i++;
+            merge_snap = argv[i];
+            i++;
+        }
+    } while ((start_option < i) && (i<argc));
 
     host = argv[i];
     i++;
@@ -73,7 +82,7 @@ int main(int argc, char **argv)
         msg = argv[i];
 
     slen = strlen(msg);
-    sprintf(buffer, "1 91 %s %d %d %d %s\n", rid, force_rebuild, timeout, slen, msg);   // IBP_INTERNAL_RID_MOUNT command
+    sprintf(buffer, "1 91 %s %d %s %d %d %s\n", rid, force_rebuild, merge_snap, timeout, slen, msg);   // IBP_INTERNAL_RID_MOUNT command
 
     assert(apr_initialize() == APR_SUCCESS);
 

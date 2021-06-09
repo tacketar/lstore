@@ -115,6 +115,8 @@ typedef struct {                //Resource structure
     ibp_off_t n_trash[2];       //Number of allocations in trash
     int preallocate;            //PReallocate all new allocations
     DB_resource_t db;           //DB for maintaining the resource's caps
+    DB_resource_t db_merge;     //DB for merging during rebuild phase if needed
+    int db_merge_valid;         //db_merge is valid to use
     osd_t *dev;                 //Actual Device information
     int rl_index;               //** Index in global resource array
     int n_lru;                  //** Max size of the ID LRU
@@ -146,13 +148,14 @@ typedef struct {
 #define resource_get_type(d) (d)->res_type
 #define resource_get_counter(d) tbx_atomic_get((d)->counter)
 
+IBPS_API char *snap_prefix(char *prefix, int add_time);
 IBPS_API int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_location,
                            ibp_off_t max_bytes, int n_partitions);
 IBPS_API int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
                             int force_rebuild, int lazy_allocate,
-                            int truncate_expiration);
+                            int truncate_expiration, char *start_snap_prefix, char *merge_snap);
 IBPS_API int umount_resource(Resource_t *res);
-IBPS_API int snap_resource(Resource_t *res, FILE *fd);
+IBPS_API int snap_resource(Resource_t *res, char *prefix, FILE *fd);
 IBPS_API int print_resource(char *buffer, int *used, int nbytes, Resource_t *res);
 IBPS_API int print_resource_usage(Resource_t *r, FILE *fd);
 IBPS_API int resource_get_corrupt_count(Resource_t *r);
@@ -222,4 +225,6 @@ IBPS_API const char *db_fill_history_key(db_history_key_t *key, osd_id_t id, int
 IBPS_API void db_delete_history(Resource_t *r, osd_id_t id);
 IBPS_API void lru_history_populate_core(Resource_t *r, osd_id_t id, lru_history_t *lh, tbx_stack_t **rm_stack, rocksdb_iterator_t *it);
 IBPS_API void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack);
+IBPS_API void lru_history_populate(Resource_t *r, osd_id_t id, lru_history_t *lh);
+IBPS_API void lru_history_populate_merge(Resource_t *r, osd_id_t id);
 #endif

@@ -73,6 +73,30 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data);
 int _remove_allocation_for_make_free(Resource_t *r, int rmode, Allocation_t *alloc,
                                      DB_iterator_t *it);
 
+//*****************************************************************************
+// snap_prefix - Makes a snap prefix
+//*****************************************************************************
+
+char *snap_prefix(char *prefix, int add_time)
+{
+    char *p;
+    char my_prefix[4096];
+    char time_str[128];
+    apr_time_exp_t now;
+    apr_size_t n;
+
+    p = (prefix) ? prefix : "snap";
+    if (add_time) {
+        apr_time_exp_lt(&now, apr_time_now());
+        apr_strftime(time_str, &n, sizeof(time_str), "%F_%T", &now);
+        snprintf(my_prefix, sizeof(my_prefix)-1, "%s-%s", p, time_str); my_prefix[sizeof(my_prefix)-1] = 0;
+    } else {
+        snprintf(my_prefix, sizeof(my_prefix)-1, "%s", p); my_prefix[sizeof(my_prefix)-1] = 0;
+    }
+
+    return(strdup(my_prefix));
+}
+
 //***************************************************************************
 //** fetch_historykey - returns the history key for the LRU
 //***************************************************************************
@@ -297,6 +321,24 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     osd_umount(res.dev);
 
     return (0);
+}
+
+//***************************************************************************
+//  check_snap_merge - Add any informtaion available from the merge DB if used
+//***************************************************************************
+
+void check_snap_merge(Resource_t *r, osd_id_t id)
+{
+    char buf[r->lru_history_bytes];
+    lru_history_t *lh = (lru_history_t *)buf;
+
+    //** Just blindly copy over the merge history info
+    //** And dups should be the same so no harm done just some wasted ops
+    //** Remember this is just called when we don't have all the fields in the startup rebuild
+    lru_history_populate_merge(r, id);
+
+    //** This will properly delete the old records
+    lru_history_populate(r, id, lh);
 }
 
 //***************************************************************************
@@ -539,6 +581,7 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
                 continue;
             }
 
+            check_snap_merge(r, d->id);
             if (d->a.expiration < now) d->a.expiration = now + r->restart_grace_period;
         } else { //** Missing from the OSD so delete it from the DB
             rebuild_remove(r, d);
@@ -794,10 +837,11 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
 //***************************************************************************
 
 int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
-                   int force_rebuild, int lazy_allocate, int truncate_expiration)
+                   int force_rebuild, int lazy_allocate, int truncate_expiration, char *start_snap_prefix, char *merge_snap)
 {
-    int err, wipe_expired;
+    int  err, wipe_expired;
     char db_group[1024];
+    char *db_snap_merge;
 
     memset(_blanks, 0, _RESOURCE_BUF_SIZE * sizeof(char));      //** This is done multiple times and it doesn't have to be but is trivial
     memset(res, 0, sizeof(Resource_t));
@@ -838,14 +882,31 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
     //** Rebuild the DB or mount it here **
     snprintf(db_group, sizeof(db_group), "db %s", res->name);
 
-    err = mount_db_generic(keyfile, db_group, &(res->db), force_rebuild, res->n_partitions);
+    err = mount_db_generic(keyfile, db_group, &(res->db), force_rebuild, res->n_partitions, NULL);
     if (err != 0) {
         log_printf(0, "mount_resource:  Error mounting DB force_rebuild=%d! res=%s err=%d\n", force_rebuild, res->name, err);
         return (err);
     }
 
+    //** Make the preemptive snap before making any changes
+    snap_resource(res, start_snap_prefix, stderr);
+
+    //** Now figure out which snap to use for the merge
+    db_snap_merge = (merge_snap) ? strdup(merge_snap) : snap_merge_pick(&res->db);
+
+    //** Mount the snap if needed
+    err = (db_snap_merge) ? mount_db_generic(keyfile, db_group, &(res->db_merge), 0, res->n_partitions, db_snap_merge) : 1;
+    res->db_merge_valid = (err==0) ? 1 : 0;
+
+    if (res->db_merge_valid) {
+        log_printf(1, "(rid=%s) snap_merge=%s\n", res->name, db_snap_merge);
+    }
     //** Construct the interal tables and fix any issues
     err = rebuild_resource(res, keyfile, wipe_expired, force_rebuild, truncate_expiration);
+
+    //** We can tear down the merge DBs
+    if (res->db_merge_valid) umount_db(&(res->db_merge));
+    if (db_snap_merge) free(db_snap_merge);
 
     log_printf(15, "mount_resource: err=%d  res=%s cleanup_shutdown=%d\n", err,
                res->name, res->cleanup_shutdown);
@@ -1023,12 +1084,12 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
 // snap_resource - Does a DB snap on the resource
 //***************************************************************************
 
-int snap_resource(Resource_t *r, FILE *fd)
+int snap_resource(Resource_t *r, char *prefix, FILE *fd)
 {
     int err;
 
     apr_thread_mutex_lock(r->mutex);
-    err = snap_db(&(r->db), fd);
+    err = snap_db(&(r->db), prefix, fd);
     apr_thread_mutex_unlock(r->mutex);
 
     return(err);

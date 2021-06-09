@@ -234,14 +234,65 @@ int print_db_resource(char *buffer, int *used, int nbytes, DB_resource_t *dbr)
 
 
 //***************************************************************************
+// snap_filter - Makes sure the direntry is a valid snap path
+//***************************************************************************
+
+int snap_filter(const struct dirent *dentry)
+{
+    int n;
+    unsigned int year, month, day, hour, min, sec;
+
+    //** check the file type
+    if ((dentry->d_type &  DT_DIR) != DT_DIR) return(0);
+
+    //** Make sure the length is correct
+    if (strlen(dentry->d_name) != 24) return(0);
+
+    //** Now check the format: snap_YYYY-MM-DD_HH:MM:SS
+    n = sscanf(dentry->d_name + 5, "%4u%*[-]%2u%*[-]%2u%*[_]%2u%*[:]%2u%*[:]%2u", &year, &month, &day, &hour, &min, &sec);
+    if (n != 6) return(0);
+
+    return(1);
+}
+
+//***************************************************************************
+// snap_merge_pick - Picks the snap to use for the merge
+//***************************************************************************
+
+char *snap_merge_pick(DB_resource_t *dbr)
+{
+    struct dirent **list;
+    int n, i;
+    char *merge_prefix = NULL;
+
+    //** Generate the list
+    n = scandir(dbr->loc, &list, snap_filter, alphasort);
+
+    //** Make the selection.  We pick the 2nd newest.
+    //** The newest is the snap we just made at startup
+    //** so we need something slightly older
+    if (n > 1) merge_prefix = strdup(list[n-2]->d_name);
+
+    //** Clean up
+    for (i=0; i<n; i++) {
+        free(list[i]);
+    }
+    free(list);
+
+    return(merge_prefix);
+}
+
+//***************************************************************************
 // snap_a_db - Snaps the given DB
 //***************************************************************************
 
 int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
 {
     rocksdb_checkpoint_t *cp;
+    char db_dir[4096];
     char *errstr = NULL;
 
+    snprintf(db_dir, sizeof(db_dir), "%s/%s", cp_dir, db_name); db_dir[sizeof(db_dir)-1] = '\0';
     cp = rocksdb_checkpoint_object_create(db, &errstr);
     if (errstr != NULL) {
         fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint object. Error:\"%s\"\n", db_name, errstr);
@@ -250,7 +301,7 @@ int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
         return(1);
     }
 
-    rocksdb_checkpoint_create(cp, cp_dir, 0, &errstr);
+    rocksdb_checkpoint_create(cp, db_dir, 0, &errstr);
     rocksdb_checkpoint_object_destroy(cp);
     if (errstr != NULL) {
         fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint. Checkpoint loc:\"%s\" error:\"%s\"\n", db_name, cp_dir, errstr);
@@ -263,26 +314,39 @@ int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
 }
 
 //***************************************************************************
-// snap_a_db - Snaps all the DBs for the RID
+// snap_db - Snaps all the DBs for the RID
 //***************************************************************************
 
-int snap_db(DB_resource_t *dbr, FILE *fd)
+int snap_db(DB_resource_t *dbr, char *prefix, FILE *fd)
 {
     char cp_dir[4096];
     int err;
 
+    DIR *dir = NULL;
+
     dbr_lock(dbr);
 
-    snprintf(cp_dir, sizeof(cp_dir), "%s/id-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
+    //** Make the snap directory
+    if (prefix) {
+        snprintf(cp_dir, sizeof(cp_dir), "%s/%s", dbr->loc, prefix);
+    } else {
+        snprintf(cp_dir, sizeof(cp_dir), "%s/snap", dbr->loc);
+    }
+    cp_dir[sizeof(cp_dir)-1] = '\0';
+
+    mkdir(cp_dir, S_IRWXU);
+    dir = opendir(cp_dir);       //Make sure I can open it
+    if (!dir) {
+        fprintf(fd, "   ERROR(snap): Failed creating checkpoint directory. Checkpoint loc: %s\n", cp_dir);
+        dbr_unlock(dbr);
+        return(1);
+    }
+    closedir(dir);
+
+    //** Do the snaps
     err = snap_a_db(dbr->pdb, "id", cp_dir, fd);
-
-    snprintf(cp_dir, sizeof(cp_dir), "%s/expire-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
     err += snap_a_db(dbr->expire, "expire", cp_dir, fd);
-
-    snprintf(cp_dir, sizeof(cp_dir), "%s/soft-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
     err += snap_a_db(dbr->soft, "soft", cp_dir, fd);
-
-    snprintf(cp_dir, sizeof(cp_dir), "%s/history-snap", dbr->loc); cp_dir[sizeof(cp_dir)-1] = '\0';
     err += snap_a_db(dbr->history, "history", cp_dir, fd);
 
     dbr_unlock(dbr);
@@ -375,15 +439,25 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
 //***************************************************************************
 
 int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
-                     DB_resource_t *dbres, int wipe_clean, int n_partitions)
+                     DB_resource_t *dbres, int wipe_clean, int n_partitions, char *loc_override)
 {
     char fname[2048];
+    char *str;
+    int n;
 
     //** Get the directory containing everything **
     dbres->kgroup = strdup(kgroup);
     log_printf(10, "mount_db_generic: kgroup=%s\n", kgroup);
     tbx_log_flush();
-    assert_result_not_null(dbres->loc = tbx_inip_get_string(kf, kgroup, "loc", NULL));
+    assert_result_not_null(str = tbx_inip_get_string(kf, kgroup, "loc", NULL));
+    if (loc_override) {
+        n = strlen(loc_override) + strlen(str) + 2;
+        tbx_type_malloc(dbres->loc, char, n);
+        snprintf(dbres->loc, n, "%s/%s", str, loc_override);
+        free(str);
+    } else {
+        dbres->loc = str;
+    }
 
     dbres->n_partitions = (n_partitions <= 0) ? n_partitions : tbx_inip_get_integer(kf, kgroup, "n_partitions", 256);
 

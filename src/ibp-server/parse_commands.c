@@ -1628,13 +1628,14 @@ int read_internal_set_mode(ibp_task_t *task, char **bstate)
 //*****************************************************************
 // read_internal_mount - Reads the internal mount command
 //
-//    RID force_rebuild timeout\n
+//    RID force_rebuild merge_snap|- timeout\n
 //
 //*****************************************************************
 
 int read_internal_mount(ibp_task_t *task, char **bstate)
 {
     int fin, opt;
+    char *snap;
     Cmd_state_t *cmd = &(task->cmd);
     Cmd_internal_mount_t *arg = &(cmd->cargs.mount);
 
@@ -1667,6 +1668,14 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
         return (-1);
     }
     arg->force_rebuild = opt;
+
+    //** See if we use an existing snap for the merge
+    snap = tbx_stk_string_token(NULL, " ", bstate, &fin);
+    if (strcmp(snap, "-") == 0) {
+        arg->merge_snap = NULL;
+    } else {
+        arg->merge_snap = strdup(snap);
+    }
 
     get_command_timeout(task, bstate);
 

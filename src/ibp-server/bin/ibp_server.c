@@ -39,6 +39,8 @@ typedef struct {
     apr_thread_t *thread_id;
     tbx_inip_file_t *keyfile;
     char *group;
+    char *snap_prefix;
+    char *merge_prefix;
     int force_resource_rebuild;
 } pMount_t;
 
@@ -55,7 +57,7 @@ void *parallel_mount_resource(apr_thread_t *th, void *data)
 
     int err = mount_resource(r, pm->keyfile, pm->group,
                              pm->force_resource_rebuild, global_config->server.lazy_allocate,
-                             global_config->truncate_expiration);
+                             global_config->truncate_expiration, pm->snap_prefix, pm->merge_prefix);
 
     if (err != 0) {
         log_printf(0, "parallel_mount_resource:  Error mounting resource!!!!!\n");
@@ -369,10 +371,10 @@ int parse_config_prefork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebu
 //                 data structure (cfg) after the FORK.
 //*****************************************************************************
 
-int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild)
+int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebuild, char *merge_snap)
 {
     Server_t *server;
-    char *str, *bstate;
+    char *str, *bstate, *start_snap_prefix;
     int val, k, i, timeout_ms;
     char iface_default[1024];
     apr_time_t t;
@@ -524,6 +526,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     tbx_type_malloc_clear(pmarray, pMount_t, k - 1);
     tbx_inip_group_t *igrp = tbx_inip_group_first(keyfile);
     val = 0;
+    start_snap_prefix = snap_prefix("snap", 1);
     for (i = 0; i < k; i++) {
         str = tbx_inip_group_get(igrp);
         if (strncmp("resource", str, 8) == 0) {
@@ -531,7 +534,8 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
             pm->keyfile = keyfile;
             pm->group = strdup(str);
             pm->force_resource_rebuild = cfg->force_resource_rebuild;
-
+            pm->snap_prefix = strdup(start_snap_prefix);
+            pm->merge_prefix = (merge_snap) ? strdup(merge_snap) : NULL;
             apr_thread_create(&(pm->thread_id), NULL, parallel_mount_resource, (void *) pm,
                               mount_pool);
 
@@ -540,11 +544,14 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
 
         igrp = tbx_inip_group_next(igrp);
     }
+    free(start_snap_prefix);
 
     //** Wait for all the threads to join **
     apr_status_t dummy;
     for (i = 0; i < val; i++) {
         apr_thread_join(&dummy, pmarray[i].thread_id);
+        if (pm->snap_prefix) free(pm->snap_prefix);
+        if (pm->merge_prefix) free(pm->merge_prefix);
     }
 
     free(pmarray);
@@ -632,22 +639,34 @@ int ibp_shutdown(Config_t *cfg)
 // snap_all_rids - Call the DB snap for each mounted resource
 //*****************************************************************************
 
-void snap_all_rids(void *arg, FILE *fd)
+void snap_all_rids(char *prefix, int add_time, FILE *fd)
 {
     int err;
+    char *my_prefix;
     Resource_t *r;
     resource_list_iterator_t it;
 
+    my_prefix = snap_prefix(prefix, add_time);
+
     //** Snapping al lthe RIDs
-    fprintf(fd, "Starting SNAP of all RIDs\n");
+    fprintf(fd, "Starting SNAP of all RIDs. Prefix:%s\n", my_prefix);
     it = resource_list_iterator(global_config->rl);
     while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
         fprintf(fd, "Snapping rid=%s\n", r->name); fflush(fd);
-        err = snap_resource(r, fd);
+        err = snap_resource(r, my_prefix, fd);
         fprintf(fd, "   rid=%s snap_status=%d\n", r->name, err); fflush(fd);
     }
     resource_list_iterator_destroy(global_config->rl, &it);
     fprintf(fd, "Finished SNAP of all RIDs\n");
+}
+
+//*****************************************************************************
+// snap_all_rids_handler - Signal handler to snap all the RIDs
+//*****************************************************************************
+
+void snap_all_rids_handler(void *arg, FILE *fd)
+{
+    snap_all_rids("snap", 0, fd);
 }
 
 //*****************************************************************************
@@ -668,7 +687,7 @@ void configure_signals()
 
     //** Lastly set up the handler for the doing a DB snap
     tbx_siginfo_install("/log/snap.log", SIGRTMIN);
-    tbx_siginfo_handler_add(SIGRTMIN, snap_all_rids, NULL);
+    tbx_siginfo_handler_add(SIGRTMIN, snap_all_rids_handler, NULL);
 }
 
 //*****************************************************************************
@@ -678,7 +697,7 @@ void configure_signals()
 int main(int argc, const char **argv)
 {
     Config_t config;
-    char *config_file;
+    char *config_file, *merge_snap;
     int i;
     apr_thread_t *rid_check_thread;
     apr_status_t dummy;
@@ -693,11 +712,16 @@ int main(int argc, const char **argv)
     memset(global_config, 0, sizeof(Config_t)); //** init the data
     global_network = NULL;
 
-    if (argc < 1) {
-        printf("ibp_server [-d] [--rebuild] config_file\n\n");
+    if (argc < 2) {
+        printf("ibp_server [-d] [--rebuild] [--merge snap-prefix] config_file\n\n");
         printf("--rebuild   - Rebuild RID databases. Same as force_rebuild=1 in config file.\n");
         printf("              This takes signifcantly longer to start the IBP server and should\n");
         printf("              not be required unless the DB itself is corrupt\n");
+        printf("--merge     - Use this DB snapshot across all RIDs to fill in gaps if needed\n");
+        printf("              The snap-prefix is the local directory in the RID metadata directory\n");
+        printf("              containing the snap to use. Typically these snaps have the name\n");
+        printf("              snap-YYYY-MM-DD_HH:MM:SS.  By default on startup it attempts to use\n");
+        printf("              the previously oldest snap if the option is not used.\n");
         printf("-d          - Run as a daemon\n");
         printf("config_file - Configuration file\n");
         return (0);
@@ -705,11 +729,16 @@ int main(int argc, const char **argv)
 
     int daemon = 0;
     int force_rebuild = 0;
+    merge_snap = NULL;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0) {
             daemon = 1;
         } else if (strcmp(argv[i], "--rebuild") == 0) {
             force_rebuild = 1;
+        } else if (strcmp(argv[i], "--merge") == 0) {
+            i++;  //** Skip over the flag
+            merge_snap = (char *)argv[i];
+            i++;  //** And the prefix
         }
     }
 
@@ -756,7 +785,7 @@ int main(int argc, const char **argv)
     }
 
     //** Loadhe rest of the config after forking.
-    parse_config_postfork(keyfile, &config, force_rebuild);
+    parse_config_postfork(keyfile, &config, force_rebuild, merge_snap);
 
     init_thread_slots(2 * config.server.max_threads);   //** Make pigeon holes
 
