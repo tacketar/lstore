@@ -549,7 +549,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     //** Wait for all the threads to join **
     apr_status_t dummy;
     for (i = 0; i < val; i++) {
-        pm = &(pmarray[val]);
+        pm = &(pmarray[i]);
         apr_thread_join(&dummy, pm->thread_id);
         if (pm->snap_prefix) free(pm->snap_prefix);
         if (pm->merge_prefix) free(pm->merge_prefix);
