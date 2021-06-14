@@ -327,18 +327,26 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
 //  check_snap_merge - Add any informtaion available from the merge DB if used
 //***************************************************************************
 
-void check_snap_merge(Resource_t *r, osd_id_t id)
+void check_snap_merge(Resource_t *r, rebuild_lut_t *d)
 {
     char buf[r->lru_history_bytes];
     lru_history_t *lh = (lru_history_t *)buf;
+    Allocation_t a;
 
     //** Just blindly copy over the merge history info
-    //** And dups should be the same so no harm done just some wasted ops
+    //** Dups should be the same so no harm done just some wasted ops
     //** Remember this is just called when we don't have all the fields in the startup rebuild
-    lru_history_populate_merge(r, id);
+    lru_history_populate_merge(r, d->id);
 
     //** This will properly delete the old records
-    lru_history_populate(r, id, lh);
+    lru_history_populate(r, d->id, lh);
+
+    //** If we're missing the actual allocation in the primary DB add it if possible
+    if (!(d->found & REBUILD_FOUND_DB)) {
+        if (_get_alloc_with_id_db(&(r->db_merge), d->id, &a) == 0) {
+            d->a = a;
+        }
+    }
 }
 
 //***************************************************************************
@@ -581,7 +589,7 @@ void rebuild_populate_partition_lut_process(Resource_t *r, apr_hash_t *lut, int 
                 continue;
             }
 
-            check_snap_merge(r, d->id);
+            check_snap_merge(r, d);
             if (d->a.expiration < now) d->a.expiration = now + r->restart_grace_period;
         } else { //** Missing from the OSD so delete it from the DB
             rebuild_remove(r, d);
