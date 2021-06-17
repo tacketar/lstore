@@ -38,9 +38,8 @@
 // warmer_query_inode - Generate list based on inode
 //*************************************************************************
 
-void warmer_query_inode(rocksdb_t *inode_db, int mode, int fonly)
+void warmer_query_inode(warm_db_t *inode_db, int mode, int fonly)
 {
-    rocksdb_readoptions_t *opt;
     rocksdb_iterator_t *it;
     char *buf;
     size_t nbytes;
@@ -50,8 +49,7 @@ void warmer_query_inode(rocksdb_t *inode_db, int mode, int fonly)
     char *name;
 
     //** Create the iterator
-    opt = rocksdb_readoptions_create();
-    it = rocksdb_create_iterator(inode_db, opt);
+    it = rocksdb_create_iterator(inode_db->db, inode_db->ropt);
     rocksdb_iter_seek_to_first(it);
 
     while (rocksdb_iter_valid(it) > 0) {
@@ -80,7 +78,6 @@ next:
 
     //** Cleanup
     rocksdb_iter_destroy(it);
-    rocksdb_readoptions_destroy(opt);
 }
 
 
@@ -88,9 +85,8 @@ next:
 // warmer_query_rid - Generate list based on the RID
 //*************************************************************************
 
-void warmer_query_rid(char *rid_key, rocksdb_t *inode_db, rocksdb_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
+void warmer_query_rid(char *rid_key, warm_db_t *inode_db, warm_db_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
 {
-    rocksdb_readoptions_t *opt;
     rocksdb_iterator_t *it;
     ex_off_t bytes_found;
     size_t nbytes;
@@ -107,8 +103,7 @@ void warmer_query_rid(char *rid_key, rocksdb_t *inode_db, rocksdb_t *rid_db, int
     tbx_type_malloc(match, char, n);
     n = sprintf(match, "%s|0", rid_key) + 1;
 
-    opt = rocksdb_readoptions_create();
-    it = rocksdb_create_iterator(rid_db, opt);
+    it = rocksdb_create_iterator(rid_db->db, rid_db->ropt);
     rocksdb_iter_seek(it, match, n);
 
     bytes_found = 0;
@@ -125,7 +120,7 @@ void warmer_query_rid(char *rid_key, rocksdb_t *inode_db, rocksdb_t *rid_db, int
 
         buf = (char *)rocksdb_iter_value(it, &nbytes);
         if (warm_parse_rid(buf, nbytes, &inode, &bsize, &state) != 0) { goto next; }
-        buf = (char *)rocksdb_get(inode_db, opt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
+        buf = (char *)rocksdb_get(inode_db->db, inode_db->ropt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
         if (nbytes == 0) { goto next; }
 
         if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) { goto next; }
@@ -158,7 +153,6 @@ next:
 
     //** Cleanup
     rocksdb_iter_destroy(it);
-    rocksdb_readoptions_destroy(opt);
 }
 
 //*************************************************************************
@@ -170,7 +164,7 @@ int main(int argc, char **argv)
     int fonly, mode;
     char *db_base = "/lio/log/warm";
     char *rid_key;
-    rocksdb_t *inode_db, *rid_db;
+    warm_db_t *inode_db, *rid_db;
     ex_off_t total_bytes;
 
     total_bytes = -1;  //** Default to print all files

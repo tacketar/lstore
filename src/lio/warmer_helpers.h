@@ -38,14 +38,27 @@ extern "C" {
 void rocksdb_cancel_all_background_work(rocksdb_t* db, unsigned char wait);
 #endif
 
+typedef struct {  //** PREP databases
+    rocksdb_t *db;
+    rocksdb_comparator_t *cmp;
+    rocksdb_writeoptions_t *wopt;
+    rocksdb_readoptions_t  *ropt;
+} warm_db_t;
+
 //** These are helpers for lio_wamer and warmer_query *******
-LIO_API int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db);
-LIO_API void close_warm_db(rocksdb_t *inode, rocksdb_t *rid);
-LIO_API int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *name);
+LIO_API int open_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
+LIO_API void close_warm_db(warm_db_t *inode, warm_db_t *rid);
+LIO_API int warm_put_inode(warm_db_t *db, ex_id_t inode, int state, int nfailed, char *name);
 LIO_API int warm_parse_inode(char *buf, int bufsize, int *state, int *nfailed, char **name);
-LIO_API int warm_put_rid(rocksdb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
+LIO_API int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
 LIO_API int warm_parse_rid(char *buf, int bufsize, ex_id_t *inode, ex_off_t *nbytes,int *state);
-LIO_API void create_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db);
+LIO_API void create_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
+
+typedef struct {  //** PREP databases
+    rocksdb_t *inode;
+    rocksdb_t *rid;
+    rocksdb_t *write_errors;
+} warm_prep_db_t;
 
 #ifdef __cplusplus
 }

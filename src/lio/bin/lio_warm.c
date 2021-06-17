@@ -118,8 +118,8 @@ typedef struct {
 apr_hash_t *tagged_rids = NULL;
 apr_pool_t *tagged_pool = NULL;
 tbx_stack_t *tagged_keys = NULL;
-rocksdb_t *db_rid = NULL;
-rocksdb_t *db_inode = NULL;
+warm_db_t *db_rid = NULL;
+warm_db_t *db_inode = NULL;
 int verbose = 0;
 
 ibp_context_t *ic = NULL;

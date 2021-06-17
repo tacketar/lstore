@@ -25,13 +25,96 @@
 #include <tbx/varint.h>
 #include "warmer_helpers.h"
 
+//=========================================================================
+//   Generic routines for opening/closing a RocksDB
+//=========================================================================
+
+//*************************************************************************
+// open_a_db - Opens a rocksDB database
+//*************************************************************************
+
+warm_db_t *open_a_db(char *db_path, rocksdb_comparator_t *cmp, int wipe_clean)
+{
+    warm_db_t *db;
+    rocksdb_options_t *opts, *opts2;
+    char *errstr = NULL;
+
+    tbx_type_malloc_clear(db, warm_db_t, 1);
+
+    if (wipe_clean != 0) { //** Wipe the DB if requested
+        opts2 = rocksdb_options_create();
+        rocksdb_options_set_error_if_exists(opts2, 1);
+
+        db->db = rocksdb_open(opts2, db_path, &errstr);
+        if (errstr != NULL) {  //** It already exists so need to remove it first
+            free(errstr);
+            errstr = NULL;
+
+            //** Remove it
+            rocksdb_destroy_db(opts2, db_path, &errstr);
+            if (errstr != NULL) {  //** Got an error so just kick out
+                fprintf(stderr, "ERROR: Failed removing %s for fresh DB. DB error:%s\n", db_path, errstr);
+                exit(1);
+            }
+        } else {  //** Close it
+            rocksdb_cancel_all_background_work(db->db, 1);
+            rocksdb_close(db->db);
+        }
+        rocksdb_options_destroy(opts2);
+    }
+
+    //** Try opening it for real
+    opts = rocksdb_options_create();
+    if (cmp) rocksdb_options_set_comparator(opts, cmp);
+    rocksdb_options_set_create_if_missing(opts, 1);
+
+    db->db = rocksdb_open(opts, db_path, &errstr);
+    if (errstr != NULL) {  //** An Error occured
+        fprintf(stderr, "ERROR: Failed Opening/Creating %s. DB error:%s\n", db_path, errstr);
+        exit(1);
+    }
+
+    rocksdb_options_destroy(opts);
+
+    db->wopt = rocksdb_writeoptions_create();
+    db->ropt = rocksdb_readoptions_create();
+    db->cmp = cmp;
+
+    return(db);
+}
+
+//*************************************************************************
+// create_a_db - Creates  a rocksDB database using the given path
+//*************************************************************************
+
+warm_db_t *create_a_db(char *db_path, rocksdb_comparator_t *cmp)
+{
+    return(open_a_db(db_path, cmp, 1));
+}
+
+//*************************************************************************
+// close_a_db - Closes a rocksDB database
+//*************************************************************************
+
+void close_a_db(warm_db_t *db)
+{
+    rocksdb_cancel_all_background_work(db->db, 1);
+    rocksdb_close(db->db);
+    rocksdb_writeoptions_destroy(db->wopt);
+    rocksdb_readoptions_destroy(db->ropt);
+    free(db);
+}
+
+//=========================================================================
+//  Routines used for generating the final warming DBs and used by warmer_query.
+//=========================================================================
+
 //*************************************************************************
 // warm_put_inode - Puts an entry in the inode DB
 //*************************************************************************
 
-int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *name)
+int warm_put_inode(warm_db_t *db, ex_id_t inode, int state, int nfailed, char *name)
 {
-    rocksdb_writeoptions_t *wopt;
     unsigned char buf[OS_PATH_MAX + 3*10];
     char *errstr = NULL;
     int n;
@@ -45,9 +128,7 @@ int warm_put_inode(rocksdb_t *db, ex_id_t inode, int state, int nfailed, char *n
     buf[sizeof(buf)-1] = 0;  //** Force a NULL terminated string
     n += strlen((const char *)buf+n);
 
-    wopt = rocksdb_writeoptions_create();
-    rocksdb_put(db, wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)buf, n, &errstr);
-    rocksdb_writeoptions_destroy(wopt);
+    rocksdb_put(db->db, db->wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)buf, n, &errstr);
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
@@ -87,9 +168,8 @@ int warm_parse_inode(char *sbuf, int bufsize, int *state, int *nfailed, char **n
 // warm_put_rid - Puts an entry in the RID DB
 //*************************************************************************
 
-int warm_put_rid(rocksdb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state)
+int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state)
 {
-    rocksdb_writeoptions_t *wopt;
     char *errstr = NULL;
     char *key;
     unsigned char buf[4*16];
@@ -105,9 +185,7 @@ int warm_put_rid(rocksdb_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int s
     n += tbx_zigzag_encode(nbytes, buf + n);   //** size
     n += tbx_zigzag_encode(state, buf + n);    //** state
 
-    wopt = rocksdb_writeoptions_create();
-    rocksdb_put(db, wopt, key, klen, (const char *)buf, n, &errstr);
-    rocksdb_writeoptions_destroy(wopt);
+    rocksdb_put(db->db, db->wopt, key, klen, (const char *)buf, n, &errstr);
 
     free(key);
 
@@ -141,97 +219,32 @@ int warm_parse_rid(char *sbuf, int bufsize, ex_id_t *inode, ex_off_t *nbytes, in
 }
 
 //*************************************************************************
-// create_a_db - Creates  a rocksDB database using the given path
-//*************************************************************************
-
-rocksdb_t *create_a_db(char *db_path)
-{
-    rocksdb_t *db;
-    rocksdb_options_t *opt_exists, *opt_create, *opt_none;
-    char *errstr = NULL;
-
-    opt_exists = rocksdb_options_create(); rocksdb_options_set_error_if_exists(opt_exists, 1);
-    opt_create = rocksdb_options_create(); rocksdb_options_set_create_if_missing(opt_create, 1);
-    opt_none = rocksdb_options_create();
-
-    db = rocksdb_open(opt_exists, db_path, &errstr);
-    if (errstr != NULL) {  //** It already exists so need to remove it first
-        free(errstr);
-        errstr = NULL;
-
-        //** Remove it
-        rocksdb_destroy_db(opt_none, db_path, &errstr);
-        if (errstr != NULL) {  //** Got an error so just kick out
-            fprintf(stderr, "ERROR: Failed removing %s for fresh DB. ERROR:%s\n", db_path, errstr);
-            exit(1);
-        }
-
-        //** Try opening it again
-        db = rocksdb_open(opt_create, db_path, &errstr);
-        if (errstr != NULL) {  //** An ERror occured
-            fprintf(stderr, "ERROR: Failed creating %s. ERROR:%s\n", db_path, errstr);
-            exit(1);
-        }
-    }
-
-    rocksdb_options_destroy(opt_none);
-    rocksdb_options_destroy(opt_exists);
-    rocksdb_options_destroy(opt_create);
-
-    return(db);
-}
-
-//*************************************************************************
 //  create_warm_db - Creates the DBs using the given base directory
 //*************************************************************************
 
-void create_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db)
+void create_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db)
 {
     char *db_path;
 
     tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
-    sprintf(db_path, "%s/inode", db_base); *inode_db = create_a_db(db_path);
-    sprintf(db_path, "%s/rid", db_base); *rid_db = create_a_db(db_path);
+    sprintf(db_path, "%s/inode", db_base); *inode_db = create_a_db(db_path, NULL);
+    sprintf(db_path, "%s/rid", db_base); *rid_db = create_a_db(db_path, NULL);
     free(db_path);
-}
-
-//*************************************************************************
-// open_a_db - Opens a rocksDB database
-//*************************************************************************
-
-rocksdb_t *open_a_db(char *db_path)
-{
-    rocksdb_t *db;
-    rocksdb_options_t *opt;
-    char *errstr = NULL;
-
-    opt = rocksdb_options_create();
-
-    db = rocksdb_open(opt, db_path, &errstr);
-    if (errstr != NULL) {  //** It already exists so need to remove it first
-        fprintf(stderr, "ERROR: Failed creating %s. ERROR:%s\n", db_path, errstr);
-        free(errstr);
-        errstr = NULL;
-    }
-
-    rocksdb_options_destroy(opt);
-
-    return(db);
 }
 
 //*************************************************************************
 //  open_warm_db - Opens the warmer DBs
 //*************************************************************************
 
-int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db)
+int open_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db)
 {
     char *db_path;
 
     tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
-    sprintf(db_path, "%s/inode", db_base); *inode_db = open_a_db(db_path);
+    sprintf(db_path, "%s/inode", db_base); *inode_db = open_a_db(db_path, NULL, 0);
     if (inode_db == NULL) { free(db_path); return(1); }
 
-    sprintf(db_path, "%s/rid", db_base); *rid_db = open_a_db(db_path);
+    sprintf(db_path, "%s/rid", db_base); *rid_db = open_a_db(db_path, NULL, 0);
     if (rid_db == NULL) { free(db_path); return(2); }
 
     free(db_path);
@@ -242,9 +255,9 @@ int open_warm_db(char *db_base, rocksdb_t **inode_db, rocksdb_t **rid_db)
 //  close_warm_db - Closes the DBs
 //*************************************************************************
 
-void close_warm_db(rocksdb_t *inode, rocksdb_t *rid)
+void close_warm_db(warm_db_t *inode, warm_db_t *rid)
 {
-    rocksdb_cancel_all_background_work(inode, 1); rocksdb_close(inode);
-    rocksdb_cancel_all_background_work(rid, 1);   rocksdb_close(rid);
+    close_a_db(inode);
+    close_a_db(rid);
 }
 
