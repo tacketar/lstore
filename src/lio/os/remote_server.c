@@ -208,52 +208,6 @@ void osrs_update_active_table(lio_object_service_fn_t *os, gop_mq_frame_t *hid)
 }
 
 //***********************************************************************
-// osrs_log - Logs an operation
-//***********************************************************************
-
-void osrs_log_printf(lio_object_service_fn_t *os, int do_lock, lio_creds_t *creds, const char *fmt, ...)
-{
-    va_list args;
-    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
-    FILE *fd;
-    char date[128], *uid;
-    char fname[OS_PATH_MAX];
-    int len;
-    time_t now;
-    struct tm tm_now;
-
-    if (osrs->fname_activity == NULL) return;
-
-    now = time(NULL);
-    localtime_r(&now, &tm_now);
-    snprintf(fname, sizeof(fname), "%s.%d-%02d-%02d", osrs->fname_activity, 1900+tm_now.tm_year, 1+tm_now.tm_mon, tm_now.tm_mday); fname[sizeof(fname)-1] = '\0';
-    if (do_lock) apr_thread_mutex_lock(osrs->lock);
-    fd = fopen(fname, "a");
-    if (fd == NULL) {
-        log_printf(0, "ERROR opening activity_log (%s)!\n", fname);
-        if (do_lock) apr_thread_mutex_unlock(osrs->lock);
-        return;
-    }
-
-    //** Add the header
-    uid = (char *)an_cred_get_descriptive_id(creds, &len);
-    if (!uid) uid = "(null)";
-    asctime_r(&tm_now, date);
-    date[strlen(date)-1] = '\0';  //** Peel of the return
-    fprintf(fd, "[%s (" TT ") %s] ", date, now, uid);
-
-    //** Print the user text
-    va_start(args, fmt);
-    vfprintf(fd, fmt, args);
-    va_end(args);
-
-    fclose(fd);
-
-    if (do_lock) apr_thread_mutex_unlock(osrs->lock);
-
-}
-
-//***********************************************************************
 // osrs_release_creds - Release the creds
 //***********************************************************************
 
@@ -605,7 +559,6 @@ void osrs_create_object_cb(void *arg, gop_mq_task_t *task)
 
     if (creds != NULL) {
         data = gop_mq_frame_strdup(f);
-        osrs_log_printf(os, 1, creds, "CREATE(%s)\n", name);
         gop = os_create_object(osrs->os_child, creds, name, ftype, data);
         gop_waitall(gop);
         if (data != NULL) free(data);
@@ -664,8 +617,6 @@ void osrs_remove_object_cb(void *arg, gop_mq_task_t *task)
     gop_mq_get_frame(fname, (void **)&name, &fsize);
 
     if (creds != NULL) {
-        osrs_log_printf(os, 1, creds, "REMOVE(%s)\n", name);
-
         gop = os_remove_object(osrs->os_child, creds, name);
         gop_waitall(gop);
         status = gop_get_status(gop);
@@ -941,7 +892,6 @@ void osrs_symlink_object_cb(void *arg, gop_mq_task_t *task)
 
     if (creds != NULL) {
         userid = gop_mq_frame_strdup(fuserid);
-        osrs_log_printf(os, 1, creds, "SYMLINK(%s, %s)\n", src_name, dest_name);
         gop = os_symlink_object(osrs->os_child, creds, src_name, dest_name, userid);
         gop_waitall(gop);
         status = gop_get_status(gop);
@@ -1005,7 +955,6 @@ void osrs_hardlink_object_cb(void *arg, gop_mq_task_t *task)
 
     if (creds != NULL) {
         userid = gop_mq_frame_strdup(fuserid);
-        osrs_log_printf(os, 1, creds, "HARDLINK(%s, %s)\n", src_name, dest_name);
         gop = os_hardlink_object(osrs->os_child, creds, src_name, dest_name, userid);
         gop_waitall(gop);
         status = gop_get_status(gop);
@@ -1066,7 +1015,6 @@ void osrs_move_object_cb(void *arg, gop_mq_task_t *task)
     gop_mq_get_frame(fdname, (void **)&dest_name, &fsize);
 
     if (creds != NULL) {
-        osrs_log_printf(os, 1, creds, "MOVE(%s, %s)\n", src_name, dest_name);
         gop = os_move_object(osrs->os_child, creds, src_name, dest_name);
         gop_waitall(gop);
         status = gop_get_status(gop);
