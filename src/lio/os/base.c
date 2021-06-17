@@ -38,6 +38,7 @@
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "os.h"
@@ -528,4 +529,142 @@ int lio_os_local_filetype(char *path)
     struct stat s;
 
     return(os_local_filetype_stat(path, &s, &s));
+}
+
+//***********************************************************************
+// os_log_open_check - Makes sure the fd is correct based on the time
+//***********************************************************************
+
+void os_log_open_check(os_log_t *olog, time_t *now, struct tm *tm_now)
+{
+    char fname[OS_PATH_MAX];
+
+    //** Get the current time
+    *now = time(NULL);
+    localtime_r(now, tm_now);
+
+    //** If it's the same day just return
+    if ((tm_now->tm_mday == olog->tm_open.tm_mday) &&
+        (tm_now->tm_mon == olog->tm_open.tm_mon) &&
+        (tm_now->tm_year == olog->tm_open.tm_year)) return;
+
+    //** The day is different so we need to close and reopen the log
+    if (olog->fd) fclose(olog->fd);
+
+    snprintf(fname, sizeof(fname), "%s.%d-%02d-%02d", olog->fname, 1900+tm_now->tm_year, 1+tm_now->tm_mon, tm_now->tm_mday); fname[sizeof(fname)-1] = '\0';
+    olog->fd = fopen(fname, "a");
+    if (olog->fd == NULL) {
+        log_printf(0, "ERROR opening activity_log (%s)!\n", fname);
+    }
+}
+
+//***********************************************************************
+// os_log_printf - Logs an operation
+//***********************************************************************
+
+void os_log_printf(os_log_t *olog, int do_lock, lio_creds_t *creds, const char *fmt, ...)
+{
+    va_list args;
+    char date[128], *uid;
+    int len;
+    time_t now;
+    struct tm tm_now;
+
+    if (olog->fname == NULL) return;
+
+    if (do_lock) apr_thread_mutex_lock(olog->lock);
+
+    os_log_open_check(olog, &now, &tm_now);
+    if (olog->fd == NULL) goto failed;
+
+    //** Add the header
+    uid = (char *)an_cred_get_descriptive_id(creds, &len);
+    if (!uid) uid = "(null)";
+    asctime_r(&tm_now, date);
+    date[strlen(date)-1] = '\0';  //** Peel of the return
+    fprintf(olog->fd, "[%s (" TT ") %s] ", date, now, uid);
+
+    //** Print the user text
+    va_start(args, fmt);
+    vfprintf(olog->fd, fmt, args);
+    va_end(args);
+
+    fflush(olog->fd);
+
+failed:
+    if (do_lock) apr_thread_mutex_unlock(olog->lock);
+}
+
+//***********************************************************************
+// os_log_create - Creates an OS logging service
+//***********************************************************************
+
+os_log_t *os_log_create(char *fname)
+{
+    os_log_t *olog;
+
+    tbx_type_malloc_clear(olog, os_log_t, 1);
+
+    olog->fname = strdup(fname);
+    assert_result(apr_pool_create(&(olog->mpool), NULL), APR_SUCCESS);
+    apr_thread_mutex_create(&(olog->lock), APR_THREAD_MUTEX_DEFAULT, olog->mpool);
+
+    return(olog);
+}
+
+//***********************************************************************
+// os_log_destroy - Destroys the OS logging service
+//***********************************************************************
+
+void os_log_destroy(os_log_t *olog)
+{
+    if (olog->fname) free(olog->fname);
+    apr_pool_destroy(olog->mpool);
+    free(olog);
+}
+
+//***********************************************************************
+// osrs_log_warm_if_needed - checks the attribute and if it's an attribute
+//      the warmer cares about it logs it.
+//***********************************************************************
+
+int os_log_warm_attr_check(os_log_t *olog, int n_keys, char **key)
+{
+    int i;
+
+    for (i=0; i<n_keys; i++) {
+        if (strncmp("system.", key[i], 7) == 0) {
+            if (strcmp("exnode", key[i]+7) == 0) {
+                return(1);
+            } else if (strcmp("write_error", key[i]+7) == 0) {
+                return(1);
+            }
+        }
+    }
+
+    return(0);
+}
+
+//***********************************************************************
+// osrs_log_warm_if_needed - checks the attribute and if it's an attribute
+//      the warmer cares about it logs it.
+//***********************************************************************
+
+void os_log_warm_if_needed(os_log_t *olog, lio_creds_t *creds, char *fname, int n_keys, char **key, int *v_size)
+{
+    int i;
+
+    for (i=0; i<n_keys; i++) {
+        if (strncmp("system.", key[i], 7) == 0) {
+            if (strcmp("exnode", key[i]+7) == 0) {
+                os_log_printf(olog, 1, creds, "ATTR_WRITE(%s, system.exnode)\n", fname);
+            } else if (strcmp("write_error", key[i]+7) == 0) {
+                if (v_size[i] < 0) {
+                    os_log_printf(olog, 1, creds, "ATTR_REMOVE(%s, system.write_error)\n", fname);
+                } else {
+                    os_log_printf(olog, 1, creds, "ATTR_WRITE(%s, system.write_error)\n", fname);
+                }
+            }
+        }
+    }
 }

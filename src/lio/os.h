@@ -28,6 +28,7 @@
 #include <regex.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "authn.h"
@@ -150,6 +151,20 @@ struct lio_os_virtual_attr_t {
 };
 
 int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat_object);
+
+typedef struct { //** This is used for logging and is defined in os/base.c
+    char *fname;
+    apr_pool_t *mpool;
+    apr_thread_mutex_t *lock;
+    FILE *fd;
+    struct tm tm_open;
+} os_log_t;
+
+void os_log_printf(os_log_t *olog, int do_lock, lio_creds_t *creds, const char *fmt, ...);
+os_log_t *os_log_create(char *fname);
+void os_log_destroy(os_log_t *olog);
+int os_log_warm_attr_check(os_log_t *olog, int n_keys, char **key);
+void os_log_warm_if_needed(os_log_t *olog, lio_creds_t *creds, char *fname, int n_keys, char **key, int *v_size);
 
 #ifdef __cplusplus
 }
