@@ -70,6 +70,8 @@ struct lio_osfile_priv_t {
     char *host_id;
     char *section;
     char *authz_section;
+    char *os_activity;
+    os_log_t *olog;
     gop_thread_pool_context_t *tpc;
     apr_thread_mutex_t **internal_lock;
     lio_os_authz_t *osaz;

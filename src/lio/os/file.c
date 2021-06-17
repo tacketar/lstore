@@ -66,6 +66,7 @@
 static lio_osfile_priv_t osf_default_options = {
     .section = "os_file",
     .base_path = "/lio/osfile",
+    .os_activity = "/lio/log/os.log",
     .internal_lock_size = 200,
     .max_copy = 1024*1024,
     .hardlink_dir_size = 256,
@@ -213,6 +214,7 @@ typedef struct {
     char *dest_path;
     char *id;
     int type;
+    int nolog;
 } osfile_mk_mv_rm_t;
 
 typedef struct {
@@ -1980,6 +1982,23 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
 }
 
 //***********************************************************************
+// osf_get_inode - Get's the inode for the file
+//***********************************************************************
+
+int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath, int ftype, char *inode, int *inode_len)
+{
+    osfile_fd_t fd;
+    int n, atype;
+
+    strncpy(fd.realpath, rpath, sizeof(fd.realpath)-1);
+    fd.object_name = rpath;
+    fd.ftype = ftype;
+
+    n = osf_get_attr(os, creds, &fd, "system.inode", (void **)&inode, inode_len, &atype, NULL, rpath);
+    return(n);
+}
+
+//***********************************************************************
 // osfile_remove_object - Removes an object
 //***********************************************************************
 
@@ -1987,9 +2006,10 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
 {
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-    int ftype;
+    int ftype, inode_len;
     char fname[OS_PATH_MAX];
     char rp[OS_PATH_MAX];
+    char inode[64];
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
@@ -2003,7 +2023,14 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     ftype = lio_os_local_filetype(fname);
     if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) {  //** Regular file so rm the attributes dir and the object
         log_printf(15, "Simple file removal: fname=%s\n", op->src_path);
+        if (!(ftype & OS_OBJECT_SYMLINK)) {
+            inode[0] = '\0'; inode_len = sizeof(inode);
+            osf_get_inode(op->os, op->creds, rp, ftype, inode, &inode_len);
+        }
         status = (osf_object_remove(op->os, fname) == 0) ? gop_success_status : gop_failure_status;
+        if (!(ftype & OS_OBJECT_SYMLINK) && (status.op_status == OP_STATE_SUCCESS)) {
+            os_log_printf(osf->olog, 1, op->creds, "REMOVE(%s, %s)\n", rp, inode);
+        }
     } else {  //** Directory so make sure it's empty
         if (osf_is_empty(fname) != 1) {
             osf_obj_unlock(lock);
@@ -2425,6 +2452,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             free(dir);
             free(base);
         }
+        if (op->nolog == 0) os_log_printf(osf->olog, 1, op->creds, "CREATE(%s,%s)\n", op->src_path, rpath);
     } else {  //** Directory object
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
@@ -2491,6 +2519,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     dop.src_path = op->dest_path;
     dop.type = OS_OBJECT_FILE_FLAG;
     dop.id = op->id;
+    dop.nolog = 1;
     status = osfile_create_object_fn(&dop, id);
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(15, "Failed creating the dest object: %s\n", op->dest_path);
@@ -2513,6 +2542,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     err = symlink(sfname, dfname);
     if (err != 0) log_printf(15, "Failed making symlink %s -> %s  err=%d\n", sfname, dfname, err);
 
+    os_log_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", op->src_path, op->dest_path);
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
 
@@ -2864,6 +2894,8 @@ fail:
         osf_obj_unlock(lock_src);
         if (lock_dest != NULL) osf_obj_unlock(lock_dest);
     }
+
+    os_log_printf(osf->olog, 1, creds, "MOVE(%s, %s)\n", src_path, dest_path);
 
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
@@ -3537,14 +3569,13 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
 }
 
 //***********************************************************************
-// osf_set_ma_links - Does the actual attribute setting when links are
-//       encountered
+// osf_set_multiple_attr_fn - Does the actual attribute setting
 //***********************************************************************
 
 gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
-//gop_op_status_t osf_set_ma_links(void *arg, int id, int first_link)
 {
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     int err, i, atype, n_locks;
     apr_thread_mutex_t *lock_table[op->n+1];
     gop_op_status_t status;
@@ -3557,6 +3588,8 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
     for (i=0; i<op->n; i++) {
         err += osf_set_attr(op->os, op->creds, op->fd, op->key[i], op->val[i], op->v_size[i], &atype, 0);
     }
+
+    os_log_warm_if_needed(osf->olog, op->creds, op->fd->realpath, op->n, op->key, op->v_size);
 
     osf_multi_unlock(lock_table, n_locks);
 
@@ -4046,7 +4079,7 @@ log_printf(0, "open access check: fname=%s rp=%p\n", op->path, op->realpath);
     fd->object_name = op->path;
     fd->id = op->id;
     fd->uuid = op->uuid;
-    strncpy(fd->realpath, rp, OS_PATH_MAX);
+    strncpy(fd->realpath, rp, OS_PATH_MAX-1);
 
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
@@ -4484,6 +4517,7 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "max_copy = %d\n", osf->max_copy);
     fprintf(fd, "hardlink_dir_size = %d\n", osf->hardlink_dir_size);
     fprintf(fd, "authz = %s\n", osf->authz_section);
+    fprintf(fd, "log_activity = %s\n", osf->os_activity);
     fprintf(fd, "\n");
 
     //** Print the AuthZ configuration
@@ -4514,6 +4548,8 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     apr_pool_destroy(osf->mpool);
 
+    if (osf->olog) os_log_destroy(osf->olog);
+    if (osf->os_activity) free(osf->os_activity);
     if (osf->authz_section) free(osf->authz_section);
     if (osf->section) free(osf->section);
     free(osf->host_id);
@@ -4556,8 +4592,10 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         osf->internal_lock_size = 200;
         osf->max_copy = 1024*1024;
         osf->hardlink_dir_size = 256;
+        osf->os_activity = strdup(osf_default_options.os_activity);
     } else {
         osf->base_path = tbx_inip_get_string(fd, section, "base_path", osf_default_options.base_path);
+        osf->os_activity = tbx_inip_get_string(fd, section, "log_activity", osf_default_options.os_activity);
         osf->internal_lock_size = tbx_inip_get_integer(fd, section, "lock_table_size", osf_default_options.internal_lock_size);
         osf->max_copy = tbx_inip_get_integer(fd, section, "max_copy", osf_default_options.max_copy);
         osf->hardlink_dir_size = tbx_inip_get_integer(fd, section, "hardlink_dir_size", osf_default_options.hardlink_dir_size);
@@ -4776,6 +4814,9 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
             }
         }
     }
+
+    //** Make the activity log
+    osf->olog = os_log_create(osf->os_activity);
 
     return(os);
 }
