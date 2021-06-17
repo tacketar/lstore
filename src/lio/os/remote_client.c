@@ -2157,7 +2157,7 @@ gop_op_status_t osrc_response_open(void *task_arg, int tid)
 
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
     if (status.op_status == OP_STATE_SUCCESS) {
-        tbx_type_malloc(fd, osrc_object_fd_t, 1);
+        tbx_type_malloc_clear(fd, osrc_object_fd_t, 1);
         fd->os = arg->os;
         gop_mq_get_frame(gop_mq_msg_next(task->response), (void **)&data, &(fd->size));
         tbx_type_malloc(fd->data, char, fd->size);
