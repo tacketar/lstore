@@ -143,6 +143,7 @@ set(LSTORE_PROJECT_OBJS
 		trace.c
 		trace_replay.c
 		view_base.c
+		warmer_helpers.c
         ${ROCKSDB_CANCEL}
 )
 
