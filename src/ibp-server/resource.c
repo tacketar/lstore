@@ -268,6 +268,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.restart_grace_period = 2 * 24 * 3600;
     res.n_partitions = n_partitions;
     res.n_history = 16;
+    res.n_lru = 100000;
     res.lru_history_bytes = sizeof(lru_history_t) + 3*res.n_history*sizeof(apr_time_t);
     res.rescan_interval = 24 * 3600;
     res.chksum_blocksize = 64 * 1024;
