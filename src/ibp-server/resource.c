@@ -254,7 +254,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.rwm_mode = RES_MODE_WRITE | RES_MODE_READ | RES_MODE_MANAGE;
     res.preallocate = 0;
     res.minfree = (ibp_off_t) 10 *1024 * 1024 * 1024;   //Default to 10GB free
-    res.update_alloc = 1;
+    res.update_alloc = 0;
     res.remove_mangled = 0;
     res.enable_read_history = 1;
     res.enable_write_history = 1;
@@ -267,7 +267,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     res.preexpire_grace_period = 24 * 3600;
     res.restart_grace_period = 2 * 24 * 3600;
     res.n_partitions = n_partitions;
-    res.n_history = 16;
+    res.n_history = 32;
     res.n_lru = 100000;
     res.lru_history_bytes = sizeof(lru_history_t) + 3*res.n_history*sizeof(apr_time_t);
     res.rescan_interval = 24 * 3600;
