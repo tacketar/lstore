@@ -301,6 +301,12 @@ tbx_lru_t *tbx_lru_create(int n_objects, tbx_lru_key_fn_t get_key, tbx_lru_clone
 {
     tbx_lru_t *lru;
 
+    if (n_objects <= 0) {
+        fprintf(stderr, "ERROR: n_objects=%d\n", n_objects);
+        fflush(stderr);
+        return(NULL);
+    }
+
     tbx_type_malloc_clear(lru, tbx_lru_t, 1);
     lru->que = tbx_stack_new();
     lru->unused = tbx_stack_new();
