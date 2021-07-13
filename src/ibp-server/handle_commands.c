@@ -721,13 +721,14 @@ int handle_status(ibp_task_t *task)
 
     char buffer[100 * 1024];
     char result[100 * 1024];
+    char pp1[16], pp2[16], pp3[16], pp4[16], pp5[16];
     char *prid;
     uint64_t total, total_used, total_diff, total_free, rbytes, wbytes, cbytes;
     uint64_t r_total, r_diff, r_free, r_used, r_alloc, r_alias, total_alloc, total_alias;
     uint64_t del_total, exp_total, n_del_total, n_exp_total;
     uint64_t del_free, exp_free, n_del, n_exp;
-    uint64_t bad_count, bad_total_count;
-    double r_total_gb, r_diff_gb, r_free_gb, r_used_gb;
+    uint64_t bad_count, bad_total_count, ui;
+    int base = 1024;
     tbx_ns_timeout_t dt;
     resource_list_iterator_t it;
     Resource_t *r;
@@ -736,7 +737,6 @@ int handle_status(ibp_task_t *task)
 
     debug_printf(1, "handle_status: Starting to process command timoue=" TT "\n",
                  task->cmd_timeout);
-
 
     if (status->subcmd == IBP_ST_VERSION) {
         alog_append_status_version(task->myid);
@@ -774,8 +774,9 @@ int handle_status(ibp_task_t *task)
         result[sizeof(result)-1] = '\0';
 
         //** Add some stats **
-        snprintf(buffer, sizeof(buffer) - 1, "Total Commands: " LU "  Connections: %d\n",
-                 task->tid, tbx_network_counter(global_network));
+        ui = tbx_network_counter(global_network);
+        snprintf(buffer, sizeof(buffer) - 1, "Total Commands: " LU " (%s)  Connections: " LU " (%s)\n",
+                 task->tid, tbx_stk_pretty_print_double_with_scale(1000, (double)task->tid, pp1), ui, tbx_stk_pretty_print_double_with_scale(1000, (double)ui, pp2));
         strncat(result, buffer, sizeof(result) - 1 - strlen(result));
         result[sizeof(result)-1] = '\0';
         snprintf(buffer, sizeof(buffer) - 1, "Active Threads: %d\n", currently_running_tasks());
@@ -816,19 +817,16 @@ int handle_status(ibp_task_t *task)
         //** Now do th4e transfer stats
         get_transfer_stats(&rbytes, &wbytes, &cbytes);
         total = rbytes + wbytes;
-        r_total_gb = total / (1024.0 * 1024.0 * 1024.0);
-        r_used_gb = rbytes / (1024.0 * 1024.0 * 1024.0);
-        r_free_gb = wbytes / (1024.0 * 1024.0 * 1024.0);
         snprintf(buffer, sizeof(buffer) - 1,
-                 "Depot Transfer Stats --  Read: " LU " b (%.2lf GB) Write: " LU
-                 " b (%.2lf GB) Total: " LU " b (%.2lf GB)\n", rbytes, r_used_gb, wbytes,
-                 r_free_gb, total, r_total_gb);
+                 "Depot Transfer Stats --  Read: " LU " b (%s) Write: " LU
+                 " b (%s) Total: " LU " b (%s)\n", rbytes, tbx_stk_pretty_print_double_with_scale(base, (double)rbytes, pp1),
+                 wbytes, tbx_stk_pretty_print_double_with_scale(base, (double)wbytes, pp2),
+                 total, tbx_stk_pretty_print_double_with_scale(base, (double)total, pp3));
         strncat(result, buffer, sizeof(result) - 1 - strlen(result));
         result[sizeof(result)-1] = '\0';
 
-        r_total_gb = cbytes / (1024.0 * 1024.0 * 1024.0);
-        snprintf(buffer, sizeof(buffer) - 1, "Depot-Depot copies: " LU " b (%.2lf GB)\n", cbytes,
-                 r_total_gb);
+        snprintf(buffer, sizeof(buffer) - 1, "Depot-Depot copies: " LU " b (%s)\n", cbytes,
+                  tbx_stk_pretty_print_double_with_scale(base, (double)cbytes, pp1));
         strncat(result, buffer, sizeof(result) - 1 - strlen(result));
         result[sizeof(result)-1] = '\0';
 
@@ -878,51 +876,49 @@ int handle_status(ibp_task_t *task)
             n_del_total = n_del_total + n_del;
             n_exp_total = n_exp_total + n_exp;
 
-            r_total_gb = r_total / (1024.0 * 1024.0 * 1024.0);
-            r_used_gb = r_used / (1024.0 * 1024.0 * 1024.0);
-            r_diff_gb = r_diff / (1024.0 * 1024.0 * 1024.0);
-            r_free_gb = r_free / (1024.0 * 1024.0 * 1024.0);
+            ui = resource_get_counter(r);
             snprintf(buffer, sizeof(buffer) - 1,
-                     "RID: %s Max: " LU " b (%.2lf GB) Used: " LU " b (%.2lf GB) Diff: " LU
-                     " b (%.2lf GB) Free: " LU " b (%.2lf GB) Allocations: " LU " (" LU
-                     " alias) Corrupt count: " LU " Activity count: " AIT "\n", r->name, r_total,
-                     r_total_gb, r_used, r_used_gb, r_diff, r_diff_gb, r_free, r_free_gb, r_alloc,
-                     r_alias, bad_count, resource_get_counter(r));
+                     "RID: %s Max: " LU " b (%s) Used: " LU " b (%s) Diff: " LU
+                     " b (%s) Free: " LU " b (%s) Allocations: " LU " (" LU
+                     " alias) Corrupt count: " LU " Activity count: " LU " (%s)\n", r->name, r_total,
+                      tbx_stk_pretty_print_double_with_scale(base, r_total, pp1), r_used,  tbx_stk_pretty_print_double_with_scale(base, r_used, pp2),
+                      r_diff,  tbx_stk_pretty_print_double_with_scale(base, r_diff, pp3),
+                      r_free,  tbx_stk_pretty_print_double_with_scale(base, r_free, pp4), r_alloc,
+                     r_alias, bad_count, ui,  tbx_stk_pretty_print_double_with_scale(base, (double)ui, pp5));
             strncat(result, buffer, sizeof(result) - 1 - strlen(result));
             result[sizeof(result)-1] = '\0';
 
-            r_diff_gb = exp_free / (1024.0 * 1024.0 * 1024.0);
-            r_free_gb = del_free / (1024.0 * 1024.0 * 1024.0);
             snprintf(buffer, sizeof(buffer) - 1,
-                     "Trash stats for RID: %s -- Deleted: " LU " b (%.2lf GB) in " LU
-                     " files  -- Expired: " LU " b (%.2lf GB) in " LU " files\n", r->name,
-                     del_free, r_free_gb, n_del, exp_free, r_diff_gb, n_exp);
+                     "Trash stats for RID: %s -- Deleted: " LU " b (%s) in " LU
+                     " files  -- Expired: " LU " b (%s) in " LU " files\n", r->name,
+                     del_free,  tbx_stk_pretty_print_double_with_scale(base, (double)del_free, pp1), n_del, exp_free,  tbx_stk_pretty_print_double_with_scale(base, (double)exp_free, pp2), n_exp);
             strncat(result, buffer, sizeof(result) - 1 - strlen(result));
             result[sizeof(result)-1] = '\0';
         }
         resource_list_iterator_destroy(global_config->rl, &it);
 
-        r_total_gb = total / (1024.0 * 1024.0 * 1024.0);
-        r_used_gb = total_used / (1024.0 * 1024.0 * 1024.0);
-        r_diff_gb = total_diff / (1024.0 * 1024.0 * 1024.0);
-        r_free_gb = total_free / (1024.0 * 1024.0 * 1024.0);
+//        r_total_gb = total / (1024.0 * 1024.0 * 1024.0);
+//        r_used_gb = total_used / (1024.0 * 1024.0 * 1024.0);
+//        r_diff_gb = total_diff / (1024.0 * 1024.0 * 1024.0);
+//        r_free_gb = total_free / (1024.0 * 1024.0 * 1024.0);
         i = resource_list_n_used(global_config->rl);
         snprintf(buffer, sizeof(buffer) - 1,
-                 "Total resources: %d  Max: " LU " b (%.2lf GB) Used: " LU " b (%.2lf GB) Diff: "
-                 LU " b (%.2lf GB) Free: " LU " b (%.2lf GB) Allocations: " LU " (" LU
-                 " alias)  Corrupt count: " LU "\n", i, total, r_total_gb, total_used, r_used_gb,
-                 total_diff, r_diff_gb, total_free, r_free_gb, total_alloc, total_alias,
+                 "Total resources: %d  Max: " LU " b (%s) Used: " LU " b (%s) Diff: "
+                 LU " b (%s) Free: " LU " b (%s) Allocations: " LU " (" LU
+                 " alias)  Corrupt count: " LU "\n", i, total,  tbx_stk_pretty_print_double_with_scale(base, (double)total, pp1),
+                 total_used,  tbx_stk_pretty_print_double_with_scale(base, (double)total_used, pp2),
+                 total_diff,  tbx_stk_pretty_print_double_with_scale(base, (double)total_diff, pp3),
+                 total_free,  tbx_stk_pretty_print_double_with_scale(base, (double)total_free, pp4),
+                 total_alloc, total_alias,
                  bad_total_count);
         strncat(result, buffer, sizeof(result) - 1 - strlen(result));
         result[sizeof(result)-1] = '\0';
 
 
-        r_free_gb = del_total / (1024.0 * 1024.0 * 1024.0);
-        r_diff_gb = exp_total / (1024.0 * 1024.0 * 1024.0);
         snprintf(buffer, sizeof(buffer) - 1,
-                 "Total Trash stats -- Deleted: " LU " b (%.2lf GB) in " LU " files  -- Expired: "
-                 LU " b (%.2lf GB) in " LU " files\n", del_total, r_free_gb, n_del_total,
-                 exp_total, r_diff_gb, n_exp_total);
+                 "Total Trash stats -- Deleted: " LU " b (%s) in " LU " files  -- Expired: "
+                 LU " b (%s) in " LU " files\n", del_total,  tbx_stk_pretty_print_double_with_scale(base, (double)del_total, pp1), n_del_total,
+                 exp_total,  tbx_stk_pretty_print_double_with_scale(base, (double)exp_total, pp2), n_exp_total);
         strncat(result, buffer, sizeof(result) - 1 - strlen(result));
         result[sizeof(result)-1] = '\0';
 
