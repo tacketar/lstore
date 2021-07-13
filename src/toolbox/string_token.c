@@ -524,20 +524,20 @@ char *tbx_stk_pretty_print_double_with_scale_full(int base, double value, char *
             if (fixed_size) {
                 sprintf(buffer, "%7.3lf  ", n);
             } else {
-                sprintf(buffer, "%7.3lf", n);
+                sprintf(buffer, "%.3lf", n);
             }
         } else {
-            sprintf(buffer, "%7.3lf%ci", n, unit[i]);
+            sprintf(buffer, "%.3lf%ci", n, unit[i]);
         }
     } else {
         if (i == 0) {
             if (fixed_size) {
                 sprintf(buffer, "%7.3lf ", n);
             } else {
-                sprintf(buffer, "%7.3lf", n);
+                sprintf(buffer, "%.3lf", n);
             }
         } else {
-            sprintf(buffer, "%7.3lf%c", n, unit[i]);
+            sprintf(buffer, "%.3lf%c", n, unit[i]);
         }
     }
 
