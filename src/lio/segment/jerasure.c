@@ -1890,8 +1890,8 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
 
     gop_opque_free(q, OP_DESTROY);
 
-    //** See if we need to retry without blacklisting enabled
-    if (((soft_error == 2) || (hard_error > 0)) && (s->blacklist) && (loop == 0)) {
+    //** See if we need to retry because of a hard error or an almost hard_error (soft_error=2)
+    if (((soft_error == 2) || (hard_error > 0)) && (loop == 0)) {
         log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
