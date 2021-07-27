@@ -337,15 +337,17 @@ void check_snap_merge(Resource_t *r, rebuild_lut_t *d)
     //** Just blindly copy over the merge history info
     //** Dups should be the same so no harm done just some wasted ops
     //** Remember this is just called when we don't have all the fields in the startup rebuild
-    lru_history_populate_merge(r, d->id);
+    if (r->db_merge_valid) lru_history_populate_merge(r, d->id);
 
     //** This will properly delete the old records
     lru_history_populate(r, d->id, lh);
 
     //** If we're missing the actual allocation in the primary DB add it if possible
-    if (!(d->found & REBUILD_FOUND_DB)) {
-        if (_get_alloc_with_id_db(&(r->db_merge), d->id, &a) == 0) {
-            d->a = a;
+    if (r->db_merge_valid) {
+        if (!(d->found & REBUILD_FOUND_DB)) {
+            if (_get_alloc_with_id_db(&(r->db_merge), d->id, &a) == 0) {
+                d->a = a;
+            }
         }
     }
 }
