@@ -123,7 +123,11 @@ void warmer_query_rid(char *rid_key, warm_db_t *inode_db, warm_db_t *rid_db, int
         buf = (char *)rocksdb_get(inode_db->db, inode_db->ropt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
         if (nbytes == 0) { goto next; }
 
-        if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) { goto next; }
+        if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) {
+            free(buf);
+            goto next;
+        }
+        free(buf);
 
         if ((state & mode) > 0) {
             if (fonly == 1) {
@@ -153,6 +157,7 @@ next:
 
     //** Cleanup
     rocksdb_iter_destroy(it);
+    free(match);
 }
 
 //*************************************************************************
