@@ -117,7 +117,21 @@ typedef struct local_object_iter_t local_object_iter_t;
 typedef struct lio_osrc_priv_t lio_osrc_priv_t;
 typedef struct lio_osrs_priv_t lio_osrs_priv_t;
 
-// Functions
+// OS logging
+
+typedef struct os_log_s os_log_t;
+typedef struct os_log_iter_s os_log_iter_t;
+
+LIO_API void os_log_printf(os_log_t *olog, int do_lock, lio_creds_t *creds, const char *fmt, ...);
+LIO_API os_log_t *os_log_create(char *fname);
+LIO_API void os_log_destroy(os_log_t *olog);
+LIO_API char *os_log_iter_next(os_log_iter_t *oli);
+LIO_API void os_log_iter_current_time(os_log_iter_t *oli, int *year, int *month, int *day, int *line);
+LIO_API os_log_iter_t *os_log_iter_create(char *prefix, int year, int month, int day, int line);
+LIO_API void os_log_iter_destroy(os_log_iter_t *oli);
+
+
+// More generic Functions
 LIO_API char *lio_os_glob2regex(char *glob);
 LIO_API int lio_os_local_filetype(char *path);
 LIO_API lio_os_regex_table_t *lio_os_path_glob2regex(char *path);

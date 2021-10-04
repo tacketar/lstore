@@ -624,6 +624,152 @@ void os_log_destroy(os_log_t *olog)
 }
 
 //***********************************************************************
+//  oli_open - Opens the preconfigured OS log file and positions the iterator
+//      to the next line.  Returns 0 on success
+//***********************************************************************
+
+int oli_open(os_log_iter_t *oli)
+{
+    char fname[OS_PATH_MAX+1];
+    int i;
+
+    snprintf(fname, OS_PATH_MAX, "%s.%04d-%02d-%02d", oli->prefix, oli->year, oli->month, oli->day); fname[OS_PATH_MAX] = '\0';
+    oli->fd = fopen(fname, "r");
+    if (oli->fd == NULL) return(-1);
+
+    //** Skip to the requested line
+    for (i=0; i<oli->line; i++) {
+        if (fgets(oli->buffer, sizeof(oli->buffer), oli->fd) == NULL) {
+            log_printf(0, "Reached EOF while skipping lines. Moving to line %d fgets=NULL on line %d  fname=%s\n", oli->line, i, fname);
+        }
+    }
+    return(0);
+}
+
+//***********************************************************************
+// oli_next_fd - Attempts to open the next log file. On success 1 is
+//     returned otherwise 0 signifies no other logs are available
+//***********************************************************************
+
+int oli_next_fd(os_log_iter_t *oli)
+{
+    time_t now, dt;
+    struct tm tm_dt;
+
+    now = time(NULL);
+
+    memset(&tm_dt, 0, sizeof(struct tm));
+    tm_dt.tm_year = oli->year - 1900;
+    tm_dt.tm_mon = oli->month - 1;
+    tm_dt.tm_mday = oli->day + 1;
+    tm_dt.tm_isdst = 0;
+    dt = mktime(&tm_dt);
+
+    while (dt < now) {
+        oli->year = tm_dt.tm_year + 1900;
+        oli->month = tm_dt.tm_mon + 1;
+        oli->day = tm_dt.tm_mday;
+        oli->line = 0;
+        if (oli_open(oli) == 0) return(1);
+
+        //** If we made it here no valid file so skip to the next
+        tm_dt.tm_mday++;
+        dt = mktime(&tm_dt);
+    }
+
+    return(0);
+}
+
+//***********************************************************************
+// oli_next_entry - Attempts to read the next entry fro mthe log file.
+//     If the EOF is reached NULL is returned and the oli FD is closed.
+//     A subsequent call to oli_next_fd() will attempt to move to the next
+//     file.
+//***********************************************************************
+
+char *oli_next_entry(os_log_iter_t *oli)
+{
+    char *entry;
+    int n;
+
+    if (!oli->fd) return(NULL);
+
+    entry = fgets(oli->buffer, sizeof(oli->buffer), oli->fd);
+    if (entry) {
+        oli->line++;
+        n = strlen(entry);
+        if (entry[n-1] == '\n') entry[n-1] = '\0';
+        return(entry);
+    }
+
+    //** Nothing left in the file so cleanup and return;
+    fclose(oli->fd);
+    oli->fd = NULL;
+    return(NULL);
+}
+
+//***********************************************************************
+// os_log_iter_next - Returns the next line of text in the log
+//***********************************************************************
+
+char *os_log_iter_next(os_log_iter_t *oli)
+{
+    char *entry;
+
+again:
+    if (oli->fd == NULL) { //** Open the next log file
+        if (oli_next_fd(oli) == 0) return(NULL);
+    }
+
+    entry = oli_next_entry(oli);
+    if (entry == NULL) goto again;
+
+    return(entry);
+}
+
+//***********************************************************************
+// os_log_iter_current_time - Returns the current timestamp/line just returned
+//***********************************************************************
+
+void os_log_iter_current_time(os_log_iter_t *oli, int *year, int *month, int *day, int *line)
+{
+    *year = oli->year;
+    *month = oli->month;
+    *day = oli->day;
+    *line = oli->line;
+}
+
+//***********************************************************************
+// os_log_iter_create - Creates a log iterator
+//***********************************************************************
+
+os_log_iter_t *os_log_iter_create(char *prefix, int year, int month, int day, int line)
+{
+    os_log_iter_t *oli;
+
+    tbx_type_malloc_clear(oli, os_log_iter_t, 1);
+    oli->prefix = strdup(prefix);
+    oli->year = year;
+    oli->month = month;
+    oli->day = day;
+    oli->line = line;
+    oli_open(oli);
+
+    return(oli);
+}
+
+//***********************************************************************
+// os_log_iter_destroy - Destroys a log iterator
+//***********************************************************************
+
+void os_log_iter_destroy(os_log_iter_t *oli)
+{
+    if (oli->fd) fclose(oli->fd);
+    if (oli->prefix) free(oli->prefix);
+    free(oli);
+}
+
+//***********************************************************************
 // osrs_log_warm_if_needed - checks the attribute and if it's an attribute
 //      the warmer cares about it logs it.
 //***********************************************************************
@@ -650,20 +796,28 @@ int os_log_warm_attr_check(os_log_t *olog, int n_keys, char **key)
 //      the warmer cares about it logs it.
 //***********************************************************************
 
-void os_log_warm_if_needed(os_log_t *olog, lio_creds_t *creds, char *fname, int n_keys, char **key, int *v_size)
+void os_log_warm_if_needed(os_log_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size)
 {
     int i;
+    char *etext;
+
+    //** We only get realpaths so unset the symlink flag if set
+    if (ftype & OS_OBJECT_SYMLINK_FLAG) ftype = ftype ^ OS_OBJECT_SYMLINK_FLAG;
 
     for (i=0; i<n_keys; i++) {
         if (strncmp("system.", key[i], 7) == 0) {
             if (strcmp("exnode", key[i]+7) == 0) {
-                os_log_printf(olog, 1, creds, "ATTR_WRITE(%s, system.exnode)\n", fname);
-            } else if (strcmp("write_error", key[i]+7) == 0) {
+                etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
+                os_log_printf(olog, 1, creds, "ATTR_WRITE(system.exnode, %d, %s)\n", ftype, etext);
+                if (etext) free(etext);
+            } else if (strcmp("write_errors", key[i]+7) == 0) {
+                etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
                 if (v_size[i] < 0) {
-                    os_log_printf(olog, 1, creds, "ATTR_REMOVE(%s, system.write_error)\n", fname);
+                    os_log_printf(olog, 1, creds, "ATTR_REMOVE(system.write_errors, %d, %s)\n", ftype, fname);
                 } else {
-                    os_log_printf(olog, 1, creds, "ATTR_WRITE(%s, system.write_error)\n", fname);
+                    os_log_printf(olog, 1, creds, "ATTR_WRITE(system.write_errors, %d, %s)\n", ftype, fname);
                 }
+                if (etext) free(etext);
             }
         }
     }
