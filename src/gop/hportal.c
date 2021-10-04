@@ -250,7 +250,7 @@ int submit_shutdown(gop_portal_context_t *hpc)
     for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
 	    for (hc = tbx_stack_top_first(hp->conn_list); hc != NULL; hc = tbx_stack_next_down(hp->conn_list)) {
-            if (hc->state == 1) {
+            if ((hc->state == 1) || (hc->state == 0)) {  //**1=Up, 0=trying to come up
                 n++;
                 hc->state = 2;
                 tbx_que_put(hc->incoming, &cmd, dt);
