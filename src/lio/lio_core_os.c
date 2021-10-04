@@ -725,12 +725,12 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     lio_mk_mv_rm_t *op = (lio_mk_mv_rm_t *)arg;
     os_fd_t *dfd;
     gop_opque_t *q;
-    int err;
+    int err, i;
     ex_id_t ino;
     char inode[32];
     gop_op_status_t status;
-    char *lkeys[] = {"system.exnode", "system.exnode.size"};
-    char *spath[2];
+    char *lkeys[] = {"system.exnode", "system.exnode.size", "system.write_errors", "system.soft_errors", "system.hard_errors"};
+    char *spath[5];
     char *vkeys[] = {"system.owner", "system.inode", "os.timestamp.system.create", "os.timestamp.system.modify_data", "os.timestamp.system.modify_attr"};
     char *val[5];
     int vsize[5];
@@ -764,9 +764,8 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     }
 
     //** Now link the exnode and size
-    spath[0] = op->src_path;
-    spath[1] = op->src_path;
-    gop_opque_add(q, os_symlink_multiple_attrs(op->lc->os, op->creds, spath, lkeys, dfd, lkeys, 2));
+    for (i=0; i<5; i++) spath[i] = op->src_path;
+    gop_opque_add(q, os_symlink_multiple_attrs(op->lc->os, op->creds, spath, lkeys, dfd, lkeys, 5));
 
     //** Store the owner, inode, and dates
     val[0] = an_cred_get_id(op->creds, &vsize[0]);
