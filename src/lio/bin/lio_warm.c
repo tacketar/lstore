@@ -248,8 +248,10 @@ void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
             free(cap[i]);
             wr->good++;
             inode[i]->n_good++;
+            warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_SUCCESS);
+        } else {
+            warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_FAIL);
         }
-        warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], 0);
 
         inode[i]->n_left--;
         if (inode[i]->n_left == 0) object_warm_finish(w, inode[i]);
@@ -631,7 +633,7 @@ int main(int argc, char **argv)
     inode_entry_t **inode_list;
     tbx_que_t *que, *que_setattr;
     apr_thread_t *sa_thread;
-    char *keys[] = { "system.exnode", "system.write_errors", "system.inode" };
+    char *keys[] = { "system.exnode", "system.inode", "system.write_errors" };
     char *vals[3];
     char *db_base = "/lio/log/warm";
     int slot, v_size[3];
@@ -820,21 +822,21 @@ int main(int argc, char **argv)
             inode->exnode = vals[0];
             inode->write_err = 0;
 
-            if (v_size[1] != -1) {
+            if (v_size[2] != -1) {
                 werr++;
                 inode->write_err = 1;
                 info_printf(lio_ifd, 0, "WRITE_ERROR for file %s\n", fname);
-                if (vals[1] != NULL) {
-                    free(vals[1]);
-                    vals[1] = NULL;
+                if (vals[2] != NULL) {
+                    free(vals[2]);
+                    vals[2] = NULL;
                 }
             }
 
             inode->inode = 0;
-            if (v_size[2] > 0) {
-               sscanf(vals[2], XIDT, &(inode->inode));
-               free(vals[2]);
-               vals[2] = NULL;
+            if (v_size[1] > 0) {
+               sscanf(vals[1], XIDT, &(inode->inode));
+               free(vals[1]);
+               vals[1] = NULL;
             }
 
             vals[0] = NULL;
@@ -881,12 +883,11 @@ int main(int argc, char **argv)
 
     //** and wait for them to complete
     apr_status_t val;
-    good = bad = werr = missing_err = 0;
+    good = bad = 0;
     for (i=0; i<n_warm; i++) {
         apr_thread_join(&val, w[i].thread);
         good += w[i].good;
         bad += w[i].bad;
-        werr += w[i].werr;
     }
 
     tbx_que_set_finished(que_setattr);  //** Let the setattr thread know we are done
