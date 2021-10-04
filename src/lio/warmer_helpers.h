@@ -25,13 +25,18 @@
 extern "C" {
 #endif
 
+#include <lio/visibility.h>
+#include <tbx/type_malloc.h>
+#include <tbx/varint.h>
+
 #define WFE_SUCCESS   1
 #define WFE_FAIL      2
 #define WFE_WRITE_ERR 4
 
-#include <lio/visibility.h>
-#include <tbx/type_malloc.h>
-#include <tbx/varint.h>
+#define DB_OPEN_EXISTS            0  //** Open's an existing DB - No creating a DB if mising
+#define DB_OPEN_WIPE_CLEAN        1  //** New DB always.  Wipes it clean if it already exists
+#define DB_OPEN_CREATE_IF_NEEDED  2  //** Fresh blank DB ONLY if the DB doesn't exist - Creates an empty DB if missing otherwise use the existing DB (no wiping)
+#define DB_OPEN_CREATE_ONLY       3  //** Always creates the DB. Fails if it already exists
 
 //**Hack until packaged version of RocksDB catches up with git
 #ifdef _ROCKSDB_CANCEL_MISSING
@@ -45,6 +50,31 @@ typedef struct {  //** PREP databases
     rocksdb_readoptions_t  *ropt;
 } warm_db_t;
 
+typedef struct {  //** PREP databases
+    warm_db_t *inode;
+    warm_db_t *rid;
+    warm_db_t *write_errors;
+    warm_db_t *missing_exnode_errors;
+    rocksdb_comparator_t *inode_cmp;
+    rocksdb_comparator_t *rid_cmp;
+    int n_partitions;
+} warm_prep_db_t;
+
+typedef struct {
+    ex_id_t id;
+    int rid_len;
+    int mcap_len;
+    char strings[];
+} rid_prep_key_t;
+
+typedef struct {
+    int n_allocs;
+    int n_rids;
+    int fname_len;
+    int rid_list_len;
+    char strings[];
+} inode_value_t;
+
 //** These are helpers for lio_wamer and warmer_query *******
 LIO_API int open_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
 LIO_API void close_warm_db(warm_db_t *inode, warm_db_t *rid);
@@ -53,12 +83,15 @@ LIO_API int warm_parse_inode(char *buf, int bufsize, int *state, int *nfailed, c
 LIO_API int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
 LIO_API int warm_parse_rid(char *buf, int bufsize, ex_id_t *inode, ex_off_t *nbytes,int *state);
 LIO_API void create_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
-
-typedef struct {  //** PREP databases
-    rocksdb_t *inode;
-    rocksdb_t *rid;
-    rocksdb_t *write_errors;
-} warm_prep_db_t;
+LIO_API warm_prep_db_t *open_prep_db(char *db_dir, int mode, int n_partitions);
+LIO_API void close_prep_db(warm_prep_db_t *wdb);
+LIO_API warm_prep_db_t *create_prep_db(char *db_dir, int n_partitions);
+LIO_API void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, char *mcap, ex_off_t nbytes);
+LIO_API int prep_warm_rid_db_parse(warm_prep_db_t *wdb, char *buffer, int blen, ex_id_t *inode, char **rid_key, char **mcap);
+LIO_API void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int n_allocs, apr_hash_t *rids, int free_rids);
+LIO_API void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, char **vals, int *v_size);
+LIO_API void warm_prep_put_timestamp(char *prefix, int year, int month, int day, int line);
+LIO_API int warm_prep_get_timestamp(char *prefix, int *year, int *month, int *day, int *line);
 
 #ifdef __cplusplus
 }
