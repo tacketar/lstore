@@ -527,7 +527,11 @@ char *tbx_stk_pretty_print_double_with_scale_full(int base, double value, char *
                 sprintf(buffer, "%.3lf", n);
             }
         } else {
-            sprintf(buffer, "%.3lf%ci", n, unit[i]);
+            if (fixed_size) {
+                sprintf(buffer, "%7.3lf%ci", n, unit[i]);
+            } else {
+                sprintf(buffer, "%.3lf%ci", n, unit[i]);
+            }
         }
     } else {
         if (i == 0) {
@@ -537,7 +541,11 @@ char *tbx_stk_pretty_print_double_with_scale_full(int base, double value, char *
                 sprintf(buffer, "%.3lf", n);
             }
         } else {
-            sprintf(buffer, "%.3lf%c", n, unit[i]);
+            if (fixed_size) {
+                sprintf(buffer, "%7.3lf%c", n, unit[i]);
+            } else {
+                sprintf(buffer, "%.3lf%c", n, unit[i]);
+            }
         }
     }
 
