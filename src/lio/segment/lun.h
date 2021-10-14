@@ -46,9 +46,11 @@ struct lio_seglun_priv_t {
     ex_off_t max_row_size;
     ex_off_t chunk_size;
     ex_off_t stripe_size;
+    ex_off_t crypt_chunk_scale;
     apr_time_t grow_time;
     rs_query_t *rsq;
     gop_thread_pool_context_t *tpc;
+    int crypt_enabled;
     int grow_count;
     int n_devices;
     int n_shift;
@@ -62,6 +64,8 @@ struct lio_seglun_priv_t {
     lio_data_service_fn_t *ds;
     tbx_stack_t *db_cleanup;
     lio_blacklist_t *bl;
+    char *crypt_key;
+    char *crypt_nonce;
 };
 
 

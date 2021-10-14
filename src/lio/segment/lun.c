@@ -37,6 +37,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string.h>
+#include <sodium.h>
+#include <zmq.h>
 #include <tbx/append_printf.h>
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
@@ -131,18 +133,75 @@ typedef struct {
 } seglun_clone_t;
 
 typedef struct {
+    lio_seglun_priv_t *s;
     gop_op_generic_t *gop;
     ex_tbx_iovec_t *ex_iov;
     tbx_iovec_t *iov;
     seglun_block_t *block;
+    char *crypt_buffer;
     tbx_tbuf_t buffer;
+    tbx_tbuf_t tbuf_crypt;
     int n_ex;
     int c_ex;
     int n_iov;
     int c_iov;
     int retries;
+    int crypt_flush;
     ex_off_t len;
+    ex_off_t prev_bufoff;
+    ex_off_t prev_lunoff;
+    ex_off_t slot_total_pos;
+    ex_off_t curr_slot;
+    ex_off_t *lun_offset;
 } lun_rw_row_t;
+
+#define SLUN_CRYPT_KEY_LEN   crypto_stream_xchacha20_KEYBYTES
+#define SLUN_CRYPT_NONCE_LEN crypto_stream_xchacha20_NONCEBYTES
+
+//***********************************************************************
+// crypt_newkeys - Generates a new key and nonce for use in encryption
+//***********************************************************************
+
+void crypt_newkeys(char **key, char **nonce)
+{
+    if (key) {
+        tbx_type_malloc(*key, char, crypto_stream_xchacha20_KEYBYTES);
+        tbx_random_get_bytes(*key, crypto_stream_xchacha20_KEYBYTES);
+    }
+    if (nonce) {
+        tbx_type_malloc_clear(*nonce, char, crypto_stream_xchacha20_NONCEBYTES);
+        tbx_random_get_bytes(*nonce, crypto_stream_xchacha20_NONCEBYTES);
+    }
+}
+
+
+//***********************************************************************
+//  crypt_bin2etext - Converts a crypto key from binary to escaped text
+//***********************************************************************
+
+char *crypt_bin2etext(char *bin, int len)
+{
+    char z85[2*len];
+
+    zmq_z85_encode(z85, (unsigned char *)bin, len);
+    return(tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', z85));
+}
+
+//***********************************************************************
+//  crypt_etext2bin - Converts a crypto key from escaped text to binary
+//***********************************************************************
+
+char *crypt_etext2bin(char *etext, int len)
+{
+    char *text, *bin;
+
+    text = tbx_stk_unescape_text('\\', etext);  //** Unescape it
+    tbx_type_malloc_clear(bin, char, len);
+    zmq_z85_decode((unsigned char *)bin, text);
+    free(text);
+
+    return(bin);
+}
 
 //***********************************************************************
 // _slun_perform_remap - Does a cap remap
@@ -1066,6 +1125,12 @@ finished:
     s->total_size = new_size;
     s->used_size = new_used;
 
+    if ((s->total_size == 0) && (s->crypt_enabled > 0)) { //** Truncate to 0 so re-generate encryption keys if enabled
+        if (s->crypt_key) free(s->crypt_key);
+        if (s->crypt_nonce) free(s->crypt_nonce);
+        crypt_newkeys(&(s->crypt_key), &(s->crypt_nonce));
+    }
+
     if (err == OP_STATE_SUCCESS) {
         status = gop_success_status;
     } else if (new_size == 0) {   //** If new size is 0 then we can ignore any failed removals
@@ -1145,7 +1210,7 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
     int i, j, k, n_stripes, start_stripe, end_stripe;
     ex_off_t lo, hi, nleft, pos, chunk_off, chunk_end, stripe_off, begin, end, nbytes;
     int err, dev, ss, stripe_shift;
-    ex_off_t offset[s->n_devices], len[s->n_devices];
+    ex_off_t offset[s->n_devices], len[s->n_devices], lun_offset[s->n_devices];
     tbx_tbuf_var_t tbv;
 
     lo = start;
@@ -1192,6 +1257,7 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
 
                 if (offset[i] == -1) { //** 1st time it's used so set the offset
                     offset[i] = ss * s->chunk_size + begin;
+                    lun_offset[i] = b->seg_offset + chunk_off;
                 }
                 len[i] += nbytes;
 
@@ -1233,8 +1299,10 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
                 rw_buf[i].c_ex = k;
                 if (rw_buf[i].n_ex == 0) {
                     tbx_type_malloc(rw_buf[i].ex_iov, ex_tbx_iovec_t, k);
+                    if (s->crypt_enabled) tbx_type_malloc(rw_buf[i].lun_offset, ex_off_t, k);
                 } else {
                     tbx_type_realloc(rw_buf[i].ex_iov, ex_tbx_iovec_t, k);
+                    if (s->crypt_enabled) tbx_type_realloc(rw_buf[i].lun_offset, ex_off_t, k);
                 }
             }
             k = 0;  //** Flag used to see if we grew an existing op
@@ -1245,6 +1313,7 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
                 }
             }
             if (k == 0) { //** new op
+                if (s->crypt_enabled) rw_buf[i].lun_offset[j] = lun_offset[i];
                 rw_buf[i].ex_iov[j].offset = offset[i];
                 rw_buf[i].ex_iov[j].len = len[i];
                 rw_buf[i].n_ex++;
@@ -1461,6 +1530,180 @@ int seglun_row_decompose_test()
     return(cerr);
 }
 
+
+//*******************************************************************************
+// crypt_read_op_next_block - Transfer buffer function to handle reading an
+//        encryption at rest data stream
+//*******************************************************************************
+
+int crypt_read_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
+{
+    lun_rw_row_t  *rwb = (lun_rw_row_t *)tb->arg;
+    tbx_tbuf_t tbc;
+    int i, slot;
+    size_t sum, ds;
+    uint64_t loff, mod, page_off, poff2, lun_offset;
+
+    //** See if we have a previous block to process
+    page_off = pos / rwb->s->chunk_size;
+    poff2 = page_off * rwb->s->stripe_size;
+    page_off *= rwb->s->chunk_size;
+    if (rwb->crypt_flush == 1) {
+        if (rwb->prev_bufoff < 0) return (TBUFFER_OK);
+    }
+    if (rwb->prev_bufoff < 0) {
+        lun_offset = rwb->lun_offset[0] + poff2;
+        sum = 0;
+        slot = 0;
+        goto next;
+    } else if ((rwb->prev_bufoff == (int64_t)page_off) && (rwb->crypt_flush == 0)) {
+        lun_offset = rwb->prev_lunoff;
+        sum = rwb->slot_total_pos;
+        slot = rwb->curr_slot;
+        goto next;
+    }
+
+    //** Need to figure out the crypt counter
+    //** Update our position in the total table;
+    sum = rwb->slot_total_pos;
+    if (pos < sum) {
+        sum = 0;
+        rwb->curr_slot = 0;
+    }
+
+    slot = rwb->curr_slot;
+    for (i=rwb->curr_slot; i<rwb->n_ex; i++) {
+        ds = sum + rwb->ex_iov[i].len;
+        if (ds > pos) {
+            slot = i;
+            break;
+        }
+        sum = ds;
+    }
+
+    lun_offset = rwb->lun_offset[slot] + poff2;
+
+    //** check if we have an empty block. If so just copy it over
+    for (i=0; i<rwb->s->chunk_size; i++) {
+        if (rwb->crypt_buffer[i] != 0) goto non_zero;
+    }
+    goto blanks;  //** If we made it here then we have all blanks
+
+non_zero:
+    //** and LUN offset
+    loff = rwb->prev_lunoff / rwb->s->chunk_size;
+    loff *= rwb->s->crypt_chunk_scale;
+
+    //** then decrypt it
+    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->s->chunk_size, (unsigned char *)rwb->s->crypt_nonce, loff, (unsigned char *)rwb->s->crypt_key);
+
+blanks:
+    //** And finally copy it back to the use buffer
+    tbx_tbuf_single(&tbc, rwb->s->chunk_size, rwb->crypt_buffer);
+    tbx_tbuf_copy(&tbc, 0, &(rwb->tbuf_crypt), rwb->prev_bufoff, rwb->s->chunk_size, 1);
+
+    if (rwb->crypt_flush) return(TBUFFER_OK);   //** Kick out since this is just the final call to flush the buffer
+
+    //** Reset the buffer
+    memset(rwb->crypt_buffer, 0, rwb->s->chunk_size);
+
+next:
+    //** Set things up for the next round
+    rwb->prev_bufoff = page_off;
+    rwb->prev_lunoff = lun_offset;
+
+    //** And configure the tbv for the next op
+    rwb->slot_total_pos = sum;
+    rwb->curr_slot = slot;
+    tbv->n_iov = 1;
+    tbv->buffer = &(tbv->priv.single);
+    mod = pos % rwb->s->chunk_size;
+    if (rwb->s->chunk_size > (int64_t)(mod + tbv->nbytes)) {
+        tbv->priv.single.iov_len = tbv->nbytes;
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+    } else {
+        tbv->priv.single.iov_len = rwb->s->chunk_size - mod;
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+    }
+
+    return(TBUFFER_OK);
+}
+
+//*******************************************************************************
+// crypt_write_op_next_block - Transfer buffer function to handle writing an
+//         encryption at rest data stream
+//*******************************************************************************
+
+int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
+{
+    lun_rw_row_t  *rwb = (lun_rw_row_t *)tb->arg;
+    tbx_tbuf_t tbc;
+    int i, slot;
+    size_t sum, ds, nbytes;
+    uint64_t loff, mod, page_off, poff2, lun_offset;
+
+    page_off = pos / rwb->s->chunk_size;
+    poff2 = page_off * rwb->s->stripe_size;
+    page_off *= rwb->s->chunk_size;
+    mod = pos % rwb->s->chunk_size;
+    if (rwb->prev_bufoff == (int64_t)page_off) { //** Same page were already got encrypted so just return the partial buf
+        tbv->n_iov = 1;
+        nbytes = rwb->s->chunk_size - mod;
+        tbv->buffer = &(tbv->priv.single);
+        tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+        return(TBUFFER_OK);
+    }
+
+    //** Need to figure out the crypt counter
+    //** Update our position in the total table;
+    sum = tbv->priv.slot_total_pos;
+    if (pos < sum) {
+        sum = 0;
+        tbv->priv.curr_slot = 0;
+    }
+
+    slot = tbv->priv.curr_slot;
+    for (i=tbv->priv.curr_slot; i<rwb->n_ex; i++) {
+        ds = sum + rwb->ex_iov[i].len;
+        if (ds > pos) {
+            slot = i;
+            break;
+        }
+        sum = ds;
+    }
+
+    //** Found my slot
+    tbv->priv.slot_total_pos = sum;
+    tbv->priv.curr_slot = slot;
+
+    //** and LUN offset
+    lun_offset = rwb->lun_offset[slot] + poff2;
+    loff = lun_offset / rwb->s->chunk_size;
+    loff *= rwb->s->crypt_chunk_scale;
+
+    //** Copy it from the user buffer into the buffer used for IBP writes
+    tbx_tbuf_single(&tbc, rwb->s->chunk_size, rwb->crypt_buffer);
+    tbx_tbuf_copy(&(rwb->tbuf_crypt), page_off, &tbc, 0, rwb->s->chunk_size, 1);
+
+    //** then encrypt it
+    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->s->chunk_size, (unsigned char *)rwb->s->crypt_nonce, loff, (unsigned char *)rwb->s->crypt_key);
+
+    //** And configure the tbv for the next op
+    rwb->prev_bufoff = page_off;
+    tbv->n_iov = 1;
+    nbytes = rwb->s->chunk_size - mod;
+    tbv->buffer = &(tbv->priv.single);
+    tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
+    tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+    tbv->nbytes = tbv->priv.single.iov_len;
+
+    return(TBUFFER_OK);
+}
+
 //***********************************************************************
 // seglun_rw_op - Reads/Writes to a LUN segment
 //***********************************************************************
@@ -1612,10 +1855,20 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                     }
                 }
 
+                //** Form the tbuf which is different based on if encryption is used
+                if (s->crypt_enabled == 0) {
+                    tbx_tbuf_vec(&(rwb_table[j + i].buffer), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
+                } else {  //** Create the crypt lun to buffer offset for each operation
+                    rwb_table[j+i].prev_bufoff = -1;  //** Reset the state
+                    rwb_table[j+i].s = s;
+                    tbx_type_malloc_clear(rwb_table[j+i].crypt_buffer, char, s->chunk_size);
+                    tbx_tbuf_vec(&(rwb_table[j + i].tbuf_crypt), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
+                    tbx_tbuf_fn(&(rwb_table[j + i].buffer), rwb_table[j + i].len, &(rwb_table[j+i]), ((rw_mode == 0) ? crypt_read_op_next_block : crypt_write_op_next_block));
+                }
+
                 //** Form the op
-                tbx_tbuf_vec(&(rwb_table[j + i].buffer), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
                 if (rw_mode== 0) {
-                    if (rwb_table[j+i].n_iov == 1) {
+                    if (rwb_table[j+i].n_ex == 1) {
                         gop = (bl_rid == 0) ? ds_read(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ),
                                                          rwb_table[j+i].ex_iov[0].offset, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
                               gop_dummy(blacklist_status);
@@ -1683,11 +1936,14 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries == 0)) {
                 log_printf(1, "RETRY sid=" XIDT " gop=%d task=%d dev=%d\n", segment_id(seg), gop_get_id(gop), j, dev);
 
+                rwb_table[j].prev_bufoff = -1;  //** Reset the state
+
                 gop_free(gop, OP_DESTROY);  //** Free the old slot
+
                 //** Make the new GOP
                 block = rwb_table[j].block;
                 if (rw_mode== 0) {
-                    if (rwb_table[j].n_iov == 1) {
+                    if (rwb_table[j].n_ex == 1) {
                         gop = ds_read(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
                                       rwb_table[j].ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     } else {
@@ -1709,6 +1965,9 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                 gop_opque_add(q, rwb_table[j].gop);
                 gop_set_myid(rwb_table[j].gop, j);
                 gop_set_private(gop, block->data->rid_key);
+            } else if ((s->crypt_enabled) && (rw_mode == 0) &&(dt_status.op_status == OP_STATE_SUCCESS)) {  //** IF a successfull read crypt op we have to flush the buffer
+                rwb_table[j].crypt_flush = 1;
+                crypt_read_op_next_block(&(rwb_table[j].buffer), 0, NULL);
             }
         }
         dt = apr_time_now() - tstart2;
@@ -1731,7 +1990,9 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                         }
                     }
 
+                    if (s->crypt_enabled) free(rwb_table[j+i].crypt_buffer);
                     free(rwb_table[j+i].ex_iov);
+                    if (s->crypt_enabled) free(rwb_table[j+i].lun_offset);
                     log_printf(15, "end stage i=%d gid=%d gop_completed_successfully=%d nerr=%d\n", i, gop_id(rwb_table[j+i].gop), gop_completed_successfully(rwb_table[j+i].gop), nerr);
                 }
 
@@ -2557,6 +2818,21 @@ gop_op_generic_t *seglun_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sd->n_devices = ss->n_devices;
     sd->n_shift = ss->n_shift;
 
+    //** Handle the encryption keys.  If they just clone the structure don't copy the keys
+    sd->crypt_enabled = ss->crypt_enabled;
+    if (sd->crypt_enabled) {
+        if (mode != CLONE_STRUCTURE) {
+            if (!sd->crypt_key) {
+                tbx_type_malloc_clear(sd->crypt_key, char, SLUN_CRYPT_KEY_LEN);
+            }
+            memcpy(sd->crypt_key, ss->crypt_key, SLUN_CRYPT_KEY_LEN);
+            if (!sd->crypt_nonce) {
+                tbx_type_malloc_clear(sd->crypt_nonce, char, SLUN_CRYPT_NONCE_LEN);
+            }
+            memcpy(sd->crypt_nonce, ss->crypt_nonce, SLUN_CRYPT_NONCE_LEN);
+        }
+    }
+
     //** Copy the header
     if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
 
@@ -2632,6 +2908,7 @@ int seglun_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
     tbx_append_printf(buffer, used, bufsize, "    n_devices=%d\n", s->n_devices);
     tbx_append_printf(buffer, used, bufsize, "    n_shift=%d\n", s->n_shift);
     tbx_append_printf(buffer, used, bufsize, "    chunk_size=" XOT "\n", s->chunk_size);
+    if (s->crypt_enabled) tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", s->crypt_enabled);
     tbx_append_printf(buffer, used, bufsize, ")\n");
 
     return(0);
@@ -2673,6 +2950,17 @@ int seglun_serialize_text_try(lio_segment_t *seg, char *segbuf, int bufsize, lio
 
     tbx_append_printf(segbuf, &sused, bufsize, "n_devices=%d\n", s->n_devices);
     tbx_append_printf(segbuf, &sused, bufsize, "n_shift=%d\n", s->n_shift);
+
+    //** Add the encryption stuff if enabled
+    if (s->crypt_enabled > 0) {
+        tbx_append_printf(segbuf, &sused, bufsize, "crypt_enabled=%d\n", s->crypt_enabled);
+        if (s->total_size > 0) {   //** Only dump the keys if the file has data
+            etext = crypt_bin2etext(s->crypt_key, SLUN_CRYPT_KEY_LEN);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); free(etext);
+            etext = crypt_bin2etext(s->crypt_nonce, SLUN_CRYPT_NONCE_LEN);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); free(etext);
+        }
+    }
 
     //** Basic size info
     tbx_append_printf(segbuf, &sused, bufsize, "max_block_size=" XOT "\n", s->max_block_size);
@@ -2811,6 +3099,39 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     s->max_row_size = s->max_block_size * s->n_devices;
     s->stripe_size = s->n_devices * s->chunk_size;
 
+    //** Fetch the encrtption if used
+    s->crypt_enabled = tbx_inip_get_integer(fd, seggrp, "crypt_enabled", 0);
+    if (s->crypt_enabled) {
+        s->crypt_chunk_scale = s->chunk_size / 64;
+        if (s->stripe_size % 64) s->crypt_chunk_scale++;
+
+        s->crypt_key = tbx_inip_get_string(fd, seggrp, "crypt_key", NULL);
+        s->crypt_nonce = tbx_inip_get_string(fd, seggrp, "crypt_nonce", NULL);
+        if ((s->crypt_key == NULL) || (s->crypt_nonce == NULL)) {
+            if (s->total_size > 0) {
+                log_printf(0, "ERROR: size>0 and crypt_enabled=1 Missing key or nonce!! sid=" XIDT " key=%s nonce=%s\n" , segment_id(seg), s->crypt_key, s->crypt_nonce);
+                return(1);
+            }
+        }
+
+        //** If we made it here we need to either convert the text -> binary for the key/nonce or generate a new one
+        if (s->crypt_key) {   //** Got a key so convert it
+            etext = s->crypt_key;
+            s->crypt_key = crypt_etext2bin(etext, strlen(etext));
+            free(etext);
+        } else {  //** Got to generate a new one
+            crypt_newkeys(&(s->crypt_key), NULL);
+        }
+        if (s->crypt_nonce) {   //** Got a nonce so convert it
+            etext = s->crypt_nonce;
+            s->crypt_nonce = crypt_etext2bin(etext, strlen(etext));
+            free(etext);
+        } else {  //** Got to generate a new one
+            crypt_newkeys(NULL, &(s->crypt_nonce));
+        }
+    }
+
+
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     g = tbx_inip_group_find(fd, seggrp);
     ele = tbx_inip_ele_first(g);
@@ -2933,6 +3254,9 @@ void seglun_destroy(tbx_ref_t *ref)
 
         tbx_stack_free(s->db_cleanup, 0);
     }
+
+    if (s->crypt_key) free(s->crypt_key);
+    if (s->crypt_nonce) free(s->crypt_nonce);
 
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);
