@@ -172,11 +172,6 @@ gop_op_generic_t *_tpc_overflow_next(gop_thread_pool_context_t *tpc)
         }
     }
 
-if (gop) {
-    log_printf(0, "dmax=%d reserve=%d slot=%d gid=%d n_running=" AIT " max=%d\n", dmax, i, slot, gop_id(gop), tbx_atomic_get(tpc->n_running), tpc->max_concurrency);
-} else {
-    log_printf(0, "dmax=%d reserve=%d slot=%d gop=%p n_running=" AIT " max=%d\n", dmax, i, slot, gop, tbx_atomic_get(tpc->n_running), tpc->max_concurrency);
-}
     return(gop);
 }
 

@@ -349,7 +349,7 @@ disable_too_full:
                     switch (q->op) {
                     case RSQ_BASE_OP_KV:
                         state = rss_test(q, rse, i, kvq->unique[i_unique], &(kvq->pickone[i_pickone]));
-                        log_printf(0, "KV: key=%s val=%s i_unique=%d i_pickone=%d loop=%d rss_test=%d rse->rid_key=%s\n", q->key, q->val, i_unique, i_pickone, loop, state, rse->rid_key);
+                        log_printf(15, "KV: key=%s val=%s i_unique=%d i_pickone=%d loop=%d rss_test=%d rse->rid_key=%s\n", q->key, q->val, i_unique, i_pickone, loop, state, rse->rid_key);
                         tbx_log_flush();
                         if ((q->key_op & RSQ_BASE_KV_UNIQUE) || (q->val_op & RSQ_BASE_KV_UNIQUE)) i_unique++;
                         if ((q->key_op & RSQ_BASE_KV_PICKONE) || (q->val_op & RSQ_BASE_KV_PICKONE)) i_pickone++;

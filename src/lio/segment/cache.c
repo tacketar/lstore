@@ -3309,7 +3309,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
                     tb_err += tbx_tbuf_copy(cop->buf, bpos, &tb, poff, blen, 1);
                     segment_lock(seg);  //** Tweak the size if needed
                     if (curr->hi > s->total_size) {
-                        log_printf(0, "seg=" XIDT " total_size=" XOT " curr->hi=" XOT "\n", segment_id(cop->seg), s->total_size, curr->hi);
+                        log_printf(5, "seg=" XIDT " total_size=" XOT " curr->hi=" XOT "\n", segment_id(cop->seg), s->total_size, curr->hi);
                         s->total_size = curr->hi + 1;
                     }
                     segment_unlock(seg);
