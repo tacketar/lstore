@@ -1899,6 +1899,11 @@ no_args:
 
     log_printf(1, "INIT completed\n");
 
+    //** Let any processes that are waiting for the initial startup to complete know so they can contine
+    apr_thread_mutex_lock(lio_gc->lock);
+    lio_gc->init_complete = 1;
+    apr_thread_mutex_unlock(lio_gc->lock);
+
     return(0);
 }
 

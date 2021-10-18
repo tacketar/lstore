@@ -233,6 +233,7 @@ struct lio_config_t {
     int tpc_unlimited_count;
     int tpc_cache_count;
     int tpc_max_recursion;
+    int init_complete;
     int ref_cnt;
 };
 
