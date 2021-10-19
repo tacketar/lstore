@@ -94,6 +94,7 @@ lio_config_t lio_default_options = {
     .mq_section = "mq_context",
     .ds_section = DS_TYPE_IBP,
     .rs_section = "rs_simple",
+    .notify_section = "lio_notify",
     .os_section = "os_remote_client",
     .authn_section = "authn",
     .cache_section = "cache_amp",
@@ -1000,6 +1001,11 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->os_section);
 
+    if (_lc_object_destroy(lio->notify_section) <= 0) {
+        notify_destroy(lio->notify);
+    }
+    free(lio->notify_section);
+
     if (_lc_object_destroy(ESS_ONGOING_CLIENT) <= 0) {
         gop_mq_ongoing_t *on = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT);
         if (on != NULL) {  //** And also the ongoing client
@@ -1262,6 +1268,23 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         //** This is to handle client stream responses
         gop_mq_command_table_t *ctable = gop_mq_portal_command_table(portal);
         gop_mq_command_set(ctable, MQS_MORE_DATA_KEY, MQS_MORE_DATA_SIZE, ons, gop_mqs_server_more_cb);
+    }
+
+    //** Load the notification service
+    stype = tbx_inip_get_string(lio->ifd, section, "notify", lio_default_options.notify_section);
+    if (strcmp(stype,lio_default_options.notify_section) != 0) check_for_section(lio->ifd, stype, "No Notify Service (notify) found in LIO config!\n");
+    lio->notify_section = stype;
+    lio->notify = _lc_object_get(stype);
+    if (lio->notify == NULL) {  //** Need to load it
+        lio->notify = notify_create(lio->ifd, NULL, lio->notify_section);
+        if (lio->notify == NULL) {
+            log_printf(1, "Error loading notification service!  section=%s\n", stype);
+            fprintf(stderr, "Error loading notification service! section=%s\n", stype);
+            fflush(stderr);
+            abort();
+        }
+
+        _lc_object_put(stype, lio->notify);  //** Add it to the table
     }
 
     //** Load the authentication service

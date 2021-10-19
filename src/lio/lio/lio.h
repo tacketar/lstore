@@ -28,6 +28,7 @@ limitations under the License.
 #include <lio/cache.h>
 #include <lio/ex3.h>
 #include <lio/os.h>
+#include <lio/notify.h>
 #include <lio/rs.h>
 #include <tbx/list.h>
 
@@ -202,6 +203,7 @@ struct lio_config_t {
     tbx_inip_file_t *ifd;
     tbx_list_t *open_index;
     lio_creds_t *creds;
+    notify_t *notify;
     apr_thread_mutex_t *lock;
     apr_pool_t *mpool;
     char *obj_name;
@@ -220,6 +222,7 @@ struct lio_config_t {
     char *blacklist_section;
     char *exe_name;
     char *rc_section;
+    char *notify_section;
     lio_blacklist_t *blacklist;
     ex_off_t readahead;
     ex_off_t readahead_trigger;
