@@ -36,6 +36,7 @@
 #include <tbx/direct_io.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
@@ -465,6 +466,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
                 free(op->path);
                 *op->fd = NULL;
                 _op_set_status(status, OP_STATE_FAILURE, -EIO);
+                notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
                 return(status);
             }
         } else if ((dtype & OS_OBJECT_DIR_FLAG) > 0) { //** It's a dir so fail
@@ -473,6 +475,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             free(op->path);
             *op->fd = NULL;
             _op_set_status(status, OP_STATE_FAILURE, -EISDIR);
+            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EISDIR\n", op->path, op->mode);
             return(status);
         } else if (op->mode & LIO_EXCL_MODE) { //** This file shouldn't exist with this flag so kick out
             info_printf(lio_ifd, 1, "ERROR file(%s) already exists and EXCL is set!\n", op->path);
@@ -480,6 +483,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             free(op->path);
             *op->fd = NULL;
             _op_set_status(status, OP_STATE_FAILURE, -EEXIST);
+            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EEXIST\n", op->path, op->mode);
             return(status);
         }
     } else if (dtype == 0) { //** No file so return an error
@@ -488,11 +492,13 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         free(op->path);
         *op->fd = NULL;
         _op_set_status(status, OP_STATE_FAILURE, -ENOTDIR);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=ENOTDIR\n", op->path, op->mode);
         return(status);
     }
 
     //** Make the space for the FD
     tbx_type_malloc_clear(fd, lio_fd_t, 1);
+    tbx_random_get_bytes(&(fd->id), sizeof(fd->id));
     fd->path = op->path;
     fd->mode = op->mode;
     fd->creds = op->creds;
@@ -507,6 +513,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         *op->fd = NULL;
         free(op->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         return(status);
     }
 
@@ -520,6 +527,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         free(op->path);
         lio_exnode_exchange_destroy(exp);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         return(status);
     }
 
@@ -533,6 +541,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         lio_unlock(lc);
         *op->fd = fd;
         lio_exnode_exchange_destroy(exp);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=SUCCESS\n", op->path, op->mode);
         return(gop_success_status);
     }
 
@@ -548,6 +557,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     if (lio_exnode_deserialize(fh->ex, exp, lc->ess) != 0) {
         log_printf(0, "ERROR: Bad exnode! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         goto cleanup;
     }
 
@@ -556,6 +566,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     if (fh->seg == NULL) {
         log_printf(0, "ERROR: No default segment!  Aborting! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, fd->id, op->mode);
         goto cleanup;
     }
 
@@ -590,12 +601,15 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     lio_exnode_exchange_destroy(exp);  //** Clean up
 
+    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s fd=" XIDT " mode=%d STATUS=SUCCESS\n", op->path, fd->id, op->mode);
     return(status);
 
 cleanup:  //** We only make it here on a failure
     log_printf(1, "ERROR in cleanup! fname=%s\n", op->path);
 
     lio_unlock(lc);
+
+    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=ERROR\n", op->path, op->mode);
 
     lio_exnode_destroy(fh->ex);
     lio_exnode_exchange_destroy(exp);
@@ -649,6 +663,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     apr_time_t now;
     int n;
     double dt;
+
+log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->id, fd->tally_bytes[0]);
 
     log_printf(1, "fname=%s modified=" AIT " count=%d\n", fd->path, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count);
     tbx_log_flush();
@@ -784,7 +800,13 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     free(fh);
     if (serr.hard != 0) status = gop_failure_status;
     log_printf(1, "hard=%d soft=%d status=%d\n", serr.hard, serr.soft, status.op_status);
+
 finished:
+    notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
+         " write_ops=" XOT " write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT "\n",
+         fd->path, fd->id, fd->tally_ops[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
+         fd->tally_ops[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1]);
+
     if (fd->path != NULL) free(fd->path);
     free(fd);
 
@@ -1339,6 +1361,8 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     //** Clean up
     if (op->buffer == NULL) free(buffer);
 
+    notify_printf(op->dlfd->lc->notify, 1, op->dlfd->creds, "COPY_WRITE: fname=%s fd=" XIDT " STATUS=%s\n", op->dlfd->path, op->dlfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
+
     return(status);
 }
 
@@ -1387,6 +1411,8 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
 
     //** Clean up
     if (op->buffer == NULL) free(buffer);
+
+    notify_printf(op->slfd->lc->notify, 1, op->slfd->creds, "COPY_READ: fname=%s fd=" XIDT " STATUS=%s\n", op->slfd->path, op->slfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
     return(status);
 }
@@ -1452,6 +1478,9 @@ gop_op_status_t lio_cp_lio2lio_fn(void *arg, int id)
         //** Clean up
         if (op->buffer == NULL) free(buffer);
     }
+
+    notify_printf(op->slfd->lc->notify, 1, op->slfd->creds, "COPY_READ: fname=%s fd=" XIDT " STATUS=%s\n", op->slfd->path, op->slfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
+    notify_printf(op->dlfd->lc->notify, 1, op->dlfd->creds, "COPY_WRITE: fname=%s fd=" XIDT " STATUS=%s\n", op->dlfd->path, op->dlfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
     tbx_atomic_set(dfh->modified, 1); //** Flag it as modified so the new exnode gets stored
 

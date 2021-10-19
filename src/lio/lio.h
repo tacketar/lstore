@@ -102,7 +102,12 @@ struct lio_fd_t {  //** Individual file descriptor
     lio_rw_ex_gop_t *read_gop;
     lio_rw_ex_gop_t *write_gop;
     int mode;         //** R/W mode
+    ex_id_t  id;
     ex_off_t curr_offset;
+    ex_off_t tally_ops[2];
+    ex_off_t tally_bytes[2];
+    ex_off_t tally_error_ops[2];
+    ex_off_t tally_error_bytes[2];
 };
 
 wq_context_t *wq_context_create(lio_fd_t *fd, int max_tasks);

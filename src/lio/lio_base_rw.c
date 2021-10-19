@@ -73,6 +73,10 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     status = gop_success_status;
     if (op->n_iov <=0) return(status);
 
+    //** Calculate the size read
+    size = iov[0].len;
+    for (i=1; i < op->n_iov; i++) size += iov[i].len;
+
     t1 = iov[0].len;
     t2 = iov[0].offset;
     log_printf(2, "fname=%s n_iov=%d iov[0].len=" XOT " iov[0].offset=" XOT "\n", fd->path, op->n_iov, t1, t2);
@@ -81,7 +85,7 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null file desriptor\n");
         _op_set_status(status, OP_STATE_FAILURE, -EBADF);
-        return(status);
+        goto error;
     }
 
     if (tbx_log_level() > 0) {
@@ -105,17 +109,24 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     if (err != OP_STATE_SUCCESS) {
         log_printf(2, "ERROR with read! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
-        return(status);
+        goto error;
     }
 
-    //** Update the file position to thelast write
+    //** Update the file position to the last read and the stats
     segment_lock(fd->fh->seg);
     fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
+    fd->tally_ops[0]++;
+    fd->tally_bytes[0] += size;
     segment_unlock(fd->fh->seg);
 
-    size = iov[0].len;
-    for (i=1; i < op->n_iov; i++) size += iov[i].len;
     status.error_code = size;
+    return(status);
+
+error:  //** Only make it here on an error
+    segment_lock(fd->fh->seg);
+    fd->tally_error_ops[0]++;
+    fd->tally_error_bytes[0] += size;
+    segment_unlock(fd->fh->seg);
     return(status);
 }
 
@@ -156,11 +167,6 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     //** Do the write op
     err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
 
-    //** Update the file position to the last write
-    segment_lock(fd->fh->seg);
-    fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
-    segment_unlock(fd->fh->seg);
-
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
     log_printf(2, "END fname=%s seg=" XIDT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), dt);
@@ -198,14 +204,28 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
         if (buf != NULL) free(buf);
     }
 
+    //** Calculate the total bytes written
+    size = iov[0].len;
+    for (i=1; i< op->n_iov; i++) size += iov[i].len;
+
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR with write! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        segment_lock(fd->fh->seg);
+        fd->tally_error_ops[1]++;
+        fd->tally_error_bytes[1] += size;
+        segment_unlock(fd->fh->seg);
+
         return(status);
     }
 
-    size = iov[0].len;
-    for (i=1; i< op->n_iov; i++) size += iov[i].len;
+    //** Update the file position to the last write
+    segment_lock(fd->fh->seg);
+    fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
+    fd->tally_ops[1]++;
+    fd->tally_bytes[1] += size;
+    segment_unlock(fd->fh->seg);
+
     _op_set_status(status, OP_STATE_SUCCESS, size);
     return(status);
 }
@@ -320,6 +340,7 @@ wq_context_t *wq_context_create(lio_fd_t *fd, int max_tasks)
     //** The only field that's transient is the path so it's duped.
     tbx_type_malloc(ctx->fd, lio_fd_t, 1);
     *ctx->fd = *fd;
+    ctx->fd->id = 1;  //** This flags that the work is being done by a WQ vs normail I/O for reporting
     ctx->fd->path = strdup(fd->path);
 
     ctx->max_tasks = (max_tasks <= 0) ? IN_FLIGHT_MAX : max_tasks;
@@ -608,7 +629,20 @@ void wq_execute_tasks(wq_context_t *ctx)
 
         for (i=m->task_start_index; i<=m->task_end_index; i++) {
             t = ctx->work[rw].tasks[i];
-            status.error_code = ctx->work[rw].tasks[i]->rw->iov->len;  //** Store the bytes read corresponding to the task.
+            if (status.op_status == OP_STATE_SUCCESS) {
+                status.error_code = ctx->work[rw].tasks[i]->rw->iov->len;  //** Store the bytes read corresponding to the task.
+                segment_lock(t->rw->fd->fh->seg);
+                t->rw->fd->curr_offset = ctx->work[rw].tasks[i]->rw->iov->offset + ctx->work[rw].tasks[i]->rw->iov->len;
+                t->rw->fd->tally_ops[rw]++;
+                t->rw->fd->tally_bytes[rw] += ctx->work[rw].tasks[i]->rw->iov->len;
+                segment_unlock(t->rw->fd->fh->seg);
+            } else {
+                status.error_code = 0;
+                segment_lock(t->rw->fd->fh->seg);
+                t->rw->fd->tally_error_ops[rw]++;
+                t->rw->fd->tally_error_bytes[rw] += ctx->work[rw].tasks[i]->rw->iov->len;
+                segment_unlock(t->rw->fd->fh->seg);
+            }
             gop_mark_completed(&t->gop, status);
         }
         gop_free(gop, OP_DESTROY);
