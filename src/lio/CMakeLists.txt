@@ -113,6 +113,7 @@ set(LSTORE_PROJECT_OBJS
 		lio_core_os.c
 		lio_fuse_core.c
 		lio_version.c
+		notify.c
 		os/base.c
 		os/file.c
 		os/remote_client.c
@@ -160,6 +161,7 @@ set(LSTORE_PROJECT_INCLUDES
         lio/ex3_fwd.h
         lio/lio.h
         lio/lio_fuse.h
+        lio/notify.h
         lio/os.h
         lio/rs.h
         lio/segment.h
