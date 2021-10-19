@@ -28,6 +28,7 @@
 #include <lio/authn.h>
 #include <lio/ds.h>
 #include <lio/ex3.h>
+#include <lio/notify.h>
 #include <lio/lio.h>
 #include <lio/os.h>
 #include <lio/rs.h>
@@ -45,7 +46,7 @@
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
-#include "os.h"
+//#include "os.h"
 #include "warmer_helpers.h"
 
 #define CL_STATE_ADD    1
@@ -508,7 +509,7 @@ int main(int argc, char **argv)
     char *clog_date = NULL;
     int clog_line = -1;
     int year, month, day, line;
-    os_log_iter_t *ci;
+    notify_iter_t *ci;
     warm_prep_db_t *wdb;
     clog_obj_info_t *obj;
     apr_pool_t *mpool;
@@ -572,17 +573,17 @@ int main(int argc, char **argv)
     wdb = open_prep_db(db_base, DB_OPEN_EXISTS, -1);
 
     //** Filter the logs
-    ci = os_log_iter_create(clog_base, year, month, day, line);
-    while ((text = os_log_iter_next(ci)) != NULL) {
+    ci = notify_iter_create(clog_base, year, month, day, line);
+    while ((text = notify_iter_next(ci)) != NULL) {
         if (interesting_clog_entry(text, &ce)) {
             process_clog_entry(wdb, &ce, obj_hash);
         }
     }
 
     //** Get the last record processed
-    os_log_iter_current_time(ci, &year, &month, &day, &line);
+    notify_iter_current_time(ci, &year, &month, &day, &line);
 
-    os_log_iter_destroy(ci);
+    notify_iter_destroy(ci);
 
     //** Process the entries
     process_objects(wdb, obj_hash);

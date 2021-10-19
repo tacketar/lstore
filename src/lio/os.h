@@ -23,6 +23,7 @@
 
 #include <gop/opque.h>
 #include <gop/tp.h>
+#include <lio/notify.h>
 #include <lio/os.h>
 #include <lio/visibility.h>
 #include <regex.h>
@@ -154,26 +155,8 @@ struct lio_os_virtual_attr_t {
 
 int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat_object);
 
-struct os_log_s { //** This is used for logging and is defined in os/base.c
-    char *fname;
-    apr_pool_t *mpool;
-    apr_thread_mutex_t *lock;
-    FILE *fd;
-    struct tm tm_open;
-};
-
-struct os_log_iter_s { //** OS log iterator
-    FILE *fd;
-    char *prefix;
-    char buffer[3*OS_PATH_MAX];
-    int year;
-    int month;
-    int day;
-    int line;
-};
-
-int os_log_warm_attr_check(os_log_t *olog, int n_keys, char **key);
-void os_log_warm_if_needed(os_log_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size);
+int os_log_warm_attr_check(notify_t *olog, int n_keys, char **key);
+void os_log_warm_if_needed(notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size);
 
 #ifdef __cplusplus
 }

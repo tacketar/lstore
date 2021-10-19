@@ -67,7 +67,7 @@
 static lio_osfile_priv_t osf_default_options = {
     .section = "os_file",
     .base_path = "/lio/osfile",
-    .os_activity = "/lio/log/os.log",
+    .os_activity = "notify_os_activity",
     .internal_lock_size = 200,
     .max_copy = 1024*1024,
     .hardlink_dir_size = 256,
@@ -2045,7 +2045,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
 
     if (status.op_status == OP_STATE_SUCCESS) {
         char *etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', ((ftype & OS_OBJECT_SYMLINK_FLAG) ? op->src_path : rp));
-        os_log_printf(osf->olog, 1, op->creds, "REMOVE(%d, %s, %s)\n", ftype, etext, inode);
+        notify_printf(osf->olog, 1, op->creds, "REMOVE(%d, %s, %s)\n", ftype, etext, inode);
         if (etext) free(etext);
     }
 
@@ -2459,7 +2459,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         }
         char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
         char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
-        os_log_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
+        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
         if (etext1) free(etext1);
         if (etext2) free(etext2);
     } else {  //** Directory object
@@ -2481,7 +2481,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
         char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
         char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
-        os_log_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
+        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
         if (etext1) free(etext1);
         if (etext2) free(etext2);
 
@@ -2559,7 +2559,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
 
     char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
     char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
-    os_log_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
+    notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
     if (etext1) free(etext1);
     if (etext2) free(etext2);
     return((err == 0) ? gop_success_status : gop_failure_status);
@@ -2920,7 +2920,7 @@ fail:
     if (err == 0) {
         char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', srpath);
         char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', drpath);
-        os_log_printf(osf->olog, 1, creds, "MOVE(%d, %s, %s)\n", ftype, etext1, etext2);
+        notify_printf(osf->olog, 1, creds, "MOVE(%d, %s, %s)\n", ftype, etext1, etext2);
         if (etext1) free(etext1);
         if (etext2) free(etext2);
     }
@@ -4542,6 +4542,9 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "log_activity = %s\n", osf->os_activity);
     fprintf(fd, "\n");
 
+    //** Print the notification log section
+    notify_print_running_config(osf->olog, fd, 1);
+
     //** Print the AuthZ configuration
     osaz_print_running_config(osf->osaz, fd, 1);
 }
@@ -4570,7 +4573,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     apr_pool_destroy(osf->mpool);
 
-    if (osf->olog) os_log_destroy(osf->olog);
+    if (osf->olog) notify_destroy(osf->olog);
     if (osf->os_activity) free(osf->os_activity);
     if (osf->authz_section) free(osf->authz_section);
     if (osf->section) free(osf->section);
@@ -4838,7 +4841,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     }
 
     //** Make the activity log
-    osf->olog = os_log_create(osf->os_activity);
+    osf->olog = notify_create(fd, NULL, osf->os_activity);
 
     return(os);
 }
