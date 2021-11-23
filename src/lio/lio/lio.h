@@ -227,6 +227,7 @@ struct lio_config_t {
     ex_off_t readahead;
     ex_off_t readahead_trigger;
     ex_off_t jerase_max_parity_on_stack;
+    ex_off_t small_files_in_metadata_max_size;
     int calc_adler32;
     int timeout;
     int max_attr;

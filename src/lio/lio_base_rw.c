@@ -50,6 +50,8 @@
 
 gop_op_generic_t *lio_read_ex_gop_aio(lio_rw_op_t *op);
 gop_op_generic_t *lio_write_ex_gop_aio(lio_rw_op_t *op);
+int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight);
+void _lio_dec_in_flight_and_unlock(lio_fd_t *fd, int in_flight);
 
 //==========================================================================
 //  These are the Asynchronous I/O routines
@@ -65,7 +67,7 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     ex_tbx_iovec_t *iov = op->iov;
     tbx_tbuf_t *buffer = op->buffer;
     gop_op_status_t status;
-    int i, err, size;
+    int i, err, size, in_flight;
     apr_time_t now;
     double dt;
     ex_off_t t1, t2;
@@ -99,7 +101,9 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     now = apr_time_now();
 
     //** Do the read op
-    err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
+    if ((err = lio_tier_check_and_handle(op, 0, &in_flight)) != OP_STATE_SUCCESS) {
+        err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
+    }
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
@@ -117,7 +121,8 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
     fd->tally_ops[0]++;
     fd->tally_bytes[0] += size;
-    segment_unlock(fd->fh->seg);
+    _lio_dec_in_flight_and_unlock(fd, in_flight);
+    //segment_unlock(fd->fh->seg);
 
     status.error_code = size;
     return(status);
@@ -126,7 +131,8 @@ error:  //** Only make it here on an error
     segment_lock(fd->fh->seg);
     fd->tally_error_ops[0]++;
     fd->tally_error_bytes[0] += size;
-    segment_unlock(fd->fh->seg);
+    _lio_dec_in_flight_and_unlock(fd, in_flight);
+    //segment_unlock(fd->fh->seg);
     return(status);
 }
 
@@ -140,7 +146,7 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     ex_tbx_iovec_t *iov = op->iov;
     tbx_tbuf_t *buffer = op->buffer;
     gop_op_status_t status;
-    int i, err, size;
+    int i, err, size, in_flight;
     apr_time_t now;
     double dt;
     ex_off_t t1, t2;
@@ -165,7 +171,9 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     tbx_atomic_set(fd->fh->modified, 1);  //** Flag it as modified
 
     //** Do the write op
-    err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
+    if ((err = lio_tier_check_and_handle(op, 1, &in_flight)) != OP_STATE_SUCCESS) {
+        err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
+    }
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
@@ -214,7 +222,8 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
         segment_lock(fd->fh->seg);
         fd->tally_error_ops[1]++;
         fd->tally_error_bytes[1] += size;
-        segment_unlock(fd->fh->seg);
+        _lio_dec_in_flight_and_unlock(fd, in_flight);
+        //segment_unlock(fd->fh->seg);
 
         return(status);
     }
@@ -224,7 +233,8 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
     fd->tally_ops[1]++;
     fd->tally_bytes[1] += size;
-    segment_unlock(fd->fh->seg);
+     _lio_dec_in_flight_and_unlock(fd, in_flight);
+    //segment_unlock(fd->fh->seg);
 
     _op_set_status(status, OP_STATE_SUCCESS, size);
     return(status);

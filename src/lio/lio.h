@@ -65,8 +65,16 @@ struct lio_file_handle_t {  //** Shared file handle
     lio_segment_t *seg;
     lio_config_t *lc;
     wq_context_t *wq_ctx;
-    char *fname;  //** This is just used for dumping info and represents the name used for adding the FH
+    apr_thread_mutex_t *lock;
+    apr_thread_cond_t *cond;
+    apr_pool_t *mpool;
+    char *fname;         //** This is just used for dumping info and represents the name used for adding the FH
+    char *data;          //** This holds small file data which gets stored as metadata
+    ex_off_t data_size;  //** And if this is the corresponding size in data
+    ex_off_t max_data_allocated;  //** This is how much is allocated already
     ex_id_t vid;
+    int in_flight;
+    int adjust_tier_pending;
     int ref_count;
     int remove_on_close;
     ex_off_t readahead_end;
@@ -83,6 +91,7 @@ typedef struct {
 typedef struct {
     lio_fd_t *fd;
     int n_iov;
+    int skip_in_flight_update;
     ex_tbx_iovec_t *iov;
     tbx_tbuf_t *buffer;
     lio_segment_rw_hints_t *rw_hints;
@@ -121,7 +130,9 @@ mode_t ftype_lio2posix(int ftype);
 void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size, char *mount_prefix, char **flink);
 
 int lio_update_error_counts(lio_config_t *lc, lio_creds_t *creds, char *path, lio_segment_t *seg, int mode);
-int lio_update_exnode_attrs(lio_config_t *lc, lio_creds_t *creds, lio_exnode_t *ex, lio_segment_t *seg, char *fname, lio_segment_errors_t *serr);
+int lio_update_exnode_attrs(lio_fd_t *fd, lio_segment_errors_t *serr);
+
+ex_off_t lio_size_fh(lio_file_handle_t *fh);
 
 void lio_set_timestamp(char *id, char **val, int *v_size);
 void lio_get_timestamp(char *val, int *timestamp, char **id);

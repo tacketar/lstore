@@ -546,7 +546,11 @@ void os_log_warm_if_needed(notify_t *olog, lio_creds_t *creds, char *fname, int 
 
     for (i=0; i<n_keys; i++) {
         if (strncmp("system.", key[i], 7) == 0) {
-            if (strcmp("exnode", key[i]+7) == 0) {
+            if (strcmp("exnode.data", key[i]+7) == 0) {
+                etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
+                notify_printf(olog, 1, creds, "ATTR_WRITE(system.exnode.data, %d, %s)\n", ftype, etext);
+                if (etext) free(etext);
+            } else if (strcmp("exnode", key[i]+7) == 0) {
                 etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
                 notify_printf(olog, 1, creds, "ATTR_WRITE(system.exnode, %d, %s)\n", ftype, etext);
                 if (etext) free(etext);

@@ -3293,9 +3293,9 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         return(1);
     }
 
-    //** We log exnode access
-    if (strcmp(attr, "system.exnode") == 0) {
-        notify_printf(osf->olog, 1, creds, "ATTR_READ(system.exnode, %d, %s)\n", ofd->ftype, ofd->realpath);
+    //** We log exnode or data access
+    if ((strcmp(attr, "system.exnode") == 0) || (strcmp(attr, "system.exnode.data") == 0)) {
+        notify_printf(osf->olog, 1, creds, "ATTR_READ(%s, %d, %s)\n", attr, ofd->ftype, ofd->realpath);
     }
 
     //** Do a Virtual Attr check

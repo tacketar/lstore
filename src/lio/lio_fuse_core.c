@@ -389,7 +389,7 @@ void _lfs_parse_stat_vals(lio_fuse_t *lfs, char *fname, struct stat *stat, char 
     if (fop != NULL) {
         ino = fop->sid;
         fh = _lio_get_file_handle(lfs->lc, ino);
-        if (fh) len = segment_size(fh->seg);
+        if (fh) len = lio_size_fh(fh);
     }
     if (get_lock == 1) lfs_unlock(lfs);
 
@@ -447,6 +447,7 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     lio_fuse_t *lfs = lfs_get_context();
     char *val[_inode_key_size];
     int v_size[_inode_key_size], i, err;
+    struct fuse_context *ctx = fuse_get_context();
 
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
@@ -455,6 +456,7 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     //** keep quickly successive stat calls to not get stale information
     lfs_lock(lfs);
     for (i=0; i<_inode_key_size; i++) v_size[i] = -lfs->lc->max_attr;
+    stat->st_uid = ctx->uid;  //** If you don't do this then chmod fails.
     err = lio_get_multiple_attrs(lfs->lc, lfs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, _inode_key_size);
 
     if (err != OP_STATE_SUCCESS) {
@@ -746,7 +748,7 @@ int lfs_chmod(const char *fname, mode_t mode)
     int exec_mode, err;
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
         return(-EACCES);
     }
@@ -852,13 +854,16 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd;
     lio_fuse_open_file_t *fop;
-    int mode;
+    int mode, os_mode;
 
     mode = LIO_READ_MODE;  //** O_RDONLY=0 so it's technically the default
+    os_mode = OS_MODE_READ_IMMEDIATE;
     if (fi->flags & O_WRONLY) {
         mode = LIO_WRITE_MODE;
+        os_mode = OS_MODE_WRITE_IMMEDIATE;
     } else if (fi->flags & O_RDWR) {
         mode = LIO_READ_MODE | LIO_WRITE_MODE;
+        os_mode = OS_MODE_WRITE_IMMEDIATE;
     }
 
     log_printf(10, "fname=%s flags=%d lio_mode=%d O_RDONLY=%d O_WRONLY=%d O_RDWR=%d LIO_READ=%d LIO_WRITE=%d\n", fname, fi->flags, mode, O_RDONLY, O_WRONLY, O_RDWR, LIO_READ_MODE, LIO_WRITE_MODE);
@@ -868,7 +873,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     if (fi->flags & O_TRUNC) mode |= LIO_TRUNCATE_MODE;
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, mode)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, os_mode)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
         return(-EACCES);
     }
@@ -1065,7 +1070,7 @@ int lfs_flush(const char *fname, struct fuse_file_info *fi)
         return(-EBADF);
     }
 
-    err = gop_sync_exec(segment_flush(fd->fh->seg, fd->fh->lc->da, 0, segment_size(fd->fh->seg)+1, fd->fh->lc->timeout));
+    err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
     if (err != OP_STATE_SUCCESS) {
         return(-EIO);
     }
@@ -1120,7 +1125,6 @@ ssize_t lfs_copy_file_range(const char *path_in,  struct fuse_file_info *fi_in, 
 
 int lfs_fsync(const char *fname, int datasync, struct fuse_file_info *fi)
 {
-    lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd;
     int err;
     apr_time_t now;
@@ -1135,7 +1139,7 @@ int lfs_fsync(const char *fname, int datasync, struct fuse_file_info *fi)
         return(-EBADF);
     }
 
-    err = gop_sync_exec(segment_flush(fd->fh->seg, fd->fh->lc->da, 0, segment_size(fd->fh->seg)+1, lfs->lc->timeout));
+    err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
     if (err != OP_STATE_SUCCESS) {
         return(-EIO);
     }
@@ -1212,7 +1216,7 @@ int lfs_truncate(const char *fname, off_t new_size)
     log_printf(15, "adjusting size=" XOT "\n", ts);
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_WRITE_MODE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
         return(-EACCES);
     }
@@ -1251,7 +1255,7 @@ int lfs_ftruncate(const char *fname, off_t new_size, struct fuse_file_info *fi)
     tbx_log_flush();
 
     if (fi == NULL) {
-        if (lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE) != 2) {
+        if (lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_WRITE_IMMEDIATE) != 2) {
             return(-EACCES);
         }
         return(lfs_truncate(fname, new_size));
@@ -1337,7 +1341,7 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
     tbx_log_flush();
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_READ_MODE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE)) {
         return(-EACCES);
     }
 
@@ -1414,7 +1418,7 @@ void lfs_set_tape_attr(lio_fuse_t *lfs, char *fname, char *mytape_val, int tape_
     lio_exnode_t *ex, *cex;
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_WRITE_MODE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(5, "Can't access! fname=%s\n", fname);
         return;
     }
@@ -1561,7 +1565,7 @@ void lfs_get_tape_attr(lio_fuse_t *lfs, char *fname, char **tape_val, int *tape_
     log_printf(15, "START fname=%s\n", fname);
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_READ_MODE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_READ_IMMEDIATE)) {
         log_printf(5, "Can't access. fname=%s\n",fname);
         return;
     }
@@ -1653,7 +1657,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     val = NULL;
     if ((lfs->enable_tape == 1) && (strcmp(name, LFS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
         //** Make sure we can access it
-        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
+        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, OS_MODE_READ_IMMEDIATE, &filter)) return(-EACCES);
         lfs_get_tape_attr(lfs, (char *)fname, &val, &v_size);
         lfs_osaz_attr_filter_apply(lfs, name, LIO_READ_MODE, &val, &v_size, filter);
     } else {
@@ -1661,12 +1665,12 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
         if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) return(-ENOATTR);
 
         //** Make sure we can access it
-        if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_READ_MODE, &filter)) return(-EACCES);
+        if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, OS_MODE_READ_IMMEDIATE, &filter)) return(-EACCES);
         err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (err != OP_STATE_SUCCESS) {
             return(-ENOATTR);
         }
-        lfs_osaz_attr_filter_apply(lfs, name, LIO_READ_MODE, &val, &v_size, filter);
+        lfs_osaz_attr_filter_apply(lfs, name, OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
     }
 
     err = 0;
@@ -1730,13 +1734,13 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
     v_size = size;
     if ((lfs->enable_tape == 1) && (strcmp(name, LFS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
         //** Make sure we can access it
-        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_WRITE_MODE, &filter)) return(-EACCES);
+        if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) return(-EACCES);
         lfs_set_tape_attr(lfs, (char *)fname, (char *)fval, v_size);
         return(0);
     } else {
         //** Make sure we can access it
         if (strcmp(name, "system.exnode") == 0) {
-           if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, LIO_WRITE_MODE, &filter)) return(-EACCES);
+           if (!lfs_osaz_attr_access(lfs, fuse_get_context(), fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) return(-EACCES);
         }
         err = lio_setattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
@@ -1767,7 +1771,7 @@ int lfs_removexattr(const char *fname, const char *name)
     if (strcmp(name, "system.exnode") == 0) return(-EACCES);
 
     //** Make sure we can access it
-    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, LIO_READ_MODE)) {
+    if (!lfs_osaz_object_access(lfs, fuse_get_context(), fname, OS_MODE_WRITE_IMMEDIATE)) {
         return(-EACCES);
     }
 

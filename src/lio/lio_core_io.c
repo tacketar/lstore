@@ -58,7 +58,8 @@
 
 #define LFH_KEY_INODE  0
 #define LFH_KEY_EXNODE 1
-#define LFH_NKEYS      2
+#define LFH_KEY_DATA   2
+#define LFH_NKEYS      3
 
 gop_op_status_t lio_read_ex_fn_aio(void *op, int id);
 gop_op_status_t lio_write_ex_fn_aio(void *op, int id);
@@ -70,7 +71,7 @@ gop_op_status_t lio_write_ex_fn_wq(void *op, int id);
 gop_op_generic_t *lio_read_ex_gop_wq(lio_rw_op_t *op);
 gop_op_generic_t *lio_write_ex_gop_wq(lio_rw_op_t *op);
 
-static char *_lio_fh_keys[] = { "system.inode", "system.exnode" };
+static char *_lio_fh_keys[] = { "system.inode", "system.exnode", "system.exnode.data" };
 
 //***********************************************************************
 // Core LIO R/W functionality
@@ -218,47 +219,63 @@ int lio_update_error_counts(lio_config_t *lc, lio_creds_t *creds, char *path, li
 // lio_update_exnode_attrs - Updates the exnode and system.error_* attributes
 //***********************************************************************
 
-int lio_update_exnode_attrs(lio_config_t *lc, lio_creds_t *creds, lio_exnode_t *ex, lio_segment_t *seg, char *fname, lio_segment_errors_t *serr)
+int lio_update_exnode_attrs(lio_fd_t *fd, lio_segment_errors_t *serr)
 {
     ex_off_t ssize;
     char buffer[32];
-    char *key[6] = {"system.exnode", "system.exnode.size", "os.timestamp.system.modify_data", NULL, NULL, NULL };
-    char *val[6];
+    char *key[7] = {"system.exnode", "system.exnode.size", "os.timestamp.system.modify_data", "system.exnode.data", NULL, NULL, NULL };
+    char *val[7];
     lio_exnode_exchange_t *exp;
-    int n, err, ret, v_size[6];
+    int n, err, ret, v_size[7];
     lio_segment_errors_t my_serr;
     char ebuf[128];
 
     ret = 0;
-    if (serr == NULL) serr = &my_serr; //** If caller doesn't care about errors use my own space
 
     //** Serialize the exnode
     exp = lio_exnode_exchange_create(EX_TEXT);
-    lio_exnode_serialize(ex, exp);
-    ssize = segment_size(seg);
+    lio_exnode_serialize(fd->fh->ex, exp);
 
-    //** Get any errors that may have occured
-    lio_get_error_counts(lc, seg, serr);
+    //** Get any errors that may have occured if needed
+    if (serr == NULL) {
+        serr = &my_serr;
+        lio_get_error_counts(fd->lc, fd->fh->seg, serr);
+    }
 
     //** Update the exnode
-    n = 3;
+    n = 4;
     val[0] = exp->text.text;
     v_size[0] = strlen(val[0]);
+
+    //* Get the size and optionally set the data attribute
+    if (fd->fh->data_size < 0) {  //** Data stored in segment
+        ssize = segment_size(fd->fh->seg);
+        val[3] = NULL;   //** Wipe the data attribute
+        v_size[3] = -1;
+    } else {   //** Data is stored as an attribute
+        ssize = fd->fh->data_size;
+        val[3] = fd->fh->data;
+        v_size[3] = ssize;
+    }
+
+    //** Encode the size
     sprintf(buffer, XOT, ssize);
     val[1] = buffer;
     v_size[1] = strlen(val[1]);
+
+    //** And update the modify timestamp
     val[2] = NULL;
     v_size[2] = 0;
 
-    n += lio_encode_error_counts(serr, &(key[3]), &(val[3]), ebuf, &(v_size[3]), 0);
+    n += lio_encode_error_counts(serr, &(key[n]), &(val[n]), ebuf, &(v_size[n]), 0);
     if ((serr->hard>0) || (serr->soft>0) || (serr->write>0)) {
-        log_printf(1, "ERROR: fname=%s hard_errors=%d soft_errors=%d write_errors=%d\n", fname, serr->hard, serr->soft, serr->write);
+        log_printf(1, "ERROR: fname=%s hard_errors=%d soft_errors=%d write_errors=%d\n", fd->path, serr->hard, serr->soft, serr->write);
         ret += 1;
     }
 
-    err = lio_multiple_setattr_op(lc, creds, fname, NULL, key, (void **)val, v_size, n);
+    err = lio_multiple_setattr_op(fd->lc, fd->creds, fd->path, NULL, key, (void **)val, v_size, n);
     if (err != OP_STATE_SUCCESS) {
-        log_printf(0, "ERROR updating exnode+attrs! fname=%s\n", fname);
+        log_printf(0, "ERROR updating exnode+attrs! fname=%s\n", fd->path);
         ret += 2;
     }
 
@@ -324,18 +341,20 @@ void lio_store_and_release_adler32(lio_config_t *lc, lio_creds_t *creds, tbx_lis
 //  lio_load_file_handle_attrs - Loads the attributes for a file handle
 //***********************************************************************
 
-int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname, ex_id_t *inode, char **exnode)
+int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname, ex_id_t *inode, char **exnode, char **data, ex_off_t *data_size)
 {
     char *myfname;
     char vino[256];
-    int err, v_size[2];
-    char *val[2];
+    int err, v_size[3];
+    char *val[3];
 
     //** Get the attributes
-    v_size[0] = sizeof(vino);
-    val[0] = vino;
-    v_size[1] = -lc->max_attr;
-    val[1] = NULL;
+    v_size[LFH_KEY_INODE] = sizeof(vino);
+    val[LFH_KEY_INODE] = vino;
+    v_size[LFH_KEY_EXNODE] = -lc->max_attr;
+    val[LFH_KEY_EXNODE] = NULL;
+    v_size[LFH_KEY_DATA] = -lc->max_attr;
+    val[LFH_KEY_DATA] = NULL;
 
     myfname = (strcmp(fname, "") == 0) ? "/" : (char *)fname;
     err = lio_get_multiple_attrs(lc, creds, myfname, NULL, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS);
@@ -345,7 +364,9 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
         return(-1);
     }
 
-    *exnode = val[1];
+    *exnode = val[LFH_KEY_EXNODE];
+    *data = val[LFH_KEY_DATA];
+    *data_size = v_size[LFH_KEY_DATA];
 
     if (v_size[LFH_KEY_INODE] > 0) {
         *inode = 0;
@@ -435,6 +456,275 @@ int lio_wq_enable(lio_fd_t *fd, int max_in_flight)
     return(0);
 }
 
+
+//*************************************************************************
+// _lio_metadata_io_fn - Function that does the actual R/W for data in metadata
+//    NOTE: Assumes the file lock is already heldd and that the metadata buffer
+//          can handle any write passed in
+//*************************************************************************
+
+int _lio_metadata_io_fn(lio_rw_op_t *op, int rw_mode)
+{
+    int i;
+    ex_off_t bpos;
+    tbx_tbuf_t tbmd;
+    lio_file_handle_t *fh = op->fd->fh;
+    ex_tbx_iovec_t *iov = op->iov;
+
+    bpos = op->boff;
+    tbx_tbuf_single(&tbmd, fh->data_size, fh->data);
+    if (rw_mode == 0) { //** Read mode
+        for (i=0; i<op->n_iov; i++) {
+            tbx_tbuf_copy(&tbmd, iov[i].offset, op->buffer, bpos, iov[i].len, 1);
+            bpos += iov[i].len;
+        }
+    } else { //** Write mode
+        for (i=0; i<op->n_iov; i++) {
+            tbx_tbuf_copy(op->buffer, bpos, &tbmd, iov[i].offset, iov[i].len, 1);
+            bpos += iov[i].len;
+        }
+    }
+    return(0);
+}
+
+//***********************************************************************
+//  _metadata_free - Releases the data
+//***********************************************************************
+
+void _metadata_free(lio_file_handle_t  *fh)
+{
+    if (fh->data) {
+        free(fh->data);
+        fh->data = NULL;
+        fh->max_data_allocated = fh->data_size = -1;
+    }
+}
+
+//***********************************************************************
+// _metadata_grow - Grows the space for storing metadata
+//***********************************************************************
+
+void _metadata_grow(lio_file_handle_t  *fh, ex_off_t new_size)
+{
+    if (new_size == 0) {
+        if (fh->data) free(fh->data);
+        fh->data = NULL;
+        fh->max_data_allocated = fh->data_size = 0;
+    } else {
+        fh->max_data_allocated = new_size;
+        if (fh->data) {
+            tbx_type_realloc(fh->data, char, new_size);
+        } else {
+            tbx_type_malloc(fh->data, char, new_size);
+        }
+
+        if (fh->data_size == -1) {
+            memset(fh->data, 0, new_size);
+        } else {
+            memset(fh->data + fh->data_size, 0, new_size - fh->data_size);
+        }
+    }
+}
+
+//*************************************************************************
+// _lio_wait_for_tier_change_ok - Flags we want to make a tier change
+//      and waits for the Ok
+//
+//    NOTE: The fh lock is held on entry and it's release/reacquired
+//*************************************************************************
+
+int _lio_wait_for_tier_change_ok(lio_file_handle_t *fh)
+{
+    int skip = 0;
+
+    segment_lock(fh->seg);
+    if (fh->adjust_tier_pending > 0) {  //** Someone else is adjusting the tier so wait for them to complete
+        do {
+            segment_unlock(fh->seg);
+            apr_thread_cond_wait(fh->cond, fh->lock);
+            segment_lock(fh->seg);
+        } while (fh->adjust_tier_pending != 0);
+        skip = 1;
+    } else {  //** We are going to be doing the adjusting
+        fh->adjust_tier_pending++;
+        if (fh->in_flight != 0) { //** Got to wait
+            do {
+                segment_unlock(fh->seg);
+                apr_thread_cond_wait(fh->cond, fh->lock);
+                segment_lock(fh->seg);
+            } while (fh->in_flight != 0);
+        }
+    }
+    segment_unlock(fh->seg);
+
+    return(skip);
+}
+
+//*************************************************************************
+// _lio_release_tier_change_flag - Release the Tier change flag
+//*************************************************************************
+
+void _lio_release_tier_change_flag(lio_file_handle_t *fh)
+{
+    segment_lock(fh->seg);
+    fh->adjust_tier_pending--;
+    apr_thread_cond_signal(fh->cond);  //** Wake up anybody listening
+    segment_unlock(fh->seg);
+}
+
+
+//*************************************************************************
+//  lio_adjust_data_tier - Shuffles the *existing* data to the appropriate
+//     Tier based on the new size.  The files size itself is not adjusted.
+//     The new_size is justused to determine which tier the data should
+//     be located.
+//*************************************************************************
+
+void lio_adjust_data_tier(lio_file_handle_t *fh, ex_off_t new_size, int do_lock)
+{
+    int err;
+    tbx_tbuf_t tbuf;
+    ex_tbx_iovec_t iov;
+    ex_off_t n;
+
+    if (do_lock) apr_thread_mutex_lock(fh->lock);
+    if (new_size > fh->lc->small_files_in_metadata_max_size) {  //** Needs to be in the segment tier
+        if (fh->data_size == 0) {  //** Currently empty
+            fh->data_size = -1;  //** Flags that the new size is to dump it into the segment
+        } else if (fh->data_size > 0) { //** Need to move it to the segment
+            if (_lio_wait_for_tier_change_ok(fh) == 0) {
+                //** copy the data to the segment
+                tbx_tbuf_single(&tbuf, fh->data_size, fh->data);
+                iov.len = fh->data_size; iov.offset = 0;
+                err = gop_sync_exec(segment_write(fh->seg, fh->lc->da, NULL, 1, &iov, &tbuf, 0, fh->lc->timeout));
+                if (err == OP_STATE_SUCCESS) {
+                    tbx_atomic_set(fh->modified, 1);  //** Flag it as modified
+                    _metadata_free(fh);
+                }
+                _lio_release_tier_change_flag(fh);
+            }
+        }
+    } else { //** Needs to be in the data tier
+        if (fh->data_size < 0) {   //** Currently in the segment
+            if (_lio_wait_for_tier_change_ok(fh) == 0) {
+                //** Get the data from the segment
+                n = segment_size(fh->seg);
+                iov.len = (n>new_size) ? new_size : n;  iov.offset = 0;
+                _metadata_free(fh);
+                if (new_size > 0) {
+                    _metadata_grow(fh, new_size);
+                }
+                tbx_tbuf_single(&tbuf, new_size, fh->data);
+                err = (new_size > 0) ? gop_sync_exec(segment_read(fh->seg, fh->lc->da, NULL, 1, &iov, &tbuf, 0, fh->lc->timeout)) : OP_STATE_SUCCESS;
+                if (err == OP_STATE_SUCCESS) {
+                    tbx_atomic_set(fh->modified, 1);  //** Flag it as modified
+                    fh->max_data_allocated = new_size;
+                    fh->data_size = iov.len;
+                    gop_sync_exec(lio_segment_truncate(fh->seg, fh->lc->da, 0, fh->lc->timeout));  //** Truncate the segment
+                }
+                _lio_release_tier_change_flag(fh);
+            }
+        } else if (fh->max_data_allocated < new_size) { //** Need to grow it
+            _metadata_grow(fh, new_size);
+        }
+    }
+    if (do_lock) apr_thread_mutex_unlock(fh->lock);
+
+
+    return;
+}
+
+//*************************************************************************
+// _lio_dec_in_flight_and_unlock - Dec's the in_flight counter and also
+//    releases the segment_lock().  If needed it will reqcuire the locks
+//    to notify a pending adjust tier call.
+//
+//    **NOTE: we have the segment lock on entry! **
+//*************************************************************************
+
+void _lio_dec_in_flight_and_unlock(lio_fd_t *fd, int in_flight)
+{
+    fd->fh->in_flight -= in_flight;
+    if ((fd->fh->adjust_tier_pending > 0) && (fd->fh->in_flight == 0)) {
+        //**Need to raise the flag so release the lock and get them in the
+        //**proper order
+        segment_unlock(fd->fh->seg);
+        apr_thread_mutex_lock(fd->fh->lock);
+        segment_lock(fd->fh->seg);
+        //** Make sure the condition is still valid
+        if ((fd->fh->adjust_tier_pending > 0) && (fd->fh->in_flight == 0)) {
+            apr_thread_cond_broadcast(fd->fh->cond);
+        }
+        segment_unlock(fd->fh->seg);
+        apr_thread_mutex_unlock(fd->fh->lock);
+    } else {
+        segment_unlock(fd->fh->seg);
+    }
+}
+
+//*************************************************************************
+// lio_tier_check_and_handle - checks if the data tier needs to be adjusted
+//     If so it will do that and also handle the request if the tier
+//     is in the metadata
+//
+//     If the operation was handled internally then 1 is returned
+//*************************************************************************
+
+int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight)
+{
+    int i;
+    ex_off_t oend, n;
+    lio_file_handle_t *fh = op->fd->fh;
+    ex_tbx_iovec_t *iov = op->iov;
+
+    *in_flight = 1;
+
+    //** Check and handle reads
+    apr_thread_mutex_lock(fh->lock);
+    if (rw_mode == 0) {
+        if (fh->data_size == -1) { //** Kick out the data is in in the segment
+            apr_thread_mutex_unlock(fh->lock);
+            return(OP_STATE_RETRY);   //** Nothing to do so return
+        }
+
+        //** If we made it here then it's in the buffer to handle them
+        _lio_metadata_io_fn(op, rw_mode);
+        apr_thread_mutex_unlock(fh->lock);
+        *in_flight = 0;
+        return(OP_STATE_SUCCESS);
+    }
+
+    //** See which tier the data sits in
+    if (fh->data_size == -1) {  //**Stored in the segment
+        apr_thread_mutex_unlock(fh->lock);
+        return(OP_STATE_RETRY);   //** Nothing to do so return
+    }
+
+    //** IF we made it here then we should be in the metadata buffer
+
+    //** Find the largest size to see if we need to grow it or switch tiers
+    oend = iov[0].offset + iov[0].len;
+    for (i=1; i<op->n_iov; i++) {
+        n = iov[i].offset + iov[i].len;
+        if (n > oend) oend = n;
+    }
+
+    if (oend > fh->lc->small_files_in_metadata_max_size) { //** Need to flip tiers
+        lio_adjust_data_tier(fh, oend, 0);
+    } else { //** We handle it in the data tier
+        if (oend > fh->max_data_allocated) { //** Need to grow the space
+            _metadata_grow(fh, oend);
+        }
+        if (oend > fh->data_size) fh->data_size = oend;
+        _lio_metadata_io_fn(op, rw_mode);
+        apr_thread_mutex_unlock(fh->lock);
+        *in_flight = 0;
+        return(OP_STATE_SUCCESS);
+    }
+    apr_thread_mutex_unlock(fh->lock);
+    return(OP_STATE_RETRY);
+}
+
 //*************************************************************************
 
 gop_op_status_t lio_myopen_fn(void *arg, int id)
@@ -443,8 +733,9 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     lio_config_t *lc = op->lc;
     lio_file_handle_t *fh;
     lio_fd_t *fd;
-    char *exnode;
+    char *exnode, *data;
     ex_id_t ino, vid;
+    ex_off_t data_size;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
     int dtype, err, exec_flag;
@@ -507,11 +798,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fd->write_gop = lio_write_ex_gop_aio;
 
     exnode = NULL;
-    if (lio_load_file_handle_attrs(lc, op->creds, op->path, &ino, &exnode) != 0) {
+    if (lio_load_file_handle_attrs(lc, op->creds, op->path, &ino, &exnode, &data, &data_size) != 0) {
         log_printf(1, "ERROR loading attributes! fname=%s\n", op->path);
         free(fd);
         *op->fd = NULL;
         free(op->path);
+        if (data) free(data);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         return(status);
@@ -525,6 +817,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         free(fd);
         *op->fd = NULL;
         free(op->path);
+        if (data) free(data);
         lio_exnode_exchange_destroy(exp);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
@@ -540,6 +833,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         fd->fh = fh;
         lio_unlock(lc);
         *op->fd = fd;
+        if (data) free(data);
         lio_exnode_exchange_destroy(exp);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=SUCCESS\n", op->path, op->mode);
         return(gop_success_status);
@@ -551,6 +845,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fh->ref_count++;
     fh->lc = lc;
     fh->fname = strdup(fd->path);
+    fh->data = data;
+    fh->data_size = data_size;
+    fh->max_data_allocated = data_size;
+    assert_result(apr_pool_create(&(fh->mpool), NULL), APR_SUCCESS);   //** These are used for data tiering
+    apr_thread_mutex_create(&(fh->lock), APR_THREAD_MUTEX_DEFAULT, fh->mpool);
+    apr_thread_cond_create(&(fh->cond), fh->mpool);
 
     //** Load it
     fh->ex = lio_exnode_create();
@@ -586,7 +886,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
             //** We just truncated the file and removed all the allocations so let's update the exnode in the lserver
             memset(&serr, 0, sizeof(serr));  //** There aren't any errors to post
-            err = lio_update_exnode_attrs(lc, fd->creds, fh->ex, fh->seg, fd->path, &serr);
+            err = lio_update_exnode_attrs(fd, &serr);
             if (err > 1) {  //** There was a problem with the update but we won't kick out since we will try again on file close
                 log_printf(0, "ERROR updating exnode during open() with truncate flag! fname=%s\n", fd->path);
             }
@@ -598,6 +898,8 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             segment_unlock(fh->seg);
         }
     }
+
+    lio_adjust_data_tier(fh, lio_size(fd), 1);  //** See if we need to move the data between teirs
 
     lio_exnode_exchange_destroy(exp);  //** Clean up
 
@@ -614,6 +916,7 @@ cleanup:  //** We only make it here on a failure
     lio_exnode_destroy(fh->ex);
     lio_exnode_exchange_destroy(exp);
     free(fd->path);
+    if (fh->data) free(fh->data);
     free(fh);
     free(fd);
     *op->fd = NULL;
@@ -664,8 +967,6 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     int n;
     double dt;
 
-log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->id, fd->tally_bytes[0]);
-
     log_printf(1, "fname=%s modified=" AIT " count=%d\n", fd->path, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count);
     tbx_log_flush();
 
@@ -683,23 +984,26 @@ log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->
     }
     lio_unlock(lc);
 
-    final_size = segment_size(fh->seg);
+    final_size = lio_size_fh(fh);
 
     log_printf(1, "FLUSH/TRUNCATE fname=%s final_size=" XOT "\n", fd->path, final_size);
     //** Flush and truncate everything which could take some time
     now = apr_time_now();
-    gop_sync_exec(lio_segment_truncate(fh->seg, lc->da, final_size, lc->timeout));
+    gop_sync_exec(lio_truncate_gop(fd, final_size));
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
     log_printf(1, "TRUNCATE fname=%s dt=%lf\n", fd->path, dt);
     now = apr_time_now();
-    gop_sync_exec(segment_flush(fh->seg, lc->da, 0, segment_size(fh->seg)+1, lc->timeout));
+    gop_sync_exec(lio_flush_gop(fd, 0, -1));
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
     log_printf(1, "FLUSH fname=%s dt=%lf\n", fd->path, dt);
 
     log_printf(5, "starting update process fname=%s modified=" AIT "\n", fd->path, tbx_atomic_get(fh->modified));
     tbx_log_flush();
+
+    //** See if we need to change tiers
+    lio_adjust_data_tier(fh, lio_size(fd), 1);
 
     //** Ok no one has the file opened so teardown the segment/exnode
     //** IF not modified just tear down and clean up
@@ -742,6 +1046,9 @@ log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->
         if (fh->remove_on_close == 1) status = gop_sync_exec_status(lio_remove_gop(lc, fd->creds, fd->path, NULL, lio_exists(lc, fd->creds, fd->path)));
 
         if (fh->fname) free(fh->fname);
+        if (fh->data) free(fh->data);
+        apr_thread_cond_destroy(fh->cond);
+        apr_pool_destroy(fh->mpool);
         free(fh);
         goto finished;
     }
@@ -752,7 +1059,7 @@ log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->
     now = apr_time_now();
 
     //** Update the exnode and misc attributes
-    err = lio_update_exnode_attrs(lc, fd->creds, fh->ex, fh->seg, fd->path, &serr);
+    err = lio_update_exnode_attrs(fd, &serr);
     if (err > 1) {
         log_printf(0, "ERROR updating exnode! fname=%s\n", fd->path);
     }
@@ -796,8 +1103,11 @@ log_printf(0, "START TALLY: fname=%s fd=" XIDT " read=" XOT "\n", fd->path, fd->
 
     if (fh->remove_on_close) status = gop_sync_exec_status(lio_remove_gop(lc, fd->creds, fd->path, NULL, lio_exists(lc, fd->creds, fd->path)));
     if (fh->fname) free(fh->fname);
-
+    if (fh->data) free(fh->data);
+    apr_thread_cond_destroy(fh->cond);
+    apr_pool_destroy(fh->mpool);
     free(fh);
+
     if (serr.hard != 0) status = gop_failure_status;
     log_printf(1, "hard=%d soft=%d status=%d\n", serr.hard, serr.soft, status.op_status);
 
@@ -928,7 +1238,7 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
     off = (user_off < 0) ? fd->curr_offset : user_off;
 
     //** Do the read op
-    ssize = segment_size(fd->fh->seg);
+    ssize = lio_size(fd);
     pend = off + size;
     log_printf(0, "ssize=" XOT " off=" XOT " len=" XOT " pend=" XOT " readahead=" XOT " trigger=" XOT "\n", ssize, off, size, pend, fd->fh->lc->readahead, fd->fh->lc->readahead_trigger);
     if (pend > ssize) {
@@ -1038,9 +1348,7 @@ gop_op_generic_t *lio_write_ex_gop_wq(lio_rw_op_t *op)
     total = tbx_tbuf_size(op->buffer);
     tv.nbytes = total;
     if (tbx_tbuf_next(op->buffer, op->boff, &tv) != TBUFFER_OK) return(lio_write_ex_gop_aio(op));
-log_printf(15, "tv.nbytes=" XOT " bsize=" XOT " boff=" XOT "\n", tv.nbytes, total, op->boff);
     if ((ex_off_t)tv.nbytes != (total-op->boff)) return(lio_write_ex_gop_aio(op));
-log_printf(15, "wq_op_new called\n");
 
     return(wq_op_new(op->fd->fh->wq_ctx, op, 1));
 }
@@ -1342,24 +1650,103 @@ gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize,
 gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
 {
     lio_cp_fn_t *op = (lio_cp_fn_t *)arg;
-    gop_op_status_t status;
+    gop_op_status_t status = gop_success_status;
     char *buffer;
-    ex_off_t bufsize;
+    ex_off_t bufsize, len, got, off, len2, max_eof;
     lio_file_handle_t *lfh = op->dlfd->fh;
+    tbx_tbuf_t tbuf;
+    ex_tbx_iovec_t iov;
+    int nfd, localbuf;
     FILE *ffd = op->sffd;
 
+    localbuf = 0;
     buffer = op->buffer;
     bufsize = (op->bufsize <= 0) ? LIO_COPY_BUFSIZE-1 : op->bufsize-1;
-
-    if (buffer == NULL) { //** Need to make it ourself
+    if (bufsize < lfh->lc->small_files_in_metadata_max_size) {
+        bufsize = lfh->lc->small_files_in_metadata_max_size;
+        localbuf = 1;
+    }
+    if ((buffer == NULL) || localbuf) { //** Need to make it ourself
         tbx_type_malloc(buffer, char, bufsize+1);
     }
 
-    status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
+    tbx_tbuf_single(&tbuf, bufsize, buffer);
+
+    //** See if we have a pipe or a normal file
+    max_eof = -1;
+    len = 0;
+    if (op->len == -1) {
+        nfd = fileno(ffd);
+        len = lseek(nfd, 0, SEEK_CUR);  //** Get the current position
+        if (len != -1) {
+            op->len = lseek(nfd, 0, SEEK_END) - len;
+            max_eof = op->len;
+            lseek(nfd, len, SEEK_SET);
+        }
+    }
+
+    //** Read the initial block
+    got = (op->len != -1) ? op->len + op->offset : op->offset;
+    if (got > lfh->lc->small_files_in_metadata_max_size) {  //** Goes in the segment
+        lio_adjust_data_tier(lfh, lfh->lc->small_files_in_metadata_max_size+1, 0);
+        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
+        goto cleanup;
+    }
+
+    //** Let's read the initial block
+    len = (op->len == -1) ? lfh->lc->small_files_in_metadata_max_size-op->offset : op->len-op->offset;
+    got = tbx_dio_read(ffd, buffer, len, -1);
+
+    if ((got != len) || (max_eof == got)) { //** Hit the EOF so we can figure out how big things are
+        off = got + op->offset;
+        if (off <= lfh->lc->small_files_in_metadata_max_size) { //** Fits in the metadata
+            if (lfh->data_size != -1) { //** Already in metadata so just update
+                if (off > lfh->max_data_allocated) { //** Need to grow the space
+                    _metadata_grow(lfh, off);
+                }
+                lfh->modified = 1;
+                memcpy(lfh->data + op->offset, buffer, got);
+                if ((op->offset+got) > lfh->data_size) lfh->data_size = op->offset + got;
+            } else { //** Stored in the segment currently
+                if (op->truncate) {  //** We can truncate so switch tiers and store the data
+                    lio_adjust_data_tier(lfh, off, 0);
+                    memcpy(lfh->data + op->offset, buffer, got);
+                    if ((op->offset+got) > lfh->data_size) lfh->data_size = op->offset + got;
+                } else { //** Dump it in the segment
+                    iov.offset = op->offset; iov.len = got;
+                    status = gop_sync_exec_status(segment_write(lfh->seg, lfh->lc->da, NULL, 1, &iov, &tbuf, 0, lfh->lc->timeout));
+                }
+            }
+        } else { //** To big so dump in segment
+            if (op->truncate) {
+                len2 = off;
+            } else {
+                len2 = lio_size_fh(lfh);
+                if (len2 < off) len2 = off;
+            }
+            lio_adjust_data_tier(lfh, len2, 0);
+            iov.offset = op->offset; iov.len = got;
+            status = gop_sync_exec_status(segment_write(lfh->seg, lfh->lc->da, NULL, 1, &iov, &tbuf, 0, lfh->lc->timeout));
+        }
+
+        goto cleanup;
+    }
+
+    //** Force it to be in the segment
+    lio_adjust_data_tier(lfh, lfh->lc->small_files_in_metadata_max_size+1, 0);
+    iov.offset = op->offset; iov.len = got;
+    status = gop_sync_exec_status(segment_write(lfh->seg, lfh->lc->da, NULL, 1, &iov, &tbuf, 0, lfh->lc->timeout));
+    if (status.op_status == OP_STATE_SUCCESS) {
+        if (op->len != -1) op->len -= got;
+        op->offset += got;
+        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
+    }
+
+cleanup:
     tbx_atomic_set(lfh->modified, 1); //** Flag it as modified so the new exnode gets stored
 
     //** Clean up
-    if (op->buffer == NULL) free(buffer);
+    if (localbuf) free(buffer);
 
     notify_printf(op->dlfd->lc->notify, 1, op->dlfd->creds, "COPY_WRITE: fname=%s fd=" XIDT " STATUS=%s\n", op->dlfd->path, op->dlfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
@@ -1388,6 +1775,25 @@ gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsiz
 }
 
 //***********************************************************************
+// metadata_lio2local - Copies the data from an LStore file with data stored as
+//       metadata to a local file
+//***********************************************************************
+
+gop_op_status_t metadata_lio2local(lio_cp_fn_t *op)
+{
+    gop_op_status_t status = gop_success_status;
+    ex_off_t got;
+    lio_file_handle_t *lfh = op->slfd->fh;
+    FILE *ffd = op->dffd;
+
+    if (op->len == -1) op->len = lfh->data_size - op->offset;
+    if ((op->offset > lfh->data_size) || ((op->offset + op->len) > lfh->data_size)) return(gop_failure_status);
+    got = tbx_dio_write(ffd, lfh->data + op->offset, op->len, -1);
+    if (got != op->len) status = gop_failure_status;
+    return(status);
+}
+
+//***********************************************************************
 // lio_cp_lio2local - Copies a LIO file to a local file
 //***********************************************************************
 
@@ -1400,17 +1806,22 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
     lio_file_handle_t *lfh = op->slfd->fh;
     FILE *ffd = op->dffd;
 
-    buffer = op->buffer;
-    bufsize = (op->bufsize <= 0) ? LIO_COPY_BUFSIZE-1 : op->bufsize-1;
 
-    if (buffer == NULL) { //** Need to make it ourself
-        tbx_type_malloc(buffer, char, bufsize+1);
+    if (lfh->data_size == -1) {   //** Data stored in the segment
+        buffer = op->buffer;
+        bufsize = (op->bufsize <= 0) ? LIO_COPY_BUFSIZE-1 : op->bufsize-1;
+        if (buffer == NULL) { //** Need to make it ourself
+            tbx_type_malloc(buffer, char, bufsize+1);
+        }
+
+        status = gop_sync_exec_status(segment_get_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, lfh->seg, ffd, op->offset, op->len, bufsize, buffer, 3600));
+
+        //** Clean up
+        if (op->buffer == NULL) free(buffer);
+    } else {  //** Stored as metadata
+        status = metadata_lio2local(op);
     }
 
-    status = gop_sync_exec_status(segment_get_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, lfh->seg, ffd, op->offset, op->len, bufsize, buffer, 3600));
-
-    //** Clean up
-    if (op->buffer == NULL) free(buffer);
 
     notify_printf(op->slfd->lc->notify, 1, op->slfd->creds, "COPY_READ: fname=%s fd=" XIDT " STATUS=%s\n", op->slfd->path, op->slfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
@@ -1436,6 +1847,96 @@ gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsiz
     return(gop_tp_op_new(sfd->lc->tpc_unlimited, NULL, lio_cp_lio2local_fn, (void *)op, free, 1));
 }
 
+//***********************************************************************
+// cp_md2seg - Copies the data from between metadata buffers
+//***********************************************************************
+
+gop_op_status_t cp_md2md(lio_cp_fn_t *op, ex_off_t dend, ex_off_t dsize)
+{
+    lio_file_handle_t *sfh = op->slfd->fh;
+    lio_file_handle_t *dfh = op->dlfd->fh;
+    ex_off_t dfinal, send;
+
+    //**Check that the source range is good
+    send = op->offset + op->len;
+    if (send > sfh->data_size) return(gop_failure_status);
+
+    //** Make sure the destination is in the metadata tier
+    dfinal = (dend > dsize) ? dend : dsize;
+    lio_adjust_data_tier(dfh, dfinal, 0);
+
+    //** Now do the copy
+    memcpy(dfh->data + op->offset2, sfh->data + op->offset, op->len);
+    if (dend > dfh->data_size) dfh->data_size = dend;
+    tbx_atomic_set(dfh->modified, 1);
+
+    return(gop_success_status);
+}
+
+//***********************************************************************
+// cp_md2seg - Copies the data from the metadata to a segment
+//***********************************************************************
+
+gop_op_status_t cp_md2seg(lio_cp_fn_t *op, ex_off_t dsize)
+{
+    gop_op_status_t status = gop_success_status;
+    lio_file_handle_t *sfh = op->slfd->fh;
+    lio_file_handle_t *dfh = op->dlfd->fh;
+    ex_off_t send;
+    tbx_tbuf_t tbuf;
+    ex_tbx_iovec_t iov;
+
+    //**Check that the source range is good
+    send = op->offset + op->len;
+    if (send > sfh->data_size) return(gop_failure_status);
+
+    //** Make sure the destination is in the segment tier
+    lio_adjust_data_tier(dfh, dfh->lc->small_files_in_metadata_max_size+1, 0);
+
+    //** Setup the buffer for the write
+    tbx_tbuf_single(&tbuf, op->len, sfh->data + op->offset);
+    iov.len = op->len; iov.offset = op->offset2;
+
+    //** And dump the data
+    status = gop_sync_exec_status(segment_write(dfh->seg, dfh->lc->da, NULL, 1, &iov, &tbuf, 0, dfh->lc->timeout));
+    if (status.op_status == OP_STATE_SUCCESS) {
+        if (op->truncate == 1) gop_sync_exec(lio_segment_truncate(dfh->seg, dfh->lc->da, dsize, dfh->lc->timeout));  //** Truncate the segment
+        tbx_atomic_set(dfh->modified, 1);
+    }
+
+    return(status);
+}
+
+//***********************************************************************
+// cp_seg2md - Copies the data from a segment to metadata
+//***********************************************************************
+
+gop_op_status_t cp_seg2md(lio_cp_fn_t *op, ex_off_t dend, ex_off_t dsize)
+{
+    gop_op_status_t status = gop_success_status;
+    lio_file_handle_t *sfh = op->slfd->fh;
+    lio_file_handle_t *dfh = op->dlfd->fh;
+    ex_off_t dfinal, send;
+    tbx_tbuf_t tbuf;
+    ex_tbx_iovec_t iov;
+
+    //**Check that the source range is good
+    send = op->offset + op->len;
+    if (send > sfh->data_size) return(gop_failure_status);
+
+    //** Make sure the destination is in the metadata tier
+    dfinal = (dend > dsize) ? dend : dsize;
+    lio_adjust_data_tier(dfh, dfinal, 0);
+
+    //** Get the data from the segment and dump it in the dest
+    tbx_tbuf_single(&tbuf, op->len, dfh->data + op->offset2);
+    iov.len = op->len; iov.offset = op->offset;
+    status = gop_sync_exec_status(segment_read(sfh->seg, sfh->lc->da, NULL, 1, &iov, &tbuf, 0, sfh->lc->timeout));
+    if (status.op_status == OP_STATE_SUCCESS) tbx_atomic_set(dfh->modified, 1);
+    if (dend > dfh->data_size) dfh->data_size = dend;
+
+    return(status);
+}
 
 //***********************************************************************
 // lio_cp_lio2lio - Copies a LIO file to another LIO file
@@ -1449,10 +1950,39 @@ gop_op_status_t lio_cp_lio2lio_fn(void *arg, int id)
     lio_file_handle_t *dfh = op->dlfd->fh;
     char *buffer;
     ex_off_t bufsize;
-    int used;
+    ex_off_t dend, dsize;
+    int used, dmd;
     const int sigsize = 10*1024;
     char sig1[sigsize], sig2[sigsize];
 
+    //** See if some of the data is stored as metadata.
+    dsize = lio_size(op->slfd);
+    if (op->len == -1) {
+        op->len = dsize - op->offset;
+    }
+    dend = op->offset2 + op->len;
+    if (op->truncate == 1) {
+        dsize = dend;
+    } else if (dend > dsize) {
+        dsize = dend;
+    }
+
+    //** This tells us if after the operation completes where the data should reside.
+    dmd = ((dend < dfh->lc->small_files_in_metadata_max_size) || (dsize < dfh->lc->small_files_in_metadata_max_size)) ? 1 : 0;
+    if (sfh->data_size != -1) { //** Source is MD
+        if (dmd) { //** Dest is MD
+            status = cp_md2md(op, dend, dsize);
+        } else {
+            status = cp_md2seg(op, dsize);
+        }
+        goto finished;
+    } else if (dmd) {  //** Source is segment and dest is MD
+        status = cp_seg2md(op, dend, dsize);
+        goto finished;
+    }
+
+    //** If we made it there then both source and dest should be in the segment
+    lio_adjust_data_tier(dfh, dfh->lc->small_files_in_metadata_max_size+1, 0);  //** Make sure the destintation is in the segment tier
 
     //** Check if we can do a depot->depot direct copy
     used = 0;
@@ -1479,6 +2009,7 @@ gop_op_status_t lio_cp_lio2lio_fn(void *arg, int id)
         if (op->buffer == NULL) free(buffer);
     }
 
+finished:
     notify_printf(op->slfd->lc->notify, 1, op->slfd->creds, "COPY_READ: fname=%s fd=" XIDT " STATUS=%s\n", op->slfd->path, op->slfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
     notify_printf(op->dlfd->lc->notify, 1, op->dlfd->creds, "COPY_WRITE: fname=%s fd=" XIDT " STATUS=%s\n", op->dlfd->path, op->dlfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
@@ -1893,12 +2424,27 @@ ex_off_t lio_tell(lio_fd_t *fd)
 
 
 //***********************************************************************
+// lio_size_fh - Return the file size using the file handle
+//***********************************************************************
+
+ex_off_t lio_size_fh(lio_file_handle_t *fh)
+{
+    ex_off_t size = -1;
+
+    apr_thread_mutex_lock(fh->lock);
+    if (fh->data_size >= 0) size = fh->data_size;
+    apr_thread_mutex_unlock(fh->lock);
+
+    if (size < 0) size = segment_size(fh->seg);
+    return(size);
+}
+//***********************************************************************
 // lio_size - Return the file size
 //***********************************************************************
 
 ex_off_t lio_size(lio_fd_t *fd)
 {
-    return(segment_size(fd->fh->seg));
+    return(lio_size_fh(fd->fh));
 }
 
 //***********************************************************************
@@ -1911,11 +2457,53 @@ ex_off_t lio_block_size(lio_fd_t *fd, int block_type)
 }
 
 //***********************************************************************
+// lio_flush_fn - Flush a file to disk
+//***********************************************************************
+
+gop_op_status_t lio_flush_fn(void *arg, int id)
+{
+    lio_cp_fn_t *op = (lio_cp_fn_t *)arg;
+    gop_op_status_t status;
+    lio_file_handle_t *fh = op->slfd->fh;
+    ex_off_t lo = op->offset;
+    ex_off_t hi = op->offset2;
+    int err;
+
+    status = gop_success_status;  //** Default status
+
+    apr_thread_mutex_lock(fh->lock);
+    if (fh->data_size > -1) { //** Data is stored as an attribute.
+        if (tbx_atomic_get(fh->modified)) { //** Changed so flush it to the LServer
+            err = lio_update_exnode_attrs(op->slfd, NULL);
+            tbx_atomic_set(fh->modified, 0);
+            if (err) status = gop_failure_status;
+        }
+        apr_thread_mutex_unlock(fh->lock);
+        return(status);
+    }
+    apr_thread_mutex_unlock(fh->lock);
+
+    status = gop_sync_exec_status(segment_flush(fh->seg, fh->lc->da, lo, (hi == -1) ? segment_size(fh->seg)+1 : hi, fh->lc->timeout));
+    return(status);
+}
+
+//***********************************************************************
 // lio_flush_gop - Returns a flush GOP operation
 //***********************************************************************
 
 gop_op_generic_t *lio_flush_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi)
 {
+    lio_cp_fn_t *op;
+
+    tbx_type_malloc_clear(op, lio_cp_fn_t, 1);
+
+    op->offset = lo;
+    op->offset2 = hi;
+    op->slfd = fd;
+
+    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flush_fn, (void *)op, free, 1));
+
+
     return(segment_flush(fd->fh->seg, fd->fh->lc->da, lo, (hi == -1) ? segment_size(fd->fh->seg)+1 : hi, fd->fh->lc->timeout));
 }
 
@@ -1938,19 +2526,32 @@ gop_op_status_t lio_truncate_fn(void *arg, int id)
     gop_op_status_t status;
     lio_file_handle_t *fh = op->slfd->fh;
 
-    if (op->bufsize != segment_size(fh->seg)) {
+    status = gop_success_status;  //** Default status
+
+    //** Go ahead and adjust the tier based on the new size. Then we'll do the truncate.
+    apr_thread_mutex_lock(fh->lock);
+    lio_adjust_data_tier(op->slfd->fh, op->bufsize, 0);
+
+    if (fh->data_size > -1) { //** Data is stored as an attribute.
+        if (fh->max_data_allocated < op->bufsize) { //** Growing the file
+            _metadata_grow(fh, op->bufsize);
+            fh->data_size = op->bufsize;
+        } else if (fh->data_size > op->bufsize) {   //** Shrinking
+            memset(fh->data + op->bufsize, 0, fh->data_size - op->bufsize);
+            fh->data_size = op->bufsize;
+        }
+        apr_thread_mutex_unlock(fh->lock);
+    } else { //** Data is in the segment
+        apr_thread_mutex_unlock(fh->lock);
         status = gop_sync_exec_status(lio_segment_truncate(fh->seg, fh->lc->da, op->bufsize, fh->lc->timeout));
-        segment_lock(fh->seg);
-        tbx_atomic_set(fh->modified, 1);
-        op->slfd->curr_offset = op->bufsize;
-        segment_unlock(fh->seg);
-    } else {
-        //** Move the FD to the end
-        segment_lock(fh->seg);
-        op->slfd->curr_offset = op->bufsize;
-        segment_unlock(fh->seg);
-        status = gop_success_status;
     }
+
+    //** Adjust the file position
+    segment_lock(fh->seg);
+    tbx_atomic_set(fh->modified, 1);
+    op->slfd->curr_offset = op->bufsize;
+//    _lio_dec_in_flight_and_unlock(op->slfd);
+    segment_unlock(fh->seg);
 
     return(status);
 }
