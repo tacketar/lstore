@@ -200,6 +200,7 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     ug->hint = hint;
     hint->ts = apr_time_now();
     hint->uid = ug->uid;
+    hint->prev_search.search_hint = -2;
     ug->hint_counter = hint->ts;
 
     if (ug->n_gid >= PA_MAX_ACCOUNT) ug->n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
@@ -272,7 +273,6 @@ void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     hint->uid = ug->uid;
     hint->prev_search.search_hint = -2;
     ug->hint_counter = hint->ts;
-
 }
 
 //**************************************************************************
@@ -494,7 +494,7 @@ int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_au
 {
     pa_hint_t *hint;
 
-    if (ug->hint_counter < pa->timestamp) { //** It's an old hint so do the fallback using GIDs stored i nteh hint
+    if (ug->hint_counter < pa->timestamp) { //** It's an old hint so do the fallback using GIDs stored in the hint
         return(pacl_can_access_gid_list(pa, path, ug->n_gid, ug->gid, mode, acl));
     }
 
@@ -1052,7 +1052,7 @@ void pacl_destroy(path_acl_context_t *pa)
     apr_ssize_t hlen;
     apr_hash_index_t *hi;
     pa_hint_t *hint;
-    
+
     log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
 
@@ -1077,7 +1077,7 @@ void pacl_destroy(path_acl_context_t *pa)
         apr_hash_this(hi, NULL, &hlen, (void **)&hint);
         free(hint);  //** The interior strings are just pointers to fields in a2g above
     }
-    
+
     //** This also destroys the hash
     apr_pool_destroy(pa->mpool);
 
