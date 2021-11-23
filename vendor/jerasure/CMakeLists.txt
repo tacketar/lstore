@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 2.6)
 
 # make a project
-project( lstore-jerasure C )
+project( lstore-jerasure C CXX)
 
 option(WANT_SHARED "Produce a shared library" ON)
 option(WANT_STATIC "Produce a static library" ON)
