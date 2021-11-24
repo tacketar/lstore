@@ -200,7 +200,6 @@ int lfs_realpath(lio_fuse_t *lfs, const char *path, char *realpath)
 
     v_size = OS_PATH_MAX;
     err = lio_getattr(lfs->lc, lfs->lc->creds, (char *)path, NULL, "os.realpath", (void **)&realpath, &v_size);
-log_printf(0, "path=%s realpath=%s err=%d\n", path, realpath, err);
     if (err != OP_STATE_SUCCESS) {
         return(-ENOATTR);
     }
