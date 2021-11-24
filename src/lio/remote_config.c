@@ -301,7 +301,7 @@ void rcs_config_send(rc_t *rc, lio_creds_t *creds, gop_mq_frame_t *fid, mq_msg_t
         if (stat(path, &st) == 0) {
             log_printf(5, "RCS: path=%s ts_user=" TT " ts_server= " TT "\n", path, timestamp, st.st_mtime);
             if (timestamp != st.st_mtime) {
-                tbx_inip_file2string(path, &config, &nbytes);
+                tbx_inip_file2string_jail(path, &config, &nbytes, rc->prefix);
                 if (nbytes > 0) nbytes++; //** Make sure and send the NULL terminator
             }
             timestamp = st.st_mtime;
