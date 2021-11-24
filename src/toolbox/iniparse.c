@@ -41,6 +41,8 @@ typedef struct {  //** Used for Reading the ini file
     bfile_entry_t *curr;
     tbx_stack_t *stack;
     tbx_stack_t *include_paths;
+    const char *jail_prefix;
+    int n_jail_len;
     int error;
 } bfile_t;
 
@@ -319,19 +321,55 @@ void tbx_inip_apply_params(tbx_inip_file_t  *fd)
 }
 
 //***********************************************************************
+// _jail_check - Check's if the path resides in the jail prefix and returns
+//     1 if it is 0 otherwise
+//***********************************************************************
+
+int _jail_check(const char *fname, const char *jail_prefix, int n_jail_len)
+{
+    char rpath[PATH_MAX];
+    char *rp;
+
+    if (n_jail_len == 0) return(0); //** No include files are allowed
+    if (n_jail_len == 1) return(1); //** Everything matches a "/"
+
+    rp = realpath(fname, rpath);
+    if (!rp) return(0);  //** No valid path so kick out
+
+    if (strncmp(rp, jail_prefix, n_jail_len) != 0) return(0); //** No match so kick out
+
+    //** Got a possible mathc if we made it here
+    if (jail_prefix[n_jail_len-1] == '/') {  //** Jail has a terminating '/' so no need to check further
+        return(1);
+    } else if (fname[n_jail_len-1] == '\0') {  //** End of fname
+        return(1);
+    } else if (fname[n_jail_len] == '/') { //** Make sure next character is a "/" otherwise it's a similarly spelled name
+        return(1);
+    }
+
+    return(0);
+}
+
+//***********************************************************************
 // bfile_fopen - Opens the requested file scanning the include paths
 //     if the file doesn't exist in the CWD and is not an absolute path.
 //     IF the file cannot be found NULL is returned.
 //***********************************************************************
 
-FILE *bfile_fopen(tbx_stack_t *include_paths, char *fname)
+FILE *bfile_fopen(tbx_stack_t *include_paths, char *fname, const char *jail_prefix, int n_jail_len)
 {
     FILE *fd;
     char fullpath[BUFMAX];
     char *path;
 
     if (fname[0] == '/') { //** Absolute path so just try and open it
-        return(fopen(fname, "r"));
+        fd = fopen(fname, "r");
+        if (fd) { //** Check the path
+            if (_jail_check(fname, jail_prefix, n_jail_len)) return(fd);
+            fclose(fd);
+            return(NULL);
+        }
+        return(NULL);
     }
 
     //** Relative path so cycle through the prefixes
@@ -340,7 +378,10 @@ FILE *bfile_fopen(tbx_stack_t *include_paths, char *fname)
         snprintf(fullpath, BUFMAX, "%s/%s", path, fname);
         fd = fopen(fullpath, "r");
         log_printf(15, "checking path=%s fname=%s fullpath=%s fd=%p\n", path, fname, fullpath, fd);
-        if (fd != NULL) return(fd);   //** Found it so kick out
+        if (fd != NULL) { //** Found a possible match so check if it's in the jail
+            if (_jail_check(fullpath, jail_prefix, n_jail_len)) return(fd);
+            fclose(fd);  //** Not in the jail so try another prefix
+        }
 
         tbx_stack_move_down(include_paths);
     }
@@ -434,7 +475,7 @@ again:
         log_printf(10, "_get_line: Opening include file %s\n", fname);
 
         tbx_type_malloc(entry, bfile_entry_t, 1);
-        entry->fd = bfile_fopen(bfd->include_paths, fname);
+        entry->fd = bfile_fopen(bfd->include_paths, fname, bfd->jail_prefix, bfd->n_jail_len);
         if (entry->fd == NULL) {  //** Can't open the file
             log_printf(-1, "_get_line: Problem opening include file !%s!\n", fname);
             fprintf(stderr, "_get_line: Problem opening include file !%s!\n", fname);
@@ -815,7 +856,7 @@ char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *
 //    NOTE:  Either fd or text showld be non-NULL but not both.
 //***********************************************************************
 
-tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int resolve_params)
+tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int resolve_params, const char *jail_prefix)
 {
     tbx_inip_file_t *inip;
     tbx_inip_group_t *group, *prev;
@@ -832,6 +873,8 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int r
     entry->used = 0;
     bfd.error = 0;
     bfd.curr = entry;
+    bfd.jail_prefix = jail_prefix;
+    bfd.n_jail_len = (jail_prefix) ? strlen(jail_prefix) : 0;
     bfd.stack = tbx_stack_new();
     bfd.include_paths = tbx_stack_new();
     tbx_stack_push(bfd.include_paths, strdup("."));  //** By default always look in the CWD 1st
@@ -876,11 +919,13 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int r
 }
 
 //***********************************************************************
-//  tbx_inip_file_read - Reads a .ini file from disk
+//  tbx_inip_file_read_jail - Reads a .ini file from disk using a prefix jail
+//     for handling include files
 //***********************************************************************
 
-tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params)
+tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, const char *jail_prefix)
 {
+
     FILE *fd;
     char *prefix;
     int i;
@@ -906,26 +951,43 @@ tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params)
         }
     }
 
-    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, resolve_params);
+    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, resolve_params, jail_prefix);
 
     if (prefix) free(prefix);
     return ret;
 }
 
 //***********************************************************************
+//  tbx_inip_file_read - Reads a .ini file from disk
+//***********************************************************************
+
+tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params)
+{
+    return(tbx_inip_file_read_jail(fname, resolve_params, "/"));
+}
+//***********************************************************************
 //  tbx_inip_string_read - Loads a string and parses it into a INI structure
 //***********************************************************************
 tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params)
 {
-    return(inip_load(NULL, text, NULL, resolve_params));
+    return(inip_load(NULL, text, NULL, resolve_params, "/"));
 }
 
 //***********************************************************************
-// inip_convert2string - Loads the file and resolves all dependencies
-//     and converts it to a string.
+//  tbx_inip_string_read_jail - Loads a string and parses it into a INI structure
+//     using the jail prefix to limit include scope
+//***********************************************************************
+tbx_inip_file_t *tbx_inip_string_read_jail(const char *text, int resolve_params, const char *jail_prefix)
+{
+    return(inip_load(NULL, text, NULL, resolve_params, jail_prefix));
+}
+
+//***********************************************************************
+// inip_convert2string_jail - Loads the file and resolves all dependencies
+//     and converts it to a string isolated to the jail prefix for include files
 //***********************************************************************
 
-int inip_convert2string(FILE *fd_in, const char *text_in, char **text_out, int *nbytes, char *prefix)
+int inip_convert2string_jail(FILE *fd_in, const char *text_in, char **text_out, int *nbytes, const char *prefix, const char *jail_prefix)
 {
     bfile_t bfd;
     bfile_entry_t *entry;
@@ -941,6 +1003,8 @@ int inip_convert2string(FILE *fd_in, const char *text_in, char **text_out, int *
 
     entry->used = 0;
     bfd.curr = entry;
+    bfd.jail_prefix = jail_prefix;
+    bfd.n_jail_len = (jail_prefix) ? strlen(jail_prefix) : 0;
     bfd.stack = tbx_stack_new();
     bfd.error = 0;
     bfd.include_paths = tbx_stack_new();
@@ -991,11 +1055,11 @@ int inip_convert2string(FILE *fd_in, const char *text_in, char **text_out, int *
 }
 
 //***********************************************************************
-//  inip_file2string - Loads a INI file resolving dependencies and
-//     converts it ot a string.
+//  inip_file2string_jail - Loads a INI file resolving dependencies and
+//     converts it ot a string using a jail prefix for includes
 //***********************************************************************
 
-int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes)
+int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, const char *jail_prefix)
 {
     FILE *fd;
     char *prefix;
@@ -1024,10 +1088,30 @@ int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes)
         }
     }
 
-    i = inip_convert2string(fd, NULL, text_out, nbytes, prefix);
+    i = inip_convert2string_jail(fd, NULL, text_out, nbytes, prefix, jail_prefix);
     if (prefix) free(prefix);
 
     return(i);
+}
+
+//***********************************************************************
+//  inip_file2string_jail - Loads a INI file resolving dependencies and
+//     converts it ot a string.
+//***********************************************************************
+
+int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes)
+{
+    return(tbx_inip_file2string_jail(fname, text_out, nbytes, "/"));
+}
+
+//***********************************************************************
+//  inip_text2string_jail - Loads a INI file resolving dependencies and
+//     converts it ot a string localizing include scope to the jail prefix
+//***********************************************************************
+
+int tbx_inip_text2string_jail(const char *text, char **text_out, int *nbytes, const char *jail_prefix)
+{
+    return(inip_convert2string_jail(NULL, text, text_out, nbytes, NULL, jail_prefix));
 }
 
 //***********************************************************************
@@ -1037,7 +1121,7 @@ int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes)
 
 int tbx_inip_text2string(const char *text, char **text_out, int *nbytes)
 {
-    return(inip_convert2string(NULL, text, text_out, nbytes, NULL));
+    return(inip_convert2string_jail(NULL, text, text_out, nbytes, NULL, "/"));
 }
 
 //***********************************************************************

@@ -70,6 +70,10 @@ TBX_API tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_param
 TBX_API tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params);
 TBX_API int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes);
 TBX_API int tbx_inip_text2string(const char *text, char **text_out, int *nbytes);
+TBX_API tbx_inip_file_t *tbx_inip_string_read_jail(const char *text, int resolve_params, const char *jail_prefix);
+TBX_API tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, const char *jail_prefix);
+TBX_API int tbx_inip_text2string_jail(const char *text, char **text_out, int *nbytes, const char *jail_prefix);
+TBX_API int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, const char *jail_prefix);
 TBX_API char *tbx_inip_serialize(tbx_inip_file_t *fd);
 TBX_API void tbx_inip_apply_params(tbx_inip_file_t  *fd);
 
