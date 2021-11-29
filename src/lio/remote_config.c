@@ -568,7 +568,7 @@ void _rc_configs_destroy(rc_configs_t *cfgs)
 //
 //  The XXXXX maps to a file in the specified prefix directory
 //  The YYYYY map to valid user accounts that are allowed to read the config.
-//  If no accounts are listed then the config is assumed to be publically 
+//  If no accounts are listed then the config is assumed to be publically
 //  accessible.
 //
 //  [config-XXXXX_1]
