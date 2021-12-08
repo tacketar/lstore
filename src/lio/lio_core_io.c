@@ -232,20 +232,11 @@ int lio_update_exnode_attrs(lio_fd_t *fd, lio_segment_errors_t *serr)
 
     ret = 0;
 
-    //** Serialize the exnode
-    exp = lio_exnode_exchange_create(EX_TEXT);
-    lio_exnode_serialize(fd->fh->ex, exp);
-
     //** Get any errors that may have occured if needed
     if (serr == NULL) {
         serr = &my_serr;
         lio_get_error_counts(fd->lc, fd->fh->seg, serr);
     }
-
-    //** Update the exnode
-    n = 4;
-    val[0] = exp->text.text;
-    v_size[0] = strlen(val[0]);
 
     //* Get the size and optionally set the data attribute
     if (fd->fh->data_size < 0) {  //** Data stored in segment
@@ -267,11 +258,21 @@ int lio_update_exnode_attrs(lio_fd_t *fd, lio_segment_errors_t *serr)
     val[2] = NULL;
     v_size[2] = 0;
 
+    n = 4;
     n += lio_encode_error_counts(serr, &(key[n]), &(val[n]), ebuf, &(v_size[n]), 0);
     if ((serr->hard>0) || (serr->soft>0) || (serr->write>0)) {
         log_printf(1, "ERROR: fname=%s hard_errors=%d soft_errors=%d write_errors=%d\n", fd->path, serr->hard, serr->soft, serr->write);
         ret += 1;
     }
+
+    //** Serialize the exnode. This is done after the error counts in case the segment does some caching
+    exp = lio_exnode_exchange_create(EX_TEXT);
+    lio_exnode_serialize(fd->fh->ex, exp);
+
+    //** Update the exnode
+    val[0] = exp->text.text;
+    v_size[0] = strlen(val[0]);
+
 
     err = lio_multiple_setattr_op(fd->lc, fd->creds, fd->path, NULL, key, (void **)val, v_size, n);
     if (err != OP_STATE_SUCCESS) {
