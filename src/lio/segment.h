@@ -23,6 +23,9 @@ gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
 gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, lio_segment_t *src_seg, FILE *fd, ex_off_t src_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int timeout);
 lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_exchange_t *ex);
 
+ex_off_t math_gcd(ex_off_t a, ex_off_t b);
+ex_off_t math_lcm(ex_off_t a, ex_off_t b);
+
 // Preprocessor macros
 #define lio_segment_type(s) (s)->header.type
 #define segment_clone(s, da, clone_ex, mode, attr, to) \
