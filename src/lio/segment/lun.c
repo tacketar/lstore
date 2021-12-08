@@ -2903,12 +2903,20 @@ ex_off_t seglun_block_size(lio_segment_t *seg, int btype)
 int seglun_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
 {
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
+    ex_id_t n;
 
     tbx_append_printf(buffer, used, bufsize, "lun(\n");
     tbx_append_printf(buffer, used, bufsize, "    n_devices=%d\n", s->n_devices);
     tbx_append_printf(buffer, used, bufsize, "    n_shift=%d\n", s->n_shift);
     tbx_append_printf(buffer, used, bufsize, "    chunk_size=" XOT "\n", s->chunk_size);
-    if (s->crypt_enabled) tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", s->crypt_enabled);
+    if (s->crypt_enabled > 0) {
+        if (s->crypt_enabled == 1) {
+            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", s->crypt_enabled);
+        } else {
+            tbx_random_get_bytes(&n, sizeof(ex_id_t));
+            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XIDT " # Generate new keys if copied\n", n);
+        }
+    }
     tbx_append_printf(buffer, used, bufsize, ")\n");
 
     return(0);
