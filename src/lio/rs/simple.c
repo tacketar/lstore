@@ -111,7 +111,7 @@ int rss_test(lio_rsq_base_ele_t *q, lio_rss_rid_entry_t *rse, int n_match, kvq_e
     v_pickone = q->val_op & RSQ_BASE_KV_PICKONE;
     v_op = q->val_op & RSQ_BASE_KV_OP_BITMASK;
 
-    log_printf(15, "key=%s val=%s n_attr=%d\n", q->key, q->val, tbx_list_key_count(rse->attr));
+    log_printf(15, "key=%s val=%s n_attr=%d k_uniq=%d k_pick=%d v_uniq=%d v_pick=%d\n", q->key, q->val, tbx_list_key_count(rse->attr), k_unique, k_pickone, v_unique, v_pickone);
 
     str_tomatch = (q->key != NULL) ? q->key : "";
     nlen = strlen(str_tomatch);
