@@ -70,7 +70,24 @@ typedef struct {
     lio_segment_t *seg;
     data_probe_t **probe;
     seglin_slot_t **block;
+    data_attr_t *da;
+    tbx_log_fd_t *fd;
+    int mode;
+    ex_off_t buffer_size;
+    lio_inspect_args_t *args;
+    int timeout;
 } seglin_check_t;
+
+typedef struct {
+    lio_segment_t *seg;
+    data_attr_t *da;
+    tbx_log_fd_t *fd;
+    int mode;
+    ex_off_t bufsize;
+    lio_inspect_args_t *args;
+    int timeout;
+    int n;
+} seglin_inspect_t;
 
 typedef struct {
     lio_segment_t *seg;
@@ -108,9 +125,11 @@ typedef struct {
     gop_thread_pool_context_t *tpc;
     int n_rid_default;
     int hard_errors;
+    int write_errors;
     tbx_isl_t *isl;
     lio_resource_service_fn_t *rs;
     lio_data_service_fn_t *ds;
+    tbx_stack_t *db_cleanup;
 } seglin_priv_t;
 
 
@@ -249,7 +268,7 @@ gop_op_status_t _sl_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_size_
 
         for (i=0; i<n_blocks; i++) {  //** Add the new blocks
             b = block[i];
-            b->data->rid_key = strdup(req_list[i].rid_key);
+            b->data->rid_key = req_list[i].rid_key;
             tbx_atomic_inc(b->data->ref_count);
             tbx_isl_insert(s->isl, (tbx_sl_key_t *)&(b->seg_offset), (tbx_sl_key_t *)&(b->seg_end), (tbx_sl_data_t *)b);
 
@@ -371,6 +390,12 @@ gop_op_status_t _sl_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new_siz
     //** Update the size
     s->total_size = new_size;
     s->used_size = new_size;
+
+    //** If needed clear any errors
+    if (s->used_size == 0) {
+        s->hard_errors = 0;
+        s->write_errors = 0;
+    }
 
     status = (err1 == OP_STATE_SUCCESS) ? gop_success_status : gop_failure_status;
     return(status);
@@ -497,18 +522,18 @@ gop_op_status_t seglin_read_func(void *arg, int id)
         gop = opque_get_gop(q);
     }
 
-    i = gop_waitall(gop);
+    gop_waitall(gop);
 
-    gop_free(gop, OP_DESTROY);
-
-    if (i == 0) {
+    if (gop_completed_successfully(gop)) {
         err = gop_success_status;
     } else {
-        err = gop_success_status;
+        err = gop_failure_status;
         segment_lock(sr->seg);
         s->hard_errors++;
         segment_unlock(sr->seg);
     }
+
+    gop_free(gop, OP_DESTROY);
 
     return(err);
 }
@@ -651,7 +676,7 @@ gop_op_status_t seglin_write_func(void *arg, int id)
         status = gop_success_status;
     } else {
         status = gop_failure_status;
-        s->hard_errors++;
+        s->write_errors++;
     }
 
     segment_unlock(sw->seg);
@@ -688,7 +713,7 @@ gop_op_generic_t *seglin_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
 // _seglin_probe_cb - Validates all the segment probes
 //***********************************************************************
 
-void _seglin_probe_cb(void *arg, int state)
+void UNUSED_seglin_probe_cb(void *arg, int state)
 {
     seglin_check_t *sp = (seglin_check_t *)arg;
     lio_segment_t *seg = sp->seg;
@@ -762,7 +787,7 @@ gop_op_generic_t *seglin_remove(lio_segment_t *seg, data_attr_t *da, int timeout
 // seglin_inspect_func - Checks that all the segments are available and they are the right size
 //***********************************************************************
 
-gop_op_generic_t *seglin_inspect_op(lio_segment_t *seg, data_attr_t *da, tbx_log_fd_t *fd, int mode, ex_off_t buffer_size, lio_inspect_args_t *args, int timeout)
+gop_op_generic_t *UNUSED_seglin_inspect_op(lio_segment_t *seg, data_attr_t *da, tbx_log_fd_t *fd, int mode, ex_off_t buffer_size, lio_inspect_args_t *args, int timeout)
 {
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
     gop_op_generic_t *gop;
@@ -780,7 +805,7 @@ gop_op_generic_t *seglin_inspect_op(lio_segment_t *seg, data_attr_t *da, tbx_log
     tbx_type_malloc_clear(sp->probe, data_probe_t *, tbx_isl_count(s->isl));
 
     q = gop_opque_new();
-    gop_cb_set(cb, _seglin_probe_cb, sp);
+    gop_cb_set(cb, UNUSED_seglin_probe_cb, sp);
     opque_callback_append(q, cb);
 
     sp->q = q;
@@ -803,7 +828,491 @@ gop_op_generic_t *seglin_inspect_op(lio_segment_t *seg, data_attr_t *da, tbx_log
 }
 
 //***********************************************************************
-//  seglin_truncate_func - Does the actual segment truncat operations
+// sli_block_check - Sanity checks the linear blocks
+//***********************************************************************
+
+int sli_block_check(seglin_inspect_t *op, int *block_status, seglin_slot_t **b_list)
+{
+    gop_op_generic_t *gop;
+    gop_opque_t *q;
+    data_probe_t *probe[op->n];
+    seglin_slot_t *b;
+    gop_op_status_t status;
+    ex_off_t psize, seg_size;
+    int i, err;
+
+    //** Generate the tasks
+    q = gop_opque_new();
+    for (i=0; i<op->n; i++) {
+        probe[i] = ds_probe_create(b_list[i]->data->ds);
+        gop = ds_probe(b_list[i]->data->ds, op->da, ds_get_cap(b_list[i]->data->ds, b_list[i]->data->cap, DS_CAP_MANAGE), probe[i], op->timeout);
+        gop_set_id(gop, i);
+        gop_opque_add(q, gop);
+    }
+
+    //** Process the results
+    err = 0;
+    while ((gop = opque_waitany(q)) != NULL) {
+        i = gop_get_id(gop);
+        b = b_list[i];
+        status = gop_get_status(gop);
+        if (status.op_status == OP_STATE_SUCCESS) {
+            //** Verify the max_size >= cap_offset+len
+            ds_get_probe(b->data->ds, probe[i], DS_PROBE_MAX_SIZE, &psize, sizeof(psize));
+            seg_size = b->cap_offset + b->len;
+            if (psize < seg_size) {
+                log_printf(10, "seg=" XIDT " allocation too small! i=%d\n", segment_id(op->seg), i);
+                block_status[i] = 2;
+                err++;
+            }
+        } else {
+            log_printf(10, "seg=" XIDT " probe failed! i=%d\n", segment_id(op->seg), i);
+            block_status[i] = 1;
+            err++;
+        }
+
+        ds_probe_destroy(b_list[i]->data->ds, probe[i]);
+        gop_free(gop, OP_DESTROY);
+    }
+
+    gop_opque_free(q, OP_DESTROY);
+
+    return(err);
+}
+
+//***********************************************************************
+// sli_placement_check - Checks that all the allocations satisfy the data placement requirements
+//***********************************************************************
+
+int sli_placement_check(seglin_inspect_t *op, int *block_status, seglin_slot_t **b_list)
+{
+    seglin_priv_t *s = (seglin_priv_t *)op->seg->priv;
+    int i, nbad;
+    lio_rs_hints_t hints_list[op->n];
+    char *migrate;
+    gop_op_generic_t *gop;
+    apr_hash_t *rid_changes;
+    lio_rid_inspect_tweak_t *rid;
+    apr_thread_mutex_t *rid_lock;
+
+    rid_changes = op->args->rid_changes;
+    rid_lock = op->args->rid_lock;
+
+    //** Make the fixed list table
+    for (i=0; i<op->n; i++) {
+        hints_list[i].fixed_rid_key = b_list[i]->data->rid_key;
+        hints_list[i].status = RS_ERROR_OK;
+        hints_list[i].local_rsq = NULL;
+        hints_list[i].pick_from = NULL;
+        migrate = data_block_get_attr(b_list[i]->data, "migrate");
+        if (migrate != NULL) {
+            hints_list[i].local_rsq = rs_query_parse(s->rs, migrate);
+        }
+    }
+
+    //** Now call the query check
+    gop = rs_data_request(s->rs, NULL, op->args->query, NULL, NULL, 0, hints_list, op->n, op->n, 0, op->timeout);
+    gop_waitall(gop);
+    gop_free(gop, OP_DESTROY);
+
+    nbad = 0;
+    for (i=0; i<op->n; i++) {
+        if (hints_list[i].status != RS_ERROR_OK) {
+            if (hints_list[i].status == RS_ERROR_FIXED_NOT_FOUND) {
+                nbad++;
+            } else {
+                nbad++;
+            }
+            block_status[i] = hints_list[i].status;
+        } else if (rid_changes) { //** See if the allocation can be shuffled
+            if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
+            rid = apr_hash_get(rid_changes, b_list[i]->data->rid_key, APR_HASH_KEY_STRING);
+            if (rid != NULL) {
+                if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
+                    rid = NULL;
+                }
+                if (rid != NULL) {  //** See about shuffling the data
+                    nbad++;
+                    block_status[i] = -103;
+                }
+            }
+            if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);
+        }
+
+        if (hints_list[i].local_rsq != NULL) {
+            rs_query_destroy(s->rs, hints_list[i].local_rsq);
+        }
+    }
+
+    return(nbad);
+}
+
+//***********************************************************************
+// sli_placement_fix - Attempts to migrate the allocations if needed
+//***********************************************************************
+
+int sli_placement_fix(seglin_inspect_t *op, int *block_status, seglin_slot_t **b_list)
+{
+    seglin_priv_t *s = (seglin_priv_t *)op->seg->priv;
+    int i, j, k, nbad, ngood, loop, cleanup_index;
+    int missing[op->n], m, todo;
+    char *cleanup_key[5*op->n];
+    lio_rs_request_t req[op->n];
+    lio_rid_inspect_tweak_t *rid_pending[op->n];
+    rs_query_t *rsq;
+    apr_hash_t *rid_changes;
+    lio_rid_inspect_tweak_t *rid;
+    apr_thread_mutex_t *rid_lock;
+
+    lio_rs_hints_t hints_list[op->n];
+    lio_data_block_t *db[op->n], *dbs, *dbd, *dbold[op->n];
+    data_cap_set_t *cap[op->n];
+
+    char *migrate;
+    gop_op_generic_t *gop;
+    gop_opque_t *q;
+
+    rid_changes = op->args->rid_changes;
+    rid_lock = op->args->rid_lock;
+    rsq = rs_query_dup(s->rs, op->args->query);
+
+    cleanup_index = 0;
+    loop = 0;
+    do {
+        q = gop_opque_new();
+
+        //** Make the fixed list mapping table
+        memset(db, 0, sizeof(db));
+        nbad = op->n-1;
+        ngood = 0;
+        m = 0;
+        if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
+        for (i=0; i<op->n; i++) {
+            rid = NULL;
+            if (rid_changes != NULL) {
+                rid = apr_hash_get(rid_changes, b_list[i]->data->rid_key, APR_HASH_KEY_STRING);
+                if (rid != NULL) {
+                    if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
+                        rid = NULL;
+                    }
+                }
+            }
+            rid_pending[i] = rid;
+
+            if ((block_status[i] == 0) && (rid == NULL)) {
+                j = ngood;
+                hints_list[ngood].fixed_rid_key = b_list[i]->data->rid_key;
+                hints_list[ngood].status = RS_ERROR_OK;
+                hints_list[ngood].local_rsq = NULL;
+                hints_list[ngood].pick_from = NULL;
+                ngood++;
+            } else {
+                j = nbad;
+                hints_list[nbad].local_rsq = NULL;
+                hints_list[nbad].fixed_rid_key = NULL;
+                hints_list[nbad].status = RS_ERROR_OK;
+                hints_list[nbad].pick_from = NULL;
+                if (rid != NULL) {
+                    hints_list[nbad].pick_from = rid->pick_pool;
+                    rid->rid->delta += b_list[i]->len;
+                    rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
+                    log_printf(5, "i=%d rid_key=%s, pick_pool_count=%d\n", i, b_list[i]->data->rid_key, apr_hash_count(rid->pick_pool));
+                }
+                req[m].rid_index = nbad;
+                req[m].size = b_list[i]->len;
+                db[m] = data_block_create(s->ds);
+                cap[m] = db[m]->cap;
+                missing[m] = i;
+                nbad--;
+                m++;
+            }
+
+            if (hints_list[j].local_rsq != NULL) {
+                rs_query_destroy(s->rs, hints_list[j].local_rsq);
+            }
+            migrate = data_block_get_attr(b_list[i]->data, "migrate");
+            if (migrate != NULL) {
+                hints_list[j].local_rsq = rs_query_parse(s->rs, migrate);
+            }
+        }
+
+        // 3=ignore fixed and it's ok to return a partial list
+        gop = rs_data_request(s->rs, op->da, rsq, cap, req, m, hints_list, ngood, op->n, 3, op->timeout);
+
+        if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);  //** The data request will use the rid_changes table in constructing the ops
+
+        gop_waitall(gop);
+        gop_free(gop, OP_DESTROY);
+
+        //** Process the results
+        opque_start_execution(q);
+        for (j=0; j<m; j++) {
+            i = missing[j];
+            if (ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_READ) != NULL) {
+                db[j]->rid_key = req[j].rid_key;
+                req[j].rid_key = NULL;  //** Cleanup
+
+                //** Make the copy operation
+                gop = ds_copy(b_list[i]->data->ds, op->da, DS_PUSH, NS_TYPE_SOCK, "",
+                              ds_get_cap(b_list[i]->data->ds, b_list[i]->data->cap, DS_CAP_READ), b_list[i]->cap_offset,
+                              ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_WRITE), 0,
+                              b_list[i]->len, op->timeout);
+                gop_set_myid(gop, j);
+                gop_opque_add(q, gop);
+            } else {  //** Make sure we exclude the RID key on the next round due to the failure
+                data_block_destroy(db[j]);
+
+                if (req[j].rid_key != NULL) {
+                    log_printf(15, "Excluding rid_key=%s on next round\n", req[j].rid_key);
+                    cleanup_key[cleanup_index] = req[j].rid_key;
+                    req[j].rid_key = NULL;
+                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_KV, "rid_key", RSQ_BASE_KV_EXACT, cleanup_key[cleanup_index], RSQ_BASE_KV_EXACT);
+                    cleanup_index++;
+                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_NOT, NULL, 0, NULL, 0);
+                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
+                } else if (block_status[i] == -103) {  //** Can't move the allocation so unflag it
+                    if (rid_pending[i] != NULL) {
+                        apr_thread_mutex_lock(rid_lock);
+                        rid_pending[i]->rid->delta -= b_list[i]->len;  //** This is the original allocation
+                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
+                        apr_thread_mutex_unlock(rid_lock);
+                    }
+                }
+            }
+            log_printf(15, "after rs query block_status[%d]=%d block_len=" XOT "\n", i, block_status[i], b_list[i]->len);
+        }
+
+        log_printf(15, "q size=%d\n",gop_opque_task_count(q));
+
+        //** Wait for the copies to complete
+        opque_waitall(q);
+        k = 0;
+        while ((gop = gop_get_next_finished(opque_get_gop(q))) != NULL) {
+            j = gop_get_myid(gop);
+            log_printf(15, "index=%d\n", j);
+            if (j >= 0) {  //** Skip any remove ops
+                i = missing[j];
+                log_printf(15, "missing[%d]=%d status=%d\n", j,i, gop_completed_successfully(gop));
+                if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {  //** Update the block
+                    dbs = b_list[i]->data;
+                    dbd = db[j];
+
+                    dbd->size = dbs->size;
+                    dbd->max_size = dbs->max_size;
+                    tbx_atomic_inc(dbd->ref_count);
+                    dbd->attr_stack = dbs->attr_stack;
+                    dbs->attr_stack = NULL;
+
+                    data_block_auto_warm(dbd);  //** Add it to be auto-warmed
+
+                    b_list[i]->data = dbd;
+                    b_list[i]->cap_offset = 0;
+                    block_status[i] = 0;
+
+                    gop_free(gop, OP_DESTROY);
+
+                    info_printf(op->fd, 2, XIDT ":    dev=%i moved to rcap=%s\n", segment_id(op->seg), i, (char *)ds_get_cap(s->ds, b_list[i]->data->cap, DS_CAP_READ));
+                    if (op->args->qs) { //** Remove the old data on complete success
+                        gop = ds_remove(dbs->ds, op->da, ds_get_cap(dbs->ds, dbs->cap, DS_CAP_MANAGE), op->timeout);
+                        gop_opque_add(op->args->qs, gop);  //** This gets placed on the success queue so we can roll it back if needed
+                    } else {       //** Remove the just created allocation on failure
+                        gop = ds_remove(dbd->ds, op->da, ds_get_cap(dbd->ds, dbd->cap, DS_CAP_MANAGE), op->timeout);
+                        gop_opque_add(op->args->qf, gop);  //** This gets placed on the failed queue so we can roll it back if needed
+                    }
+                    if (s->db_cleanup == NULL) s->db_cleanup = tbx_stack_new();
+                    tbx_stack_push(s->db_cleanup, dbs);  //** Dump the data block here cause the cap is needed for the gop.  We'll cleanup up on destroy()
+                } else {  //** Copy failed so remove the destintation
+                    gop_free(gop, OP_DESTROY);
+                    info_printf(op->fd, 2, XIDT ":    dev=%i failed move to rcap=%s\n", segment_id(op->seg), i, (char *)ds_get_cap(s->ds, db[j]->cap, DS_CAP_READ));
+                    gop = ds_remove(db[j]->ds, op->da, ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_MANAGE), op->timeout);
+                    gop_set_myid(gop, -1);
+                    dbold[k] = db[j];
+                    k++;
+                    gop_opque_add(q, gop);
+
+                    if (rid_pending[i] != NULL) { //** Cleanup RID changes
+                        apr_thread_mutex_lock(rid_lock);
+                        rid_pending[i]->rid->delta -= b_list[i]->len;  //** This is the original allocation
+                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
+
+                        //** and this is the destination
+                        rid = apr_hash_get(rid_changes, db[j]->rid_key, APR_HASH_KEY_STRING);
+                        if (rid != NULL) {
+                            rid->rid->delta += b_list[i]->len;
+                            rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
+                        }
+                        apr_thread_mutex_unlock(rid_lock);
+                    }
+                }
+            } else {
+                gop_free(gop, OP_DESTROY);
+            }
+        }
+
+        opque_waitall(q);  //** Wait for the removal to complete.  Don't care if there are errors we can still continue
+        gop_opque_free(q, OP_DESTROY);
+
+        //** Clean up
+        for (i=0; i<k; i++) {
+            data_block_destroy(dbold[i]);
+        }
+
+        todo= 0;
+        for (i=0; i<op->n; i++) if (block_status[i] != 0) todo++;
+        loop++;
+    } while ((loop < 5) && (todo > 0));
+
+    for (i=0; i<cleanup_index; i++) free(cleanup_key[i]);
+
+    for (i=0; i<op->n; i++) {
+        if (hints_list[i].local_rsq != NULL) {
+            rs_query_destroy(s->rs, hints_list[i].local_rsq);
+        }
+    }
+    rs_query_destroy(s->rs, rsq);
+
+    return(todo);
+}
+
+//***********************************************************************
+// sli_read_data - Reads all the data.  Can't actually check it but can verify it's readable.
+//***********************************************************************
+
+int sli_read_data(seglin_inspect_t *op, int *block_status, seglin_slot_t **b_list)
+{
+    char *buffer;
+    seglin_slot_t *b;
+    tbx_tbuf_t tbuf;
+    int i, j;
+    ex_off_t off, bend, len, start, good, bad;
+
+    tbx_type_malloc(buffer, char, op->bufsize);
+    tbx_tbuf_single(&tbuf, op->bufsize, buffer);
+
+    good = bad = 0;
+    for (i=0; i<op->n; i++) {
+        b = b_list[i];
+        off = b->seg_offset;
+        for (off = b->seg_offset; off < b->seg_end; off += op->bufsize) {
+            bend = off + op->bufsize;
+            len = (bend > b->seg_end) ? b->seg_end - off + 1: op->bufsize;
+            start = b->cap_offset + off - b->seg_offset;
+            j = gop_sync_exec(ds_read(b->data->ds, op->da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_READ), start, &tbuf, 0, len, op->timeout));
+            if (j == OP_STATE_SUCCESS) {
+                good += len;
+            } else {
+                bad += len;
+            }
+
+            info_printf(op->fd, 1, XIDT ": dev=%d range=(" XOT ", " XOT ") read_bytes=" XOT " error_bytes=" XOT "\n",
+                segment_id(op->seg), i, off, off+len-1, good, bad);
+        }
+    }
+
+    free(buffer);
+    return(((bad == 0) ? 0 : 1));
+}
+
+//***********************************************************************
+// seglin_inspect_func - Does the inspect operation
+//***********************************************************************
+
+gop_op_status_t seglin_inspect_func(void *arg, int id)
+{
+    seglin_inspect_t *op = (seglin_inspect_t *)arg;
+    seglin_priv_t *s = (seglin_priv_t *)op->seg->priv;
+    int n, i, err, err1, err2;
+    gop_op_status_t status;
+    int *block_status;
+    seglin_slot_t **b_list;
+    seglin_slot_t *b;
+    rs_query_t *query;
+    tbx_isl_iter_t it;
+    lio_inspect_args_t args;
+    lio_ex3_inspect_command_t cmd = INSPECT_COMMAND_BITS & op->mode;
+
+    n = tbx_isl_count(s->isl);
+    op->n = n;
+
+    //** Print some details about the segment
+    info_printf(op->fd, 1, XIDT ": linear information: n_blocks=%d n_rid_default=%d  write_errors=%d used_size=" XOT " max_block_size=" XOT "\n",
+        segment_id(op->seg), op->n, s->n_rid_default, s->write_errors, s->used_size, s->max_block_size);
+
+    //** If nothing to check kick out
+    if (n == 0) {
+        err = 0;
+        goto finished;
+    }
+
+    //** Make our working space
+    tbx_type_malloc_clear(block_status, int, n);
+    tbx_type_malloc_clear(b_list, seglin_slot_t *, n);
+
+    //** Make the list of devices
+    it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
+    for (i=0; i<n; i++) {
+        b_list[i] = (seglin_slot_t *)tbx_isl_next(&it);
+    }
+
+    //** Form the query to use
+    args = *(op->args);
+    query = rs_query_dup(s->rs, s->rsq);
+    if (op->args != NULL) {
+        if (op->args->query != NULL) {  //** Local query needs to be added
+            rs_query_append(s->rs, query, op->args->query);
+            rs_query_add(s->rs, &query, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
+        }
+    }
+    args.query = query;
+    op->args = &args;
+
+    //** Check all the allocations exist are are the right size
+    err1 = sli_block_check(op, block_status, b_list);
+
+    //** Also check the data placement is good
+    err2 = sli_placement_check(op, block_status, b_list);
+
+    //** Print a summary of the status
+    for (i=0; i<n; i++) {
+        b = b_list[i];
+        info_printf(op->fd, 1, XIDT ":    dev=%d  rcap=%s   start=" XOT " end=" XOT " len=" XOT " status=%d\n",
+            segment_id(op->seg), i, (char *)ds_get_cap(s->ds, b->data->cap, DS_CAP_READ), b->seg_offset, b->seg_end, b->len, block_status[i]);
+    }
+
+    //**  Check if we need to move some allocations
+    if (err2) {
+        if ((cmd == INSPECT_QUICK_REPAIR) || (cmd == INSPECT_SCAN_REPAIR) || (cmd == INSPECT_FULL_REPAIR)) {
+            err2 = sli_placement_fix(op, block_status, b_list);
+        }
+    }
+
+    //** See if we kick out
+    err = err1+err2;
+    if ((cmd == INSPECT_QUICK_CHECK) || (cmd == INSPECT_QUICK_REPAIR)) {
+        goto finished;
+    }
+
+    //** Everything else requires us to read all the data
+    err += sli_read_data(op, block_status, b_list);
+
+finished:
+    if ((err == 0) && (s->write_errors == 0)) {
+        status = gop_success_status;
+        info_printf(op->fd, 1, XIDT ": status: SUCCESS\n", segment_id(op->seg));
+    } else {
+        status = gop_failure_status;
+        info_printf(op->fd, 1, XIDT ": status: FAILURE\n", segment_id(op->seg));
+    }
+
+    free(b_list);
+    free(block_status);
+    rs_query_destroy(s->rs, query);
+
+    return(status);
+}
+
+//***********************************************************************
+//  seglin_inspect - Generates the inspect operation
 //***********************************************************************
 
 gop_op_generic_t *seglin_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd_t *fd, int mode, ex_off_t bufsize, lio_inspect_args_t *args, int timeout)
@@ -811,19 +1320,33 @@ gop_op_generic_t *seglin_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
     gop_op_generic_t *gop;
     gop_op_status_t err;
+    seglin_inspect_t *op;
 
-    gop = NULL;
+    segment_lock(seg);
+
     lio_ex3_inspect_command_t cmd = INSPECT_COMMAND_BITS & mode;
     switch (cmd) {
+    case (INSPECT_NO_CHECK):
+        gop = gop_dummy(gop_success_status);
+        break;
     case (INSPECT_QUICK_CHECK):
     case (INSPECT_SCAN_CHECK):
     case (INSPECT_FULL_CHECK):
     case (INSPECT_QUICK_REPAIR):
     case (INSPECT_SCAN_REPAIR):
     case (INSPECT_FULL_REPAIR):
+        tbx_type_malloc_clear(op, seglin_inspect_t, 1);
+        op->seg = seg;
+        op->da = da;
+        op->fd = fd;
+        op->mode = mode;
+        op->bufsize = bufsize;
+        op->args = args;
+        op->timeout = timeout;
+        gop = gop_tp_op_new(s->tpc, NULL, seglin_inspect_func, (void *)op, free, 1);
+        break;
     case (INSPECT_MIGRATE):
-    case (INSPECT_NO_CHECK):
-        gop = gop_dummy(gop_failure_status);  //** Not implemented
+        gop = gop_dummy(gop_failure_status);
         break;
     case (INSPECT_SOFT_ERRORS):
     case (INSPECT_HARD_ERRORS):
@@ -831,10 +1354,18 @@ gop_op_generic_t *seglin_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
         err.op_status = (err.error_code == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
         gop = gop_dummy(err);
         break;
+    case (INSPECT_WRITE_ERRORS):
+        err.error_code = s->write_errors;
+        err.op_status = (err.error_code == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
+        gop = gop_dummy(err);
+        break;
     default:
         log_printf(0, "ERROR: Unknown command: %d", cmd);
+        gop = gop_dummy(gop_failure_status);
         break;
     }
+
+    segment_unlock(seg);
 
     return(gop);
 }
@@ -1079,6 +1610,7 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     tbx_append_printf(segbuf, &sused, bufsize, "excess_block_size=" XOT "\n", s->excess_block_size);
     tbx_append_printf(segbuf, &sused, bufsize, "max_size=" XOT "\n", s->total_size);
     tbx_append_printf(segbuf, &sused, bufsize, "used_size=" XOT "\n", s->used_size);
+    tbx_append_printf(segbuf, &sused, bufsize, "write_errors=" XOT "\n", s->write_errors);
 
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
@@ -1180,6 +1712,7 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     s->excess_block_size = tbx_inip_get_integer(fd, seggrp, "excess_block_size", s->max_block_size/4);
     s->total_size = tbx_inip_get_integer(fd, seggrp, "max_size", 0);
     s->used_size = tbx_inip_get_integer(fd, seggrp, "used_size", 0);
+    s->write_errors = tbx_inip_get_integer(fd, seggrp, "write_errors", 0);
 
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     g = tbx_inip_group_find(fd, seggrp);
@@ -1252,10 +1785,10 @@ void seglin_destroy(tbx_ref_t *ref)
 {
     tbx_obj_t *obj = container_of(ref, tbx_obj_t, refcount);
     lio_segment_t *seg = container_of(obj, lio_segment_t, obj);
-
-    int i, n;
+    int i, n, cnt;
     tbx_isl_iter_t it;
     seglin_slot_t **b_list;
+    lio_data_block_t *db;
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
 
     //** Check if it's still in use
@@ -1275,6 +1808,16 @@ void seglin_destroy(tbx_ref_t *ref)
         free(b_list[i]);
     }
     free(b_list);
+
+    if (s->db_cleanup != NULL) {
+        while ((db = tbx_stack_pop(s->db_cleanup)) != NULL) {
+            cnt = tbx_atomic_get(db->ref_count);
+            if (cnt > 0) tbx_atomic_dec(db->ref_count);
+            data_block_destroy(db);
+        }
+
+        tbx_stack_free(s->db_cleanup, 0);
+    }
 
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);

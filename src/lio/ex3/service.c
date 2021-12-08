@@ -51,6 +51,7 @@
 #include "segment/linear.h"
 #include "segment/log.h"
 #include "segment/lun.h"
+#include "segment/mirror.h"
 #include "service_manager.h"
 
 lio_service_manager_t *lio_exnode_service_set = NULL;
@@ -80,6 +81,8 @@ lio_service_manager_t *lio_exnode_service_set_create()
     add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_JERASURE, segment_jerasure_create);
     add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_LOG, segment_log_load);
     add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_LOG, segment_log_create);
+    add_service(ess, SEG_SM_LOAD, SEGMENT_TYPE_MIRROR, segment_mirror_load);
+    add_service(ess, SEG_SM_CREATE, SEGMENT_TYPE_MIRROR, segment_mirror_create);
 
     add_service(ess, RS_SM_AVAILABLE, RS_TYPE_SIMPLE, rs_simple_create);
     add_service(ess, RS_SM_AVAILABLE, RS_TYPE_REMOTE_CLIENT, rs_remote_client_create);

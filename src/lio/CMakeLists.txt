@@ -140,6 +140,7 @@ set(LSTORE_PROJECT_OBJS
 		segment/linear.c
 		segment/log.c
 		segment/lun.c
+		segment/mirror.c
 		service_manager.c
 		trace.c
 		trace_replay.c
