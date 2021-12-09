@@ -64,6 +64,7 @@
 #include "ex3/system.h"
 #include "rs.h"
 #include "rs/query_base.h"
+#include "../segment.h"
 #include "segment/lun.h"
 #include "service_manager.h"
 
@@ -134,74 +135,17 @@ typedef struct {
 
 typedef struct {
     lio_seglun_priv_t *s;
-    gop_op_generic_t *gop;
-    ex_tbx_iovec_t *ex_iov;
-    tbx_iovec_t *iov;
     seglun_block_t *block;
-    char *crypt_buffer;
-    tbx_tbuf_t buffer;
-    tbx_tbuf_t tbuf_crypt;
-    int n_ex;
-    int c_ex;
+    gop_op_generic_t *gop;
+    crypt_rw_t  crwb;
+    ex_off_t len;
     int n_iov;
     int c_iov;
+    tbx_iovec_t *iov;
+    tbx_tbuf_t buffer;
+    int c_ex;
     int retries;
-    int crypt_flush;
-    ex_off_t len;
-    ex_off_t prev_bufoff;
-    ex_off_t prev_lunoff;
-    ex_off_t slot_total_pos;
-    ex_off_t curr_slot;
-    ex_off_t *lun_offset;
 } lun_rw_row_t;
-
-#define SLUN_CRYPT_KEY_LEN   crypto_stream_xchacha20_KEYBYTES
-#define SLUN_CRYPT_NONCE_LEN crypto_stream_xchacha20_NONCEBYTES
-
-//***********************************************************************
-// crypt_newkeys - Generates a new key and nonce for use in encryption
-//***********************************************************************
-
-void crypt_newkeys(char **key, char **nonce)
-{
-    if (key) {
-        tbx_type_malloc(*key, char, crypto_stream_xchacha20_KEYBYTES);
-        tbx_random_get_bytes(*key, crypto_stream_xchacha20_KEYBYTES);
-    }
-    if (nonce) {
-        tbx_type_malloc_clear(*nonce, char, crypto_stream_xchacha20_NONCEBYTES);
-        tbx_random_get_bytes(*nonce, crypto_stream_xchacha20_NONCEBYTES);
-    }
-}
-
-
-//***********************************************************************
-//  crypt_bin2etext - Converts a crypto key from binary to escaped text
-//***********************************************************************
-
-char *crypt_bin2etext(char *bin, int len)
-{
-    char z85[2*len];
-
-    zmq_z85_encode(z85, (unsigned char *)bin, len);
-    return(tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', z85));
-}
-
-//***********************************************************************
-//  crypt_etext2bin - Converts a crypto key from escaped text to binary
-//***********************************************************************
-
-char *crypt_etext2bin(char *etext, int len)
-{
-    char *text, *bin;
-
-    text = tbx_stk_unescape_text('\\', etext);  //** Unescape it
-    tbx_type_malloc_clear(bin, char, len);
-    zmq_z85_decode((unsigned char *)bin, text);
-    free(text);
-
-    return(bin);
-}
 
 //***********************************************************************
 // _slun_perform_remap - Does a cap remap
@@ -1126,9 +1070,9 @@ finished:
     s->used_size = new_used;
 
     if ((s->total_size == 0) && (s->crypt_enabled > 0)) { //** Truncate to 0 so re-generate encryption keys if enabled
-        if (s->crypt_key) free(s->crypt_key);
-        if (s->crypt_nonce) free(s->crypt_nonce);
-        crypt_newkeys(&(s->crypt_key), &(s->crypt_nonce));
+        if (s->cinfo.crypt_key) free(s->cinfo.crypt_key);
+        if (s->cinfo.crypt_nonce) free(s->cinfo.crypt_nonce);
+        crypt_newkeys(&(s->cinfo.crypt_key), &(s->cinfo.crypt_nonce));
     }
 
     if (err == OP_STATE_SUCCESS) {
@@ -1293,30 +1237,30 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
 
     for (i=0; i < s->n_devices; i++) {
         if (offset[i] >= 0) {
-            j = rw_buf[i].n_ex;
-            if (rw_buf[i].n_ex == rw_buf[i].c_ex) {
+            j = rw_buf[i].crwb.n_ex;
+            if (rw_buf[i].crwb.n_ex == rw_buf[i].c_ex) {
                 k = 2 * (j+1);
                 rw_buf[i].c_ex = k;
-                if (rw_buf[i].n_ex == 0) {
-                    tbx_type_malloc(rw_buf[i].ex_iov, ex_tbx_iovec_t, k);
-                    if (s->crypt_enabled) tbx_type_malloc(rw_buf[i].lun_offset, ex_off_t, k);
+                if (rw_buf[i].crwb.n_ex == 0) {
+                    tbx_type_malloc(rw_buf[i].crwb.ex_iov, ex_tbx_iovec_t, k);
+                    if (s->crypt_enabled) tbx_type_malloc(rw_buf[i].crwb.lun_offset, ex_off_t, k);
                 } else {
-                    tbx_type_realloc(rw_buf[i].ex_iov, ex_tbx_iovec_t, k);
-                    if (s->crypt_enabled) tbx_type_realloc(rw_buf[i].lun_offset, ex_off_t, k);
+                    tbx_type_realloc(rw_buf[i].crwb.ex_iov, ex_tbx_iovec_t, k);
+                    if (s->crypt_enabled) tbx_type_realloc(rw_buf[i].crwb.lun_offset, ex_off_t, k);
                 }
             }
             k = 0;  //** Flag used to see if we grew an existing op
             if (j > 0) {  //** Already have a op so see if we can grow it
-                if (offset[i] == (rw_buf[i].ex_iov[j-1].offset+rw_buf[i].ex_iov[j-1].len)) {
-                    rw_buf[i].ex_iov[j-1].len += len[i];
+                if (offset[i] == (rw_buf[i].crwb.ex_iov[j-1].offset+rw_buf[i].crwb.ex_iov[j-1].len)) {
+                    rw_buf[i].crwb.ex_iov[j-1].len += len[i];
                     k = 1;
                 }
             }
             if (k == 0) { //** new op
-                if (s->crypt_enabled) rw_buf[i].lun_offset[j] = lun_offset[i];
-                rw_buf[i].ex_iov[j].offset = offset[i];
-                rw_buf[i].ex_iov[j].len = len[i];
-                rw_buf[i].n_ex++;
+                if (s->crypt_enabled) rw_buf[i].crwb.lun_offset[j] = lun_offset[i];
+                rw_buf[i].crwb.ex_iov[j].offset = offset[i];
+                rw_buf[i].crwb.ex_iov[j].len = len[i];
+                rw_buf[i].crwb.n_ex++;
             }
 
             rw_buf[i].len += len[i];  //** Accumulate the total length
@@ -1497,8 +1441,8 @@ int seglun_row_decompose_test()
                 lun_row_decompose(seg, rw_buf, b, offset, &tbuf, 0, len);
 
                 for (i=0; i < s->n_devices; i++) {
-                    if (rw_buf[i].n_ex > 0) {
-                        tbx_tbuf_copy(&(tbuf_ref[i]), rw_buf[i].ex_iov[0].offset, &(rw_buf[i].buffer), 0, rw_buf[i].ex_iov[0].len, 1);
+                    if (rw_buf[i].crwb.n_ex > 0) {
+                        tbx_tbuf_copy(&(tbuf_ref[i]), rw_buf[i].crwb.ex_iov[0].offset, &(rw_buf[i].buffer), 0, rw_buf[i].crwb.ex_iov[0].len, 1);
                     }
                 }
 
@@ -1528,180 +1472,6 @@ int seglun_row_decompose_test()
     if (cerr == 0) log_printf(0, "PASSED!\n");
 
     return(cerr);
-}
-
-
-//*******************************************************************************
-// crypt_read_op_next_block - Transfer buffer function to handle reading an
-//        encryption at rest data stream
-//*******************************************************************************
-
-int crypt_read_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
-{
-    lun_rw_row_t  *rwb = (lun_rw_row_t *)tb->arg;
-    tbx_tbuf_t tbc;
-    int i, slot;
-    size_t sum, ds;
-    uint64_t loff, mod, page_off, poff2, lun_offset;
-
-    //** See if we have a previous block to process
-    page_off = pos / rwb->s->chunk_size;
-    poff2 = page_off * rwb->s->stripe_size;
-    page_off *= rwb->s->chunk_size;
-    if (rwb->crypt_flush == 1) {
-        if (rwb->prev_bufoff < 0) return (TBUFFER_OK);
-    }
-    if (rwb->prev_bufoff < 0) {
-        lun_offset = rwb->lun_offset[0] + poff2;
-        sum = 0;
-        slot = 0;
-        goto next;
-    } else if ((rwb->prev_bufoff == (int64_t)page_off) && (rwb->crypt_flush == 0)) {
-        lun_offset = rwb->prev_lunoff;
-        sum = rwb->slot_total_pos;
-        slot = rwb->curr_slot;
-        goto next;
-    }
-
-    //** Need to figure out the crypt counter
-    //** Update our position in the total table;
-    sum = rwb->slot_total_pos;
-    if (pos < sum) {
-        sum = 0;
-        rwb->curr_slot = 0;
-    }
-
-    slot = rwb->curr_slot;
-    for (i=rwb->curr_slot; i<rwb->n_ex; i++) {
-        ds = sum + rwb->ex_iov[i].len;
-        if (ds > pos) {
-            slot = i;
-            break;
-        }
-        sum = ds;
-    }
-
-    lun_offset = rwb->lun_offset[slot] + poff2;
-
-    //** check if we have an empty block. If so just copy it over
-    for (i=0; i<rwb->s->chunk_size; i++) {
-        if (rwb->crypt_buffer[i] != 0) goto non_zero;
-    }
-    goto blanks;  //** If we made it here then we have all blanks
-
-non_zero:
-    //** and LUN offset
-    loff = rwb->prev_lunoff / rwb->s->chunk_size;
-    loff *= rwb->s->crypt_chunk_scale;
-
-    //** then decrypt it
-    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->s->chunk_size, (unsigned char *)rwb->s->crypt_nonce, loff, (unsigned char *)rwb->s->crypt_key);
-
-blanks:
-    //** And finally copy it back to the use buffer
-    tbx_tbuf_single(&tbc, rwb->s->chunk_size, rwb->crypt_buffer);
-    tbx_tbuf_copy(&tbc, 0, &(rwb->tbuf_crypt), rwb->prev_bufoff, rwb->s->chunk_size, 1);
-
-    if (rwb->crypt_flush) return(TBUFFER_OK);   //** Kick out since this is just the final call to flush the buffer
-
-    //** Reset the buffer
-    memset(rwb->crypt_buffer, 0, rwb->s->chunk_size);
-
-next:
-    //** Set things up for the next round
-    rwb->prev_bufoff = page_off;
-    rwb->prev_lunoff = lun_offset;
-
-    //** And configure the tbv for the next op
-    rwb->slot_total_pos = sum;
-    rwb->curr_slot = slot;
-    tbv->n_iov = 1;
-    tbv->buffer = &(tbv->priv.single);
-    mod = pos % rwb->s->chunk_size;
-    if (rwb->s->chunk_size > (int64_t)(mod + tbv->nbytes)) {
-        tbv->priv.single.iov_len = tbv->nbytes;
-        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
-        tbv->nbytes = tbv->priv.single.iov_len;
-    } else {
-        tbv->priv.single.iov_len = rwb->s->chunk_size - mod;
-        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
-        tbv->nbytes = tbv->priv.single.iov_len;
-    }
-
-    return(TBUFFER_OK);
-}
-
-//*******************************************************************************
-// crypt_write_op_next_block - Transfer buffer function to handle writing an
-//         encryption at rest data stream
-//*******************************************************************************
-
-int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
-{
-    lun_rw_row_t  *rwb = (lun_rw_row_t *)tb->arg;
-    tbx_tbuf_t tbc;
-    int i, slot;
-    size_t sum, ds, nbytes;
-    uint64_t loff, mod, page_off, poff2, lun_offset;
-
-    page_off = pos / rwb->s->chunk_size;
-    poff2 = page_off * rwb->s->stripe_size;
-    page_off *= rwb->s->chunk_size;
-    mod = pos % rwb->s->chunk_size;
-    if (rwb->prev_bufoff == (int64_t)page_off) { //** Same page were already got encrypted so just return the partial buf
-        tbv->n_iov = 1;
-        nbytes = rwb->s->chunk_size - mod;
-        tbv->buffer = &(tbv->priv.single);
-        tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
-        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
-        tbv->nbytes = tbv->priv.single.iov_len;
-        return(TBUFFER_OK);
-    }
-
-    //** Need to figure out the crypt counter
-    //** Update our position in the total table;
-    sum = tbv->priv.slot_total_pos;
-    if (pos < sum) {
-        sum = 0;
-        tbv->priv.curr_slot = 0;
-    }
-
-    slot = tbv->priv.curr_slot;
-    for (i=tbv->priv.curr_slot; i<rwb->n_ex; i++) {
-        ds = sum + rwb->ex_iov[i].len;
-        if (ds > pos) {
-            slot = i;
-            break;
-        }
-        sum = ds;
-    }
-
-    //** Found my slot
-    tbv->priv.slot_total_pos = sum;
-    tbv->priv.curr_slot = slot;
-
-    //** and LUN offset
-    lun_offset = rwb->lun_offset[slot] + poff2;
-    loff = lun_offset / rwb->s->chunk_size;
-    loff *= rwb->s->crypt_chunk_scale;
-
-    //** Copy it from the user buffer into the buffer used for IBP writes
-    tbx_tbuf_single(&tbc, rwb->s->chunk_size, rwb->crypt_buffer);
-    tbx_tbuf_copy(&(rwb->tbuf_crypt), page_off, &tbc, 0, rwb->s->chunk_size, 1);
-
-    //** then encrypt it
-    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->s->chunk_size, (unsigned char *)rwb->s->crypt_nonce, loff, (unsigned char *)rwb->s->crypt_key);
-
-    //** And configure the tbv for the next op
-    rwb->prev_bufoff = page_off;
-    tbv->n_iov = 1;
-    nbytes = rwb->s->chunk_size - mod;
-    tbv->buffer = &(tbv->priv.single);
-    tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
-    tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
-    tbv->nbytes = tbv->priv.single.iov_len;
-
-    return(TBUFFER_OK);
 }
 
 //***********************************************************************
@@ -1842,7 +1612,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
         for (i=0; i < s->n_devices; i++) {
             bl_rid = 0;
 
-            if (rwb_table[j + i].n_ex > 0) {
+            if (rwb_table[j + i].crwb.n_ex > 0) {
                 //** Check on blacklisting the RID
                 if (bl != NULL) {
                     bl_rid = blacklist_check(bl, b->block[i].data->rid_key, 0);
@@ -1859,32 +1629,33 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                 if (s->crypt_enabled == 0) {
                     tbx_tbuf_vec(&(rwb_table[j + i].buffer), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
                 } else {  //** Create the crypt lun to buffer offset for each operation
-                    rwb_table[j+i].prev_bufoff = -1;  //** Reset the state
+                    rwb_table[j+i].crwb.prev_bufoff = -1;  //** Reset the state
                     rwb_table[j+i].s = s;
-                    tbx_type_malloc_clear(rwb_table[j+i].crypt_buffer, char, s->chunk_size);
-                    tbx_tbuf_vec(&(rwb_table[j + i].tbuf_crypt), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
-                    tbx_tbuf_fn(&(rwb_table[j + i].buffer), rwb_table[j + i].len, &(rwb_table[j+i]), ((rw_mode == 0) ? crypt_read_op_next_block : crypt_write_op_next_block));
+                    tbx_type_malloc_clear(rwb_table[j+i].crwb.crypt_buffer, char, s->chunk_size);
+                    tbx_tbuf_vec(&(rwb_table[j + i].crwb.tbuf_crypt), rwb_table[j + i].len, rwb_table[j+i].n_iov, rwb_table[j+i].iov);
+                    rwb_table[j+i].crwb.info = &(s->cinfo);
+                    tbx_tbuf_fn(&(rwb_table[j + i].buffer), rwb_table[j + i].len, &(rwb_table[j+i].crwb), ((rw_mode == 0) ? crypt_read_op_next_block : crypt_write_op_next_block));
                 }
 
                 //** Form the op
                 if (rw_mode== 0) {
-                    if (rwb_table[j+i].n_ex == 1) {
+                    if (rwb_table[j+i].crwb.n_ex == 1) {
                         gop = (bl_rid == 0) ? ds_read(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ),
-                                                         rwb_table[j+i].ex_iov[0].offset, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
+                                                         rwb_table[j+i].crwb.ex_iov[0].offset, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
                               gop_dummy(blacklist_status);
                     } else {
                         gop = (bl_rid == 0) ? ds_readv(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ),
-                                                          rwb_table[j + i].n_ex, rwb_table[j+i].ex_iov, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
+                                                          rwb_table[j + i].crwb.n_ex, rwb_table[j+i].crwb.ex_iov, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
                               gop_dummy(blacklist_status);
                     }
                 } else {
-                    if (rwb_table[j+i].n_iov == 1) {
+                    if (rwb_table[j+i].crwb.n_ex == 1) {
                         gop = (bl_rid == 0) ? ds_write(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_WRITE),
-                                                          rwb_table[j+i].ex_iov[0].offset, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
+                                                          rwb_table[j+i].crwb.ex_iov[0].offset, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
                               gop_dummy(blacklist_status);
                     } else {
                         gop = (bl_rid == 0) ? ds_writev(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_WRITE),
-                                                           rwb_table[j + i].n_ex, rwb_table[j+i].ex_iov, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
+                                                           rwb_table[j + i].crwb.n_ex, rwb_table[j+i].crwb.ex_iov, &(rwb_table[j+i].buffer), 0, rwb_table[j+i].len, timeout) :
                               gop_dummy(blacklist_status);
                     }
                 }
@@ -1936,27 +1707,27 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries == 0)) {
                 log_printf(1, "RETRY sid=" XIDT " gop=%d task=%d dev=%d\n", segment_id(seg), gop_get_id(gop), j, dev);
 
-                rwb_table[j].prev_bufoff = -1;  //** Reset the state
+                rwb_table[j].crwb.prev_bufoff = -1;  //** Reset the state
 
                 gop_free(gop, OP_DESTROY);  //** Free the old slot
 
                 //** Make the new GOP
                 block = rwb_table[j].block;
-                if (rw_mode== 0) {
-                    if (rwb_table[j].n_ex == 1) {
+                if (rw_mode == 0) {
+                    if (rwb_table[j].crwb.n_ex == 1) {
                         gop = ds_read(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
-                                      rwb_table[j].ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                                      rwb_table[j].crwb.ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     } else {
                         gop = ds_readv(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
-                                       rwb_table[j].n_ex, rwb_table[j].ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                                       rwb_table[j].crwb.n_ex, rwb_table[j].crwb.ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     }
                 } else {
-                    if (rwb_table[j].n_iov == 1) {
+                    if (rwb_table[j].crwb.n_ex == 1) {
                         gop = ds_write(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE),
-                                       rwb_table[j].ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                                       rwb_table[j].crwb.ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     } else {
                         gop = ds_writev(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE),
-                                        rwb_table[j].n_ex, rwb_table[j].ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
+                                        rwb_table[j].crwb.n_ex, rwb_table[j].crwb.ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     }
                 }
 
@@ -1966,7 +1737,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                 gop_set_myid(rwb_table[j].gop, j);
                 gop_set_private(gop, block->data->rid_key);
             } else if ((s->crypt_enabled) && (rw_mode == 0) &&(dt_status.op_status == OP_STATE_SUCCESS)) {  //** IF a successfull read crypt op we have to flush the buffer
-                rwb_table[j].crypt_flush = 1;
+                rwb_table[j].crwb.crypt_flush = 1;
                 crypt_read_op_next_block(&(rwb_table[j].buffer), 0, NULL);
             }
         }
@@ -1979,7 +1750,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             nerr = 0;
             j = slot * s->n_devices;
             for (i=0; i < s->n_devices; i++) {
-                if (rwb_table[j+i].n_ex > 0) {
+                if (rwb_table[j+i].crwb.n_ex > 0) {
                     if (gop_completed_successfully(rwb_table[j+i].gop) != OP_STATE_SUCCESS) {  //** Error
                         nerr++;  //** Increment the error count
                         if (rw_mode == 0) {
@@ -1990,9 +1761,9 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                         }
                     }
 
-                    if (s->crypt_enabled) free(rwb_table[j+i].crypt_buffer);
-                    free(rwb_table[j+i].ex_iov);
-                    if (s->crypt_enabled) free(rwb_table[j+i].lun_offset);
+                    if (s->crypt_enabled) free(rwb_table[j+i].crwb.crypt_buffer);
+                    free(rwb_table[j+i].crwb.ex_iov);
+                    if (s->crypt_enabled) free(rwb_table[j+i].crwb.lun_offset);
                     log_printf(15, "end stage i=%d gid=%d gop_completed_successfully=%d nerr=%d\n", i, gop_id(rwb_table[j+i].gop), gop_completed_successfully(rwb_table[j+i].gop), nerr);
                 }
 
@@ -2821,15 +2592,17 @@ gop_op_generic_t *seglun_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     //** Handle the encryption keys.  If they just clone the structure don't copy the keys
     sd->crypt_enabled = ss->crypt_enabled;
     if (sd->crypt_enabled) {
+        sd->cinfo.chunk_size = ss->cinfo.chunk_size;
+        sd->cinfo.stripe_size = ss->cinfo.stripe_size;
         if (mode != CLONE_STRUCTURE) {
-            if (!sd->crypt_key) {
-                tbx_type_malloc_clear(sd->crypt_key, char, SLUN_CRYPT_KEY_LEN);
+            if (!sd->cinfo.crypt_key) {
+                tbx_type_malloc_clear(sd->cinfo.crypt_key, char, SEGMENT_CRYPT_KEY_LEN);
             }
-            memcpy(sd->crypt_key, ss->crypt_key, SLUN_CRYPT_KEY_LEN);
-            if (!sd->crypt_nonce) {
-                tbx_type_malloc_clear(sd->crypt_nonce, char, SLUN_CRYPT_NONCE_LEN);
+            memcpy(sd->cinfo.crypt_key, ss->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
+            if (!sd->cinfo.crypt_nonce) {
+                tbx_type_malloc_clear(sd->cinfo.crypt_nonce, char, SEGMENT_CRYPT_NONCE_LEN);
             }
-            memcpy(sd->crypt_nonce, ss->crypt_nonce, SLUN_CRYPT_NONCE_LEN);
+            memcpy(sd->cinfo.crypt_nonce, ss->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
         }
     }
 
@@ -2963,9 +2736,9 @@ int seglun_serialize_text_try(lio_segment_t *seg, char *segbuf, int bufsize, lio
     if (s->crypt_enabled > 0) {
         tbx_append_printf(segbuf, &sused, bufsize, "crypt_enabled=%d\n", s->crypt_enabled);
         if (s->total_size > 0) {   //** Only dump the keys if the file has data
-            etext = crypt_bin2etext(s->crypt_key, SLUN_CRYPT_KEY_LEN);
+            etext = crypt_bin2etext(s->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
             tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); free(etext);
-            etext = crypt_bin2etext(s->crypt_nonce, SLUN_CRYPT_NONCE_LEN);
+            etext = crypt_bin2etext(s->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
             tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); free(etext);
         }
     }
@@ -3110,32 +2883,34 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     //** Fetch the encrtption if used
     s->crypt_enabled = tbx_inip_get_integer(fd, seggrp, "crypt_enabled", 0);
     if (s->crypt_enabled) {
-        s->crypt_chunk_scale = s->chunk_size / 64;
-        if (s->stripe_size % 64) s->crypt_chunk_scale++;
+        s->cinfo.chunk_size = s->chunk_size;
+        s->cinfo.stripe_size = s->stripe_size;
+        s->cinfo.crypt_chunk_scale = s->cinfo.chunk_size / 64;
+        if (s->cinfo.stripe_size % 64) s->cinfo.crypt_chunk_scale++;
 
-        s->crypt_key = tbx_inip_get_string(fd, seggrp, "crypt_key", NULL);
-        s->crypt_nonce = tbx_inip_get_string(fd, seggrp, "crypt_nonce", NULL);
-        if ((s->crypt_key == NULL) || (s->crypt_nonce == NULL)) {
+        s->cinfo.crypt_key = tbx_inip_get_string(fd, seggrp, "crypt_key", NULL);
+        s->cinfo.crypt_nonce = tbx_inip_get_string(fd, seggrp, "crypt_nonce", NULL);
+        if ((s->cinfo.crypt_key == NULL) || (s->cinfo.crypt_nonce == NULL)) {
             if (s->total_size > 0) {
-                log_printf(0, "ERROR: size>0 and crypt_enabled=1 Missing key or nonce!! sid=" XIDT " key=%s nonce=%s\n" , segment_id(seg), s->crypt_key, s->crypt_nonce);
+                log_printf(0, "ERROR: size>0 and crypt_enabled=1 Missing key or nonce!! sid=" XIDT " key=%s nonce=%s\n" , segment_id(seg), s->cinfo.crypt_key, s->cinfo.crypt_nonce);
                 return(1);
             }
         }
 
         //** If we made it here we need to either convert the text -> binary for the key/nonce or generate a new one
-        if (s->crypt_key) {   //** Got a key so convert it
-            etext = s->crypt_key;
-            s->crypt_key = crypt_etext2bin(etext, strlen(etext));
+        if (s->cinfo.crypt_key) {   //** Got a key so convert it
+            etext = s->cinfo.crypt_key;
+            s->cinfo.crypt_key = crypt_etext2bin(etext, strlen(etext));
             free(etext);
         } else {  //** Got to generate a new one
-            crypt_newkeys(&(s->crypt_key), NULL);
+            crypt_newkeys(&(s->cinfo.crypt_key), NULL);
         }
-        if (s->crypt_nonce) {   //** Got a nonce so convert it
-            etext = s->crypt_nonce;
-            s->crypt_nonce = crypt_etext2bin(etext, strlen(etext));
+        if (s->cinfo.crypt_nonce) {   //** Got a nonce so convert it
+            etext = s->cinfo.crypt_nonce;
+            s->cinfo.crypt_nonce = crypt_etext2bin(etext, strlen(etext));
             free(etext);
         } else {  //** Got to generate a new one
-            crypt_newkeys(NULL, &(s->crypt_nonce));
+            crypt_newkeys(NULL, &(s->cinfo.crypt_nonce));
         }
     }
 
@@ -3263,8 +3038,8 @@ void seglun_destroy(tbx_ref_t *ref)
         tbx_stack_free(s->db_cleanup, 0);
     }
 
-    if (s->crypt_key) free(s->crypt_key);
-    if (s->crypt_nonce) free(s->crypt_nonce);
+    if (s->cinfo.crypt_key) free(s->cinfo.crypt_key);
+    if (s->cinfo.crypt_nonce) free(s->cinfo.crypt_nonce);
 
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);

@@ -27,6 +27,7 @@
 #include <gop/opque.h>
 #include <gop/tp.h>
 #include <gop/types.h>
+#include <sodium.h>
 #include <lio/segment.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -37,6 +38,7 @@
 #include <tbx/direct_io.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
@@ -607,3 +609,226 @@ gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
     return(gop_tp_op_new(tpc, NULL, segment_put_gop_func, (void *)sc, free, 1));
 }
 
+
+//======================================================================================================
+//  Below are all the encryption at rest helpers
+//======================================================================================================
+
+//***********************************************************************
+// crypt_newkeys - Generates a new key and nonce for use in encryption
+//***********************************************************************
+
+void crypt_newkeys(char **key, char **nonce)
+{
+    if (key) {
+        tbx_type_malloc(*key, char, crypto_stream_xchacha20_KEYBYTES);
+        tbx_random_get_bytes(*key, crypto_stream_xchacha20_KEYBYTES);
+    }
+    if (nonce) {
+        tbx_type_malloc_clear(*nonce, char, crypto_stream_xchacha20_NONCEBYTES);
+        tbx_random_get_bytes(*nonce, crypto_stream_xchacha20_NONCEBYTES);
+    }
+}
+
+
+//***********************************************************************
+//  crypt_bin2etext - Converts a crypto key from binary to escaped text
+//***********************************************************************
+
+char *crypt_bin2etext(char *bin, int len)
+{
+    char z85[2*len];
+
+    zmq_z85_encode(z85, (unsigned char *)bin, len);
+    return(tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', z85));
+}
+
+//***********************************************************************
+//  crypt_etext2bin - Converts a crypto key from escaped text to binary
+//***********************************************************************
+
+char *crypt_etext2bin(char *etext, int len)
+{
+    char *text, *bin;
+
+    text = tbx_stk_unescape_text('\\', etext);  //** Unescape it
+    tbx_type_malloc_clear(bin, char, len);
+    zmq_z85_decode((unsigned char *)bin, text);
+    free(text);
+
+    return(bin);
+}
+
+//*******************************************************************************
+// crypt_read_op_next_block - Transfer buffer function to handle reading an
+//        encryption at rest data stream
+//*******************************************************************************
+
+int crypt_read_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
+{
+    crypt_rw_t  *rwb = (crypt_rw_t *)tb->arg;
+    tbx_tbuf_t tbc;
+    int i, slot;
+    size_t sum, ds;
+    uint64_t loff, mod, page_off, poff2, lun_offset;
+
+    //** See if we have a previous block to process
+    page_off = pos / rwb->info->chunk_size;
+    poff2 = page_off * rwb->info->stripe_size;
+    page_off *= rwb->info->chunk_size;
+    if (rwb->crypt_flush == 1) {
+        if (rwb->prev_bufoff < 0) return (TBUFFER_OK);
+    }
+    if (rwb->prev_bufoff < 0) {
+        lun_offset = rwb->lun_offset[0] + poff2;
+        sum = 0;
+        slot = 0;
+        goto next;
+    } else if ((rwb->prev_bufoff == (int64_t)page_off) && (rwb->crypt_flush == 0)) {
+        lun_offset = rwb->prev_lunoff;
+        sum = rwb->slot_total_pos;
+        slot = rwb->curr_slot;
+        goto next;
+    }
+
+    //** Need to figure out the crypt counter
+    //** Update our position in the total table;
+    sum = rwb->slot_total_pos;
+    if (pos < sum) {
+        sum = 0;
+        rwb->curr_slot = 0;
+    }
+
+    slot = rwb->curr_slot;
+    for (i=rwb->curr_slot; i<rwb->n_ex; i++) {
+        ds = sum + rwb->ex_iov[i].len;
+        if (ds > pos) {
+            slot = i;
+            break;
+        }
+        sum = ds;
+    }
+
+    lun_offset = rwb->lun_offset[slot] + poff2;
+
+    //** check if we have an empty block. If so just copy it over
+    for (i=0; i<rwb->info->chunk_size; i++) {
+        if (rwb->crypt_buffer[i] != 0) goto non_zero;
+    }
+    goto blanks;  //** If we made it here then we have all blanks
+
+non_zero:
+    //** and LUN offset
+    loff = rwb->prev_lunoff / rwb->info->chunk_size;
+    loff *= rwb->info->crypt_chunk_scale;
+
+    //** then decrypt it
+    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->info->chunk_size, (unsigned char *)rwb->info->crypt_nonce, loff, (unsigned char *)rwb->info->crypt_key);
+
+blanks:
+    //** And finally copy it back to the use buffer
+    tbx_tbuf_single(&tbc, rwb->info->chunk_size, rwb->crypt_buffer);
+    tbx_tbuf_copy(&tbc, 0, &(rwb->tbuf_crypt), rwb->prev_bufoff, rwb->info->chunk_size, 1);
+
+    if (rwb->crypt_flush) return(TBUFFER_OK);   //** Kick out since this is just the final call to flush the buffer
+
+    //** Reset the buffer
+    memset(rwb->crypt_buffer, 0, rwb->info->chunk_size);
+
+next:
+    //** Set things up for the next round
+    rwb->prev_bufoff = page_off;
+    rwb->prev_lunoff = lun_offset;
+
+    //** And configure the tbv for the next op
+    rwb->slot_total_pos = sum;
+    rwb->curr_slot = slot;
+    tbv->n_iov = 1;
+    tbv->buffer = &(tbv->priv.single);
+    mod = pos % rwb->info->chunk_size;
+    if (rwb->info->chunk_size > (int64_t)(mod + tbv->nbytes)) {
+        tbv->priv.single.iov_len = tbv->nbytes;
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+    } else {
+        tbv->priv.single.iov_len = rwb->info->chunk_size - mod;
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+    }
+
+    return(TBUFFER_OK);
+}
+
+
+//*******************************************************************************
+// crypt_write_op_next_block - Transfer buffer function to handle writing an
+//         encryption at rest data stream
+//*******************************************************************************
+
+int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
+{
+    crypt_rw_t  *rwb = (crypt_rw_t *)tb->arg;
+    tbx_tbuf_t tbc;
+    int i, slot;
+    size_t sum, ds, nbytes;
+    uint64_t loff, mod, page_off, poff2, lun_offset;
+
+    page_off = pos / rwb->info->chunk_size;
+    poff2 = page_off * rwb->info->stripe_size;
+    page_off *= rwb->info->chunk_size;
+    mod = pos % rwb->info->chunk_size;
+    if (rwb->prev_bufoff == (int64_t)page_off) { //** Same page were already got encrypted so just return the partial buf
+        tbv->n_iov = 1;
+        nbytes = rwb->info->chunk_size - mod;
+        tbv->buffer = &(tbv->priv.single);
+        tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
+        tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+        tbv->nbytes = tbv->priv.single.iov_len;
+        return(TBUFFER_OK);
+    }
+
+    //** Need to figure out the crypt counter
+    //** Update our position in the total table;
+    sum = tbv->priv.slot_total_pos;
+    if (pos < sum) {
+        sum = 0;
+        tbv->priv.curr_slot = 0;
+    }
+
+    slot = tbv->priv.curr_slot;
+    for (i=tbv->priv.curr_slot; i<rwb->n_ex; i++) {
+        ds = sum + rwb->ex_iov[i].len;
+        if (ds > pos) {
+            slot = i;
+            break;
+        }
+        sum = ds;
+    }
+
+    //** Found my slot
+    tbv->priv.slot_total_pos = sum;
+    tbv->priv.curr_slot = slot;
+
+    //** and LUN offset
+    lun_offset = rwb->lun_offset[slot] + poff2;
+    loff = lun_offset / rwb->info->chunk_size;
+    loff *= rwb->info->crypt_chunk_scale;
+
+    //** Copy it from the user buffer into the buffer used for IBP writes
+    tbx_tbuf_single(&tbc, rwb->info->chunk_size, rwb->crypt_buffer);
+    tbx_tbuf_copy(&(rwb->tbuf_crypt), page_off, &tbc, 0, rwb->info->chunk_size, 1);
+
+    //** then encrypt it
+    crypto_stream_xchacha20_xor_ic((unsigned char *)rwb->crypt_buffer, (unsigned char *)rwb->crypt_buffer, rwb->info->chunk_size, (unsigned char *)rwb->info->crypt_nonce, loff, (unsigned char *)rwb->info->crypt_key);
+
+    //** And configure the tbv for the next op
+    rwb->prev_bufoff = page_off;
+    tbv->n_iov = 1;
+    nbytes = rwb->info->chunk_size - mod;
+    tbv->buffer = &(tbv->priv.single);
+    tbv->priv.single.iov_len = (nbytes > tbv->nbytes) ? tbv->nbytes : nbytes;  //** return just enough bytes to hit the buffer
+    tbv->priv.single.iov_base = rwb->crypt_buffer + mod;
+    tbv->nbytes = tbv->priv.single.iov_len;
+
+    return(TBUFFER_OK);
+}

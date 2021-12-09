@@ -27,6 +27,7 @@
 
 #include "ex3.h"
 #include "ex3/types.h"
+#include "../segment.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,7 @@ struct lio_seglun_priv_t {
     apr_time_t grow_time;
     rs_query_t *rsq;
     gop_thread_pool_context_t *tpc;
+    crypt_info_t cinfo;
     int crypt_enabled;
     int grow_count;
     int n_devices;
@@ -64,8 +66,6 @@ struct lio_seglun_priv_t {
     lio_data_service_fn_t *ds;
     tbx_stack_t *db_cleanup;
     lio_blacklist_t *bl;
-    char *crypt_key;
-    char *crypt_nonce;
 };
 
 

@@ -19,12 +19,45 @@
 
 #include <lio/segment.h>
 
+typedef struct {
+    ex_off_t chunk_size;
+    ex_off_t stripe_size;
+    ex_off_t crypt_chunk_scale;
+    char *crypt_nonce;
+    char *crypt_key;
+} crypt_info_t;
+
+typedef struct {
+    crypt_info_t *info;
+    ex_tbx_iovec_t *ex_iov;
+    char *crypt_buffer;
+    tbx_tbuf_t tbuf_crypt;
+    int n_ex;
+    int crypt_flush;
+    ex_off_t prev_bufoff;
+    ex_off_t prev_lunoff;
+    ex_off_t slot_total_pos;
+    ex_off_t curr_slot;
+    ex_off_t *lun_offset;
+} crypt_rw_t;
+
 gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, FILE *fd, lio_segment_t *dest_seg, ex_off_t dest_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int do_truncate, int timeout);
 gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, lio_segment_t *src_seg, FILE *fd, ex_off_t src_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int timeout);
 lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_exchange_t *ex);
 
 ex_off_t math_gcd(ex_off_t a, ex_off_t b);
 ex_off_t math_lcm(ex_off_t a, ex_off_t b);
+
+//** Encryption at rest helpers
+
+#define SEGMENT_CRYPT_KEY_LEN   crypto_stream_xchacha20_KEYBYTES
+#define SEGMENT_CRYPT_NONCE_LEN crypto_stream_xchacha20_NONCEBYTES
+
+void crypt_newkeys(char **key, char **nonce);
+char *crypt_bin2etext(char *bin, int len);
+char *crypt_etext2bin(char *etext, int len);
+int crypt_read_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv);
+int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv);
 
 // Preprocessor macros
 #define lio_segment_type(s) (s)->header.type
