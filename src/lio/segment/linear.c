@@ -66,19 +66,6 @@ typedef struct {
 } seglin_slot_t;
 
 typedef struct {
-    gop_opque_t *q;
-    lio_segment_t *seg;
-    data_probe_t **probe;
-    seglin_slot_t **block;
-    data_attr_t *da;
-    tbx_log_fd_t *fd;
-    int mode;
-    ex_off_t buffer_size;
-    lio_inspect_args_t *args;
-    int timeout;
-} seglin_check_t;
-
-typedef struct {
     lio_segment_t *seg;
     data_attr_t *da;
     tbx_log_fd_t *fd;
@@ -710,51 +697,6 @@ gop_op_generic_t *seglin_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
 }
 
 //***********************************************************************
-// _seglin_probe_cb - Validates all the segment probes
-//***********************************************************************
-
-void UNUSED_seglin_probe_cb(void *arg, int state)
-{
-    seglin_check_t *sp = (seglin_check_t *)arg;
-    lio_segment_t *seg = sp->seg;
-    seglin_priv_t *s = (seglin_priv_t *)seg->priv;
-    seglin_slot_t *b = NULL;
-    data_probe_t *p;
-    ds_int_t psize, seg_size;
-    int i;
-
-    if (state == OP_STATE_SUCCESS) {
-        opque_set_status(sp->q, gop_success_status);        //** Default to success
-        for (i=0; i<tbx_isl_count(s->isl); i++) {
-            b = sp->block[i];
-            p = sp->probe[i];
-
-            //** Verify the max_size >= cap_offset+len
-            ds_get_probe(b->data->ds, p, DS_PROBE_MAX_SIZE, &psize, sizeof(psize));
-            seg_size = b->cap_offset + b->len;
-            if (psize < seg_size) {
-                log_printf(10, "_seglin_probe_cb: allocation too small! i=%d\n", i);
-                opque_set_status(sp->q, gop_failure_status);
-            }
-        }
-    } else {
-        opque_set_status(sp->q, gop_failure_status);
-    }
-
-    //*** Clean up ***
-    for (i=0; i<tbx_isl_count(s->isl); i++) {
-        ds_probe_destroy(sp->block[i]->data->ds, sp->probe[i]);
-    }
-    free(sp->probe);
-    free(sp->block);
-    free(sp);
-    //** NOTE: the CB is freed in the normal gop_opque_free call **
-
-    return;
-
-}
-
-//***********************************************************************
 // seglin_remove - DECrements the ref counts for the segment which could
 //     result in the data being removed.
 //***********************************************************************
@@ -779,50 +721,6 @@ gop_op_generic_t *seglin_remove(lio_segment_t *seg, data_attr_t *da, int timeout
         gop_opque_add(q, gop);
     }
     segment_unlock(seg);
-
-    return(opque_get_gop(q));
-}
-
-//***********************************************************************
-// seglin_inspect_func - Checks that all the segments are available and they are the right size
-//***********************************************************************
-
-gop_op_generic_t *UNUSED_seglin_inspect_op(lio_segment_t *seg, data_attr_t *da, tbx_log_fd_t *fd, int mode, ex_off_t buffer_size, lio_inspect_args_t *args, int timeout)
-{
-    seglin_priv_t *s = (seglin_priv_t *)seg->priv;
-    gop_op_generic_t *gop;
-    gop_opque_t *q;
-    seglin_slot_t *b;
-    tbx_isl_iter_t it;
-    gop_callback_t *cb;
-    seglin_check_t *sp;
-    int i;
-
-    //** Make and assemble the cb
-    tbx_type_malloc_clear(cb, gop_callback_t, 1);
-    tbx_type_malloc_clear(sp, seglin_check_t, 1);
-    tbx_type_malloc_clear(sp->block, seglin_slot_t *, tbx_isl_count(s->isl));
-    tbx_type_malloc_clear(sp->probe, data_probe_t *, tbx_isl_count(s->isl));
-
-    q = gop_opque_new();
-    gop_cb_set(cb, UNUSED_seglin_probe_cb, sp);
-    opque_callback_append(q, cb);
-
-    sp->q = q;
-    sp->seg = seg;
-
-    it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
-    i = 0;
-    for (b = (seglin_slot_t *)tbx_isl_next(&it); b != NULL; b = (seglin_slot_t *)tbx_isl_next(&it)) {
-        sp->block[i] = b;
-        sp->probe[i] = ds_probe_create(b->data->ds);
-
-        gop = ds_probe(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_MANAGE), sp->probe[i], timeout);
-
-        gop_opque_add(q, gop);
-        i++;
-    }
-
 
     return(opque_get_gop(q));
 }
