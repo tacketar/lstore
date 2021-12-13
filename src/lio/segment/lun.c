@@ -172,303 +172,6 @@ void _slun_perform_remap(lio_segment_t *seg)
     return;
 }
 
-
-//***********************************************************************
-// slun_row_placement_check - Checks the placement of each allocation
-//***********************************************************************
-
-int slun_row_placement_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, int n_devices, int soft_error_fail, rs_query_t *query, lio_inspect_args_t *args, int timeout)
-{
-    lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
-    int i, nbad;
-    lio_rs_hints_t hints_list[n_devices];
-    char *migrate;
-    gop_op_generic_t *gop;
-    apr_hash_t *rid_changes;
-    lio_rid_inspect_tweak_t *rid;
-    apr_thread_mutex_t *rid_lock;
-
-    rid_changes = args->rid_changes;
-    rid_lock = args->rid_lock;
-
-    //** Make the fixed list table
-    for (i=0; i<n_devices; i++) {
-        hints_list[i].fixed_rid_key = b->block[i].data->rid_key;
-        hints_list[i].status = RS_ERROR_OK;
-        hints_list[i].local_rsq = NULL;
-        hints_list[i].pick_from = NULL;
-        migrate = data_block_get_attr(b->block[i].data, "migrate");
-        if (migrate != NULL) {
-            hints_list[i].local_rsq = rs_query_parse(s->rs, migrate);
-        }
-    }
-
-    //** Now call the query check
-    gop = rs_data_request(s->rs, NULL, query, NULL, NULL, 0, hints_list, n_devices, n_devices, 0, timeout);
-    gop_waitall(gop);
-    gop_free(gop, OP_DESTROY);
-
-    nbad = 0;
-    for (i=0; i<n_devices; i++) {
-        if (hints_list[i].status != RS_ERROR_OK) {
-            if (hints_list[i].status == RS_ERROR_FIXED_NOT_FOUND) {
-                if (soft_error_fail > 0) nbad++;
-            } else {
-                nbad++;
-            }
-            block_status[i] = hints_list[i].status;
-        } else if (rid_changes) { //** See if the allocation can be shuffled
-            if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
-            rid = apr_hash_get(rid_changes, b->block[i].data->rid_key, APR_HASH_KEY_STRING);
-            if (rid != NULL) {
-                if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
-                    rid = NULL;
-                }
-                if (rid != NULL) {  //** See about shuffling the data
-                    nbad++;
-                    block_status[i] = -103;
-                }
-            }
-            if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);
-
-        }
-
-        if (hints_list[i].local_rsq != NULL) {
-            rs_query_destroy(s->rs, hints_list[i].local_rsq);
-        }
-    }
-
-    return(nbad);
-}
-
-//***********************************************************************
-// slun_row_placement_fix - Moves the allocations to satisfy the placement
-//     constraints
-//***********************************************************************
-
-int slun_row_placement_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, int n_devices, lio_inspect_args_t *args, int timeout)
-{
-    lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
-    int i, j, k, nbad, ngood, loop, cleanup_index;
-    int missing[n_devices], m, todo;
-    char *cleanup_key[5*n_devices];
-    lio_rs_request_t req[n_devices];
-    lio_rid_inspect_tweak_t *rid_pending[n_devices];
-    rs_query_t *rsq;
-    apr_hash_t *rid_changes;
-    lio_rid_inspect_tweak_t *rid;
-    apr_thread_mutex_t *rid_lock;
-
-    lio_rs_hints_t hints_list[n_devices];
-    lio_data_block_t *db[n_devices], *dbs, *dbd, *dbold[n_devices];
-    data_cap_set_t *cap[n_devices];
-
-    char *migrate;
-    gop_op_generic_t *gop;
-    gop_opque_t *q;
-
-    rid_changes = args->rid_changes;
-    rid_lock = args->rid_lock;
-    rsq = rs_query_dup(s->rs, args->query);
-
-    cleanup_index = 0;
-    loop = 0;
-    do {
-        q = gop_opque_new();
-
-        //** Make the fixed list mapping table
-        memset(db, 0, sizeof(db));
-        nbad = n_devices-1;
-        ngood = 0;
-        m = 0;
-        if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
-        for (i=0; i<n_devices; i++) {
-            rid = NULL;
-            if (rid_changes != NULL) {
-                rid = apr_hash_get(rid_changes, b->block[i].data->rid_key, APR_HASH_KEY_STRING);
-                if (rid != NULL) {
-                    if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
-                        rid = NULL;
-                    }
-                }
-            }
-            rid_pending[i] = rid;
-
-            if ((block_status[i] == 0) && (rid == NULL)) {
-                j = ngood;
-                hints_list[ngood].fixed_rid_key = b->block[i].data->rid_key;
-                hints_list[ngood].status = RS_ERROR_OK;
-                hints_list[ngood].local_rsq = NULL;
-                hints_list[ngood].pick_from = NULL;
-                ngood++;
-            } else {
-                j = nbad;
-                hints_list[nbad].local_rsq = NULL;
-                hints_list[nbad].fixed_rid_key = NULL;
-                hints_list[nbad].status = RS_ERROR_OK;
-                hints_list[nbad].pick_from = NULL;
-                if (rid != NULL) {
-                    hints_list[nbad].pick_from = rid->pick_pool;
-                    rid->rid->delta += b->block_len;
-                    rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
-                    log_printf(5, "i=%d rid_key=%s, pick_pool_count=%d\n", i, b->block[i].data->rid_key, apr_hash_count(rid->pick_pool));
-                }
-                req[m].rid_index = nbad;
-                req[m].size = b->block_len;
-                db[m] = data_block_create(s->ds);
-                cap[m] = db[m]->cap;
-                missing[m] = i;
-                nbad--;
-                m++;
-            }
-
-            if (hints_list[j].local_rsq != NULL) {
-                rs_query_destroy(s->rs, hints_list[j].local_rsq);
-            }
-
-            migrate = data_block_get_attr(b->block[i].data, "migrate");
-            if (migrate != NULL) {
-                hints_list[j].local_rsq = rs_query_parse(s->rs, migrate);
-            }
-//log_printf(0, "i=%d ngood=%d nbad=%d m=%d\n", i, ngood, nbad, m);
-        }
-
-        // 3=ignore fixed and it's ok to return a partial list
-        gop = rs_data_request(s->rs, da, rsq, cap, req, m, hints_list, ngood, n_devices, 3, timeout);
-
-        if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);  //** The data request will use the rid_changes table in constructing the ops
-
-        gop_waitall(gop);
-        gop_free(gop, OP_DESTROY);
-
-        //** Process the results
-        opque_start_execution(q);
-        for (j=0; j<m; j++) {
-            i = missing[j];
-            if (ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_READ) != NULL) {
-                db[j]->rid_key = req[j].rid_key;
-                req[j].rid_key = NULL;  //** Cleanup
-
-                //** Make the copy operation
-                gop = ds_copy(b->block[i].data->ds, da, DS_PUSH, NS_TYPE_SOCK, "",
-                              ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), b->block[i].cap_offset,
-                              ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_WRITE), 0,
-                              b->block_len, timeout);
-                gop_set_myid(gop, j);
-                gop_opque_add(q, gop);
-            } else {  //** Make sure we exclude the RID key on the next round due to the failure
-                data_block_destroy(db[j]);
-
-                if (req[j].rid_key != NULL) {
-                    log_printf(15, "Excluding rid_key=%s on next round\n", req[j].rid_key);
-                    cleanup_key[cleanup_index] = req[j].rid_key;
-                    req[j].rid_key = NULL;
-                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_KV, "rid_key", RSQ_BASE_KV_EXACT, cleanup_key[cleanup_index], RSQ_BASE_KV_EXACT);
-                    cleanup_index++;
-                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_NOT, NULL, 0, NULL, 0);
-                    rs_query_add(s->rs, &rsq, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
-                } else if (block_status[i] == -103) {  //** Can't move the allocation so unflag it
-                    if (rid_pending[i] != NULL) {
-                        apr_thread_mutex_lock(rid_lock);
-                        rid_pending[i]->rid->delta -= b->block_len;  //** This is the original allocation
-                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
-                        apr_thread_mutex_unlock(rid_lock);
-                    }
-                }
-            }
-            log_printf(15, "after rs query block_status[%d]=%d block_len=" XOT "\n", i, block_status[i], b->block_len);
-        }
-
-        log_printf(15, "q size=%d\n",gop_opque_task_count(q));
-
-        //** Wait for the copies to complete
-        opque_waitall(q);
-        k = 0;
-        while ((gop = gop_get_next_finished(opque_get_gop(q))) != NULL) {
-            j = gop_get_myid(gop);
-            log_printf(15, "index=%d\n", j);
-            if (j >= 0) {  //** Skip any remove ops
-                i = missing[j];
-                log_printf(15, "missing[%d]=%d status=%d\n", j,i, gop_completed_successfully(gop));
-                if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {  //** Update the block
-                    dbs = b->block[i].data;
-                    dbd = db[j];
-
-                    dbd->size = dbs->size;
-                    dbd->max_size = dbs->max_size;
-                    tbx_atomic_inc(dbd->ref_count);
-                    dbd->attr_stack = dbs->attr_stack;
-                    dbs->attr_stack = NULL;
-
-                    data_block_auto_warm(dbd);  //** Add it to be auto-warmed
-
-                    b->block[i].data = dbd;
-                    b->block[i].cap_offset = 0;
-                    block_status[i] = 0;
-
-                    gop_free(gop, OP_DESTROY);
-
-                    if (args->qs) { //** Remove the old data on complete success
-                        gop = ds_remove(dbs->ds, da, ds_get_cap(dbs->ds, dbs->cap, DS_CAP_MANAGE), timeout);
-                        gop_opque_add(args->qs, gop);  //** This gets placed on the success queue so we can roll it back if needed
-                    } else {       //** Remove the just created allocation on failure
-                        gop = ds_remove(dbd->ds, da, ds_get_cap(dbd->ds, dbd->cap, DS_CAP_MANAGE), timeout);
-                        gop_opque_add(args->qf, gop);  //** This gets placed on the failed queue so we can roll it back if needed
-                    }
-                    if (s->db_cleanup == NULL) s->db_cleanup = tbx_stack_new();
-                    tbx_stack_push(s->db_cleanup, dbs);  //** Dump the data block here cause the cap is needed for the gop.  We'll cleanup up on destroy()
-                } else {  //** Copy failed so remove the destintation
-                    gop_free(gop, OP_DESTROY);
-                    gop = ds_remove(db[j]->ds, da, ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_MANAGE), timeout);
-                    gop_set_myid(gop, -1);
-                    dbold[k] = db[j];
-                    k++;
-                    gop_opque_add(q, gop);
-
-                    if (rid_pending[i] != NULL) { //** Cleanup RID changes
-                        apr_thread_mutex_lock(rid_lock);
-                        rid_pending[i]->rid->delta -= b->block_len;  //** This is the original allocation
-                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
-
-                        //** and this is the destination
-                        rid = apr_hash_get(rid_changes, db[j]->rid_key, APR_HASH_KEY_STRING);
-                        if (rid != NULL) {
-                            rid->rid->delta += b->block_len;
-                            rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
-                        }
-                        apr_thread_mutex_unlock(rid_lock);
-                    }
-                }
-            } else {
-                gop_free(gop, OP_DESTROY);
-            }
-        }
-
-        opque_waitall(q);  //** Wait for the removal to complete.  Don't care if there are errors we can still continue
-        gop_opque_free(q, OP_DESTROY);
-
-        //** Clean up
-        for (i=0; i<k; i++) {
-            data_block_destroy(dbold[i]);
-        }
-
-        todo= 0;
-        for (i=0; i<n_devices; i++) if (block_status[i] != 0) todo++;
-        loop++;
-    } while ((loop < 5) && (todo > 0));
-
-    for (i=0; i<cleanup_index; i++) free(cleanup_key[i]);
-
-    for (i=0; i<n_devices; i++) {
-        if (hints_list[i].local_rsq != NULL) {
-            rs_query_destroy(s->rs, hints_list[i].local_rsq);
-        }
-    }
-    rs_query_destroy(s->rs, rsq);
-
-    return(todo);
-}
-
 //#########################################
 //  DEBUG PURPOSES ONLY TO SIMULATE A FAILURE
 //#########################################
@@ -2000,6 +1703,7 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
     seglun_inspect_t *si = (seglun_inspect_t *)arg;
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)si->seg->priv;
     seglun_row_t *b;
+    segment_block_inspect_t block[s->n_devices];
     int bufsize = 10*1024;
     char info[bufsize];
     ex_off_t sstripe, estripe;
@@ -2021,7 +1725,12 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
     nmigrated = 0;
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
     for (b = (seglun_row_t *)tbx_isl_next(&it); b != NULL; b = (seglun_row_t *)tbx_isl_next(&it)) {
-        for (i=0; i < s->n_devices; i++) block_status[i] = 0;
+        for (i=0; i < s->n_devices; i++) {
+            block_status[i] = 0;
+            block[i].data = b->block[i].data;
+            block[i].cap_offset = b->block[i].cap_offset;
+            block[i].block_len = b->block_len;
+        }
 
         sstripe = b->seg_offset / s->stripe_size;
         estripe = b->seg_end / s->stripe_size;
@@ -2032,15 +1741,14 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
         }
 
         for (i=0; i < s->n_devices; i++) block_status[i] = 0;
-        err = slun_row_placement_check(si->seg, si->da, b, block_status, s->n_devices, soft_error_fail, si->args->query, si->args, si->timeout);
+        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, si->args->query, si->args, si->timeout);
         used = 0;
         tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_placement_check:", segment_id(si->seg));
         for (i=0; i < s->n_devices; i++) tbx_append_printf(info, &used, bufsize, " %d", block_status[i]);
         info_printf(si->fd, 1, "%s\n", info);
         if ((err > 0) || (si->args->rid_changes != NULL)) {
             memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
-
-            i = slun_row_placement_fix(si->seg, si->da, b, block_status, s->n_devices, s->rsq, si->timeout);
+            i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, s->rsq, si->timeout, &(s->db_cleanup));
             nmigrated +=  err - i;
             nattempted += err;
 
@@ -2065,6 +1773,11 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
             nattempted = nattempted + err;
         }
 
+        //** Copy the updated block back
+        for (i=0; i<s->n_devices; i++) {
+            b->block[i].data = block[i].data;
+            b->block[i].cap_offset = block[i].cap_offset;
+        }
     }
 
     segment_unlock(si->seg);
@@ -2098,6 +1811,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     int used, soft_error_fail, force_reconstruct, nforce;
     int block_status[s->n_devices], block_copy[s->n_devices], block_tmp[s->n_devices];
     int i, j, err, option, force_repair, max_lost, total_lost, total_repaired, total_migrate, nmigrated, nlost, nrepaired, drow;
+    segment_block_inspect_t block[s->n_devices];
     lio_inspect_args_t args;
     lio_inspect_args_t args_blank;
     apr_time_t dt[s->n_devices];
@@ -2140,14 +1854,19 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
     for (b = (seglun_row_t *)tbx_isl_next(&it); b != NULL; b = (seglun_row_t *)tbx_isl_next(&it)) {
         drow++;
-        for (i=0; i < s->n_devices; i++) block_status[i] = 0;
+        for (i=0; i < s->n_devices; i++) {
+            block_status[i] = 0;
+            block[i].data = b->block[i].data;
+            block[i].cap_offset = b->block[i].cap_offset;
+            block[i].block_len = b->block_len;
+        }
 
         sstripe = b->seg_offset / s->stripe_size;
         estripe = b->seg_end / s->stripe_size;
         info_printf(si->fd, 1, XIDT ": Checking row: (" XOT ", " XOT ", " XOT ")   Stripe: (" XOT ", " XOT ")\n", segment_id(si->seg), b->seg_offset, b->seg_end, b->row_len, sstripe, estripe);
 
         for (i=0; i < s->n_devices; i++) {
-            info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+            info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
         }
 
         nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout);
@@ -2187,7 +1906,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
             info_printf(si->fd, 1, "%s\n", info);
 
             for (i=0; i < s->n_devices; i++) {
-                if (block_status[i] != 0) info_printf(si->fd, 5, XIDT ":     dev=%i replacing rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+                if (block_status[i] != 0) info_printf(si->fd, 5, XIDT ":     dev=%i replacing rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
             }
 
             if (max_lost < err) max_lost = err;
@@ -2200,7 +1919,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
                 err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);
 
                 for (i=0; i < s->n_devices; i++) {
-                    if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced with rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+                    if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced with rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
                 }
 
                 used = 0;
@@ -2222,7 +1941,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         if (err != 0) goto fail;
 
         log_printf(0, "BEFORE_PLACEMENT_CHECK\n");
-        err = slun_row_placement_check(si->seg, si->da, b, block_status, s->n_devices, soft_error_fail, query, &args, si->timeout);
+        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, query, &args, si->timeout);
         for (i=0; i < s->n_devices; i++) tbx_append_printf(info, &used, bufsize, " %d", block_status[i]);
 
         total_migrate += err;
@@ -2234,7 +1953,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         if ((err > 0) && ((option == INSPECT_QUICK_REPAIR) || (option == INSPECT_SCAN_REPAIR) || (option == INSPECT_FULL_REPAIR))) {
             if (force_reconstruct == 0) {
                 memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
-                i = slun_row_placement_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);
+                i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, &args, si->timeout, &(s->db_cleanup));
                 nmigrated += err - i;
                 memcpy(block_tmp, block_status, sizeof(int)*s->n_devices);
 
@@ -2242,7 +1961,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
                 for (i=0; i < s->n_devices; i++) {
                     if (block_copy[i] != 0) {
                         if (block_status[i] == 0) {
-                            info_printf(si->fd, 2, XIDT ":     dev=%i moved to rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+                            info_printf(si->fd, 2, XIDT ":     dev=%i moved to rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
                         } else if (block_status[i] == -103) { //** Can't opportunistically move the allocation so unflagg it but I need to check for collisions later
                             log_printf(0, "OPPORTUNISTIC mv failed i=%d\n", i);
                             block_status[i] = 0;
@@ -2254,7 +1973,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
 
                 //** Opportunistic shuffle failed so check for placement collisions
                 if (j > 0) {
-                    err = slun_row_placement_check(si->seg, si->da, b, block_tmp, s->n_devices, soft_error_fail, query, &args_blank, si->timeout);
+                    err = segment_placement_check(s->rs, si->da, block, block_tmp, s->n_devices, soft_error_fail, query, &args_blank, si->timeout);
                     if (err > 0) {
                         log_printf(1, "ERROR: opportunistic overlap.  err=%d\n", err);
                         info_printf(si->fd, 1, XIDT ": ERROR: opportunistic overlap.  err=%d\n", segment_id(si->seg), err);
@@ -2276,7 +1995,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
                     err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);
 
                     for (i=0; i < s->n_devices; i++) {
-                        if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+                        if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
                     }
                     used = 0;
                     tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_replace_fix:", segment_id(si->seg));
@@ -2294,6 +2013,12 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         }
 
 fail:
+        //** Copy the updated block back
+        for (i=0; i<s->n_devices; i++) {
+            b->block[i].data = block[i].data;
+            b->block[i].cap_offset = block[i].cap_offset;
+        }
+
         total_lost += nlost;
         total_repaired += nrepaired;
     }

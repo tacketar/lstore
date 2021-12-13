@@ -832,3 +832,306 @@ int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv)
 
     return(TBUFFER_OK);
 }
+
+//=======================================================================================================
+// Below are helper routines for data placement
+//=======================================================================================================
+
+//***********************************************************************
+// segment_placement_check - Checks the placement of each allocation
+//***********************************************************************
+
+int segment_placement_check(lio_resource_service_fn_t *rs, data_attr_t *da, segment_block_inspect_t *block, int *block_status, int n_blocks, int soft_error_fail, rs_query_t *query, lio_inspect_args_t *args, int timeout)
+{
+    int i, nbad;
+    lio_rs_hints_t hints_list[n_blocks];
+    char *migrate;
+    gop_op_generic_t *gop;
+    apr_hash_t *rid_changes;
+    lio_rid_inspect_tweak_t *rid;
+    apr_thread_mutex_t *rid_lock;
+
+    rid_changes = args->rid_changes;
+    rid_lock = args->rid_lock;
+
+    //** Make the fixed list table
+    for (i=0; i<n_blocks; i++) {
+        hints_list[i].fixed_rid_key = block[i].data->rid_key;
+        hints_list[i].status = RS_ERROR_OK;
+        hints_list[i].local_rsq = NULL;
+        hints_list[i].pick_from = NULL;
+        migrate = data_block_get_attr(block[i].data, "migrate");
+        if (migrate != NULL) {
+            hints_list[i].local_rsq = rs_query_parse(rs, migrate);
+        }
+    }
+
+    //** Now call the query check
+    gop = rs_data_request(rs, NULL, query, NULL, NULL, 0, hints_list, n_blocks, n_blocks, 0, timeout);
+    gop_waitall(gop);
+    gop_free(gop, OP_DESTROY);
+
+    //** Now call the query check
+    gop = rs_data_request(rs, NULL, query, NULL, NULL, 0, hints_list, n_blocks, n_blocks, 0, timeout);
+    gop_waitall(gop);
+    gop_free(gop, OP_DESTROY);
+
+    nbad = 0;
+    for (i=0; i<n_blocks; i++) {
+        if (hints_list[i].status != RS_ERROR_OK) {
+            if (hints_list[i].status == RS_ERROR_FIXED_NOT_FOUND) {
+                if (soft_error_fail > 0) nbad++;
+            } else {
+                nbad++;
+            }
+            block_status[i] = hints_list[i].status;
+        } else if (rid_changes) { //** See if the allocation can be shuffled
+            if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
+            rid = apr_hash_get(rid_changes, block[i].data->rid_key, APR_HASH_KEY_STRING);
+            if (rid != NULL) {
+                if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
+                    rid = NULL;
+                }
+                if (rid != NULL) {  //** See about shuffling the data
+                    nbad++;
+                    block_status[i] = -103;
+                }
+            }
+            if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);
+
+        }
+
+        if (hints_list[i].local_rsq != NULL) {
+            rs_query_destroy(rs, hints_list[i].local_rsq);
+        }
+    }
+
+    return(nbad);
+}
+
+
+//***********************************************************************
+// segment_placement_fix - Moves the allocations to satisfy the placement
+//     constraints
+//***********************************************************************
+
+int segment_placement_fix(lio_resource_service_fn_t *rs, data_attr_t *da, segment_block_inspect_t *block, int *block_status, int n_blocks, lio_inspect_args_t *args, int timeout, tbx_stack_t **db_cleanup)
+{
+    int i, j, k, nbad, ngood, loop, cleanup_index;
+    int missing[n_blocks], m, todo;
+    char *cleanup_key[5*n_blocks];
+    lio_rs_request_t req[n_blocks];
+    lio_rid_inspect_tweak_t *rid_pending[n_blocks];
+    rs_query_t *rsq;
+    apr_hash_t *rid_changes;
+    lio_rid_inspect_tweak_t *rid;
+    apr_thread_mutex_t *rid_lock;
+
+    lio_rs_hints_t hints_list[n_blocks];
+    lio_data_block_t *db[n_blocks], *dbs, *dbd, *dbold[n_blocks];
+    data_cap_set_t *cap[n_blocks];
+
+    char *migrate;
+    gop_op_generic_t *gop;
+    gop_opque_t *q;
+
+    rid_changes = args->rid_changes;
+    rid_lock = args->rid_lock;
+    rsq = rs_query_dup(rs, args->query);
+
+    cleanup_index = 0;
+    loop = 0;
+    do {
+        q = gop_opque_new();
+
+        //** Make the fixed list mapping table
+        memset(db, 0, sizeof(db));
+        nbad = n_blocks-1;
+        ngood = 0;
+        m = 0;
+        if (rid_lock != NULL) apr_thread_mutex_lock(rid_lock);
+        for (i=0; i<n_blocks; i++) {
+            rid = NULL;
+            if (rid_changes != NULL) {
+                rid = apr_hash_get(rid_changes, block[i].data->rid_key, APR_HASH_KEY_STRING);
+                if (rid != NULL) {
+                    if ((rid->rid->state != 0) || (rid->rid->delta >= 0)) {
+                        rid = NULL;
+                    }
+                }
+            }
+            rid_pending[i] = rid;
+
+            if ((block_status[i] == 0) && (rid == NULL)) {
+                j = ngood;
+                hints_list[ngood].fixed_rid_key = block[i].data->rid_key;
+                hints_list[ngood].status = RS_ERROR_OK;
+                hints_list[ngood].local_rsq = NULL;
+                hints_list[ngood].pick_from = NULL;
+                ngood++;
+            } else {
+                j = nbad;
+                hints_list[nbad].local_rsq = NULL;
+                hints_list[nbad].fixed_rid_key = NULL;
+                hints_list[nbad].status = RS_ERROR_OK;
+                hints_list[nbad].pick_from = NULL;
+                if (rid != NULL) {
+                    hints_list[nbad].pick_from = rid->pick_pool;
+                    rid->rid->delta += block[i].block_len;
+                    rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
+                    log_printf(5, "i=%d rid_key=%s, pick_pool_count=%d\n", i, block[i].data->rid_key, apr_hash_count(rid->pick_pool));
+                }
+                req[m].rid_index = nbad;
+                req[m].size = block[i].block_len;
+                db[m] = data_block_create(block[i].data->ds);
+                cap[m] = db[m]->cap;
+                missing[m] = i;
+                nbad--;
+                m++;
+            }
+
+            if (hints_list[j].local_rsq != NULL) {
+                rs_query_destroy(rs, hints_list[j].local_rsq);
+            }
+
+            migrate = data_block_get_attr(block[i].data, "migrate");
+            if (migrate != NULL) {
+                hints_list[j].local_rsq = rs_query_parse(rs, migrate);
+            }
+        }
+
+        // 3=ignore fixed and it's ok to return a partial list
+        gop = rs_data_request(rs, da, rsq, cap, req, m, hints_list, ngood, n_blocks, 3, timeout);
+
+        if (rid_lock != NULL) apr_thread_mutex_unlock(rid_lock);  //** The data request will use the rid_changes table in constructing the ops
+
+        gop_waitall(gop);
+        gop_free(gop, OP_DESTROY);
+
+        //** Process the results
+        opque_start_execution(q);
+        for (j=0; j<m; j++) {
+            i = missing[j];
+            if (ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_READ) != NULL) {
+                db[j]->rid_key = req[j].rid_key;
+                req[j].rid_key = NULL;  //** Cleanup
+
+                //** Make the copy operation
+                gop = ds_copy(block[i].data->ds, da, DS_PUSH, NS_TYPE_SOCK, "",
+                              ds_get_cap(block[i].data->ds, block[i].data->cap, DS_CAP_READ), block[i].cap_offset,
+                              ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_WRITE), 0,
+                              block[i].block_len, timeout);
+                gop_set_myid(gop, j);
+                gop_opque_add(q, gop);
+            } else {  //** Make sure we exclude the RID key on the next round due to the failure
+                data_block_destroy(db[j]);
+
+                if (req[j].rid_key != NULL) {
+                    log_printf(15, "Excluding rid_key=%s on next round\n", req[j].rid_key);
+                    cleanup_key[cleanup_index] = req[j].rid_key;
+                    req[j].rid_key = NULL;
+                    rs_query_add(rs, &rsq, RSQ_BASE_OP_KV, "rid_key", RSQ_BASE_KV_EXACT, cleanup_key[cleanup_index], RSQ_BASE_KV_EXACT);
+                    cleanup_index++;
+                    rs_query_add(rs, &rsq, RSQ_BASE_OP_NOT, NULL, 0, NULL, 0);
+                    rs_query_add(rs, &rsq, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
+                } else if (block_status[i] == -103) {  //** Can't move the allocation so unflag it
+                    if (rid_pending[i] != NULL) {
+                        apr_thread_mutex_lock(rid_lock);
+                        rid_pending[i]->rid->delta -= block[i].block_len;  //** This is the original allocation
+                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
+                        apr_thread_mutex_unlock(rid_lock);
+                    }
+                }
+            }
+            log_printf(15, "after rs query block_status[%d]=%d block_len=" XOT "\n", i, block_status[i], block[i].block_len);
+        }
+
+        log_printf(15, "q size=%d\n",gop_opque_task_count(q));
+
+        //** Wait for the copies to complete
+        opque_waitall(q);
+        k = 0;
+        while ((gop = gop_get_next_finished(opque_get_gop(q))) != NULL) {
+            j = gop_get_myid(gop);
+            log_printf(15, "index=%d\n", j);
+            if (j >= 0) {  //** Skip any remove ops
+                i = missing[j];
+                log_printf(15, "missing[%d]=%d status=%d\n", j,i, gop_completed_successfully(gop));
+                if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {  //** Update the block
+                    dbs = block[i].data;
+                    dbd = db[j];
+
+                    dbd->size = dbs->size;
+                    dbd->max_size = dbs->max_size;
+                    tbx_atomic_inc(dbd->ref_count);
+                    dbd->attr_stack = dbs->attr_stack;
+                    dbs->attr_stack = NULL;
+
+                    data_block_auto_warm(dbd);  //** Add it to be auto-warmed
+
+                    block[i].data = dbd;
+                    block[i].cap_offset = 0;
+                    block_status[i] = 0;
+
+                    gop_free(gop, OP_DESTROY);
+
+                    if (args->qs) { //** Remove the old data on complete success
+                        gop = ds_remove(dbs->ds, da, ds_get_cap(dbs->ds, dbs->cap, DS_CAP_MANAGE), timeout);
+                        gop_opque_add(args->qs, gop);  //** This gets placed on the success queue so we can roll it back if needed
+                    } else {       //** Remove the just created allocation on failure
+                        gop = ds_remove(dbd->ds, da, ds_get_cap(dbd->ds, dbd->cap, DS_CAP_MANAGE), timeout);
+                        gop_opque_add(args->qf, gop);  //** This gets placed on the failed queue so we can roll it back if needed
+                    }
+                    if (*db_cleanup == NULL) *db_cleanup = tbx_stack_new();
+                    tbx_stack_push(*db_cleanup, dbs);  //** Dump the data block here cause the cap is needed for the gop.  We'll cleanup up on destroy()
+                } else {  //** Copy failed so remove the destintation
+                    gop_free(gop, OP_DESTROY);
+                    gop = ds_remove(db[j]->ds, da, ds_get_cap(db[j]->ds, db[j]->cap, DS_CAP_MANAGE), timeout);
+                    gop_set_myid(gop, -1);
+                    dbold[k] = db[j];
+                    k++;
+                    gop_opque_add(q, gop);
+
+                    if (rid_pending[i] != NULL) { //** Cleanup RID changes
+                        apr_thread_mutex_lock(rid_lock);
+                        rid_pending[i]->rid->delta -= block[i].block_len;  //** This is the original allocation
+                        rid_pending[i]->rid->state = ((llabs(rid_pending[i]->rid->delta) <= rid_pending[i]->rid->tolerance) || (rid_pending[i]->rid->tolerance == 0)) ? 1 : 0;
+
+                        //** and this is the destination
+                        rid = apr_hash_get(rid_changes, db[j]->rid_key, APR_HASH_KEY_STRING);
+                        if (rid != NULL) {
+                            rid->rid->delta += block[i].block_len;
+                            rid->rid->state = ((llabs(rid->rid->delta) <= rid->rid->tolerance) || (rid->rid->tolerance == 0)) ? 1 : 0;
+                        }
+                        apr_thread_mutex_unlock(rid_lock);
+                    }
+                }
+            } else {
+                gop_free(gop, OP_DESTROY);
+            }
+        }
+
+        opque_waitall(q);  //** Wait for the removal to complete.  Don't care if there are errors we can still continue
+        gop_opque_free(q, OP_DESTROY);
+
+        //** Clean up
+        for (i=0; i<k; i++) {
+            data_block_destroy(dbold[i]);
+        }
+
+        todo= 0;
+        for (i=0; i<n_blocks; i++) if (block_status[i] != 0) todo++;
+        loop++;
+    } while ((loop < 5) && (todo > 0));
+
+    for (i=0; i<cleanup_index; i++) free(cleanup_key[i]);
+
+    for (i=0; i<n_blocks; i++) {
+        if (hints_list[i].local_rsq != NULL) {
+            rs_query_destroy(rs, hints_list[i].local_rsq);
+        }
+    }
+    rs_query_destroy(rs, rsq);
+
+    return(todo);
+}

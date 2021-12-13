@@ -41,9 +41,19 @@ typedef struct {
     ex_off_t *lun_offset;
 } crypt_rw_t;
 
+typedef struct {
+    lio_data_block_t *data;    //** Data block
+    ex_off_t cap_offset;  //** Starting location to use data in the cap
+    ex_off_t block_len;
+} segment_block_inspect_t;
+
 gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, FILE *fd, lio_segment_t *dest_seg, ex_off_t dest_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int do_truncate, int timeout);
 gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, lio_segment_t *src_seg, FILE *fd, ex_off_t src_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int timeout);
 lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_exchange_t *ex);
+
+//** Data placement helpers
+int segment_placement_check(lio_resource_service_fn_t *rs, data_attr_t *da, segment_block_inspect_t *block, int *block_status, int n_blocks, int soft_error_fail, rs_query_t *query, lio_inspect_args_t *args, int timeout);
+int segment_placement_fix(lio_resource_service_fn_t *rs, data_attr_t *da, segment_block_inspect_t *block, int *block_status, int n_blocks, lio_inspect_args_t *args, int timeout, tbx_stack_t **db_cleanup);
 
 ex_off_t math_gcd(ex_off_t a, ex_off_t b);
 ex_off_t math_lcm(ex_off_t a, ex_off_t b);
