@@ -570,7 +570,7 @@ gop_op_status_t segment_put_gop_func(void *arg, int id)
             goto finished;
         }
         gop_free(gop, OP_DESTROY);
-    } while ((rlen > 0) && (nbytes != 0));
+    } while (rlen > 0);
 
     if (sc->truncate == 1) {  //** Truncate if wanted
         gop_sync_exec(lio_segment_truncate(sc->dest, sc->da, wpos, sc->timeout));
@@ -657,6 +657,68 @@ char *crypt_etext2bin(char *etext, int len)
     free(text);
 
     return(bin);
+}
+
+//*******************************************************************************
+// crypt_loadkeys - Load the keys and initializes the cinfo structure
+//*******************************************************************************
+
+int crypt_loadkeys(crypt_info_t *cinfo, tbx_inip_file_t *fd, const char *grp, int ok_to_generate_keys, ex_off_t chunk_size, ex_off_t stripe_size)
+{
+    char *etext;
+
+    cinfo->chunk_size = chunk_size;
+    cinfo->stripe_size = stripe_size;
+    cinfo->crypt_chunk_scale = cinfo->chunk_size / 64;
+    if (cinfo->stripe_size % 64) cinfo->crypt_chunk_scale++;
+
+    cinfo->crypt_key = tbx_inip_get_string(fd, grp, "crypt_key", NULL);
+    cinfo->crypt_nonce = tbx_inip_get_string(fd, grp, "crypt_nonce", NULL);
+    if ((cinfo->crypt_key == NULL) || (cinfo->crypt_nonce == NULL)) {
+        if (ok_to_generate_keys != 1) {
+            log_printf(0, "ERROR: Missing key or nonce!! INI group=%s key=%s nonce=%s\n", grp, cinfo->crypt_key, cinfo->crypt_nonce);
+            return(1);
+        }
+    }
+
+    //** If we made it here we need to either convert the text -> binary for the key/nonce or generate a new one
+    if (cinfo->crypt_key) {   //** Got a key so convert it
+        etext = cinfo->crypt_key;
+        cinfo->crypt_key = crypt_etext2bin(etext, strlen(etext));
+        free(etext);
+    } else {  //** Got to generate a new one
+        crypt_newkeys(&(cinfo->crypt_key), NULL);
+    }
+    if (cinfo->crypt_nonce) {   //** Got a nonce so convert it
+        etext = cinfo->crypt_nonce;
+        cinfo->crypt_nonce = crypt_etext2bin(etext, strlen(etext));
+        free(etext);
+    } else {  //** Got to generate a new one
+        crypt_newkeys(NULL, &(cinfo->crypt_nonce));
+    }
+
+    return(0);
+}
+
+//*******************************************************************************
+// crypt_destroykeys - Does cleanup of the keys
+//*******************************************************************************
+
+void crypt_destroykeys(crypt_info_t *cinfo)
+{
+    if (cinfo->crypt_key) { free(cinfo->crypt_key); cinfo->crypt_key = NULL; }
+    if (cinfo->crypt_nonce) { free(cinfo->crypt_nonce); cinfo->crypt_nonce = NULL; }
+}
+
+//*******************************************************************************
+// crypt_regenkeys - Regenerates the keys
+//*******************************************************************************
+
+void crypt_regenkeys(crypt_info_t *cinfo)
+{
+    if (cinfo->crypt_key) free(cinfo->crypt_key);
+    if (cinfo->crypt_nonce) free(cinfo->crypt_nonce);
+    crypt_newkeys(&(cinfo->crypt_key), &(cinfo->crypt_nonce));
 }
 
 //*******************************************************************************

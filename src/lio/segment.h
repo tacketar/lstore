@@ -17,6 +17,7 @@
 #ifndef _SEGMENT_H_INCLUDED
 #define _SEGMENT_H_INCLUDED
 
+#include <sodium.h>
 #include <lio/segment.h>
 
 typedef struct {
@@ -59,13 +60,16 @@ ex_off_t math_gcd(ex_off_t a, ex_off_t b);
 ex_off_t math_lcm(ex_off_t a, ex_off_t b);
 
 //** Encryption at rest helpers
-
 #define SEGMENT_CRYPT_KEY_LEN   crypto_stream_xchacha20_KEYBYTES
 #define SEGMENT_CRYPT_NONCE_LEN crypto_stream_xchacha20_NONCEBYTES
 
 void crypt_newkeys(char **key, char **nonce);
 char *crypt_bin2etext(char *bin, int len);
 char *crypt_etext2bin(char *etext, int len);
+int crypt_loadkeys(crypt_info_t *cinfo, tbx_inip_file_t *fd, const char *grp, int ok_to_generate_keys, ex_off_t chunk_size, ex_off_t stripe_size);
+void crypt_destroykeys(crypt_info_t *cinfo);
+void crypt_regenkeys(crypt_info_t *cinfo);
+
 int crypt_read_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv);
 int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv);
 

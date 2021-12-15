@@ -773,9 +773,7 @@ finished:
     s->used_size = new_used;
 
     if ((s->total_size == 0) && (s->crypt_enabled > 0)) { //** Truncate to 0 so re-generate encryption keys if enabled
-        if (s->cinfo.crypt_key) free(s->cinfo.crypt_key);
-        if (s->cinfo.crypt_nonce) free(s->cinfo.crypt_nonce);
-        crypt_newkeys(&(s->cinfo.crypt_key), &(s->cinfo.crypt_nonce));
+        crypt_regenkeys(&(s->cinfo));
     }
 
     if (err == OP_STATE_SUCCESS) {
@@ -1719,7 +1717,7 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
 
     segment_lock(si->seg);
 
-    info_printf(si->fd, 1, XIDT ": segment information: n_devices=%d n_shift=%d chunk_size=" XOT "  used_size=" XOT " total_size=" XOT " mode=%d\n", segment_id(si->seg), s->n_devices, s->n_shift, s->chunk_size, s->used_size, s->total_size, si->inspect_mode);
+    info_printf(si->fd, 1, XIDT ": jerase segment information: n_devices=%d n_shift=%d chunk_size=" XOT "  crypt_enabled=%d  used_size=" XOT " total_size=" XOT " mode=%d\n", segment_id(si->seg), s->n_devices, s->n_shift, s->chunk_size, s->crypt_enabled, s->used_size, s->total_size, si->inspect_mode);
 
     nattempted = 0;
     nmigrated = 0;
@@ -1847,7 +1845,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     }
     args.query = query;
 
-    info_printf(si->fd, 1, XIDT ": segment information: n_devices=%d n_shift=%d chunk_size=" XOT "  used_size=" XOT " total_size=" XOT " mode=%d\n", segment_id(si->seg), s->n_devices, s->n_shift, s->chunk_size, s->used_size, s->total_size, si->inspect_mode);
+    info_printf(si->fd, 1, XIDT ": jerase segment information: n_devices=%d n_shift=%d chunk_size=" XOT "  crypt_enabled=%d  used_size=" XOT " total_size=" XOT " mode=%d\n", segment_id(si->seg), s->n_devices, s->n_shift, s->chunk_size, s->crypt_enabled, s->used_size, s->total_size, si->inspect_mode);
 
     si->args->n_dev_rows = tbx_isl_range_count(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
     drow = -1;
@@ -2601,6 +2599,7 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
 
     //** Make sure the mac block size is a mulitple of the chunk size
     s->max_block_size = (s->max_block_size / s->chunk_size);
+    if (s->max_block_size == 0) s->max_block_size = 1;
     s->max_block_size = s->max_block_size * s->chunk_size;
     s->max_row_size = s->max_block_size * s->n_devices;
     s->stripe_size = s->n_devices * s->chunk_size;
@@ -2608,34 +2607,9 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     //** Fetch the encrtption if used
     s->crypt_enabled = tbx_inip_get_integer(fd, seggrp, "crypt_enabled", 0);
     if (s->crypt_enabled) {
-        s->cinfo.chunk_size = s->chunk_size;
-        s->cinfo.stripe_size = s->stripe_size;
-        s->cinfo.crypt_chunk_scale = s->cinfo.chunk_size / 64;
-        if (s->cinfo.stripe_size % 64) s->cinfo.crypt_chunk_scale++;
-
-        s->cinfo.crypt_key = tbx_inip_get_string(fd, seggrp, "crypt_key", NULL);
-        s->cinfo.crypt_nonce = tbx_inip_get_string(fd, seggrp, "crypt_nonce", NULL);
-        if ((s->cinfo.crypt_key == NULL) || (s->cinfo.crypt_nonce == NULL)) {
-            if (s->total_size > 0) {
-                log_printf(0, "ERROR: size>0 and crypt_enabled=1 Missing key or nonce!! sid=" XIDT " key=%s nonce=%s\n" , segment_id(seg), s->cinfo.crypt_key, s->cinfo.crypt_nonce);
-                return(1);
-            }
-        }
-
-        //** If we made it here we need to either convert the text -> binary for the key/nonce or generate a new one
-        if (s->cinfo.crypt_key) {   //** Got a key so convert it
-            etext = s->cinfo.crypt_key;
-            s->cinfo.crypt_key = crypt_etext2bin(etext, strlen(etext));
-            free(etext);
-        } else {  //** Got to generate a new one
-            crypt_newkeys(&(s->cinfo.crypt_key), NULL);
-        }
-        if (s->cinfo.crypt_nonce) {   //** Got a nonce so convert it
-            etext = s->cinfo.crypt_nonce;
-            s->cinfo.crypt_nonce = crypt_etext2bin(etext, strlen(etext));
-            free(etext);
-        } else {  //** Got to generate a new one
-            crypt_newkeys(NULL, &(s->cinfo.crypt_nonce));
+        if (crypt_loadkeys(&(s->cinfo), fd, seggrp, ((s->total_size > 0) ? 0 : 1), s->chunk_size, s->stripe_size) != 0) {
+            log_printf(0, "ERROR: Missing cyrpt key or nonce and size > 0! sid=" XIDT "\n", segment_id(seg));
+            return(1);
         }
     }
 
@@ -2763,8 +2737,7 @@ void seglun_destroy(tbx_ref_t *ref)
         tbx_stack_free(s->db_cleanup, 0);
     }
 
-    if (s->cinfo.crypt_key) free(s->cinfo.crypt_key);
-    if (s->cinfo.crypt_nonce) free(s->cinfo.crypt_nonce);
+    if (s->crypt_enabled) crypt_destroykeys(&(s->cinfo));
 
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);
