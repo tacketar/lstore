@@ -40,6 +40,7 @@
 #include <tbx/log.h>
 #include <tbx/network.h>
 #include <tbx/object.h>
+#include <tbx/random.h>
 #include <tbx/skiplist.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
@@ -108,8 +109,11 @@ typedef struct {
     ex_off_t total_size;
     ex_off_t max_block_size;
     ex_off_t excess_block_size;
+    ex_off_t stripe_size;
     rs_query_t *rsq;
     gop_thread_pool_context_t *tpc;
+    crypt_info_t cinfo;
+    int crypt_enabled;
     int n_rid_default;
     int hard_errors;
     int write_errors;
@@ -147,6 +151,12 @@ gop_op_status_t _sl_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_size_
         new_size = - new_size_arg;
         if (new_size < s->total_size) return(gop_success_status);  //** Already have that much space reserved
     }
+
+    //** Round to the nearest block
+    dsize = new_size / s->stripe_size;
+    dsize = dsize * s->stripe_size;
+    if ((new_size % s->stripe_size) > 0) dsize += s->stripe_size;
+    new_size = dsize;
 
     //** Make the space
     lo = s->total_size;
@@ -305,7 +315,7 @@ gop_op_status_t _sl_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new_siz
     tbx_isl_iter_t it;
     seglin_slot_t *b;
     gop_opque_t *q = NULL;
-    ex_off_t lo, hi, dsize;
+    ex_off_t lo, hi, dsize, new_used;
     tbx_stack_t *stack;
     seglin_slot_t *start_b;
     gop_op_status_t status;
@@ -313,10 +323,16 @@ gop_op_status_t _sl_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new_siz
 
     stack = tbx_stack_new();
 
-    lo = new_size;
-    hi = s->total_size;
-    log_printf(15, "_sl_shrink: sid=" XIDT " total_size=" XOT " new_size=" XOT "\n", segment_id(seg), hi, lo);
+    //** Round the size to the nearest stripe size
+    new_used = new_size;
+    dsize = new_size / s->stripe_size;
+    dsize = dsize * s->stripe_size;
+    if ((new_size % s->stripe_size) > 0) dsize += s->stripe_size;
+    new_size = dsize;
 
+    lo = new_size-1;
+    hi = s->total_size-1;
+    log_printf(15, "_sl_shrink: sid=" XIDT " total_size=" XOT " new_size=" XOT " new_used=" XOT "\n", segment_id(seg), hi+1, lo+1, new_used);
 
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)&lo, (tbx_sl_key_t *)&hi);
     b = (seglin_slot_t *)tbx_isl_next(&it);
@@ -376,12 +392,13 @@ gop_op_status_t _sl_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new_siz
 
     //** Update the size
     s->total_size = new_size;
-    s->used_size = new_size;
+    s->used_size = new_used;
 
-    //** If needed clear any errors
+    //** If needed clear any errors and get new keys
     if (s->used_size == 0) {
         s->hard_errors = 0;
         s->write_errors = 0;
+        if (s->crypt_enabled > 0) crypt_regenkeys(&(s->cinfo));  //** Regen the keys if needed
     }
 
     status = (err1 == OP_STATE_SUCCESS) ? gop_success_status : gop_failure_status;
@@ -452,13 +469,24 @@ gop_op_status_t seglin_read_func(void *arg, int id)
 {
     seglin_rw_t *sr = (seglin_rw_t *)arg;
     seglin_priv_t *s = (seglin_priv_t *)sr->seg->priv;
+    int n_isl = tbx_isl_count(s->isl);
+    int n_max = sr->n_iov*n_isl;
+    tbx_tbuf_t tbuffer[n_max];
+    crypt_rw_t  crwb[n_max];
+    ex_tbx_iovec_t  ex_iov[n_max];
+    ex_off_t  lun_offset[n_max];
     gop_op_generic_t *gop;
     gop_opque_t *q;
     seglin_slot_t *b;
     tbx_isl_iter_t it;
-    ex_off_t lo, hi, start, end, blen, bpos;
+    ex_off_t lo, hi, start, end, blen, bpos, loff;
     gop_op_status_t err;
-    int i;
+    char *cbuffer;
+    int i, j;
+
+    if (s->crypt_enabled) {
+        tbx_type_malloc(cbuffer, char, s->stripe_size*n_max);
+    }
 
     segment_lock(sr->seg);
 
@@ -466,6 +494,7 @@ gop_op_status_t seglin_read_func(void *arg, int id)
     q = NULL;
     bpos = sr->boff;
 
+    j = 0;
     for (i=0; i<sr->n_iov; i++) {
         lo = sr->iov[i].offset;
         hi = lo + sr->iov[i].len - 1;
@@ -478,13 +507,31 @@ gop_op_status_t seglin_read_func(void *arg, int id)
             start = (lo <= b->seg_offset) ? 0 : (lo - b->seg_offset);
             end = (hi >= b->seg_end) ? b->len-1 : (hi - b->seg_offset);
             blen = end - start + 1;
+            loff = start + b->seg_offset;
             start = start + b->cap_offset;
 
             log_printf(15, "seglin_read: sid=" XIDT " bid=" XIDT " soff=" XOT " bpos=" XOT " blen=" XOT "\n", segment_id(sr->seg),
                        data_block_id(b->data), start, bpos, blen);
             tbx_log_flush();
 
-            gop = ds_read(b->data->ds, sr->da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_READ), start, sr->buffer, bpos, blen, sr->timeout);
+            if (s->crypt_enabled) {
+                memset(&(crwb[j]), 0, sizeof(crypt_rw_t));
+                crwb[j].info = &(s->cinfo);
+                crwb[j].prev_bufoff = -1;  //** Reset the state
+                crwb[j].n_ex = 1;
+                crwb[j].lun_offset = lun_offset + j;
+                crwb[j].crypt_flush = 0;
+                lun_offset[j] = loff;
+                crwb[j].ex_iov = ex_iov + j;
+                ex_iov[j].offset = start; ex_iov[j].len = blen;
+                crwb[j].crypt_buffer = cbuffer + j*s->stripe_size;
+                memcpy(&(crwb[j].tbuf_crypt), sr->buffer, sizeof(tbx_tbuf_t));
+                tbx_tbuf_fn(&(tbuffer[j]), blen, &(crwb[j]), crypt_read_op_next_block);
+                gop = ds_read(b->data->ds, sr->da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_READ), start, &(tbuffer[j]), bpos, blen, sr->timeout);
+                j++;
+            } else {
+                gop = ds_read(b->data->ds, sr->da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_READ), start, sr->buffer, bpos, blen, sr->timeout);
+            }
 
             bpos = bpos + blen;
 
@@ -511,6 +558,14 @@ gop_op_status_t seglin_read_func(void *arg, int id)
 
     gop_waitall(gop);
 
+    //** cycle through and flush te buffers
+    if (s->crypt_enabled) {
+        for (i=0; i<j; i++) {
+            crwb[i].crypt_flush = 1;
+            crypt_read_op_next_block(&(tbuffer[i]), 0, NULL);
+        }
+    }
+
     if (gop_completed_successfully(gop)) {
         err = gop_success_status;
     } else {
@@ -518,6 +573,10 @@ gop_op_status_t seglin_read_func(void *arg, int id)
         segment_lock(sr->seg);
         s->hard_errors++;
         segment_unlock(sr->seg);
+    }
+
+    if (s->crypt_enabled) {
+        free(cbuffer);
     }
 
     gop_free(gop, OP_DESTROY);
@@ -554,15 +613,26 @@ gop_op_generic_t *seglin_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
 // seglin_write_op - Writes to a linear segment
 //***********************************************************************
 
-gop_op_generic_t *seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *buffer, ex_off_t boff, int timeout)
+int seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *buffer, ex_off_t boff, int timeout)
 {
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
+    int n_isl = tbx_isl_count(s->isl);
+    int n_max = n_iov*n_isl;
     gop_op_generic_t *gop;
     gop_opque_t *q;
     seglin_slot_t *b;
+    tbx_tbuf_t tbuffer[n_max];
+    crypt_rw_t  crwb[n_max];
+    ex_tbx_iovec_t  ex_iov[n_max];
+    ex_off_t  lun_offset[n_max];
     tbx_isl_iter_t it;
-    ex_off_t lo, hi, start, end, blen, bpos;
-    int i;
+    ex_off_t lo, hi, start, end, blen, bpos, loff;
+    char *cbuffer;
+    int i, j, err;
+
+    if (s->crypt_enabled) {
+        tbx_type_malloc(cbuffer, char, s->stripe_size*n_max);
+    }
 
     segment_lock(seg);
 
@@ -570,10 +640,12 @@ gop_op_generic_t *seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segme
     q = NULL;
     bpos = boff;
 
+    j = 0;
     for (i=0; i<n_iov; i++) {
         lo = iov[i].offset;
         hi = lo + iov[i].len - 1;
         it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)&lo, (tbx_sl_key_t *)&hi);
+
         b = (seglin_slot_t *)tbx_isl_next(&it);
         log_printf(15, "seglin_write_op: START sid=" XIDT " i=%d n_iov=%d lo=" XOT " hi=" XOT " b=%p\n", segment_id(seg), i, n_iov, lo, hi, b);
 
@@ -581,13 +653,31 @@ gop_op_generic_t *seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segme
             start = (lo <= b->seg_offset) ? 0 : (lo - b->seg_offset);
             end = (hi >= b->seg_end) ? b->len-1 : (hi - b->seg_offset);
             blen = end - start + 1;
+            loff = start + b->seg_offset;
             start = start + b->cap_offset;
 
             log_printf(15, "seglin_write_op: sid=" XIDT " bid=" XIDT " soff=" XOT " bpos=" XOT " blen=" XOT " seg_off=" XOT " seg_len=" XOT " seg_end=" XOT "\n", segment_id(seg),
                        data_block_id(b->data), start, bpos, blen, b->seg_offset, b->len, b->seg_end);
             tbx_log_flush();
 
-            gop = ds_write(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_WRITE), start, buffer, bpos, blen, timeout);
+            if (s->crypt_enabled) {
+                memset(&(crwb[j]), 0, sizeof(crypt_rw_t));
+                crwb[j].info = &(s->cinfo);
+                crwb[j].prev_bufoff = -1;  //** Reset the state
+                crwb[j].n_ex = 1;
+                crwb[j].lun_offset = lun_offset + j;
+                lun_offset[j] = loff;
+                crwb[j].ex_iov = ex_iov + j;
+                ex_iov[j].offset = start; ex_iov[j].len = blen;
+                crwb[j].crypt_buffer = cbuffer + j*s->stripe_size;
+                memset(&(tbuffer[j]), 0, sizeof(tbx_tbuf_t));
+                memcpy(&(crwb[j].tbuf_crypt), buffer, sizeof(tbx_tbuf_t));
+                tbx_tbuf_fn(&(tbuffer[j]), blen, &(crwb[j]), crypt_write_op_next_block);
+                gop = ds_write(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_WRITE), start, &(tbuffer[j]), bpos, blen, timeout);
+                j++;
+            } else {
+                gop = ds_write(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_WRITE), start, buffer, bpos, blen, timeout);
+            }
 
             bpos = bpos + blen;
 
@@ -603,12 +693,26 @@ gop_op_generic_t *seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segme
     if (q == NULL) {
         if (gop == NULL) {
             log_printf(0, "ERROR Nothing to do\n");
-            gop = gop_dummy(gop_failure_status);
+            err = OP_STATE_FAILURE;
+        } else {
+            err = gop_sync_exec(gop);
         }
     } else {
-        gop = opque_get_gop(q);
+        err = opque_waitall(q);
+        gop_opque_free(q, OP_DESTROY);
     }
-    return(gop);
+
+    if (err != OP_STATE_SUCCESS) {
+        segment_lock(seg);
+        s->write_errors++;
+        segment_unlock(seg);
+    }
+
+    if (s->crypt_enabled) {
+        free(cbuffer);
+    }
+
+    return(err);
 }
 
 
@@ -634,9 +738,7 @@ gop_op_status_t seglin_write_func(void *arg, int id)
     for (i=0; i<sw->n_iov; i++) {
         pos = sw->iov[i].offset + sw->iov[i].len - 1;
         if (pos > maxpos) maxpos = pos;
-//log_printf(15, "i=%d off=" XOT " len=" XOT " pos=" XOT " maxpos=" XOT "\n", i, sw->iov[i].offset, sw->iov[i].len, pos, maxpos);
     }
-
 
     if (maxpos >= s->total_size) { //** Need to grow it first
         segment_lock(sw->seg);
@@ -651,13 +753,14 @@ gop_op_status_t seglin_write_func(void *arg, int id)
 
     //** Now do the actual write
     log_printf(15, "seglin_write_func: Before exec\n");
-    err = gop_sync_exec(seglin_write_op(sw->seg, sw->da, sw->rw_hints, sw->n_iov, sw->iov, sw->buffer, sw->boff, sw->timeout));
+    err =  seglin_write_op(sw->seg, sw->da, sw->rw_hints, sw->n_iov, sw->iov, sw->buffer, sw->boff, sw->timeout);
     log_printf(15, "seglin_write_func: After exec err=%d\n", err);
 
     segment_lock(sw->seg);
     log_printf(15, "seglin_write_func: oldused=" XOT " maxpos=" XOT "\n", s->used_size, maxpos);
 
-    if (s->used_size <= maxpos) s->used_size = maxpos+1;
+    maxpos++;
+    if (maxpos > s->used_size) s->used_size = maxpos;
 
     if (err == OP_STATE_SUCCESS) {
         status = gop_success_status;
@@ -710,19 +813,25 @@ gop_op_generic_t *seglin_remove(lio_segment_t *seg, data_attr_t *da, int timeout
     tbx_isl_iter_t it;
     int i, n;
 
-    q = gop_opque_new();
-
     segment_lock(seg);
     n = tbx_isl_count(s->isl);
+    if (n == 0) {   //** See if we kick out early
+        segment_unlock(seg);
+        return(gop_dummy(gop_success_status));
+    } else if (n>1) {
+        q = gop_opque_new();
+    }
+
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
     for (i=0; i<n; i++) {
         b = (seglin_slot_t *)tbx_isl_next(&it);
         gop = ds_remove(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_MANAGE), timeout);
-        gop_opque_add(q, gop);
+        if (n>1) gop_opque_add(q, gop);
     }
     segment_unlock(seg);
 
-    return(opque_get_gop(q));
+    if (n > 1) gop = opque_get_gop(q);
+    return(gop);
 }
 
 //***********************************************************************
@@ -840,8 +949,8 @@ gop_op_status_t seglin_inspect_func(void *arg, int id)
     op->n = n;
 
     //** Print some details about the segment
-    info_printf(op->fd, 1, XIDT ": linear information: n_blocks=%d n_rid_default=%d  write_errors=%d used_size=" XOT " max_block_size=" XOT "\n",
-        segment_id(op->seg), op->n, s->n_rid_default, s->write_errors, s->used_size, s->max_block_size);
+    info_printf(op->fd, 1, XIDT ": linear segment information: n_blocks=%d n_rid_default=%d  crypt_enabled=%d  stripe_size=" XOT "  write_errors=%d used_size=" XOT "  total_size=" XOT "  max_block_size=" XOT "\n",
+        segment_id(op->seg), op->n, s->n_rid_default, s->crypt_enabled, s->stripe_size, s->write_errors, s->used_size, s->total_size, s->max_block_size);
 
     //** If nothing to check kick out
     if (n == 0) {
@@ -1064,6 +1173,12 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
     //** Wait for block creation to complete
     gop_waitall(gop);
     if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {  //** Error so clean up and return
+        log_printf(0, " ERROR: failed creating blocks! sid=" XIDT "\n", segment_id(slc->dseg));
+        for (i=0; i<n_blocks; i++) {
+            data_block_destroy(block[i]->data);
+            free(block[i]);
+        }
+
         //** And cleanup
         free(block);
         free(req_list);
@@ -1142,6 +1257,24 @@ gop_op_generic_t *seglin_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     //** Basic size info
     sd->max_block_size = ss->max_block_size;
     sd->excess_block_size = ss->excess_block_size;
+    sd->stripe_size = ss->stripe_size;
+
+    //** Handle the encryption keys.  If they just clone the structure don't copy the keys
+    sd->crypt_enabled = ss->crypt_enabled;
+    if (sd->crypt_enabled) {
+        sd->cinfo.chunk_size = ss->cinfo.chunk_size;
+        sd->cinfo.stripe_size = ss->cinfo.stripe_size;
+        if (mode != CLONE_STRUCTURE) {
+            if (!sd->cinfo.crypt_key) {
+                tbx_type_malloc_clear(sd->cinfo.crypt_key, char, SEGMENT_CRYPT_KEY_LEN);
+            }
+            memcpy(sd->cinfo.crypt_key, ss->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
+            if (!sd->cinfo.crypt_nonce) {
+                tbx_type_malloc_clear(sd->cinfo.crypt_nonce, char, SEGMENT_CRYPT_NONCE_LEN);
+            }
+            memcpy(sd->cinfo.crypt_nonce, ss->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
+        }
+    }
 
     //** Now copy the data if needed
     if (mode == CLONE_STRUCTURE) {
@@ -1186,7 +1319,8 @@ ex_off_t seglin_size(lio_segment_t *seg)
 
 ex_off_t seglin_block_size(lio_segment_t *seg, int btype)
 {
-    return(1);
+    seglin_priv_t *s = (seglin_priv_t *)seg->priv;
+    return(s->stripe_size);
 }
 
 //***********************************************************************
@@ -1233,7 +1367,19 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     tbx_append_printf(segbuf, &sused, bufsize, "excess_block_size=" XOT "\n", s->excess_block_size);
     tbx_append_printf(segbuf, &sused, bufsize, "max_size=" XOT "\n", s->total_size);
     tbx_append_printf(segbuf, &sused, bufsize, "used_size=" XOT "\n", s->used_size);
+    tbx_append_printf(segbuf, &sused, bufsize, "stripe_size=" XOT "\n", s->stripe_size);
     tbx_append_printf(segbuf, &sused, bufsize, "write_errors=" XOT "\n", s->write_errors);
+
+    //** Add the encryption stuff if enabled
+    if (s->crypt_enabled > 0) {
+        tbx_append_printf(segbuf, &sused, bufsize, "crypt_enabled=%d\n", s->crypt_enabled);
+        if (s->total_size > 0) {   //** Only dump the keys if the file has data
+            etext = crypt_bin2etext(s->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); free(etext);
+            etext = crypt_bin2etext(s->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); free(etext);
+        }
+    }
 
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
@@ -1286,8 +1432,21 @@ int seglin_serialize(lio_segment_t *seg, lio_exnode_exchange_t *exp)
 int seglin_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
 {
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
+    ex_id_t n;
 
-    tbx_append_printf(buffer, used, bufsize, "linear(n_rid_default=%d)\n", s->n_rid_default);
+    tbx_append_printf(buffer, used, bufsize, "linear(\n");
+    tbx_append_printf(buffer, used, bufsize, "    n_rid_default=%d\n", s->n_rid_default);
+    tbx_append_printf(buffer, used, bufsize, "    stripe_size=" XOT "\n", s->stripe_size);
+    if (s->crypt_enabled > 0) {
+        if (s->crypt_enabled == 1) {
+            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", s->crypt_enabled);
+        } else {
+            tbx_random_get_bytes(&n, sizeof(ex_id_t));
+            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XIDT " # Generate new keys if copied\n", n);
+        }
+    }
+    tbx_append_printf(buffer, used, bufsize, ")\n");
+
 
     return(0);
 }
@@ -1336,6 +1495,21 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     s->total_size = tbx_inip_get_integer(fd, seggrp, "max_size", 0);
     s->used_size = tbx_inip_get_integer(fd, seggrp, "used_size", 0);
     s->write_errors = tbx_inip_get_integer(fd, seggrp, "write_errors", 0);
+
+    //** Fetch the encrtption if used
+    s->crypt_enabled = tbx_inip_get_integer(fd, seggrp, "crypt_enabled", 0);
+    s->stripe_size = tbx_inip_get_integer(fd, seggrp, "stripe_size", ((s->crypt_enabled > 0) ? 64*1024 : 1));
+    if (s->crypt_enabled) {
+        if (crypt_loadkeys(&(s->cinfo), fd, seggrp, ((s->total_size > 0) ? 0 : 1), s->stripe_size, s->stripe_size) != 0) {
+            log_printf(0, "ERROR: Missing cyrpt key or nonce and size > 0! sid=" XIDT "\n", segment_id(seg));
+            return(1);
+        }
+    }
+
+    //** Make sure the mac block size is a mulitple of the chunk size
+    s->max_block_size = (s->max_block_size / s->stripe_size);
+    if (s->max_block_size == 0) s->max_block_size = 1;
+    s->max_block_size = s->max_block_size * s->stripe_size;
 
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     g = tbx_inip_group_find(fd, seggrp);
@@ -1442,6 +1616,7 @@ void seglin_destroy(tbx_ref_t *ref)
         tbx_stack_free(s->db_cleanup, 0);
     }
 
+    if (s->crypt_enabled) crypt_destroykeys(&(s->cinfo));
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);
 
