@@ -755,36 +755,36 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             if (err != OP_STATE_SUCCESS) {
                 info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
                 log_printf(1, "ERROR creating file(%s)!\n", op->path);
+                notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
                 free(op->path);
                 *op->fd = NULL;
                 _op_set_status(status, OP_STATE_FAILURE, -EIO);
-                notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
                 return(status);
             }
         } else if ((dtype & OS_OBJECT_DIR_FLAG) > 0) { //** It's a dir so fail
             info_printf(lio_ifd, 1, "Destination(%s) is a dir!\n", op->path);
             log_printf(1, "ERROR: Destination(%s) is a dir!\n", op->path);
+            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EISDIR\n", op->path, op->mode);
             free(op->path);
             *op->fd = NULL;
             _op_set_status(status, OP_STATE_FAILURE, -EISDIR);
-            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EISDIR\n", op->path, op->mode);
             return(status);
         } else if (op->mode & LIO_EXCL_MODE) { //** This file shouldn't exist with this flag so kick out
             info_printf(lio_ifd, 1, "ERROR file(%s) already exists and EXCL is set!\n", op->path);
             log_printf(1, "ERROR file(%s) already exists and EXCL is set!\n", op->path);
+            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EEXIST\n", op->path, op->mode);
             free(op->path);
             *op->fd = NULL;
             _op_set_status(status, OP_STATE_FAILURE, -EEXIST);
-            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EEXIST\n", op->path, op->mode);
             return(status);
         }
     } else if (dtype == 0) { //** No file so return an error
         info_printf(lio_ifd, 20, "Destination(%s) doesn't exist!\n", op->path);
         log_printf(1, "ERROR: Destination(%s) doesn't exist!\n", op->path);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=ENOTDIR\n", op->path, op->mode);
         free(op->path);
         *op->fd = NULL;
         _op_set_status(status, OP_STATE_FAILURE, -ENOTDIR);
-        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=ENOTDIR\n", op->path, op->mode);
         return(status);
     }
 
@@ -801,12 +801,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     exnode = NULL;
     if (lio_load_file_handle_attrs(lc, op->creds, op->path, &ino, &exnode, &data, &data_size) != 0) {
         log_printf(1, "ERROR loading attributes! fname=%s\n", op->path);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         free(fd);
         *op->fd = NULL;
         free(op->path);
         if (data) free(data);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
-        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         return(status);
     }
 
@@ -815,13 +815,13 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     vid = exnode_exchange_get_default_view_id(exp);
     if (vid == 0) {  //** Make sure the vid is valid.
         log_printf(1, "ERROR loading exnode! fname=%s\n", op->path);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         free(fd);
         *op->fd = NULL;
         free(op->path);
         if (data) free(data);
         lio_exnode_exchange_destroy(exp);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
-        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         return(status);
     }
 
