@@ -293,6 +293,8 @@ void apsk_cred_destroy(lio_creds_t *c)
         tbx_stack_move_to_ptr(pc->a->creds, pc->ele);
         tbx_stack_delete_current(pc->a->creds, 0, 0);
 
+        apr_hash_set(ap->ctx->creds, pc->c.handle, pc->c.handle_len, NULL);
+
         a = pc->a; //** Get the account before freeing the creds
         free(pc);
 
