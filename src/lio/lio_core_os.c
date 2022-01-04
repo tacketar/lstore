@@ -292,6 +292,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         if (lio_exnode_deserialize(ex, exp, op->lc->ess_nocache) != 0) {
             log_printf(15, "ERROR parsing parent exnode src_path=%s\n", op->src_path);
             status = gop_failure_status;
+            val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
             lio_exnode_destroy(ex);
             goto fail;
@@ -302,6 +303,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR cloning parent src_path=%s\n", op->src_path);
             status = gop_failure_status;
+            val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
             lio_exnode_destroy(ex);
             lio_exnode_destroy(cex);
