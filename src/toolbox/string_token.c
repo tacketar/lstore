@@ -449,7 +449,6 @@ char *tbx_stk_pretty_print_int_with_scale_full(int64_t value, char *buffer, int 
         n = n / base;
     }
 
-
     if (base == 1024) {
         if ( i == 0) {
             if (fixed_size) {
