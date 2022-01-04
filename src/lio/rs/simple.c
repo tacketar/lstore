@@ -465,7 +465,7 @@ disable_too_full:
 
     tbx_stack_free(stack, 1);
 
-    log_printf(15, "rs_simple_request: END n_rid=%d\n", n_rid);
+    log_printf(15, "rs_simple_request: END n_rid=%d found=%d err_cnt=%d q_tasks=%d\n", n_rid, found, err_cnt, gop_opque_task_count(que));
 
     apr_thread_mutex_unlock(rss->lock);
 
