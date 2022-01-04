@@ -844,7 +844,7 @@ gop_op_status_t inspect_task(void *arg, int id)
         goto finished;
     }
 
-    info_printf(lfd, 1, XIDT ": Inspecting file %s\n", segment_id(seg), w->tuple.path);
+    info_printf(lfd, 1, XIDT ":MAP: Inspecting file %s\n", segment_id(seg), w->tuple.path);
 
     log_printf(15, "whattodo=%d\n", whattodo);
     //** Execute the inspection operation

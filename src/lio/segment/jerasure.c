@@ -959,7 +959,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     gop_op_generic_t *gop;
     int max_loops = 10;
 
-    info_printf(si->fd, 1, XIDT ": jerase segment maps to child " XIDT "\n", segment_id(si->seg), segment_id(s->child_seg));
+    info_printf(si->fd, 1, XIDT ":MAP: jerase segment maps to child " XIDT "\n", segment_id(si->seg), segment_id(s->child_seg));
     info_printf(si->fd, 1, XIDT ": segment information: method=%s data_devs=%d parity_devs=%d chunk_size=%d  used_size=" XOT " magic_cksum=%d write_errors=%d mode=%d\n",
                 segment_id(si->seg), JE_method[s->method], s->n_data_devs, s->n_parity_devs, s->chunk_size, segment_size(s->child_seg),  s->magic_cksum, s->write_errors, si->inspect_mode);
 
@@ -967,7 +967,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
     option = si->inspect_mode & INSPECT_COMMAND_BITS;
 
     ranges = tbx_stack_new();  //** Where to storethe ranges to process
-    
+
     //** See if we do a full check
     i = ((option == INSPECT_FULL_CHECK) || (option == INSPECT_FULL_REPAIR)) ? 1 : 0;
     j = ((option == INSPECT_QUICK_CHECK) || (option == INSPECT_QUICK_REPAIR)) ? 1 : 0;

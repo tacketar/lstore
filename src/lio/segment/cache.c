@@ -3778,7 +3778,7 @@ gop_op_generic_t *segcache_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_
     lio_ex3_inspect_command_t cmd = mode & INSPECT_COMMAND_BITS;
 
     if ((cmd != INSPECT_SOFT_ERRORS) && (cmd != INSPECT_HARD_ERRORS) && (cmd != INSPECT_WRITE_ERRORS)) {
-        info_printf(fd, 1, XIDT ": Cache segment maps to child " XIDT "\n", segment_id(seg), segment_id(s->child_seg));
+        info_printf(fd, 1, XIDT ":MAP: Cache segment maps to child " XIDT "\n", segment_id(seg), segment_id(s->child_seg));
         info_printf(fd, 1, XIDT ": segment information: cache used_size=" XIDT "\n", segment_id(seg), segment_size(seg));
 
         //** Check the file size first
