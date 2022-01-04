@@ -965,7 +965,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     lio_segment_errors_t serr;
     ex_off_t final_size;
     apr_time_t now;
-    int n;
+    int n, modified;
     double dt;
 
     log_printf(1, "fname=%s modified=" AIT " count=%d\n", fd->path, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count);
@@ -987,28 +987,30 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     final_size = lio_size_fh(fh);
 
-    log_printf(1, "FLUSH/TRUNCATE fname=%s final_size=" XOT "\n", fd->path, final_size);
     //** Flush and truncate everything which could take some time
-    now = apr_time_now();
-    gop_sync_exec(lio_truncate_gop(fd, final_size));
-    dt = apr_time_now() - now;
-    dt /= APR_USEC_PER_SEC;
-    log_printf(1, "TRUNCATE fname=%s dt=%lf\n", fd->path, dt);
-    now = apr_time_now();
-    gop_sync_exec(lio_flush_gop(fd, 0, -1));
-    dt = apr_time_now() - now;
-    dt /= APR_USEC_PER_SEC;
-    log_printf(1, "FLUSH fname=%s dt=%lf\n", fd->path, dt);
+    modified = tbx_atomic_get(fh->modified);
+    if (modified != 0) {
+        log_printf(1, "FLUSH/TRUNCATE fname=%s final_size=" XOT " modified=%d\n", fd->path, final_size, modified);
+        now = apr_time_now();
+        gop_sync_exec(lio_truncate_gop(fd, final_size));
+        dt = apr_time_now() - now;
+        dt /= APR_USEC_PER_SEC;
+        log_printf(1, "TRUNCATE fname=%s dt=%lf\n", fd->path, dt);
+        now = apr_time_now();
+        gop_sync_exec(lio_flush_gop(fd, 0, -1));
+        dt = apr_time_now() - now;
+        dt /= APR_USEC_PER_SEC;
+        log_printf(1, "FLUSH fname=%s dt=%lf\n", fd->path, dt);
+    }
 
-    log_printf(5, "starting update process fname=%s modified=" AIT "\n", fd->path, tbx_atomic_get(fh->modified));
-    tbx_log_flush();
+    log_printf(5, "starting update process fname=%s modified=%d\n", fd->path, modified);
 
     //** See if we need to change tiers
     lio_adjust_data_tier(fh, lio_size(fd), 1);
 
     //** Ok no one has the file opened so teardown the segment/exnode
     //** IF not modified just tear down and clean up
-    if (tbx_atomic_get(fh->modified) == 0) {
+    if (modified == 0) {
         //*** See if we need to update the error counts
         lio_get_error_counts(lc, fh->seg, &serr);
         n = lio_encode_error_counts(&serr, key, val, ebuf, v_size, 0);
