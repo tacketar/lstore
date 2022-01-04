@@ -1158,7 +1158,7 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
 
         block[i] = bd;
         block[i+n_blocks] = bs;
-        req_list[i].rid_index = n_blocks%sd->n_rid_default;
+        req_list[i].rid_index = i%sd->n_rid_default;
         req_list[i].size = bd->len;
         cap_list[i] = bd->data->cap;
         i++;
@@ -1177,6 +1177,7 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
         for (i=0; i<n_blocks; i++) {
             data_block_destroy(block[i]->data);
             free(block[i]);
+            if (req_list[i].rid_key) free(req_list[i].rid_key);
         }
 
         //** And cleanup
@@ -1198,6 +1199,8 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
         bs = block[i+n_blocks];
         tbx_atomic_inc(bd->data->ref_count);
         tbx_isl_insert(sd->isl, (tbx_sl_key_t *)&(bd->seg_offset), (tbx_sl_key_t *)&(bd->seg_end), (tbx_sl_data_t *)bd);
+        data_block_auto_warm(bd->data);  //** Add it to be auto-warmed
+        bd->data->rid_key = req_list[i].rid_key;
 
         gop = ds_copy(bd->data->ds, slc->da, dir, NS_TYPE_SOCK, "",
                       ds_get_cap(bs->data->ds, bs->data->cap, DS_CAP_READ), bs->cap_offset,
@@ -1264,6 +1267,7 @@ gop_op_generic_t *seglin_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     if (sd->crypt_enabled) {
         sd->cinfo.chunk_size = ss->cinfo.chunk_size;
         sd->cinfo.stripe_size = ss->cinfo.stripe_size;
+        sd->cinfo.crypt_chunk_scale = ss->cinfo.crypt_chunk_scale;
         if (mode != CLONE_STRUCTURE) {
             if (!sd->cinfo.crypt_key) {
                 tbx_type_malloc_clear(sd->cinfo.crypt_key, char, SEGMENT_CRYPT_KEY_LEN);
@@ -1273,6 +1277,8 @@ gop_op_generic_t *seglin_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
                 tbx_type_malloc_clear(sd->cinfo.crypt_nonce, char, SEGMENT_CRYPT_NONCE_LEN);
             }
             memcpy(sd->cinfo.crypt_nonce, ss->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
+        } else if (use_existing == 0) {
+            crypt_regenkeys(&(sd->cinfo));
         }
     }
 
