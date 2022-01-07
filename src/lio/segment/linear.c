@@ -1330,6 +1330,15 @@ ex_off_t seglin_block_size(lio_segment_t *seg, int btype)
 }
 
 //***********************************************************************
+// segdc_tool - Returns the tool GOP
+//***********************************************************************
+
+gop_op_generic_t *seglin_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    return(gop_dummy(gop_success_status));
+}
+
+//***********************************************************************
 // seglin_serialize_text -Convert the segment to a text based format
 //***********************************************************************
 
@@ -1719,6 +1728,7 @@ const lio_segment_vtable_t lio_seglin_vtable = {
     .signature = seglin_signature,
     .size = seglin_size,
     .block_size = seglin_block_size,
+    .tool = seglin_tool,
     .serialize = seglin_serialize,
     .deserialize = seglin_deserialize,
 };

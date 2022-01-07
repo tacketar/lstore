@@ -2076,6 +2076,17 @@ ex_off_t segjerase_size(lio_segment_t *seg)
 }
 
 //***********************************************************************
+// segjerase_tool - Returns the tool GOP for the child
+//***********************************************************************
+
+gop_op_generic_t *segjerase_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    segjerase_priv_t *s = (segjerase_priv_t *)seg->priv;
+
+    return(segment_tool(s->child_seg, da, sid, stype, match_section, args_section, fd, dryrun, timeout));
+}
+
+//***********************************************************************
 // segjerase_signature - Generates the segment signature
 //***********************************************************************
 
@@ -2393,6 +2404,7 @@ const lio_segment_vtable_t lio_jeraseseg_vtable = {
     .signature = segjerase_signature,
     .size = segjerase_size,
     .block_size = segjerase_block_size,
+    .tool = segjerase_tool,
     .serialize = segjerase_serialize,
     .deserialize = segjerase_deserialize,
 };

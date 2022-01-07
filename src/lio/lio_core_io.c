@@ -2575,3 +2575,10 @@ gop_op_generic_t *lio_truncate_gop(lio_fd_t *fd, ex_off_t newsize)
 
     return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_truncate_fn, (void *)op, free, 1));
 }
+
+//***********************************************************************
+
+gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout)
+{
+    return(segment_tool(fd->fh->seg, fd->lc->da, segment_id, stype, match_section, args_section, afd, dryrun, timeout));
+}

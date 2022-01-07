@@ -48,6 +48,7 @@ typedef gop_op_generic_t *(*lio_segment_truncate_fn_t)(lio_segment_t *seg, data_
 typedef gop_op_generic_t *(*lio_segment_remove_fn_t)(lio_segment_t *seg, data_attr_t *da, int timeout);
 typedef gop_op_generic_t *(*lio_segment_flush_fn_t)(lio_segment_t *seg, data_attr_t *da, ex_off_t lo, ex_off_t hi, int timeout);
 typedef gop_op_generic_t *(*lio_segment_clone_fn_t)(lio_segment_t *seg, data_attr_t *da, lio_segment_t **clone, int mode, void *attr, int timeout);
+typedef gop_op_generic_t *(*lio_segment_tool_fn_t)(lio_segment_t *seg, data_attr_t *da, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout);
 typedef int (*lio_segment_signature_fn_t)(lio_segment_t *seg, char *buffer, int *used, int bufsize);
 typedef ex_off_t (*lio_segment_block_size_fn_t)(lio_segment_t *seg, int block_type);
 typedef ex_off_t (*lio_segment_size_fn_t)(lio_segment_t *seg);
@@ -81,6 +82,7 @@ LIO_API gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_
 #define lio_segment_truncate(s, da, new_size, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->truncate(s, da, new_size, to)
 #define segment_write(s, da, hints, n_iov, iov, tbuf, boff, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->write(s, da, hints, n_iov, iov, tbuf, boff, to)
 #define segment_block_size(s, btype) ((lio_segment_vtable_t *)(s)->obj.vtable)->block_size(s, btype)
+#define segment_tool(s, da, sid, stype, match_section, args_section, afd, dryrun, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->tool(s, da, sid, stype, match_section, args_section, afd, dryrun, to)
 
 // Exported types. To be obscured
 struct lio_segment_vtable_t {
@@ -95,6 +97,7 @@ struct lio_segment_vtable_t {
     lio_segment_signature_fn_t signature;
     lio_segment_block_size_fn_t block_size;
     lio_segment_size_fn_t size;
+    lio_segment_tool_fn_t tool;
     lio_segment_serialize_fn_t serialize;
     lio_segment_deserialize_fn_t deserialize;
 };
@@ -119,4 +122,4 @@ struct lio_segment_errors_t {
 }
 #endif
 
-#endif /* ^ ACCRE_LIO_SEGMENT_CACHE_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_LIO_SEGMENT_CACHE_H_INCLUDED ^ */

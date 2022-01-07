@@ -456,6 +456,14 @@ ex_off_t segfile_block_size(lio_segment_t *seg, int btype)
     return(1);
 }
 
+//***********************************************************************
+// segfile_tool - Returns the tool GOP
+//***********************************************************************
+
+gop_op_generic_t *segfile_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    return(gop_dummy(gop_success_status));
+}
 
 //***********************************************************************
 // segfile_serialize_text -Convert the segment to a text based format
@@ -676,6 +684,7 @@ const lio_segment_vtable_t lio_fileseg_vtable = {
         .clone = segfile_clone,
         .signature = segfile_signature,
         .size = segfile_size,
+        .tool = segfile_tool,
         .block_size = segfile_block_size,
         .serialize = segfile_serialize,
         .deserialize = segfile_deserialize,

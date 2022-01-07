@@ -198,6 +198,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_rm
 		lio_rmdir
 		lio_rs
+		lio_segtool
 		lio_server
 		lio_setattr
 		lio_signature

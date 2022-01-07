@@ -99,6 +99,18 @@ typedef struct {
     int timeout;
 } seglog_merge_t;
 
+typedef struct {
+    lio_segment_t *seg;
+    data_attr_t *da;
+    ex_id_t sid;
+    const char *stype;
+    const char *match_section;
+    const char *args_section;
+    tbx_inip_file_t *fd;
+    int dryrun;
+    int timeout;
+} seglog_tool_t;
+
 //***********************************************************************
 // _slog_find_base - Recursives though the semgents base until it finds
 //   the root, non-log segment base and returns it.
@@ -1051,6 +1063,65 @@ ex_off_t seglog_block_size(lio_segment_t *seg, int btype)
 }
 
 //***********************************************************************
+// seglog_tool_fn - Performs the tool fn on the child segments
+//***********************************************************************
+
+gop_op_status_t seglog_tool_fn(void *arg, int id)
+{
+    seglog_tool_t *op = (seglog_tool_t *)arg;
+    lio_seglog_priv_t *s = (lio_seglog_priv_t *)op->seg->priv;
+    int err;
+    gop_opque_t *q;
+    gop_op_generic_t *gop;
+    gop_op_status_t status, ms;
+
+    q = gop_opque_new();
+    gop_opque_add(q, segment_tool(s->table_seg, op->da, op->sid, op->stype, op->match_section, op->args_section, op->fd, op->dryrun, op->timeout));
+    gop_opque_add(q, segment_tool(s->data_seg, op->da, op->sid, op->stype, op->match_section, op->args_section, op->fd, op->dryrun, op->timeout));
+    gop_opque_add(q, segment_tool(s->base_seg, op->da, op->sid, op->stype, op->match_section, op->args_section, op->fd, op->dryrun, op->timeout));
+
+    err = opque_waitall(q);
+    if (err == OP_STATE_SUCCESS) {
+        status = gop_success_status;
+        while ((gop = opque_waitany(q)) != NULL) {
+            ms = gop_get_status(gop);
+            status.error_code += ms.error_code;
+            gop_free(gop, OP_DESTROY);
+        }
+    } else {
+        status = gop_failure_status;
+    }
+
+    gop_opque_free(q, OP_DESTROY);
+
+    return(status);
+}
+
+//***********************************************************************
+// seglog_tool - Returns the tool GOP
+//***********************************************************************
+
+gop_op_generic_t *seglog_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    lio_seglog_priv_t *s = (lio_seglog_priv_t *)seg->priv;
+    seglog_tool_t *op;
+
+    tbx_type_malloc_clear(op, seglog_tool_t, 1);
+
+    op->seg = seg;
+    op->da = da;
+    op->sid = sid;
+    op->stype = stype;
+    op->match_section = match_section;
+    op->args_section = args_section;
+    op->fd = fd;
+    op->dryrun = dryrun;
+    op->timeout = timeout;
+
+    return(gop_tp_op_new(s->tpc, NULL, seglog_tool_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
 // seglog_signature - Generates the segment signature
 //***********************************************************************
 
@@ -1514,6 +1585,7 @@ const lio_segment_vtable_t lio_seglog_vtable = {
     .signature = seglog_signature,
     .size = seglog_size,
     .block_size = seglog_block_size,
+    .tool = seglog_tool,
     .serialize = seglog_serialize,
     .deserialize = seglog_deserialize,
 };

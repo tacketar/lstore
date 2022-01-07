@@ -106,6 +106,18 @@ typedef struct {
 } seg_mirror_clone_t;
 
 typedef struct {
+    lio_segment_t *seg;
+    data_attr_t *da;
+    ex_id_t sid;
+    const char *stype;
+    const char *match_section;
+    const char *args_section;
+    tbx_inip_file_t *fd;
+    int dryrun;
+    int timeout;
+} seg_mirror_tool_t;
+
+typedef struct {
     lio_segment_t *child_seg;
     data_attr_t *da;
     int timeout;
@@ -1268,6 +1280,66 @@ ex_off_t seg_mirror_block_size(lio_segment_t *seg, int btype)
 }
 
 //***********************************************************************
+// seg_mirror_tool_fn - Performs the tool fn on the mirrors
+//***********************************************************************
+
+gop_op_status_t seg_mirror_tool_fn(void *arg, int id)
+{
+    seg_mirror_tool_t *op = (seg_mirror_tool_t *)arg;
+    seg_mirror_priv_t *s = (seg_mirror_priv_t *)op->seg->priv;
+    int i, err;
+    gop_opque_t *q;
+    gop_op_generic_t *gop;
+    gop_op_status_t status, ms;
+
+    q = gop_opque_new();
+    for (i=0; i<s->n_mirrors; i++) {
+        gop = segment_tool(s->child_seg[i], op->da, op->sid, op->stype, op->match_section, op->args_section, op->fd, op->dryrun, op->timeout);
+        gop_opque_add(q, gop);
+    }
+
+    err = opque_waitall(q);
+    if (err == OP_STATE_SUCCESS) {
+        status = gop_success_status;
+        while ((gop = opque_waitany(q)) != NULL) {
+            ms = gop_get_status(gop);
+            status.error_code += ms.error_code;
+            gop_free(gop, OP_DESTROY);
+        }
+    } else {
+        status = gop_failure_status;
+    }
+
+    gop_opque_free(q, OP_DESTROY);
+
+    return(status);
+}
+
+//***********************************************************************
+// seg_mirror_tool - Returns the tool GOP
+//***********************************************************************
+
+gop_op_generic_t *seg_mirror_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    seg_mirror_priv_t *s = (seg_mirror_priv_t *)seg->priv;
+    seg_mirror_tool_t *op;
+
+    tbx_type_malloc_clear(op, seg_mirror_tool_t, 1);
+
+    op->seg = seg;
+    op->da = da;
+    op->sid = sid;
+    op->stype = stype;
+    op->match_section = match_section;
+    op->args_section = args_section;
+    op->fd = fd;
+    op->dryrun = dryrun;
+    op->timeout = timeout;
+
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_tool_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
 // seg_mirror_serialize - Convert the segment to a more portable format. Simple pass-through
 //***********************************************************************
 
@@ -1534,6 +1606,7 @@ const lio_segment_vtable_t lio_mirror_vtable = {
         .signature = seg_mirror_signature,
         .size = seg_mirror_size,
         .block_size = seg_mirror_block_size,
+        .tool = seg_mirror_tool,
         .serialize = seg_mirror_serialize,
         .deserialize = seg_mirror_deserialize,
 };

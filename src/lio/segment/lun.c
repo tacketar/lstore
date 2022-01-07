@@ -2393,6 +2393,15 @@ ex_off_t seglun_block_size(lio_segment_t *seg, int btype)
 }
 
 //***********************************************************************
+// seglun_tool - Returns the tool GOP
+//***********************************************************************
+
+gop_op_generic_t *seglun_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    return(gop_dummy(gop_success_status));
+}
+
+//***********************************************************************
 // seglun_signature - Generates the segment signature
 //***********************************************************************
 
@@ -2830,6 +2839,7 @@ const lio_segment_vtable_t lio_seglun_vtable = {
     .signature = seglun_signature,
     .size = seglun_size,
     .block_size = seglun_block_size,
+    .tool = seglun_tool,
     .serialize = seglun_serialize,
     .deserialize = seglun_deserialize,
 };

@@ -4003,6 +4003,17 @@ gop_op_generic_t *segcache_remove(lio_segment_t *seg, data_attr_t *da, int timeo
 }
 
 //***********************************************************************
+// segcache_tool - Returns the child tool GOP
+//***********************************************************************
+
+gop_op_generic_t *segcache_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *fd, int dryrun, int timeout)
+{
+    lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
+
+    return(segment_tool(s->child_seg, da, sid, stype, match_section, args_section, fd, dryrun, timeout));
+}
+
+//***********************************************************************
 // segcache_serialize_text -Convert the segment to a text based format
 //***********************************************************************
 
@@ -4429,6 +4440,7 @@ const lio_segment_vtable_t lio_cacheseg_vtable = {
         .signature = segcache_signature,
         .size = segcache_size,
         .block_size = segcache_block_size,
+        .tool = segcache_tool,
         .serialize = segcache_serialize,
         .deserialize = segcache_deserialize,
 };
