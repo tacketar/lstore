@@ -359,9 +359,12 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
 
     myfname = (strcmp(fname, "") == 0) ? "/" : (char *)fname;
     err = lio_get_multiple_attrs(lc, creds, myfname, NULL, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS);
+    if (val[LFH_KEY_EXNODE] == NULL) err = OP_STATE_FAILURE;
     if (err != OP_STATE_SUCCESS) {
         log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
         if (val[1] != NULL) free(val[1]);
+        *exnode = *data = NULL;
+        *data_size = 0;
         return(-1);
     }
 
@@ -2572,5 +2575,3 @@ gop_op_generic_t *lio_truncate_gop(lio_fd_t *fd, ex_off_t newsize)
 
     return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_truncate_fn, (void *)op, free, 1));
 }
-
-
