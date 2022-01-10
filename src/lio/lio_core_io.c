@@ -73,6 +73,17 @@ gop_op_generic_t *lio_write_ex_gop_wq(lio_rw_op_t *op);
 
 static char *_lio_fh_keys[] = { "system.inode", "system.exnode", "system.exnode.data" };
 
+typedef struct {
+    lio_fd_t *fd;
+    ex_id_t sid;
+    const char *stype;
+    const char *match_section;
+    const char *args_section;
+    tbx_inip_file_t *afd;
+    int dryrun;
+    int timeout;
+} lio_segtool_t;
+
 //***********************************************************************
 // Core LIO R/W functionality
 //***********************************************************************
@@ -2578,7 +2589,37 @@ gop_op_generic_t *lio_truncate_gop(lio_fd_t *fd, ex_off_t newsize)
 
 //***********************************************************************
 
+gop_op_status_t lio_segment_tool_fn(void *arg, int id)
+{
+    lio_segtool_t *op = (lio_segtool_t *)arg;
+    gop_op_status_t status;
+
+    status = gop_sync_exec_status(segment_tool(op->fd->fh->seg, op->fd->lc->da, op->sid, op->stype, op->match_section, op->args_section, op->afd, op->dryrun, op->timeout));
+    if (op->dryrun != 0) {
+        if (status.op_status == OP_STATE_SUCCESS) {
+            if (status.error_code > 0) tbx_atomic_set(op->fd->fh->modified, 1);
+        }
+    }
+    return(status);
+}
+
+//***********************************************************************
+// lio_truncate - Truncates an open LIO file
+
 gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout)
 {
-    return(segment_tool(fd->fh->seg, fd->lc->da, segment_id, stype, match_section, args_section, afd, dryrun, timeout));
+    lio_segtool_t *op;
+
+    tbx_type_malloc_clear(op, lio_segtool_t, 1);
+
+    op->fd = fd;
+    op->sid = segment_id;
+    op->stype = stype;
+    op->match_section = match_section;
+    op->args_section = args_section;
+    op->afd = afd;
+    op->dryrun = dryrun;
+    op->timeout = timeout;
+
+    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_segment_tool_fn, (void *)op, free, 1));
 }
