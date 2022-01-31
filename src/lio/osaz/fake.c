@@ -117,7 +117,7 @@ int osaz_fake_posix_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, i
 int osaz_fake_attr_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key, int mode, osaz_attr_filter_t *filter)
 {
     *filter = NULL;
-    return(1);
+    return(2);
 }
 
 //***********************************************************************
