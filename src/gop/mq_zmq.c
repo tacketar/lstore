@@ -63,8 +63,8 @@ void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
     tbx_inip_file_t *ifd;
     int k, retry;
 
-    retry = 0;
     key_prefix = getenv(LIO_ENV_KEY_PREFIX);
+    retry = 0;
 again:
     if (!server_mode) {  //** Client mode
         if (key_prefix) {
@@ -73,6 +73,7 @@ again:
             home = getenv("HOME");
             snprintf(fname, sizeof(fname)-1, "%s/.lio/%s", home, CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
         } else {    //** and if that fails try getting the server public key from the global common location
+            retry = 2;  //** This will kick us out on the next round
             snprintf(fname, sizeof(fname)-1, "/etc/lio/%s", CLIENT_CONFIG); fname[sizeof(fname)-1] = '\0';
         }
     } else {   //** Server mode.  Keys are always in their local directory
@@ -89,8 +90,10 @@ again:
         if ((!server_mode) || (retry == 0)) {  //** Let's try again
             if (key_prefix) {
                 key_prefix = NULL;
-            } else {
+            } else if (retry == 0) {
                 retry = 1;
+            } else {
+                goto fail;
             }
             goto again;
         }
@@ -274,6 +277,7 @@ int zero_native_connect(gop_mq_socket_t *socket, const char *format, ...) {
     if (socket->type != MQ_PAIR) encrypt_socket(socket, id + n, 0);
 
     err = zmq_connect(socket->arg, &(id[n]));
+
     va_end(args);
 
     return(err);
