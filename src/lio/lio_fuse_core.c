@@ -688,7 +688,8 @@ LFS_READDIR()
 int lfs_object_create(lio_fuse_t *lfs, const char *fname, mode_t mode, int ftype)
 {
     char fullname[OS_PATH_MAX];
-    int err, n;
+    int err, n, exec_mode;
+    gop_op_status_t status;
 
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
@@ -711,7 +712,14 @@ int lfs_object_create(lio_fuse_t *lfs, const char *fname, mode_t mode, int ftype
         return(-EREMOTEIO);
     }
 
-    return(0);
+    err = 0;
+    exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
+    if (exec_mode) {
+        status = gop_sync_exec_status(os_object_exec_modify(lfs->lc->os, lfs->lc->creds, (char *)fname, exec_mode));
+        err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+    }
+
+    return(err);
 }
 
 //*************************************************************************
@@ -730,7 +738,6 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 
     return(lfs_object_create(lfs, fname, mode, OS_OBJECT_FILE_FLAG));
 }
-
 
 //*************************************************************************
 // lfs_chmod - Currently this only changes the exec bit for a FILE
@@ -755,6 +762,7 @@ int lfs_chmod(const char *fname, mode_t mode)
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     status = gop_sync_exec_status(os_object_exec_modify(lfs->lc->os, lfs->lc->creds, (char *)fname, exec_mode));
     err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+
     return(err);
 }
 
@@ -1293,6 +1301,7 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
 
     key = "system.modify_attr";
     if (lfs_osaz_attr_access(lfs, fuse_get_context(), fname, key, OS_MODE_WRITE_IMMEDIATE, &filter) != 2) {
+        log_printf(0, "ERROR accessing system.modify_attr fname=%s\n", fname);
         return(-EACCES);
     }
 
@@ -1300,10 +1309,6 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
     snprintf(buf, 1024, XOT "|%s", ts, lfs->id);
     val = buf;
     v_size = strlen(buf);
-
-//  key = "os.timestamp.system.modify_attr";
-//  val = lfs->id;
-//  v_size = strlen(val);
 
     err = lio_setattr(lfs->lc, lfs->lc->creds, (char *)fname, NULL, key, (void *)val, v_size);
     if (err != OP_STATE_SUCCESS) {
@@ -2025,7 +2030,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
 
     lfs->enable_tape = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_tape", 0);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
-    lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", 1);
+    lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", lfs->enable_osaz_acl_mappings);
 
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
