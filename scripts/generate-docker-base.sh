@@ -150,15 +150,6 @@ FROM $FROM
 MAINTAINER http://lstore.org
 ENV DEBIAN_FRONTEND=noninteractive
 $GLOBAL_INSTALL
-RUN cd /tmp && \
-    git clone https://github.com/Kitware/CMake.git && \
-    cd CMake && \
-    git checkout v3.5.2 && \
-    ./bootstrap && \
-    make -j16 && \
-    make install && \
-    cd .. && \
-    rm -rf CMake
 $PACKAGE_INSTALL
 EOF
 
