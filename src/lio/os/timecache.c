@@ -2372,7 +2372,6 @@ gop_op_generic_t *ostc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->val = val;
     ma->v_size = v_size;
     ma->n = 1;
-log_printf(0, "VAL=%p\n", val);
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
 }
@@ -2684,7 +2683,6 @@ os_object_iter_t *ostc_create_object_iter_alist(lio_object_service_fn_t *os, lio
 
     return(it);
 }
-
 
 //***********************************************************************
 // ostc_open_object_fn - Handles the actual object open
