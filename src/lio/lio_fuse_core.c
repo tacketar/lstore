@@ -85,9 +85,15 @@
 #define lfs_lock(lfs)    apr_thread_mutex_lock((lfs)->lock)
 #define lfs_unlock(lfs)  apr_thread_mutex_unlock((lfs)->lock)
 
-#define _inode_key_size 8
+//#define _inode_key_size 8
+//#define _inode_key_os_realpath_index 7
+//static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath"};
+
+
+#define _inode_key_size_core 8
+#define _inode_key_size_security 11
 #define _inode_key_os_realpath_index 7
-static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath"};
+static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath", "system.posix_acl_default", "security.selinux", "system.posix_acl_access" };
 
 #define _tape_key_size  2
 static char *_tape_keys[] = { "system.owner", "system.exnode" };
@@ -108,8 +114,8 @@ typedef struct {
     lio_fuse_t *lfs;
     os_object_iter_t *it;
     lio_os_regex_table_t *path_regex;
-    char *val[_inode_key_size];
-    int v_size[_inode_key_size];
+    char *val[_inode_key_size_security];
+    int v_size[_inode_key_size_security];
     char *dot_path;
     char *dotdot_path;
     tbx_stack_t *stack;
@@ -414,7 +420,7 @@ void _lfs_parse_stat_vals(lio_fuse_t *lfs, char *fname, struct stat *stat, char 
     //** so the subsequent call by FUSE will pull from cache instead of remote.
 
     //** Clean up
-    for (i=0; i<_inode_key_size; i++) {
+    for (i=0; i<lfs->_inode_key_size; i++) {
         if (val[i] != NULL) free(val[i]);
     }
 }
@@ -444,8 +450,8 @@ lio_fuse_t *lfs_get_context()
 int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    char *val[_inode_key_size];
-    int v_size[_inode_key_size], i, err;
+    char *val[_inode_key_size_security];
+    int v_size[_inode_key_size_security], i, err;
     struct fuse_context *ctx = fuse_get_context();
 
     log_printf(1, "fname=%s\n", fname);
@@ -454,9 +460,9 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     //** The whole remote fetch and merging with open files is locked to
     //** keep quickly successive stat calls to not get stale information
     lfs_lock(lfs);
-    for (i=0; i<_inode_key_size; i++) v_size[i] = -lfs->lc->max_attr;
+    for (i=0; i<lfs->_inode_key_size; i++) v_size[i] = -lfs->lc->max_attr;
     stat->st_uid = ctx->uid;  //** If you don't do this then chmod fails.
-    err = lio_get_multiple_attrs(lfs->lc, lfs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, _inode_key_size);
+    err = lio_get_multiple_attrs(lfs->lc, lfs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, lfs->_inode_key_size);
 
     if (err != OP_STATE_SUCCESS) {
         lfs_unlock(lfs);
@@ -540,7 +546,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
 
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
 
-    for (i=0; i<_inode_key_size; i++) {
+    for (i=0; i<lfs->_inode_key_size; i++) {
         dit->v_size[i] = -lfs->lc->max_attr;
         dit->val[i] = NULL;
     }
@@ -549,7 +555,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     snprintf(path, OS_PATH_MAX, "%s/*", fname);
     dit->path_regex = lio_os_path_glob2regex(path);
 
-    dit->it = lio_create_object_iter_alist(dit->lfs->lc, dit->lfs->lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, _inode_keys, (void **)dit->val, dit->v_size, _inode_key_size);
+    dit->it = lio_create_object_iter_alist(dit->lfs->lc, dit->lfs->lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, _inode_keys, (void **)dit->val, dit->v_size, lfs->_inode_key_size);
     if (dit->it == NULL) {
         lfs_closedir_real(dit);
         return(-ENOENT);
@@ -622,12 +628,13 @@ LFS_READDIR()
 
     memset(&stbuf, 0, sizeof(stbuf));
     n = tbx_stack_count(dit->stack);
+    tbx_stack_move_to_bottom(dit->stack);  //** Go from the bottom up.
     if (n>=off) { //** Rewind
-        tbx_stack_move_to_bottom(dit->stack);  //** Go from the bottom up.
         for (i=n; i>off; i--) tbx_stack_move_up(dit->stack);
 
         de = tbx_stack_get_current_data(dit->stack);
         while (de != NULL) {
+            log_printf(2, "dname=%s off=" XOT "\n", de->dentry, off);
             if (FILLER(filler, buf, de->dentry, &(de->stat), off) == 1) {
                 dt = apr_time_now() - now;
                 dt /= APR_USEC_PER_SEC;
@@ -662,7 +669,7 @@ LFS_READDIR()
         de->dentry = strdup(fname+prefix_len+1);
         _lfs_parse_stat_vals(dit->lfs, fname, &(de->stat), dit->val, dit->v_size, 1);
         free(fname);
-        log_printf(1, "next fname=%s ftype=%d prefix_len=%d ino=" XIDT " off=" XOT "\n", de->dentry, ftype, prefix_len, de->stat.st_ino, off);
+        log_printf(2, "next fname=%s ftype=%d prefix_len=%d ino=" XIDT " off=" XOT "\n", de->dentry, ftype, prefix_len, de->stat.st_ino, off);
 
         tbx_stack_move_to_bottom(dit->stack);
         tbx_stack_insert_below(dit->stack, de);
@@ -679,7 +686,6 @@ LFS_READDIR()
 
     return(0);
 }
-
 
 //*************************************************************************
 // lfs_object_create
@@ -1651,10 +1657,21 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
             ftype = lfs_exists(lfs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                return(-ENODATA);
+                return(-ENOATTR);
             }
             return(osaz_posix_acl(lfs->osaz, lfs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode));
         }
+    }
+
+    //** See if this are always empty attrs
+    if (lfs->enable_security_attr_checks == 0) {
+        if (strncmp("system.posix_acl_", name, 17) == 0) {
+            if ((strcmp("access", name + 17) == 0) || (strcmp("default", name + 17) == 0)) {
+                return(-ENOATTR);
+            }
+       } else if (strcmp("security.selinux", name) == 0) {
+          return(-ENOATTR);
+       }
     }
 
     v_size = (size == 0) ? -lfs->lc->max_attr : -(int)size;
@@ -1680,7 +1697,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     err = 0;
     if (v_size < 0) {
         v_size = 0;  //** No attribute
-        err = -ENODATA;
+        err = -ENOATTR;
     }
 
     if (size == 0) {
@@ -1942,6 +1959,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_tape = %d\n", lfs->enable_tape);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", lfs->enable_osaz_secondary_gids);
+    fprintf(fd, "enable_security_attr_checks = %d\n", lfs->enable_security_attr_checks);
     fprintf(fd, "n_merge = %d\n", lfs->n_merge);
     fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
 #ifdef HAS_FUSE3
@@ -2030,7 +2048,9 @@ void *lfs_init_real(struct fuse_conn_info *conn,
 
     lfs->enable_tape = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_tape", 0);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
-    lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", lfs->enable_osaz_acl_mappings);
+    lfs->enable_osaz_secondary_gids = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_secondary_gids", 0);
+    lfs->enable_security_attr_checks = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_security_attr_checks", 0);
+    lfs->_inode_key_size = (lfs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {

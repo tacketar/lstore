@@ -58,6 +58,8 @@ struct lio_fuse_t {
     int shutdown;
     int mount_point_len;
     int n_merge;
+    int enable_security_attr_checks;
+    int _inode_key_size;
     tbx_atomic_int_t read_cmds_inflight;
     tbx_atomic_int_t read_bytes_inflight;
     tbx_atomic_int_t write_cmds_inflight;
