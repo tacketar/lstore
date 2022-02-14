@@ -99,7 +99,7 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
     FILE *fd = fopen(s->fname, "r+");
     if (fd == NULL) fd = fopen(s->fname, "w+");
 
-    log_printf(15, "segfile_rw_func: tid=%d fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " mode=%d\n", tbx_atomic_thread_id, s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, srw->mode);
+    log_printf(15, "segfile_rw_func: fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " mode=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, srw->mode);
     tbx_log_flush();
     tbx_tbuf_var_init(&tbv);
 
@@ -123,7 +123,7 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
 
             int ib = blen;
             int inb = nbytes;
-            log_printf(15, "segfile_rw_func: tid=%d fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " blen=%d nbytes=%d err_cnt=%d\n", tbx_atomic_thread_id, s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, ib, inb, err_cnt);
+            log_printf(15, "segfile_rw_func: fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " blen=%d nbytes=%d err_cnt=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, ib, inb, err_cnt);
             tbx_log_flush();
 
             if (nbytes > 0) {
@@ -139,12 +139,12 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
     err =  (err_cnt > 0) ? gop_failure_status : gop_success_status;
 
     if (err_cnt > 0) {  //** Update the error count if needed
-        log_printf(15, "segfile_rw_func: ERROR tid=%d fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " bleft=" XOT " err_cnt=%d\n", tbx_atomic_thread_id, s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, bleft, err_cnt);
+        log_printf(15, "segfile_rw_func: ERROR fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " bleft=" XOT " err_cnt=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, bleft, err_cnt);
         tbx_atomic_inc(s->hard_errors);
         if (srw->mode != 0) tbx_atomic_inc(s->write_errors);
     }
 
-    log_printf(15, "segfile_rw_func: tid=%d fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " bleft=" XOT " err_cnt=%d\n", tbx_atomic_thread_id, s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, bleft, err_cnt);
+    log_printf(15, "segfile_rw_func: fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " bleft=" XOT " err_cnt=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, bleft, err_cnt);
     tbx_log_flush();
     fclose(fd);
     return(err);

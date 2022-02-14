@@ -217,7 +217,7 @@ lio_os_regex_table_t *lio_os_path_glob2regex(char *path)
             err = regcomp(&(table->regex_entry[i].compiled), table->regex_entry[i].expression, REG_NOSUB|REG_EXTENDED);
             if (err != 0) {
                 lio_os_regex_table_destroy(table);
-                log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d tid=%d\n", table->regex_entry[i].expression, err, tbx_atomic_thread_id);
+                log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d\n", table->regex_entry[i].expression, err);
                 free(p2);
                 return(NULL);
             }
@@ -269,7 +269,7 @@ lio_os_regex_table_t *lio_os_regex2table(char *regex)
     err = regcomp(&(table->regex_entry[0].compiled), table->regex_entry[0].expression, REG_NOSUB|REG_EXTENDED);
     if (err != 0) {
         lio_os_regex_table_destroy(table);
-        log_printf(0, "Error with fragment %s err=%d tid=%d\n", table->regex_entry[0].expression, err, tbx_atomic_thread_id);
+        log_printf(0, "Error with fragment %s err=%d\n", table->regex_entry[0].expression, err);
         return(NULL);
     }
 

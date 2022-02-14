@@ -332,7 +332,7 @@ void gop_free(gop_op_generic_t *gop, gop_op_free_mode_t mode)
 {
     int type;
 
-    log_printf(15, "gop_free: gid=%d tid=%d\n", gop_id(gop), tbx_atomic_thread_id);
+    log_printf(15, "gop_free: gid=%d\n", gop_id(gop));
     //** Get the status
     type = gop_get_type(gop);
     if (type == Q_TYPE_QUE) {

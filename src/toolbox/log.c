@@ -159,7 +159,7 @@ int tbx_mlog_printf(int suppress_header, int module_index, int level, const char
     sec = apr_time_sec(dt) % 60;
     usec = dt % apr_time_from_sec(1);
 
-    if (suppress_header == 0) n = fprintf(_log_fd, "[dt=%dh%02dm%02ds%06du mi=%d tid=%ld file=%s:%d fn=%s] ", hours, min, sec, usec, module_index, (long)syscall(SYS_gettid), fname, line, fn);
+    if (suppress_header == 0) n = fprintf(_log_fd, "[dt=%dh%02dm%02ds%06du mi=%d tid=%ld file=%s:%d fn=%s] ", hours, min, sec, usec, module_index, tbx_atomic_thread_id, fname, line, fn);
     va_start(args, fmt);
     n += vfprintf(_log_fd, fmt, args);
     va_end(args);
@@ -268,10 +268,10 @@ int tbx_minfo_printf(tbx_log_fd_t *ifd, int module_index, int level, const char 
     case INFO_HEADER_NONE:
         break;
     case INFO_HEADER_THREAD:
-        n = fprintf(ifd->fd, "[tid=%d] ", tbx_atomic_thread_id);
+        n = fprintf(ifd->fd, "[tid=%ld] ", tbx_atomic_thread_id);
         break;
     case INFO_HEADER_FULL:
-        n = fprintf(ifd->fd, "[mi=%d tid=%d file=%s:%d fn=%s] ", module_index, tbx_atomic_thread_id, fname, line, fn);
+        n = fprintf(ifd->fd, "[mi=%d tid=%ld file=%s:%d fn=%s] ", module_index, tbx_atomic_thread_id, fname, line, fn);
         break;
     }
 

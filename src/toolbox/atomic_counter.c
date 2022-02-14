@@ -26,10 +26,7 @@
 #include "tbx/atomic_counter.h"
 
 static tbx_atomic_int_t _tbx_atomic_global_counter = 0;
-
-static apr_threadkey_t *tbx_atomic_thread_id_key;
 tbx_atomic_int_t _atomic_times_used = 0;
-apr_pool_t *_atomic_mpool = NULL;
 
 //*************************************************************************
 // tbx_atomic_global_counter - Returns the global counter and inc's it as well
@@ -53,31 +50,6 @@ inline int tbx_atomic_global_counter()
 }
 
 //*************************************************************************
-// tbx_a_thread_id_ptr - Returns the pointer to the thread unique id
-//*************************************************************************
-
-int *tbx_a_thread_id_ptr()
-{
-    int *ptr = NULL;
-
-    apr_threadkey_private_get((void *)&ptr, tbx_atomic_thread_id_key);
-    if (ptr == NULL ) {
-        ptr = (int *)malloc(sizeof(int));
-        apr_threadkey_private_set(ptr, tbx_atomic_thread_id_key);
-        *ptr = tbx_atomic_global_counter();
-    }
-
-    return(ptr);
-}
-
-//***************************************************************************
-
-void _atomic_destructor(void *ptr)
-{
-    free(ptr);
-}
-
-//*************************************************************************
 //  tbx_atomic_startup - initializes the atomic routines. Only needed if using the
 //     thread_id or global counter routines
 //*************************************************************************
@@ -85,9 +57,6 @@ void _atomic_destructor(void *ptr)
 void tbx_atomic_startup()
 {
     if (tbx_atomic_inc(_atomic_times_used) != 0) return;
-
-    apr_pool_create(&_atomic_mpool, NULL);
-    apr_threadkey_private_create(&tbx_atomic_thread_id_key,_atomic_destructor, _atomic_mpool);
 }
 
 //*************************************************************************
@@ -98,10 +67,6 @@ void tbx_atomic_startup()
 void tbx_atomic_shutdown()
 {
     if (tbx_atomic_dec(_atomic_times_used) > 0) return;
-
-    apr_pool_destroy(_atomic_mpool);
-
-    _atomic_mpool = NULL;
     _atomic_times_used = 0;
 }
 
