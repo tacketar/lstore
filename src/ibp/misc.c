@@ -103,6 +103,7 @@ int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *ke
     char *ptr;
     tbx_stk_string_token(temp, "/", &bstate, &finished); //** gets the ibp:/
     ptr = tbx_stk_string_token(NULL, ":", &bstate, &finished); //** This should be the hostname
+    if (finished) goto error;
     ptr = &(ptr[1]);  //** Skip the extra "/"
     sscanf(tbx_stk_string_token(NULL, "/", &bstate, &finished), "%d", port);
     strncpy(host,  ptr, MAX_HOST_SIZE-1); //** This should be the host name
@@ -140,6 +141,7 @@ int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *ke
         }
     }
 
+error:
     free(temp);
 
     log_printf(14, "parse_cap: CAP=%s * parsed=[%s]:%d/%s/%s\n", cap, host, *port, key, typekey);
