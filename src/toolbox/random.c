@@ -48,7 +48,6 @@ int tbx_random_startup()
     if (_rnd_lock != NULL) return(0);
 
     assert_result(RAND_load_file("/dev/urandom", max_bytes), max_bytes);
-
     apr_pool_create(&_rnd_pool, NULL);
     apr_thread_mutex_create(&_rnd_lock, APR_THREAD_MUTEX_DEFAULT,_rnd_pool);
 
