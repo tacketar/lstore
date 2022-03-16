@@ -56,7 +56,28 @@ static char *_lio_create_keys[] = { "system.owner", "os.timestamp.system.create"
                                     "os.timestamp.system.modify_attr", "system.inode", "system.exnode", "system.exnode.size"
                                   };
 
+#define _lio_stat_keys_size 7
 char *_lio_stat_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link" };
+
+typedef struct {
+    char *dentry;
+    char *fname;
+    char *readlink;
+    struct stat stat;
+} _dentry_t;
+
+struct lio_stat_iter_t {
+    lio_config_t *lc;
+    lio_creds_t *creds;
+    os_object_iter_t *it;
+    lio_os_regex_table_t *path_regex;
+    char *val[_lio_stat_keys_size];
+    int v_size[_lio_stat_keys_size];
+    _dentry_t dot;
+    _dentry_t dotdot;
+    int prefix_len;
+    int state;
+};
 
 typedef struct {
     lio_config_t *lc;
@@ -1252,6 +1273,8 @@ void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_siz
     ex_off_t len;
     int ts;
 
+    memset(stat, 0, sizeof(struct stat));
+
     ino = 0;
     if (val[0] != NULL) {
         sscanf(val[0], XIDT, &ino);
@@ -1276,7 +1299,7 @@ void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_siz
         link = val[6];
         readlink = strlen(link);
         log_printf(15, "inode->link=%s mount_point=%s moun_point_len=%lu\n", link, mount_prefix, strlen(mount_prefix));
-        if (link[0] == '/') { //** If an absolute link then we need to add the mount prefix back
+        if ((link[0] == '/') && (mount_prefix)) { //** If an absolute link then we need to add the mount prefix back
             readlink += strlen(mount_prefix) + 1;
             if (flink != NULL) {
                 tbx_type_malloc(*flink, char, readlink+1);
@@ -1299,7 +1322,8 @@ void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_siz
 
     stat->st_size = (n & OS_OBJECT_SYMLINK_FLAG) ? readlink : len;
     stat->st_blksize = 4096;
-    stat->st_blocks = stat->st_size / 512;
+    stat->st_blocks = stat->st_size / stat->st_blksize;
+    if (stat->st_blocks <= 0) stat->st_blocks = 1;
     if (stat->st_size < 1024) stat->st_blksize = 1024;
 
     //** N-links
@@ -1340,13 +1364,136 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
 
 }
 
+//***********************************************************************
+// lio_stat_iter_destroy - Destroy's the stat iter
+//***********************************************************************
+
+void lio_stat_iter_destroy(lio_stat_iter_t *dit)
+{
+    if (dit->dot.readlink) free(dit->dot.readlink);
+    if (dit->dotdot.readlink) free(dit->dotdot.readlink);
+
+    if (dit->it) lio_destroy_object_iter(dit->lc, dit->it);
+    lio_os_regex_table_destroy(dit->path_regex);
+    free(dit);
+}
+
+//***********************************************************************
+// lio_stat_iter_create - Creates a stat iterator
+//***********************************************************************
+
+lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path)
+{
+    lio_stat_iter_t *dit;
+    char prefix[OS_PATH_MAX];
+    char *dir, *file;
+    int i;
+
+    tbx_type_malloc_clear(dit, lio_stat_iter_t, 1);
+    dit->lc = lc;
+    dit->creds = creds;
+
+    for (i=0; i<_lio_stat_key_size; i++) {
+        dit->v_size[i] = -lio_gc->max_attr;
+        dit->val[i] = NULL;
+    }
+
+    i = strlen(path);
+    if (path[i-1] == '/') {
+        dit->prefix_len = i;
+    } else {
+        dit->prefix_len = i+1;
+    }
+
+    snprintf(prefix, OS_PATH_MAX, "%s/*", path);
+    dit->path_regex = lio_os_path_glob2regex(prefix);
+
+    dit->it = lio_create_object_iter_alist(lc, lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, _lio_stat_keys, (void **)dit->val, dit->v_size, _lio_stat_key_size);
+    if (dit->it == NULL) {
+        lio_stat_iter_destroy(dit);
+        return(NULL);
+    }
+
+    //** Add "."
+    dit->dot.dentry = ".";
+    if (lio_stat(lc, creds, (char *)path, &(dit->dot.stat), NULL, &(dit->dot.readlink)) != 0) {
+        lio_stat_iter_destroy(dit);
+        return(NULL);
+    }
+
+    //** And ".."
+    if (strcmp(path, "/") != 0) {
+        lio_os_path_split((char *)path, &dir, &file);
+        free(file);
+    } else {
+        dir = strdup(path);
+    }
+
+    dit->dot.dentry = "..";
+    if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), NULL, &(dit->dot.readlink)) != 0) {
+        if (dir) free(dir);
+        lio_stat_iter_destroy(dit);
+        return(NULL);
+    }
+
+    return(dit);
+}
+
+//***********************************************************************
+// lio_stat_iter_next - Returns the next entries
+//***********************************************************************
+
+int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, char **readlink)
+{
+    int ftype, prefix_len;
+    char *fname, *flink;
+    _dentry_t *de;
+
+    if (dit->state < 2) {
+        de = (dit->state == 0) ? &(dit->dot) : &(dit->dotdot);
+        *stat = de->stat;
+        if (dentry) {
+            if (de->dentry) *dentry = strdup(de->dentry);
+        }
+        if (readlink) {
+            if (de->readlink) *readlink = strdup(de->readlink);
+        }
+        dit->state++;
+        return(0);
+    }
+
+    if (dit->state == 3) goto finished;
+
+    //** Off . and .. and into regular objects
+    //** Get the next object
+    ftype = lio_next_object(dit->lc, dit->it, &fname, &prefix_len);
+    if (ftype <= 0) {
+        dit->state = 3;
+        goto finished;
+    }
+
+    //** And parse it
+    _lio_parse_stat_vals(fname, stat, dit->val, dit->v_size, NULL, &flink);
+    if (dentry) *dentry = strdup(fname + prefix_len);
+    if (readlink) {
+        *readlink = flink;
+    } else if (flink) {
+        free(flink);
+    }
+
+    return(0);
+
+finished:  //** If we make it here we're done
+    if (dentry) *dentry = NULL;
+    if (readlink) *readlink = NULL;
+    return(1);
+}
 
 //***********************************************************************
 //***********************************************************************
 //  FSCK related routines
 //***********************************************************************
 //***********************************************************************
-
 
 //***********************************************************************
 // lio_fsck_check_file - Checks a file for errors and optionally repairs them

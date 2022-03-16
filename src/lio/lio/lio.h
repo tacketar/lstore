@@ -26,6 +26,7 @@ limitations under the License.
 #include <lio/authn.h>
 #include <lio/blacklist.h>
 #include <lio/cache.h>
+#include <lio/core.h>
 #include <lio/ex3.h>
 #include <lio/os.h>
 #include <lio/notify.h>
@@ -40,7 +41,6 @@ extern "C" {
 typedef struct lio_config_t lio_config_t;
 typedef struct lio_cp_file_t lio_cp_file_t;
 typedef struct lio_cp_path_t lio_cp_path_t;
-typedef struct lio_fd_t lio_fd_t;
 typedef struct lio_file_handle_t lio_file_handle_t;
 typedef struct lio_fn_t lio_fn_t;
 typedef struct lio_fsck_iter_t lio_fsck_iter_t;
@@ -75,6 +75,7 @@ LIO_API ex_off_t lio_block_size(lio_fd_t *fd, int block_type);
 LIO_API int lio_cache_pages_drop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi);
 LIO_API gop_op_generic_t *lio_truncate_gop(lio_fd_t *fd, ex_off_t new_size);
 LIO_API gop_op_generic_t *lio_flush_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi);
+LIO_API const char *lio_fd_path(lio_fd_t *fd);
 
 LIO_API gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout);
 
@@ -86,6 +87,9 @@ LIO_API gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *cre
 LIO_API os_attr_iter_t *lio_create_attr_iter(lio_config_t *lc, lio_creds_t *creds, const char *path, lio_os_regex_table_t *attr, int v_max);
 LIO_API void lio_destroy_attr_iter(lio_config_t *lc, os_attr_iter_t *it);
 
+LIO_API lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path);
+LIO_API int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, char **readlink);
+LIO_API void lio_stat_iter_destroy(lio_stat_iter_t *dit);
 LIO_API gop_op_generic_t *lio_close_gop(lio_fd_t *fd);
 LIO_API gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int hints, lio_segment_rw_hints_t *rw_hints);
 LIO_API gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints);
@@ -104,6 +108,7 @@ LIO_API int lio_realpath(lio_config_t *lc, lio_creds_t *creds, const char *path,
 LIO_API gop_op_generic_t *lio_realpath_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath);
 LIO_API gop_op_status_t lio_file_copy_op(void *arg, int id);
 LIO_API int lio_fopen_flags(char *sflags);
+LIO_API int lio_open_flags(int flags, mode_t mode);
 LIO_API gop_op_generic_t *lio_fsck_gop(lio_config_t *lc, lio_creds_t *creds, char *fname, int ftype, int owner_mode, char *owner, int exnode_mode);
 LIO_API ex_off_t lio_fsck_visited_count(lio_config_t *lc, lio_fsck_iter_t *oit);
 LIO_API void lio_get_error_counts(lio_config_t *lc, lio_segment_t *seg, lio_segment_errors_t *serr);
@@ -174,6 +179,7 @@ enum lio_fsck_error_flags_t {
 #define LIO_CREATE_MODE    8
 #define LIO_APPEND_MODE   16
 #define LIO_EXCL_MODE     32
+#define LIO_EXEC_MODE     64
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
 typedef enum lio_copy_hint_t lio_copy_hint_t;
@@ -208,6 +214,7 @@ struct lio_config_t {
     notify_t *notify;
     apr_thread_mutex_t *lock;
     apr_pool_t *mpool;
+    char *monitor_fname;
     char *obj_name;
     char *server_address;
     char *section_name;
@@ -231,6 +238,7 @@ struct lio_config_t {
     ex_off_t jerase_max_parity_on_stack;
     ex_off_t small_files_in_metadata_max_size;
     int calc_adler32;
+    int monitor_enable;
     int timeout;
     int max_attr;
     int anonymous_creation;
