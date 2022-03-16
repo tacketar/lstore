@@ -236,7 +236,7 @@ void ibp_op_init(ibp_context_t *ic, ibp_op_t *op)
 
     //** Now munge the pointers
     gop = &(op->gop);
-    gop_init(gop);
+    gop_init_mo(gop, MON_INDEX_IBP);
     gop->op = &(op->dop);
     gop->op->priv = op;
     gop->type = Q_TYPE_OPERATION;
@@ -420,6 +420,12 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[rw_type]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    if (rw_type == IBP_READ) {
+        tbx_monitor_obj_label(gop_mo(gop), "IBP_READ: host=%s len=" I64T, op->dop.cmd.hostport, len);
+    } else {
+        tbx_monitor_obj_label(gop_mo(gop), "IBP_WRITE: host=%s len=" I64T, op->dop.cmd.hostport, len);
+    }
 
     cmd->cap = cap;
     cmd->size = len; //** This is the total size

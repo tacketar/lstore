@@ -3425,6 +3425,7 @@ gop_op_generic_t *cache_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
 {
     cache_rw_op_t *cop;
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
+    gop_op_generic_t *gop;
 
     tbx_type_malloc_clear(cop, cache_rw_op_t, 1);
     cop->seg = seg;
@@ -3436,9 +3437,17 @@ gop_op_generic_t *cache_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     cop->boff = boff;
     cop->buf = buffer;
 
-    if (s->direct_io == 1) return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1));
+    if (s->direct_io == 1) {
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
+        tbx_monitor_obj_label(gop_mo(gop), "CACHE_READ_DIRECT: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    } else {
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
+        tbx_monitor_obj_label(gop_mo(gop), "CACHE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    }
 
-    return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1));
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+
+    return(gop);
 }
 
 
@@ -3450,6 +3459,7 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
 {
     cache_rw_op_t *cop;
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
+    gop_op_generic_t *gop;
 
     tbx_type_malloc_clear(cop, cache_rw_op_t, 1);
     cop->seg = seg;
@@ -3461,9 +3471,17 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     cop->boff = boff;
     cop->buf = buffer;
 
-    if (s->direct_io == 1) return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1));
+    if (s->direct_io == 1) {
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
+        tbx_monitor_obj_label(gop_mo(gop), "CACHE_WRITE_DIRECT: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    } else {
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
+        tbx_monitor_obj_label(gop_mo(gop), "CACHE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    }
 
-    return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1));
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+
+    return(gop);
 }
 
 
@@ -4116,6 +4134,17 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
         return (-1);
     }
 
+    if (myid != seg->header.id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, myid);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
+
+    //** Group the child together
+    tbx_mon_object_t cmo;
+    tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, id);
+    tbx_monitor_obj_group(&(seg->header.mo), &cmo);
+
     s->child_seg = load_segment(seg->ess, id, exp);
     if (s->child_seg == NULL) {
         log_printf(0, "ERROR child_seg = NULL initial sid=" XIDT " myid=" XIDT " cid=" XIDT "\n",segment_id(seg), myid, id);
@@ -4135,6 +4164,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
 
     //** Get the segment header info
     seg->header.id = myid;
+
     if (s->qname != NULL) free(s->qname);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
     s->qname = strdup(qname);
@@ -4314,8 +4344,13 @@ void segcache_destroy(tbx_ref_t *ref)
 finished:
     //** Destroy the child segment as well
     if (s->child_seg != NULL) {
+        tbx_mon_object_t cmo;
+        tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, segment_id(s->child_seg));
         tbx_obj_put(&s->child_seg->obj);
+        tbx_monitor_obj_ungroup(&(seg->header.mo), &cmo);
     }
+
+    tbx_monitor_obj_destroy(&(seg->header.mo));
 
     if (s->dio_pending) tbx_stack_free(s->dio_pending, 0);
     if (s->dio_execing) tbx_stack_free(s->dio_execing, 0);
@@ -4354,6 +4389,9 @@ lio_segment_t *segment_cache_create(void *arg)
 
     generate_ex_id(&(seg->header.id));
     seg->header.type = SEGMENT_TYPE_CACHE;
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
     s->qname = strdup(qname);
@@ -4409,6 +4447,7 @@ lio_segment_t *segment_cache_create(void *arg)
         CACHE_PRINT;
         cache_unlock(s->c);
     }
+
 
     return(seg);
 }

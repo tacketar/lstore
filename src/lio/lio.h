@@ -25,6 +25,7 @@
 #include <lio/lio.h>
 #include <lio/visibility.h>
 #include <sys/stat.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/log.h>
 #include <zlib.h>
 
@@ -68,6 +69,7 @@ struct lio_file_handle_t {  //** Shared file handle
     apr_thread_mutex_t *lock;
     apr_thread_cond_t *cond;
     apr_pool_t *mpool;
+    tbx_mon_object_t mo;
     char *fname;         //** This is just used for dumping info and represents the name used for adding the FH
     char *data;          //** This holds small file data which gets stored as metadata
     ex_off_t data_size;  //** And if this is the corresponding size in data

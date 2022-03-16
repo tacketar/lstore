@@ -243,7 +243,7 @@ void init_opque(gop_opque_t *q)
 
     tbx_type_memclear(q, gop_opque_t, 1);
 
-    gop_init(gop);
+    gop_init_mo(gop, MON_INDEX_QUE);
 
     log_printf(15, "init_opque: qid=%d\n", gop_id(gop));
 
@@ -280,12 +280,15 @@ gop_opque_t *gop_opque_new()
 // free_finished_stack - Frees an opque
 //*************************************************************
 
-void free_finished_stack(tbx_stack_t *stack, int mode)
+void free_finished_stack(gop_opque_t *q, int mode)
 {
+    tbx_stack_t *stack = q->qd.finished;
     gop_op_generic_t *gop;
+    tbx_mon_object_t *qmo = &(q->op.base.mo);
 
     gop = (gop_op_generic_t *)tbx_stack_pop(stack);
     while (gop != NULL) {
+        tbx_monitor_obj_ungroup(qmo, gop_mo(gop));
         if (gop->type == Q_TYPE_QUE) {
             gop_opque_free(gop->q->opque, mode);
         } else {
@@ -339,7 +342,7 @@ void gop_opque_free(gop_opque_t *opq, int mode)
 
     //** Free the stacks
     tbx_stack_free(q->failed, 0);
-    free_finished_stack(q->finished, mode);
+    free_finished_stack(opq, mode);
     free_list_stack(q->list, mode);
 
     unlock_opque(&(opq->qd));  //** Has to be unlocked for gop_generic_free to work cause it also locks it
@@ -358,6 +361,9 @@ int internal_gop_opque_add(gop_opque_t *que, gop_op_generic_t *gop, int dolock)
     int err = 0;
     gop_callback_t *cb;
     gop_que_data_t *q = &(que->qd);
+
+    //** Associate the gop with the que
+    tbx_monitor_obj_group(&(q->opque->op.base.mo), gop_mo(gop));
 
     //** Create the callback **
     tbx_type_malloc(cb, gop_callback_t, 1);

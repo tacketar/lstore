@@ -704,6 +704,7 @@ gop_op_generic_t *osrc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:EXISTS path=%s", path);
 
     log_printf(5, "END\n");
 
@@ -773,6 +774,7 @@ gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, free, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:REALPATH path=%s", path);
 
     log_printf(5, "END\n");
 
@@ -808,6 +810,7 @@ gop_op_generic_t *osrc_object_exec_modify(lio_object_service_fn_t *os, lio_creds
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:EXEC_MODIFY path=%s", path);
 
     log_printf(5, "END\n");
 
@@ -848,6 +851,7 @@ gop_op_generic_t *osrc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
 
     log_printf(5, "END\n");
 
@@ -882,6 +886,7 @@ gop_op_generic_t *osrc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:SYMLINK src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
 
@@ -916,6 +921,7 @@ gop_op_generic_t *osrc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:HARDLINK src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
 
@@ -945,6 +951,7 @@ gop_op_generic_t *osrc_move_object(lio_object_service_fn_t *os, lio_creds_t *cre
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:MOVE src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
 
@@ -1004,6 +1011,7 @@ gop_op_generic_t *osrc_copy_mult_attrs_internal(lio_object_service_fn_t *os, osr
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:COPY_ATTRS");
 
     log_printf(5, "END\n");
 
@@ -1400,6 +1408,7 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, free, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:GET_ATTRS");
 
     log_printf(5, "END\n");
 
@@ -1501,6 +1510,7 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:SET_ATTRS");
 
     log_printf(5, "END\n");
 
@@ -2226,6 +2236,8 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, osrc->timeout);
     gop_set_private(gop, arg);
 
+    tbx_monitor_obj_label(gop_mo(gop), "OS:OPEN path=%s", path);
+
     log_printf(5, "END\n");
 
     return(gop);
@@ -2313,6 +2325,7 @@ gop_op_generic_t *osrc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_close_object, fd, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:CLOSE");
 
     log_printf(5, "END\n");
 

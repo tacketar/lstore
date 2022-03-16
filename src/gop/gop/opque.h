@@ -54,6 +54,7 @@ GOP_API void gop_shutdown();
 #define gop_opque_tasks_finished(q) gop_tasks_finished(opque_get_gop(q))
 #define gop_opque_tasks_left(q) gop_tasks_left(opque_get_gop(q))
 #define gop_opque_task_count(q) q->qd.nsubmitted
+#define opque_mo(q) (&((q)->op.base.mo))
 #define opque_waitall(q) gop_waitall(opque_get_gop(q))
 #define opque_waitany(q) gop_waitany(opque_get_gop(q))
 #define opque_start_execution(q) gop_start_execution(opque_get_gop(q))

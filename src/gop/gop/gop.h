@@ -27,6 +27,7 @@ limitations under the License.
 #include <gop/types.h>
 #include <stdbool.h>
 #include <tbx/atomic_counter.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/network.h>
 #include <tbx/stack.h>
 
@@ -89,6 +90,7 @@ GOP_API void gop_generic_free(gop_op_generic_t *gop, gop_op_free_mode_t mode);
 GOP_API gop_op_generic_t *gop_get_next_failed(gop_op_generic_t *gop);
 GOP_API gop_op_generic_t *gop_get_next_finished(gop_op_generic_t *gop);
 GOP_API void gop_init(gop_op_generic_t *gop);
+GOP_API void gop_init_mo(gop_op_generic_t *gop, unsigned char mtype);
 GOP_API void gop_reset(gop_op_generic_t *gop);
 GOP_API void gop_set_auto_destroy(gop_op_generic_t *gop, int val);
 GOP_API void gop_start_execution(gop_op_generic_t *gop);
@@ -121,6 +123,7 @@ GOP_API extern gop_op_status_t gop_error_status;
 #define lock_gop(gop)   log_printf(15, "lock_gop: gid=%d\n", (gop)->base.id); apr_thread_mutex_lock((gop)->base.ctl->lock)
 #define unlock_gop(gop) log_printf(15, "unlock_gop: gid=%d\n", (gop)->base.id); apr_thread_mutex_unlock((gop)->base.ctl->lock)
 #define gop_id(gop) (gop)->base.id
+#define gop_mo(gop) &((gop)->base.mo)
 #define gop_get_auto_destroy(gop) (gop)->base.auto_destroy
 #define gop_get_private(gop) (gop)->base.user_priv
 #define gop_set_private(gop, newval) (gop)->base.user_priv = newval
@@ -146,6 +149,7 @@ struct gop_op_common_t {
     int retries;           //** Upon failure how many times we've retried
     int id;                //** Op's global id.  Can be changed by use but generally should use my_id
     int my_id;             //** User/Application settable id.  Defaults to id.
+    tbx_mon_object_t mo;   //** Monitoring object
     bool state;             //** Command state 0=submitted 1=completed
     bool started_execution; //** If 1 the tasks have already been submitted for execution
     bool auto_destroy;      //** If 1 then automatically call the free fn to destroy the object

@@ -32,6 +32,7 @@ limitations under the License.
 #include <lio/rs.h>
 #include <lio/service_manager.h>
 #include <tbx/iniparse.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
 
@@ -116,6 +117,7 @@ struct lio_ex_header_t {
     char *name;
     ex_id_t id;
     char *type;
+    tbx_mon_object_t mo;
     tbx_list_t *attributes;  //should be a key/value pair struct?
 };
 

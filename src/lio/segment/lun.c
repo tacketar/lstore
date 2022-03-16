@@ -1241,6 +1241,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     s->inprogress_count++;  //** Flag that we are doing an I/O op
 
     q = gop_opque_new();
+    tbx_monitor_obj_group(&(seg->header.mo), opque_mo(q));
     stack = tbx_stack_new();
     bpos = boff;
 
@@ -1627,6 +1628,9 @@ gop_op_generic_t *seglun_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
 
+    tbx_monitor_obj_label(gop_mo(gop), "LUN_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+
     return(gop);
 }
 
@@ -1651,6 +1655,9 @@ gop_op_generic_t *seglun_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     sw->timeout = timeout;
     sw->rw_mode = 0;
     gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
+
+    tbx_monitor_obj_label(gop_mo(gop), "LUN_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
 
     return(gop);
 }
@@ -2583,6 +2590,12 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     //** Make the segment section name
     snprintf(seggrp, bufsize, "segment-" XIDT, id);
 
+    if (seg->header.id != id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, id);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
+
     //** Get the segment header info
     seg->header.id = id;
     seg->header.type = SEGMENT_TYPE_LUN;
@@ -2757,11 +2770,13 @@ void seglun_destroy(tbx_ref_t *ref)
     apr_thread_cond_destroy(seg->cond);
     apr_pool_destroy(seg->mpool);
 
+    tbx_monitor_obj_destroy(&(seg->header.mo));
+
     free(seg);
 }
 
 //***********************************************************************
-// segment_linear_create - Creates a linear segment
+// segment_lun_create - Creates a linear segment
 //***********************************************************************
 
 lio_segment_t *segment_lun_create(void *arg)
@@ -2793,6 +2808,9 @@ lio_segment_t *segment_lun_create(void *arg)
     generate_ex_id(&(seg->header.id));
     tbx_obj_init(&seg->obj, (tbx_vtable_t *) &lio_seglun_vtable);
     seg->header.type = SEGMENT_TYPE_LUN;
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);

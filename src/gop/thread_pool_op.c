@@ -23,6 +23,7 @@
 #include <string.h>
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/log.h>
 #include <tbx/network.h>
 #include <tbx/stack.h>
@@ -185,6 +186,7 @@ void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
     int *my_depth;
     int tid;
     int concurrent, start_depth;
+    tbx_mon_object_t mo;
 
     tid = tbx_atomic_thread_id;
 
@@ -225,9 +227,11 @@ void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
     log_printf(4, "tp_recv: Start!!! gid=%d tid=%d op->depth=%d op->overflow_slot=%d n_overflow=" AIT "\n", gop_id(gop), tid, op->depth, op->overflow_slot, tbx_atomic_get(tpc->n_overflow));
     tbx_atomic_inc(tpc->n_started);
 
+    tbx_monitor_thread_group(tbx_monitor_object_fill(&mo, MON_INDEX_GOP, gop_id(gop)), MON_MY_THREAD);
     gop->op->cmd.start_time = apr_time_now();
     status = op->fn(op->arg, gop_id(gop));
     gop->op->cmd.end_time = apr_time_now();
+    tbx_monitor_thread_ungroup(tbx_monitor_object_fill(&mo, MON_INDEX_GOP, gop_id(gop)), MON_MY_THREAD);
 
     if (_tp_stats > 0) {
         if (tid != op->parent_tid) {

@@ -1955,6 +1955,9 @@ gop_op_generic_t *segjerase_write(lio_segment_t *seg, data_attr_t *da, lio_segme
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, segjerase_write_func, (void *)sw, free, 1);
 
+    tbx_monitor_obj_label(gop_mo(gop), "JERASE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+
     return(gop);
 }
 
@@ -2002,6 +2005,9 @@ gop_op_generic_t *segjerase_read(lio_segment_t *seg, data_attr_t *da, lio_segmen
     sw->timeout = timeout;
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, segjerase_read_func, (void *)sw, free, 1);
+
+    tbx_monitor_obj_label(gop_mo(gop), "JERASE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
+    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
 
     return(gop);
 }
@@ -2205,6 +2211,12 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     //** Make the segment section name
     snprintf(seggrp, bufsize, "segment-" XIDT, id);
 
+    if (id != seg->header.id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, id);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
+
     //** Get the segment header info
     seg->header.id = id;
     seg->header.type = SEGMENT_TYPE_JERASURE;
@@ -2215,6 +2227,11 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     if (id == 0) {
         return (-1);
     }
+
+    //** Group the child together
+    tbx_mon_object_t cmo;
+    tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, id);
+    tbx_monitor_obj_group(&(seg->header.mo), &cmo);
 
     s->child_seg = load_segment(seg->ess, id, exp);
     if (s->child_seg == NULL) {
@@ -2316,7 +2333,10 @@ void segjerase_destroy(tbx_ref_t *ref)
 
     //** Destroy the child segment as well
     if (s->child_seg != NULL) {
+        tbx_mon_object_t cmo;
+        tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, segment_id(s->child_seg));
         tbx_obj_put(&s->child_seg->obj);
+        tbx_monitor_obj_ungroup(&(seg->header.mo), &cmo);
     }
 
     if (s->plan != NULL) et_destroy_plan(s->plan);
@@ -2326,6 +2346,8 @@ void segjerase_destroy(tbx_ref_t *ref)
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
     apr_pool_destroy(seg->mpool);
+
+    tbx_monitor_obj_destroy(&(seg->header.mo));
 
     //** Do final cleanup
     free(s);
@@ -2358,6 +2380,9 @@ lio_segment_t *segment_jerasure_create(void *arg)
     assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     seg->ess = es;
     s->tpc = lio_lookup_service(es, ESS_RUNNING, ESS_TPC_UNLIMITED);

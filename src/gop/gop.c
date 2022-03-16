@@ -404,6 +404,7 @@ gop_op_generic_t *gop_waitany(gop_op_generic_t *g)
             lock_gop(g);
             gop = tbx_stack_pop(g->q->finished); //** Remove it from the finished list. This could be a different task so use whats on top
             unlock_gop(g);
+            tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
             return(gop);
         } else {
             _gop_start_execution(g);  //** Make sure things have been submitted
@@ -412,7 +413,10 @@ gop_op_generic_t *gop_waitany(gop_op_generic_t *g)
             }
         }
 
-        if (gop != NULL) log_printf(15, "POP finished qid=%d gid=%d\n", gop_id(g), gop_id(gop));
+        if (gop != NULL) {
+            log_printf(15, "POP finished qid=%d gid=%d\n", gop_id(g), gop_id(gop));
+            tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
+        }
     } else {
         log_printf(15, "gop_waitany: BEFORE (type=op) While gid=%d state=%d\n", gop_id(g), g->base.state);
         tbx_log_flush();
@@ -516,6 +520,7 @@ gop_op_generic_t *gop_waitany_timed(gop_op_generic_t *g, int dt)
             apr_thread_cond_timedwait(g->base.ctl->cond, g->base.ctl->lock, adt); //** Sleep until something completes
             loop++;
         }
+        if (gop) tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
     } else {
         while ((g->base.state == 0) && (loop == 0)) {
             apr_thread_cond_timedwait(g->base.ctl->cond, g->base.ctl->lock, adt); //** Sleep until something completes
@@ -578,6 +583,8 @@ void single_gop_mark_completed(gop_op_generic_t *gop, gop_op_status_t status)
     int mode;
 
     log_printf(15, "gop_mark_completed: START gid=%d status=%d\n", gop_id(gop), status.op_status);
+
+    tbx_monitor_obj_destroy(&(gop->base.mo));
 
     lock_gop(gop);
     log_printf(15, "gop_mark_completed: after lock gid=%d\n", gop_id(gop));
@@ -713,6 +720,9 @@ void gop_reset(gop_op_generic_t *gop)
 {
     gop->base.id = tbx_atomic_global_counter();
 
+    tbx_monitor_object_fill(&(gop->base.mo), gop->base.mo.type, gop->base.id);
+    tbx_monitor_obj_create(&(gop->base.mo), "");
+
     unlock_gop(gop);
     gop->base.cb = NULL;
     gop->base.state = 0;
@@ -723,10 +733,10 @@ void gop_reset(gop_op_generic_t *gop)
 
 
 //*************************************************************
-// gop_init - Initializes a generic op
+// gop_init_mo - Initializes a generic op using the monitoring type
 //*************************************************************
 
-void gop_init(gop_op_generic_t *gop)
+void gop_init_mo(gop_op_generic_t *gop, unsigned char mtype)
 {
     tbx_pch_t pch;
 
@@ -735,6 +745,8 @@ void gop_init(gop_op_generic_t *gop)
     tbx_type_memclear(gop, gop_op_generic_t, 1);
 
     base->id = tbx_atomic_global_counter();
+    tbx_monitor_object_fill(&(base->mo), mtype, base->id);
+    tbx_monitor_obj_create(&(base->mo), "");
 
     log_printf(15, "gop ptr=%p gid=%d\n", gop, gop_id(gop));
 
@@ -742,6 +754,15 @@ void gop_init(gop_op_generic_t *gop)
     pch = tbx_pch_reserve(_gop_control);
     gop->base.ctl = (gop_control_t *)tbx_pch_data(&pch);
     gop->base.ctl->pch = pch;
+}
+
+//*************************************************************
+// gop_init - Initializes a generic op
+//*************************************************************
+
+void gop_init(gop_op_generic_t *gop)
+{
+    gop_init_mo(gop, MON_INDEX_GOP);
 }
 
 
@@ -758,6 +779,7 @@ void gop_generic_free(gop_op_generic_t *gop, gop_op_free_mode_t mode)
     callback_destroy(gop->base.cb);  //** Free the callback chain as well
 
     unlock_gop(gop);  //** Make sure the lock is left in the proper state for reuse
+
     tbx_pch_release(_gop_control, &(gop->base.ctl->pch));
 }
 

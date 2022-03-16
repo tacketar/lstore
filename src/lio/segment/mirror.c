@@ -1410,6 +1410,7 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
     tbx_inip_group_t *g;
     tbx_inip_element_t *ele;
     char *token, *bstate, *key, *value;
+    tbx_mon_object_t cmo;
 
     //** We can only handle the text/INI format
     if (exp->type != EX_TEXT) {
@@ -1423,6 +1424,12 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
 
     //** Make the segment section name
     snprintf(seggrp, bufsize, "segment-" XIDT, id);
+
+    if (id != seg->header.id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, id);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
 
     //** Get the segment header info
     seg->header.id = id;
@@ -1467,6 +1474,10 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
             sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->child_status[i]));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XIDT, &cid);
             free(token);
+
+            tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, cid);
+            tbx_monitor_obj_group(&(seg->header.mo), &cmo);
+
             cseg = load_segment(seg->ess, cid, exp);
             if (!cseg) fail = 1;
             s->child_seg[i] = cseg;
@@ -1524,18 +1535,23 @@ void seg_mirror_destroy(tbx_ref_t *ref)
     tbx_obj_t *obj = container_of(ref, tbx_obj_t, refcount);
     lio_segment_t *seg = container_of(obj, lio_segment_t, obj);
     seg_mirror_priv_t *s = (seg_mirror_priv_t *)seg->priv;
+    tbx_mon_object_t cmo;
     int i;
 
     //** Destroy the mirrors
     if (s->child_seg) {
         for (i=0; i<s->n_mirrors; i++) {
+            tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, segment_id(s->child_seg[i]));
             tbx_obj_put(&(s->child_seg[i]->obj));
+            tbx_monitor_obj_ungroup(&(seg->header.mo), &cmo);
         }
         free(s->child_seg);
     }
     if (s->child_status) free(s->child_status);
-    free(s);
 
+    tbx_monitor_obj_destroy(&(seg->header.mo));
+
+    free(s);
     ex_header_release(&(seg->header));
 
     apr_thread_mutex_destroy(seg->lock);
@@ -1566,6 +1582,9 @@ lio_segment_t *segment_mirror_create(void *arg)
 
     generate_ex_id(&(seg->header.id));
     seg->header.type = SEGMENT_TYPE_MIRROR;
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     s->tpc = lio_lookup_service(es, ESS_RUNNING, ESS_TPC_UNLIMITED);
 

@@ -541,6 +541,12 @@ int segfile_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange
     //** Make the segment section name
     snprintf(seggrp, bufsize, "segment-" XIDT, id);
 
+    if (id != seg->header.id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, id);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
+
     //** Get the segment header info
     seg->header.id = id;
     if (s->qname != NULL) free(s->qname);
@@ -603,6 +609,7 @@ void segfile_destroy(tbx_ref_t *ref)
 
     free(s);
 
+    tbx_monitor_obj_destroy(&(seg->header.mo));
     ex_header_release(&(seg->header));
 
     free(seg);
@@ -648,6 +655,9 @@ lio_segment_t *segment_file_create(void *arg)
 
     generate_ex_id(&(seg->header.id));
     seg->header.type = SEGMENT_TYPE_FILE;
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     s->tpc = lio_lookup_service(es, ESS_RUNNING, ESS_TPC_UNLIMITED);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);

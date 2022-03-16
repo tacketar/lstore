@@ -1212,6 +1212,7 @@ void *hc_send_thread(apr_thread_t *th, void *data)
     int err, nbytes, recv_idle;
     gop_op_status_t finished;
     apr_status_t dummy;
+    tbx_mon_object_t mo;
 
     //** Attempt to connect
     err = hpc->fn->connect(ns, hp->connect_context, hp->host, hp->port, hp->hpc->dt_connect);
@@ -1228,6 +1229,10 @@ void *hc_send_thread(apr_thread_t *th, void *data)
     cmd.cmd = CONN_READY;
 log_printf(15, "internal hp=%s SEND CONN_READY\n", hp->skey);
     tbx_que_put(hc->internal, &cmd, TBX_QUE_BLOCK);
+
+    tbx_monitor_object_fill(&mo, MON_INDEX_HPSEND, tbx_ns_getid(ns));
+    tbx_monitor_obj_create(&mo, "HP: %s:%d", hp->host, hp->port);
+    tbx_monitor_thread_group(&mo, MON_MY_THREAD);
 
     //** Now enter the main loop
     finished = gop_success_status;
@@ -1267,6 +1272,7 @@ log_printf(15, "hp=%s gid=%d\n", hp->skey, gop_id(gop));
         hop->end_time = hop->start_time + hop->timeout;
 
         //** Send the command
+        tbx_monitor_obj_group(&mo, gop_mo(gop));
         finished = (hop->send_command != NULL) ? hop->send_command(gop, ns) : gop_success_status;
 log_printf(15, "hp=%s send_command=%d\n", hp->skey, finished.op_status);
 
@@ -1275,6 +1281,7 @@ log_printf(15, "hp=%s send_command=%d\n", hp->skey, finished.op_status);
             finished = (hop->send_phase != NULL) ? hop->send_phase(gop, ns) : gop_success_status;
 log_printf(15, "hp=%s send_phase=%d\n", hp->skey, finished.op_status);
         }
+        tbx_monitor_obj_ungroup(&mo, gop_mo(gop));
 
         cmd.status = finished;
         tbx_atomic_set(hc->send_gop, NULL);  //** Reflect were finished
@@ -1310,6 +1317,9 @@ failed:
     tbx_que_put(hc->internal, &cmd, TBX_QUE_BLOCK);
     apr_thread_join(&dummy, hc->recv_thread);
 
+    tbx_monitor_thread_ungroup(&mo, MON_MY_THREAD);
+    tbx_monitor_obj_destroy(&mo);
+
     apr_thread_exit(th, 0);
     return(NULL);
 }
@@ -1329,6 +1339,7 @@ void *hc_recv_thread(apr_thread_t *th, void *data)
     int nbytes, notify_hp;
     hpc_cmd_t cmd;
     gop_op_status_t status;
+    tbx_mon_object_t mo;
 
     //** Wait to make sure the send_thread connected
     tbx_que_get(hc->internal, &cmd, TBX_QUE_BLOCK);
@@ -1342,6 +1353,11 @@ log_printf(15, "hp=%s CONN_READY\n", hc->hp->skey);
     cmd.cmd = CONN_READY;
     cmd.hc = hc;
     tbx_que_put(hc->outgoing, &cmd, TBX_QUE_BLOCK);
+
+    tbx_monitor_object_fill(&mo, MON_INDEX_HPRECV, tbx_ns_getid(ns));
+    tbx_monitor_obj_create(&mo, "HP: %s:%d", hp->host, hp->port);
+    tbx_monitor_thread_group(&mo, MON_MY_THREAD);
+
 
     //** Now enter the main loop
     status = gop_success_status;
@@ -1381,7 +1397,9 @@ log_printf(15, "hp=%s get=%d cmd=%d\n", hc->hp->skey, nbytes, cmd.cmd);
         tbx_atomic_set(hc->recv_working, 1);   //** Set our working flag for the send thread
 log_printf(15, "hp=%s gid=%d\n", hp->skey, gop_id(gop));
         hop = &(gop->op->cmd);
+        tbx_monitor_obj_group(&mo, gop_mo(gop));
         status = (hop->recv_phase != NULL) ? hop->recv_phase(gop, ns) : status;
+        tbx_monitor_obj_ungroup(&mo, gop_mo(gop));
         hop->end_time = apr_time_now();
         cmd.status = status;
         if (status.op_status == OP_STATE_RETRY) break; //** Kick out and handle the retry
@@ -1425,6 +1443,9 @@ log_printf(15, "hp=%s sending a CONN_CLOSE_REQUEST\n", hp->skey);
 
 failed:
     log_printf(15, "hp=%s Got a CONN_CLOSE\n", hp->skey);
+
+    tbx_monitor_thread_ungroup(&mo, MON_MY_THREAD);
+    tbx_monitor_obj_destroy(&mo);
 
     //** Update the router
     cmd.cmd = CONN_CLOSED;

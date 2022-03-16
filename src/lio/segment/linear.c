@@ -1491,6 +1491,12 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     //** Make the segment section name
     snprintf(seggrp, bufsize, "segment-" XIDT, id);
 
+    if (id != seg->header.id) {
+        tbx_monitor_obj_destroy(&(seg->header.mo));
+        tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, id);
+        tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
+    }
+
     //** Get the segment header info
     seg->header.id = id;
     seg->header.type = SEGMENT_TYPE_LINEAR;
@@ -1635,6 +1641,8 @@ void seglin_destroy(tbx_ref_t *ref)
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
     free(s);
 
+    tbx_monitor_obj_destroy(&(seg->header.mo));
+
     ex_header_release(&(seg->header));
 
     apr_thread_mutex_destroy(seg->lock);
@@ -1688,6 +1696,9 @@ lio_segment_t *segment_linear_create(void *arg)
     generate_ex_id(&(seg->header.id));
     tbx_obj_init(&seg->obj, (tbx_vtable_t *) &lio_seglin_vtable);
     seg->header.type = SEGMENT_TYPE_LINEAR;
+
+    tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
+    tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);

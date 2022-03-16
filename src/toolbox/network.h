@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "chksum.h"
+#include <tbx/lio_monitor.h>
 #include "tbx/network.h"
 #include "tbx/visibility.h"
 #include "tbx/transfer_buffer.h"
@@ -92,6 +93,8 @@ struct tbx_ns_t {
     tbx_ns_monitor_t *nm;      //This is only used for an accept call to tell which bind was accepted
     tbx_ns_chksum_t read_chksum;      //Read chksum
     tbx_ns_chksum_t write_chksum;     //Write chksum
+    tbx_mon_object_t mo_send;     // Send and recv monitoring objects
+    tbx_mon_object_t mo_recv;
     ns_native_fd_t (*native_fd)(net_sock_t *sock);  //** Native socket if supported
     int (*close)(net_sock_t *sock);  //** Close socket
     long int (*write)(net_sock_t *sock, tbx_tbuf_t *buf, size_t boff, size_t count, tbx_ns_timeout_t tm);

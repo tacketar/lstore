@@ -41,6 +41,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/monitor.h>
 #include <tbx/skiplist.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
@@ -91,6 +92,8 @@ lio_config_t lio_default_options = {
     .tpc_max_recursion = 10,
     .tpc_cache_count = 100,
     .blacklist_section = NULL,
+    .monitor_fname = "/tmp/lio.mon",
+    .monitor_enable = 0,
     .section_name = "lio",
     .mq_section = "mq_context",
     .ds_section = DS_TYPE_IBP,
@@ -109,6 +112,9 @@ lio_cache_t *_lio_cache = NULL;
 tbx_log_fd_t *lio_ifd = NULL;
 FILE *_lio_ifd = NULL;
 char *_lio_exe_name = NULL;
+
+int _monitoring_state = 0;
+char *_monitoring_fname = NULL;
 
 int _lfs_mount_count = -1;
 lfs_mount_t *lfs_mount = NULL;
@@ -195,6 +201,8 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "remote_config = %s\n", lio->rc_section);
     fprintf(fd, "cache = %s\n", lio->cache_section);
     fprintf(fd, "user = %s\n", lio->creds_user);
+    fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
+    fprintf(fd, "monitor_enable = %d  #touch %s.enable to start logging or touch %s.disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
     fprintf(fd, "\n");
 
     rc_print_running_config(fd);
@@ -220,6 +228,38 @@ void lio_dump_running_config_fn(void *arg, FILE *fd)
     lio_print_running_config(fd, lc);
     fprintf(fd, "---------------------------------- LIO config end --------------------------------------------\n");
     fprintf(fd, "\n");
+}
+
+//***************************************************************
+//** lio_monitor_fn - See if we need to adjust the monitoring state
+//***************************************************************
+
+void lio_monitor_fn(void *arg, FILE *fd)
+{
+    lio_config_t *lc = (lio_config_t *)arg;
+    char buffer[OS_PATH_MAX];
+
+    snprintf(buffer, sizeof(buffer), "%s_enable", lc->monitor_fname);
+    buffer[OS_PATH_MAX-1] = '\0';
+    if (lio_os_local_filetype(buffer)) {
+        if (lc->monitor_enable == 0) {
+            fprintf(fd, "-------- Enabling monitoring logs fname:%s\n", lc->monitor_fname);
+            lc->monitor_enable = 1;
+            tbx_monitor_set_state(1);
+            return;  //** Kick out
+        }
+    }
+
+    snprintf(buffer, sizeof(buffer), "%s_disable", lc->monitor_fname);
+    buffer[OS_PATH_MAX-1] = '\0';
+    if (lio_os_local_filetype(buffer)) {
+        if (lc->monitor_enable == 1) {
+            fprintf(fd, "-------- Disabling monitoring logs fname:%s\n", lc->monitor_fname);
+            lc->monitor_enable = 0;
+            tbx_monitor_set_state(0);
+            return;  //** Kick out
+        }
+    }
 }
 
 
@@ -892,9 +932,7 @@ void lc_object_remove_unused(int remove_all_unused)
     while ((lcc = tbx_stack_pop(stack)) != NULL) {
         tuple = lcc->object;
         _lc_object_destroy(lcc->key);
-//        if (strcmp(tuple->path, "ANONYMOUS") == 0) os_cred_destroy(tuple->lc->os, tuple->creds);
         an_cred_destroy(tuple->creds);
-//        free(tuple);
     }
 
     //** Now iterate through all the LC's
@@ -955,6 +993,8 @@ void lio_print_options(FILE *fd)
     fprintf(fd, "       --print-config     - Print the parsed config with hints applied but not substitutions.\n");
     fprintf(fd, "       --print-config-with-subs - Print the parsed config with substitutions applied.\n");
     fprintf(fd, "       --print-running-config   - Print the running config.\n");
+    fprintf(fd, "       --monitor_fname fname    - Set the monitoring log file\n");
+    fprintf(fd, "       --monitor_state 0|1      - Enable/Disable monitoring\n");
     fprintf(fd, "\n");
     tbx_inip_print_hint_options(fd);
 }
@@ -1057,9 +1097,10 @@ void lio_destroy_nl(lio_config_t *lio)
     //** Table of open files
     tbx_list_destroy(lio->open_index);
 
-    //** Remove ourselves to the info handler
+    //** Remove ourselves from the info handler
     tbx_siginfo_handler_remove(SIGUSR1, lio_open_files_info_fn, lio);
     tbx_siginfo_handler_remove(SIGUSR1, lio_dump_running_config_fn, lio);
+    tbx_siginfo_handler_remove(SIGUSR1, lio_monitor_fn, lio);
 
     //** Blacklist if used
     if (lio->blacklist != NULL) {
@@ -1084,6 +1125,11 @@ void lio_destroy_nl(lio_config_t *lio)
         gop_tp_context_destroy(lio->tpc_cache);
     }
     free(lio->tpc_cache_section);
+
+    if (lio->monitor_fname) {
+        tbx_monitor_destroy();
+        free(lio->monitor_fname);
+    }
 
     apr_thread_mutex_destroy(lio->lock);
     apr_pool_destroy(lio->mpool);
@@ -1163,6 +1209,12 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->readahead = tbx_inip_get_integer(lio->ifd, section, "readahead", lio_default_options.readahead);
     lio->readahead_trigger = tbx_inip_get_integer(lio->ifd, section, "readahead_trigger", lio_default_options.readahead_trigger);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
+
+    //** Set up the monitoring
+    lio->monitor_fname = (_monitoring_fname) ? strdup(_monitoring_fname) : tbx_inip_get_string(lio->ifd, section, "monitor_fname", lio_default_options.monitor_fname);
+    lio->monitor_enable = (_monitoring_state == 1) ? 1 : tbx_inip_get_integer(lio->ifd, section, "monitor_enable", lio_default_options.monitor_enable);
+    tbx_monitor_create(lio->monitor_fname);
+    if (lio->monitor_enable) tbx_monitor_set_state(1);
 
     //** Check and see if we need to enable the blacklist
     lio->blacklist_section = tbx_inip_get_string(lio->ifd, section, "blacklist", lio_default_options.blacklist_section);
@@ -1444,6 +1496,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     //** Add ourselves to the info handler
     tbx_siginfo_handler_add(SIGUSR1, lio_open_files_info_fn, lio);
     tbx_siginfo_handler_add(SIGUSR1, lio_dump_running_config_fn, lio);
+    tbx_siginfo_handler_add(SIGUSR1, lio_monitor_fn, lio);
 
     log_printf(1, "END: uri=%s\n", obj_name);
 
@@ -1620,7 +1673,6 @@ int lio_init(int *argc, char ***argvp)
 
     //** Setup the info signal handler.  We'll reset the name after we've got a lio_gc
     tbx_siginfo_install(NULL, SIGUSR1);
-
     gop_init_opque_system();  //** Initialize GOP.  This needs to be done after any fork() calls
     exnode_system_init();
 
@@ -1649,7 +1701,6 @@ int lio_init(int *argc, char ***argvp)
 
     env = getenv(var); //** Get the exe based options if available
     if (env == NULL) env = getenv("LIO_OPTIONS");  //** If not get the global default
-
     if (env != NULL) {  //** Got args so prepend them to the front of the list
         env = strdup(env);  //** Don't want to mess up the actual env variable
         eargv = NULL;
@@ -1745,6 +1796,14 @@ int lio_init(int *argc, char ***argvp)
         } else if (strcmp(argv[i], "--print-running-config") == 0) { //** Print the running config
             i++;
             print_config |= 4;
+        } else if (strcmp(argv[i], "--monitor_fname") == 0) { //** Override the monitor file name
+            i++;
+            _monitoring_fname = argv[i];
+            i++;
+        } else if (strcmp(argv[i], "--monitor_state") == 0) { //** Override the monitor state
+            i++;
+            _monitoring_state = atoi(argv[i]);
+            i++;
         } else {
             myargv[nargs] = argv[i];
             nargs++;
@@ -1801,7 +1860,6 @@ no_args:
             exit(1);
         }
     }
-
 
     if (strncasecmp(cfg_name, "file://", 7) == 0) { //** Load the default and see what we have
         fd = fopen(cfg_name+7, "r");
@@ -1896,8 +1954,6 @@ no_args:
     if (obj_name) free(obj_name);
 
     if (auto_mode != -1) lio_gc->auto_translate = auto_mode;
-
-//    if (userid != NULL) free(userid);
 
     lio_find_lfs_mounts();  //** Make the global mount prefix table
 

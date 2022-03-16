@@ -192,6 +192,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_ln
 		lio_ls
 		lio_mkdir
+		lio_monitor_parse
 		lio_mv
 		lio_put
 		lio_realpath

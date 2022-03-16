@@ -34,6 +34,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/direct_io.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
 #include <tbx/random.h>
@@ -132,15 +133,59 @@ int lio_fopen_flags(char *sflags)
         mode = LIO_RW_MODE;
     } else if (strcmp(sflags, "w") == 0) {
         mode = LIO_WRITE_MODE | LIO_TRUNCATE_MODE | LIO_CREATE_MODE;
+    } else if (strcmp(sflags, "W") == 0) {
+        mode = LIO_WRITE_MODE | LIO_TRUNCATE_MODE | LIO_CREATE_MODE | LIO_EXEC_MODE;
     } else if (strcmp(sflags, "w+") == 0 ) {
         mode = LIO_RW_MODE | LIO_TRUNCATE_MODE | LIO_CREATE_MODE;
+    } else if (strcmp(sflags, "W+") == 0 ) {
+        mode = LIO_RW_MODE | LIO_TRUNCATE_MODE | LIO_CREATE_MODE | LIO_EXEC_MODE;
     } else if (strcmp(sflags, "a") == 0) {
         mode = LIO_WRITE_MODE | LIO_CREATE_MODE | LIO_APPEND_MODE;
-    } else if (strcmp(sflags, "w+") == 0) {
+    } else if (strcmp(sflags, "A") == 0) {
+        mode = LIO_WRITE_MODE | LIO_CREATE_MODE | LIO_APPEND_MODE | LIO_EXEC_MODE;
+    } else if (strcmp(sflags, "a+") == 0) {
+        mode = LIO_RW_MODE | LIO_CREATE_MODE | LIO_APPEND_MODE;
+    } else if (strcmp(sflags, "A+") == 0) {
         mode = LIO_RW_MODE | LIO_CREATE_MODE | LIO_APPEND_MODE;
     }
 
     return(mode);
+}
+
+//***********************************************************************
+// lio_open_flags - Handles open type  flags and converts them
+//   to an integer which can be passed to lio_open calls.
+//   On error -1 is returned
+//***********************************************************************
+
+int lio_open_flags(int flags, mode_t mode)
+{
+    int lflags;
+
+    lflags = LIO_READ_MODE;  //** O_RDONLY == 0 so this is always set
+
+    if (flags & O_APPEND)  lflags |= LIO_APPEND_MODE;
+    if (flags & O_EXCL)    lflags |= LIO_EXCL_MODE;
+    if (flags & O_TRUNC)   lflags |= LIO_TRUNCATE_MODE;
+    if (flags & O_WRONLY)  lflags |= LIO_WRITE_MODE;
+    if (flags & O_RDWR)    lflags |= LIO_RW_MODE;
+
+    if (flags & O_CREAT) {
+        lflags |= LIO_CREATE_MODE;
+
+        if ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) lflags |= LIO_EXEC_MODE;
+    }
+
+    return(lflags);
+}
+
+//***********************************************************************
+// lio_fd_path - Return the FD's filename
+//***********************************************************************
+
+const char *lio_fd_path(lio_fd_t *fd)
+{
+    return(fd->path);
 }
 
 //***********************************************************************
@@ -836,7 +881,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     //** Check if it exists
     dtype = lio_exists(lc, op->creds, op->path);
 
-    exec_flag = OS_OBJECT_EXEC_FLAG & op->mode;  //** Peel off the exec flag for use on new files only
+    exec_flag = (LIO_EXEC_MODE & op->mode) ? OS_OBJECT_EXEC_FLAG : 0;  //** Peel off the exec flag for use on new files only
 
     if ((op->mode & (LIO_WRITE_MODE|LIO_CREATE_MODE)) != 0) {  //** Writing and they want to create it if it doesn't exist
         if (dtype == 0) { //** Need to create it
@@ -926,6 +971,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         if (data) free(data);
         lio_exnode_exchange_destroy(exp);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=SUCCESS\n", op->path, op->mode);
+        tbx_monitor_obj_message(&(fh->mo), "OPEN: fname=%s mode=%d ref_count=%d\n", op->path, op->mode, fh->ref_count);
         return(gop_success_status);
     }
 
@@ -959,6 +1005,10 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, fd->id, op->mode);
         goto cleanup;
     }
+
+    tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, segment_id(fh->seg));
+    tbx_monitor_obj_create(&(fh->mo), "OPEN: fname=%s mode=%d", op->path, op->mode);
+    tbx_monitor_obj_group(&(fh->mo), &(fh->seg->header.mo));
 
     if (lc->calc_adler32) fh->write_table = tbx_list_create(0, &skiplist_compare_ex_off, NULL, NULL, NULL);
 
@@ -1067,6 +1117,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     //** We don't decrement the ref count immediately to avoid another thread from thinking they are the only user
     lio_lock(lc);
+    tbx_monitor_obj_message(&(fh->mo), "CLOSE: fname=%s ref_count=%d", fd->path, fh->ref_count);
     if (fh->ref_count > 1) {  //** Somebody else has it open as well
         fh->ref_count--;  //** Remove ourselves
         lio_unlock(lc);
@@ -1123,9 +1174,12 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
         }
 
         //** Tear everything down
+        tbx_monitor_obj_ungroup(&(fh->mo), &(fh->seg->header.mo));
         lio_exnode_destroy(fh->ex);
         _lio_remove_file_handle(lc, fh);
         lio_unlock(lc);
+
+        tbx_monitor_obj_destroy(&(fh->mo));
 
         //** Shutdown the Work Queue context if needed
         //** This is done outside the lock in case a siginfo is triggered
@@ -1179,6 +1233,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     _lio_remove_file_handle(lc, fh);
 
     lio_unlock(lc);
+
+    tbx_monitor_obj_destroy(&(fh->mo));
 
     //** Shutdown the Work Queue context if needed
     //** This is done outside the lock in case a siginfo is triggered
@@ -2509,7 +2565,7 @@ ex_off_t lio_tell(lio_fd_t *fd)
 
     segment_lock(fd->fh->seg);
     offset = fd->curr_offset;
-    segment_lock(fd->fh->seg);
+    segment_unlock(fd->fh->seg);
 
     return(offset);
 }

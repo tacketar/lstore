@@ -379,6 +379,31 @@ tbx_ns_timeout_t *tbx_ns_timeout_set(tbx_ns_timeout_t *tm, int sec, int us)
 }
 
 //*********************************************************************
+//  _ns_monitor_create - Creates the NS send/recv monitoring objects
+//*********************************************************************
+
+void _ns_monitor_create(tbx_ns_t *ns)
+{
+    char *label;
+
+    label = tbx_ns_encrypt_status(ns) ? "encrypted" : "plain";
+    tbx_monitor_object_fill(&(ns->mo_send), MON_INDEX_NSSEND, ns->id);
+    tbx_monitor_object_fill(&(ns->mo_recv), MON_INDEX_NSRECV, ns->id);
+    tbx_monitor_obj_create(&(ns->mo_send), label);
+    tbx_monitor_obj_create(&(ns->mo_recv), label);
+}
+
+//*********************************************************************
+//  _ns_monitor_destroy - Destroys the NS send/recv monitoring objects
+//*********************************************************************
+
+void _ns_monitor_destroy(tbx_ns_t *ns)
+{
+    tbx_monitor_obj_destroy(&(ns->mo_send));
+    tbx_monitor_obj_destroy(&(ns->mo_recv));
+}
+
+//*********************************************************************
 // _ns_init - Inits a NetStream data structure assuming a connected state
 //*********************************************************************
 
@@ -640,6 +665,8 @@ int tbx_ns_connect(tbx_ns_t *ns, const char *hostname, int port, tbx_ns_timeout_
 
     err = (ns->encrypted) ? _ns_encrypt_client(ns) : 0;
 
+    _ns_monitor_create(ns);
+
     log_printf(10, "net_connect: final ns=%d\n", ns->id);
     unlock_ns(ns);
 
@@ -772,6 +799,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
     nm->trigger_lock = net->ns_lock;
     nm->trigger_count = &(net->accept_pending);
     ns->id = tbx_ns_generate_id();
+    _ns_monitor_create(ns);
 
     if (apr_thread_create(&(nm->thread),
                           NULL,
@@ -915,6 +943,8 @@ void teardown_netstream(tbx_ns_t *ns)
         free(ns->enc);
         ns->enc = NULL;
     }
+    if (ns->id > 0) _ns_monitor_destroy(ns);
+
     apr_thread_mutex_destroy(ns->read_lock);
     apr_thread_mutex_destroy(ns->write_lock);
     apr_pool_destroy(ns->mpool);
@@ -1624,6 +1654,7 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
 
         err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
+        _ns_monitor_create(ns);
     } else {
         log_printf(10, "accept_pending_connection: Failed getting a new connection\n");
     }
