@@ -105,7 +105,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libaprutil1-dev
                                     libdistro-info-perl
                                     libexpat1-dev
-                                    libfuse-dev
+                                    libfuse3-dev
                                     librocksdb-dev
                                     libsodium-dev
                                     libssl-dev
