@@ -60,7 +60,6 @@ struct lio_os_attr_list_t {
 
 #define os_exists(os, c, path) (os)->exists(os, c, path)
 #define os_realpath(os, c, path, realpath) (os)->realpath(os, c, path, realpath)
-#define os_object_exec_modify(os, c, path, exec_state) (os)->exec_modify(os, c, path, exec_state)
 #define os_create_object(os, c, path, type, id) (os)->create_object(os, c, path, type, id)
 #define os_remove_object(os, c, path) (os)->remove_object(os, c, path)
 #define os_remove_regex_object(os, c, path, obj_regex, obj_types, depth) (os)->remove_regex_object(os, c, path, obj_regex, obj_types, depth)

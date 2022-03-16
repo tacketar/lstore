@@ -173,6 +173,7 @@ LIO_API int os_locking_tests(char *prefix);
 #define os_next_fsck(os, it, fname, atype) (os)->next_fsck(os, it, fname, atype)
 #define os_open_object(os, c, path, mode, id, fd, max_wait) (os)->open_object(os, c, path, mode, id, fd, max_wait)
 #define os_symlink_multiple_attrs(os, c, src_path, key_src, fd_dest, key_dest, n) (os)->symlink_multiple_attrs(os, c, src_path, key_src, fd_dest, key_dest, n)
+#define os_object_exec_modify(os, c, path, exec_state) (os)->exec_modify(os, c, path, exec_state)
 
 // Exported types. To be obscured
 struct lio_object_service_fn_t {
