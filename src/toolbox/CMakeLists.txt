@@ -33,6 +33,7 @@ set(TOOL_OBJS
     fork_helper.c
     iniparse.c
     interval_skiplist.c
+    io.c
     log.c
     lru.c
     monitor.c
@@ -67,6 +68,9 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/fmttypes.h
     tbx/iniparse.h
     tbx/interval_skiplist.h
+    tbx/io.h
+    tbx/io_declare.h
+    tbx/io_assign.h
     tbx/lio_monitor.h
     tbx/list.h
     tbx/log.h
