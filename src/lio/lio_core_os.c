@@ -75,6 +75,7 @@ struct lio_stat_iter_t {
     int v_size[_lio_stat_keys_size];
     _dentry_t dot;
     _dentry_t dotdot;
+    int stat_symlink;
     int prefix_len;
     int state;
 };
@@ -752,8 +753,8 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     ex_id_t ino;
     char inode[32];
     gop_op_status_t status;
-    char *lkeys[] = {"system.exnode", "system.exnode.size", "system.write_errors", "system.soft_errors", "system.hard_errors"};
-    char *spath[5];
+    char *lkeys[] = {"system.exnode", "system.exnode.size", "system.exnode.data", "system.write_errors", "system.soft_errors", "system.hard_errors"};
+    char *spath[6];
     char *vkeys[] = {"system.owner", "system.inode", "os.timestamp.system.create", "os.timestamp.system.modify_data", "os.timestamp.system.modify_attr"};
     char *val[5];
     int vsize[5];
@@ -787,7 +788,7 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     }
 
     //** Now link the exnode and size
-    for (i=0; i<5; i++) spath[i] = op->src_path;
+    for (i=0; i<6; i++) spath[i] = op->src_path;
     gop_opque_add(q, os_symlink_multiple_attrs(op->lc->os, op->creds, spath, lkeys, dfd, lkeys, 5));
 
     //** Store the owner, inode, and dates
@@ -1261,14 +1262,44 @@ mode_t ftype_lio2posix(int ftype)
 }
 
 //*************************************************************************
-// _lio_parse_stat_vals - Parses the stat values received
+
+int lio_get_symlink_inode(lio_config_t *lc, lio_creds_t *creds, const char *fname, char *rpath, int fetch_realpath, ex_id_t *ino)
+{
+    const char *rp;
+    char val[128];
+    char *vptr = val;
+    int v_size;
+
+    //** Get the realpath
+    rp = fname;
+    rpath[0] = '\0';
+    if (fetch_realpath) {
+        if (lio_realpath(lc, creds, fname, rpath) != 0) return(-1);
+        rp = rpath;
+    }
+
+    //** Now fetch the inode
+    v_size = sizeof(val)-1;
+
+    if (lio_getattr(lc, creds, rp, NULL, "system.inode", (void **)&vptr, &v_size) != OP_STATE_SUCCESS) return(-1);
+
+    if (v_size > 0) {
+        sscanf(val, XIDT, ino);
+    } else {
+        return(-1);
+    }
+
+    return(0);
+}
+
+//*************************************************************************
+// lio_parse_stat_vals - Parses the stat values received
 //   NOTE: All the val[*] strings are free'ed!
 //*************************************************************************
 
-void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size, char *mount_prefix, char **flink)
+void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size, char **flink, int *ftype)
 {
-    int i, n, readlink;
-    char *link;
+    int i, n;
     ex_id_t ino;
     ex_off_t len;
     int ts;
@@ -1294,33 +1325,21 @@ void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_siz
     stat->st_atime = stat->st_ctime;
 
     //** Get the symlink if it exists and optionally store it
-    readlink = 0;
-    if (val[6] != NULL) {
-        link = val[6];
-        readlink = strlen(link);
-        log_printf(15, "inode->link=%s mount_point=%s moun_point_len=%lu\n", link, mount_prefix, strlen(mount_prefix));
-        if ((link[0] == '/') && (mount_prefix)) { //** If an absolute link then we need to add the mount prefix back
-            readlink += strlen(mount_prefix) + 1;
-            if (flink != NULL) {
-                tbx_type_malloc(*flink, char, readlink+1);
-                snprintf(*flink, readlink+1, "%s%s", mount_prefix, link);
-            }
-        } else if (flink != NULL) {
-            *flink = link;
-            val[6] = NULL;  //** Don't want to delete it on cleanup
-        }
-
+    if (flink) {
+        *flink = val[6];
+        val[6] = NULL;
     }
 
     //** File types
     n = 0;
     if (val[4] != NULL) sscanf(val[4], "%d", &n);
     stat->st_mode = ftype_lio2posix(n);
+    if (ftype) *ftype = n;
 
     len = 0;
     if (val[3] != NULL) sscanf(val[3], XOT, &len);
 
-    stat->st_size = (n & OS_OBJECT_SYMLINK_FLAG) ? readlink : len;
+    stat->st_size = len;
     stat->st_blksize = 4096;
     stat->st_blocks = stat->st_size / stat->st_blksize;
     if (stat->st_blocks <= 0) stat->st_blocks = 1;
@@ -1341,10 +1360,13 @@ void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_siz
 // lio_stat - Do a simple file stat
 //***********************************************************************
 
-int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char *mount_prefix, char **readlink)
+int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink)
 {
     char *val[_lio_stat_key_size];
     int v_size[_lio_stat_key_size], i, err;
+    char *slink;
+    char rpath[OS_PATH_MAX];
+    ex_id_t ino;
 
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
@@ -1355,7 +1377,27 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
     if (err != OP_STATE_SUCCESS) {
         return(-ENOENT);
     }
-    _lio_parse_stat_vals(fname, stat, val, v_size, mount_prefix, readlink);
+    slink = NULL;
+    lio_parse_stat_vals(fname, stat, val, v_size, &slink, NULL);
+
+    //** Now update the fields based on the requested symlink behavior
+    if (slink) {
+        if (stat_symlink == 1) {
+            stat->st_size = strlen(slink);
+        } else { //** Get the symlink target values
+            ino = 0;
+            if (lio_get_symlink_inode(lc, creds, fname, rpath, 1, &ino) == 0) {
+                stat->st_ino = ino;
+            }
+       }
+    }
+
+    if (readlink) {
+        *readlink = slink;
+    } else if (slink) {
+        free(slink);
+    }
+
 
     log_printf(1, "END fname=%s err=%d\n", fname, err);
     tbx_log_flush();
@@ -1382,7 +1424,7 @@ void lio_stat_iter_destroy(lio_stat_iter_t *dit)
 // lio_stat_iter_create - Creates a stat iterator
 //***********************************************************************
 
-lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path)
+lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path, int stat_symlink)
 {
     lio_stat_iter_t *dit;
     char prefix[OS_PATH_MAX];
@@ -1392,6 +1434,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
     tbx_type_malloc_clear(dit, lio_stat_iter_t, 1);
     dit->lc = lc;
     dit->creds = creds;
+    dit->stat_symlink = stat_symlink;
 
     for (i=0; i<_lio_stat_key_size; i++) {
         dit->v_size[i] = -lio_gc->max_attr;
@@ -1416,7 +1459,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
 
     //** Add "."
     dit->dot.dentry = ".";
-    if (lio_stat(lc, creds, (char *)path, &(dit->dot.stat), NULL, &(dit->dot.readlink)) != 0) {
+    if (lio_stat(lc, creds, (char *)path, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink) != 0) {
         lio_stat_iter_destroy(dit);
         return(NULL);
     }
@@ -1430,7 +1473,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
     }
 
     dit->dot.dentry = "..";
-    if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), NULL, &(dit->dot.readlink)) != 0) {
+    if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink) != 0) {
         if (dir) free(dir);
         lio_stat_iter_destroy(dit);
         return(NULL);
@@ -1448,6 +1491,8 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
     int ftype, prefix_len;
     char *fname, *flink;
     _dentry_t *de;
+    char rpath[OS_PATH_MAX];
+    ex_id_t ino;
 
     if (dit->state < 2) {
         de = (dit->state == 0) ? &(dit->dot) : &(dit->dotdot);
@@ -1473,8 +1518,20 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
     }
 
     //** And parse it
-    _lio_parse_stat_vals(fname, stat, dit->val, dit->v_size, NULL, &flink);
+    lio_parse_stat_vals(fname, stat, dit->val, dit->v_size, &flink, NULL);
     if (dentry) *dentry = strdup(fname + prefix_len);
+
+    //** Now update the fields based on the requested symlink behavior
+    if (flink) {
+        if (dit->stat_symlink == 1) {
+            stat->st_size = strlen(flink);
+        } else { //** Get the symlink target values
+            ino = 0;
+            if (lio_get_symlink_inode(dit->lc, dit->creds, fname, rpath, 1, &ino) == 0) {
+                stat->st_ino = ino;
+            }
+       }
+    }
     if (readlink) {
         *readlink = flink;
     } else if (flink) {

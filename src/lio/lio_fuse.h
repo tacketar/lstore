@@ -24,6 +24,7 @@
 #include <apr_pools.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
+#include <lio/fs.h>
 #include <lio/lio_fuse.h>
 #include <lio/visibility.h>
 #include <tbx/atomic_counter.h>
@@ -41,41 +42,18 @@ extern "C" {
 struct fuse_conn_info;
 struct lio_fuse_t;
 
-#define LFS_READ_MODE  1
-#define LFS_WRITE_MODE 2
-
-#define LFS_TAPE_ATTR "system.tape"
-
-#define LFS_INODE_OK     0  //** Everythings fine
-#define LFS_INODE_DROP   1  //** Drop the inode from the cache
-#define LFS_INODE_DELETE 2  //** Remove it from cache and delete the file contents
-
-
 struct lio_fuse_t {
-    int enable_tape;
     int enable_osaz_acl_mappings;
-    int enable_osaz_secondary_gids;
     int shutdown;
     int mount_point_len;
-    int n_merge;
-    int enable_security_attr_checks;
-    int _inode_key_size;
-    tbx_atomic_int_t read_cmds_inflight;
-    tbx_atomic_int_t read_bytes_inflight;
-    tbx_atomic_int_t write_cmds_inflight;
-    tbx_atomic_int_t write_bytes_inflight;
     lio_config_t *lc;
     apr_pool_t *mpool;
-    apr_thread_mutex_t *lock;
-    apr_hash_t *open_files;
     struct fuse_operations fops;
     char *id;
     char *mount_point;
-    lio_segment_rw_hints_t *rw_hints;
-    lio_os_authz_t *osaz;
-    char *authz_section;
     char *lfs_section;
     struct fuse_conn_info *conn;
+    lio_fs_t *fs;
 };
 
 #ifdef HAS_FUSE3

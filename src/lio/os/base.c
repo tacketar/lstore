@@ -488,7 +488,7 @@ fail:
 //           stat_link is ONLY used if the path is a symlink!
 //***********************************************************************
 
-int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat_object)
+int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat *stat_object)
 {
     int err, ftype;
 
@@ -524,7 +524,7 @@ int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat
 // lio_os_local_filetype - Determines the file type
 //***********************************************************************
 
-int lio_os_local_filetype(char *path)
+int lio_os_local_filetype(const char *path)
 {
     struct stat s;
 

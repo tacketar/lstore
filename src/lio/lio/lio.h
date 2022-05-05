@@ -38,7 +38,6 @@ extern "C" {
 #endif
 
 // Typedefs
-typedef struct lio_config_t lio_config_t;
 typedef struct lio_cp_file_t lio_cp_file_t;
 typedef struct lio_cp_path_t lio_cp_path_t;
 typedef struct lio_file_handle_t lio_file_handle_t;
@@ -64,7 +63,7 @@ LIO_API int lio_read_ex(lio_fd_t *fd, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t
 LIO_API int lio_write(lio_fd_t *fd, char *buf, ex_off_t size, off_t off, lio_segment_rw_hints_t *rw_hints);
 LIO_API int lio_writev(lio_fd_t *fd, tbx_iovec_t *iov, int n_iov, ex_off_t size, off_t off, lio_segment_rw_hints_t *rw_hints);
 LIO_API int lio_write_ex(lio_fd_t *fd, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *buffer, ex_off_t boff, lio_segment_rw_hints_t *rw_hints);
-LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char *mount_prefix, char **readlink);
+LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink);
 LIO_API int lio_wq_enable(lio_fd_t *fd, int max_in_flight);
 
 LIO_API void lio_get_timestamp(char *val, int *timestamp, char **id);
@@ -87,7 +86,7 @@ LIO_API gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *cre
 LIO_API os_attr_iter_t *lio_create_attr_iter(lio_config_t *lc, lio_creds_t *creds, const char *path, lio_os_regex_table_t *attr, int v_max);
 LIO_API void lio_destroy_attr_iter(lio_config_t *lc, os_attr_iter_t *it);
 
-LIO_API lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path);
+LIO_API lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, const char *path, int stat_symlink);
 LIO_API int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, char **readlink);
 LIO_API void lio_stat_iter_destroy(lio_stat_iter_t *dit);
 LIO_API gop_op_generic_t *lio_close_gop(lio_fd_t *fd);
@@ -107,7 +106,7 @@ LIO_API gop_op_generic_t *lio_exists_gop(lio_config_t *lc, lio_creds_t *creds, c
 LIO_API int lio_realpath(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath);
 LIO_API gop_op_generic_t *lio_realpath_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *realpath);
 LIO_API gop_op_status_t lio_file_copy_op(void *arg, int id);
-LIO_API int lio_fopen_flags(char *sflags);
+LIO_API int lio_fopen_flags(const char *sflags);
 LIO_API int lio_open_flags(int flags, mode_t mode);
 LIO_API gop_op_generic_t *lio_fsck_gop(lio_config_t *lc, lio_creds_t *creds, char *fname, int ftype, int owner_mode, char *owner, int exnode_mode);
 LIO_API ex_off_t lio_fsck_visited_count(lio_config_t *lc, lio_fsck_iter_t *oit);
@@ -141,7 +140,6 @@ LIO_API int lio_setattr(lio_config_t *lc, lio_creds_t *creds, const char *path, 
 LIO_API gop_op_generic_t *lio_setattr_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char *key, void *val, int v_size);
 LIO_API gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path);
 LIO_API int lio_shutdown();
-LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char *mount_prefix, char **readlink);
 LIO_API gop_op_generic_t *lio_truncate_op(lio_fd_t *fd, ex_off_t new_size);
 LIO_API int lio_unified_next_object(lio_unified_object_iter_t *it, char **fname, int *prefix_len);
 LIO_API lio_unified_object_iter_t *lio_unified_object_iter_create(lio_path_tuple_t tuple, lio_os_regex_table_t *path_regex, lio_os_regex_table_t *obj_regex, int obj_types, int rd);
@@ -235,6 +233,7 @@ struct lio_config_t {
     lio_blacklist_t *blacklist;
     ex_off_t readahead;
     ex_off_t readahead_trigger;
+    ex_off_t stream_buffer_max_size;
     ex_off_t jerase_max_parity_on_stack;
     ex_off_t small_files_in_metadata_max_size;
     int calc_adler32;

@@ -85,6 +85,7 @@ lio_config_t lio_default_options = {
     .calc_adler32 = 0,
     .readahead = 0,
     .readahead_trigger = 0,
+    .stream_buffer_max_size = 0,
     .small_files_in_metadata_max_size = 0,
     .jerase_paranoid = 0,
     .jerase_max_parity_on_stack = 2*1024*1024,
@@ -186,6 +187,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "calc_adler32 = %d\n", lio->calc_adler32);
     fprintf(fd, "readahead = %s\n", tbx_stk_pretty_print_int_with_scale(lio->readahead, text));
     fprintf(fd, "readahead_trigger = %s\n", tbx_stk_pretty_print_int_with_scale(lio->readahead_trigger, text));
+    fprintf(fd, "stream_buffer_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_max_size, text));
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
     fprintf(fd, "jerase_paranoid = %d\n", lio->jerase_paranoid);
     fprintf(fd, "jerase_max_parity_on_stack = %s\n", tbx_stk_pretty_print_int_with_scale(lio->jerase_max_parity_on_stack, text));
@@ -1208,6 +1210,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->calc_adler32 = tbx_inip_get_integer(lio->ifd, section, "calc_adler32", lio_default_options.calc_adler32);
     lio->readahead = tbx_inip_get_integer(lio->ifd, section, "readahead", lio_default_options.readahead);
     lio->readahead_trigger = tbx_inip_get_integer(lio->ifd, section, "readahead_trigger", lio_default_options.readahead_trigger);
+    lio->stream_buffer_max_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_max_size", lio_default_options.stream_buffer_max_size);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
 
     //** Set up the monitoring

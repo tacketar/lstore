@@ -27,8 +27,10 @@ limitations under the License.
 extern "C" {
 #endif
 
+typedef struct lio_config_t lio_config_t;
 typedef struct lio_fd_t lio_fd_t;
 typedef struct lio_stat_iter_t lio_stat_iter_t;
+typedef struct lio_os_authz_local_t lio_os_authz_local_t;
 
 #ifdef __cplusplus
 }

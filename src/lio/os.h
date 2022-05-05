@@ -24,6 +24,7 @@
 #include <gop/opque.h>
 #include <gop/tp.h>
 #include <lio/notify.h>
+#include <lio/core.h>
 #include <lio/os.h>
 #include <lio/visibility.h>
 #include <regex.h>
@@ -100,7 +101,7 @@ lio_os_regex_table_t *os_regex_table_unpack(unsigned char *buffer, int bufsize, 
 typedef void (*osaz_attr_filter_t)(lio_os_authz_t *osa, char *key, int mode, void *value_in, int len_in, void **value_out, int *len_out);
 
 #define OS_AUTHZ_MAX_GID 100
-typedef struct {
+struct lio_os_authz_local_t {
     int   internal_use_only;
     uid_t uid;
     gid_t gid[OS_AUTHZ_MAX_GID];
@@ -108,7 +109,7 @@ typedef struct {
     lio_creds_t *creds;
     apr_time_t hint_counter;
     void *hint;
-} lio_os_authz_local_t;
+};
 
 struct lio_os_authz_t {
     void *priv;
@@ -152,7 +153,7 @@ struct lio_os_virtual_attr_t {
     int (*get_link)(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void **val, int *v_size, int *atype);
 };
 
-int os_local_filetype_stat(char *path, struct stat *stat_link, struct stat *stat_object);
+int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat *stat_object);
 
 int os_log_warm_attr_check(notify_t *olog, int n_keys, char **key);
 void os_log_warm_if_needed(notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size);

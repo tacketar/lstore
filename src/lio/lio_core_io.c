@@ -62,6 +62,8 @@
 #define LFH_KEY_DATA   2
 #define LFH_NKEYS      3
 
+void _stream_flush(lio_fd_t *fd);
+
 gop_op_status_t lio_read_ex_fn_aio(void *op, int id);
 gop_op_status_t lio_write_ex_fn_aio(void *op, int id);
 gop_op_generic_t *lio_read_ex_gop_aio(lio_rw_op_t *op);
@@ -123,7 +125,7 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
 //   On error -1 is returned
 //***********************************************************************
 
-int lio_fopen_flags(char *sflags)
+int lio_fopen_flags(const char *sflags)
 {
     int mode = -1;
 
@@ -663,6 +665,16 @@ int _lio_adjust_data_snap(lio_fd_t *fd, ex_off_t new_size, ex_off_t *used)
     int v_size[2];
     char buffer[128];
 
+    //** See if we need to flush the stream
+    if (fh->stream) {
+        _stream_flush(fd);
+        n = new_size - 1;
+        if ((fh->stream->offset <= n) && (fh->stream->offset_end > n)) {
+            fh->stream->offset_end = n;
+            fh->stream->used = fh->stream->offset_end - fh->stream->offset + 1;
+        }
+    }
+
     //** Get the data from the segment
     n = segment_size(fh->seg);
     iov.len = (n>new_size) ? new_size : n;  iov.offset = 0;
@@ -705,6 +717,9 @@ int _lio_adjust_segment_snap(lio_fd_t *fd)
     tbx_tbuf_t tbuf;
     ex_tbx_iovec_t iov;
 
+    //** See if we need to flush the stream
+    if (fh->stream) _stream_flush(fd);
+
     //** copy the data to the segment
     tbx_tbuf_single(&tbuf, fh->data_size, fh->data);
     iov.len = fh->data_size; iov.offset = 0;
@@ -724,7 +739,6 @@ int _lio_adjust_segment_snap(lio_fd_t *fd)
 //     be located.
 //*************************************************************************
 
-//void lio_adjust_data_tier(lio_file_handle_t *fh, ex_off_t new_size, int do_lock)
 void lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
 {
     lio_file_handle_t *fh = fd->fh;
@@ -1009,6 +1023,17 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, segment_id(fh->seg));
     tbx_monitor_obj_create(&(fh->mo), "OPEN: fname=%s mode=%d", op->path, op->mode);
     tbx_monitor_obj_group(&(fh->mo), &(fh->seg->header.mo));
+
+    if (lc->stream_buffer_max_size > 0) {  //** See if we are enabling a stream buffeer
+        int n = sizeof(stream_buf_t) + lc->stream_buffer_max_size;
+        fh->stream = malloc(n);
+        memset(fh->stream, 0, n);
+        fh->stream->offset = 0;
+        fh->stream->offset_end = -1;
+        fh->stream->used = 0;
+        fh->stream->max_size = lc->stream_buffer_max_size;
+        tbx_tbuf_single(&(fh->stream->tbuf), fh->stream->max_size, fh->stream->buf);
+    }
 
     if (lc->calc_adler32) fh->write_table = tbx_list_create(0, &skiplist_compare_ex_off, NULL, NULL, NULL);
 
@@ -1388,7 +1413,7 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
     //** Do the read op
     ssize = lio_size(fd);
     pend = off + size;
-    log_printf(0, "ssize=" XOT " off=" XOT " len=" XOT " pend=" XOT " readahead=" XOT " trigger=" XOT "\n", ssize, off, size, pend, fd->fh->lc->readahead, fd->fh->lc->readahead_trigger);
+    log_printf(10, "ssize=" XOT " off=" XOT " len=" XOT " pend=" XOT " my_readahead=" XOT " readahead=" XOT " trigger=" XOT "\n", ssize, off, size, pend, readahead, fd->fh->lc->readahead, fd->fh->lc->readahead_trigger);
     if (pend > ssize) {
         if (off > ssize) {
             // offset is past the end of the segment
@@ -1397,9 +1422,7 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
             size = ssize - off;  //** Tweak the size based on how much data there is
         }
     }
-    log_printf(0, "tweaked len=" XOT "\n", size);
     if (size <= 0) {
-        log_printf(0, "Clipped tweaked len\n");
         return(1);
     }
 
@@ -1410,7 +1433,9 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
 
     segment_lock(fd->fh->seg);
     dr = pend - fd->fh->readahead_end;
-    if ((dr > 0) || ((-dr) > fd->fh->lc->readahead_trigger)) {
+    log_printf(10, "tweaked start len=" XOT " dr=" XOT " rend=" XOT " readahead_end=" XOT "\n", rsize, dr, rend, fd->fh->readahead_end);
+
+    if ((dr > 0) || ((-dr) < fd->fh->lc->readahead_trigger)) {
         rsize = rend - off;
         if (rend > ssize) {
             if (off <= ssize) {
@@ -1419,8 +1444,11 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
         }
 
         fd->fh->readahead_end = rend;  //** Update the readahead end
+        log_printf(10, "tweaked CHANGED len=" XOT " dr=" XOT " rend=" XOT " readahead_end=" XOT "\n", rsize, dr, rend, fd->fh->readahead_end);
     }
+    log_printf(10, "tweaked final len=" XOT " dr=" XOT " rend=" XOT " readahead_end=" XOT "\n", rsize, dr, rend, fd->fh->readahead_end);
     segment_unlock(fd->fh->seg);
+
 
 finished:
     op->fd = fd;
@@ -2578,12 +2606,22 @@ ex_off_t lio_tell(lio_fd_t *fd)
 ex_off_t lio_size_fh(lio_file_handle_t *fh)
 {
     ex_off_t size = -1;
+    ex_off_t n_stream = -1;
+    ex_off_t n;
 
     apr_thread_mutex_lock(fh->lock);
-    if (fh->data_size >= 0) size = fh->data_size;
+    if (fh->data_size >= 0) {
+        size = fh->data_size;
+    } else if ((fh->stream) && (fh->stream->offset_end > -1)) {
+        n_stream = fh->stream->offset_end + 1;
+    }
     apr_thread_mutex_unlock(fh->lock);
 
-    if (size < 0) size = segment_size(fh->seg);
+    if (size <= 0) {
+        n = segment_size(fh->seg);
+        size = (n_stream < n) ? n : n_stream;
+    }
+
     return(size);
 }
 //***********************************************************************
@@ -2612,7 +2650,8 @@ gop_op_status_t lio_flush_fn(void *arg, int id)
 {
     lio_cp_fn_t *op = (lio_cp_fn_t *)arg;
     gop_op_status_t status;
-    lio_file_handle_t *fh = op->slfd->fh;
+    lio_fd_t *fd = op->slfd;
+    lio_file_handle_t *fh = fd->fh;
     ex_off_t lo = op->offset;
     ex_off_t hi = op->offset2;
     int err;
@@ -2629,6 +2668,10 @@ gop_op_status_t lio_flush_fn(void *arg, int id)
         apr_thread_mutex_unlock(fh->lock);
         return(status);
     }
+
+    //** See if we have some small I/O buffering to flush
+    if ((fh->stream) && (fh->stream->is_dirty)) _stream_flush(fd);
+
     apr_thread_mutex_unlock(fh->lock);
 
     status = gop_sync_exec_status(segment_flush(fh->seg, fh->lc->da, lo, (hi == -1) ? segment_size(fh->seg)+1 : hi, fh->lc->timeout));
@@ -2650,9 +2693,6 @@ gop_op_generic_t *lio_flush_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi)
     op->slfd = fd;
 
     return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flush_fn, (void *)op, free, 1));
-
-
-    return(segment_flush(fd->fh->seg, fd->fh->lc->da, lo, (hi == -1) ? segment_size(fd->fh->seg)+1 : hi, fd->fh->lc->timeout));
 }
 
 //***********************************************************************

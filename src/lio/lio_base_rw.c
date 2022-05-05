@@ -59,6 +59,148 @@ void _lio_dec_in_flight_and_unlock(lio_fd_t *fd, int in_flight);
 
 //*************************************************************************
 
+void _stream_flush(lio_fd_t *fd)
+{
+    int err;
+    ex_tbx_iovec_t iov;
+
+    iov.offset = fd->fh->stream->offset;
+    iov.len = fd->fh->stream->used;
+    if (iov.len == 0) return;  //** Nothing to do so kick out
+
+    err = gop_sync_exec(segment_write(fd->fh->seg, fd->fh->lc->da, NULL, 1, &iov, &(fd->fh->stream->tbuf), 0, fd->fh->lc->timeout));
+    fd->fh->stream->is_dirty = 0;
+    if (err != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR: WRITE_ERROR while flushing the stream at fname=%s sid=" XIDT " offset=" XOT " len=" XOT "\n", fd->fh->fname, segment_id(fd->fh->seg), fd->fh->stream->offset, fd->fh->stream->used);
+    }
+}
+
+//*************************************************************************
+
+int stream_read(lio_rw_op_t *op)
+{
+    lio_fd_t *fd = op->fd;
+    lio_config_t *lc = fd->lc;
+    ex_tbx_iovec_t *iov = op->iov;
+    ex_tbx_iovec_t siov;
+    tbx_tbuf_t *buffer = op->buffer;
+    stream_buf_t *stream = fd->fh->stream;
+    ex_off_t boff, pend, dn, dm, len;
+    int i;
+
+    boff = op->boff;
+    apr_thread_mutex_lock(fd->fh->lock);
+    for (i=0; i<op->n_iov; i++) {
+        if (iov[i].len > stream->max_size) goto failure; //** Kick out if request is bigger than the stream buf
+        pend = iov[i].offset + iov[i].len - 1;
+        if ((iov[i].offset >= stream->offset) && (pend <= stream->offset_end)) { //** Full overlap
+            dn = iov[i].offset - stream->offset;
+            tbx_tbuf_copy(&(stream->tbuf), dn, buffer, boff, iov[i].len, 1);
+        } else {     //** Need to populate the stream buffer first
+            //** See if we can copy anything from the existing buffer
+            len = iov[i].len;
+            dm = 0;
+            if ((iov[i].offset >= stream->offset) && (iov[i].offset < stream->offset_end)) { //** partial
+                dn = iov[i].offset - stream->offset;
+                dm = stream->offset_end - iov[i].offset + 1;
+                if (dm) tbx_tbuf_copy(&(stream->tbuf), dn, buffer, boff, dm, 1);
+                len -= dm;
+            }
+
+            //** Now flush and get the rest
+            if (stream->is_dirty) _stream_flush(fd);
+            stream->offset = iov[i].offset + dm;
+            stream->offset_end = stream->offset + stream->max_size - 1;
+            dn = segment_size(fd->fh->seg);
+            if (stream->offset_end > dn) stream->offset_end = dn - 1;
+            stream->used = stream->offset_end - stream->offset + 1;
+            siov.offset = iov[i].offset + dm;
+            siov.len = stream->used;
+            if (gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, 1, &siov, &(stream->tbuf), 0, lc->timeout)) != OP_STATE_SUCCESS) goto failure;
+            tbx_tbuf_copy(&(stream->tbuf), 0, buffer, boff+dm, len, 1);
+        }
+
+        boff += iov[i].len;
+    }
+    apr_thread_mutex_unlock(fd->fh->lock);
+
+    return(OP_STATE_SUCCESS);
+
+failure:
+    apr_thread_mutex_unlock(fd->fh->lock);
+    return(OP_STATE_FAILURE);
+}
+
+//*************************************************************************
+
+int stream_write(lio_rw_op_t *op)
+{
+    lio_fd_t *fd = op->fd;
+    ex_tbx_iovec_t *iov = op->iov;
+    tbx_tbuf_t *buffer = op->buffer;
+    stream_buf_t *stream = fd->fh->stream;
+    ex_off_t boff, pend, dn;
+    int i;
+
+    boff = op->boff;
+    apr_thread_mutex_lock(fd->fh->lock);
+    for (i=0; i<op->n_iov; i++) {
+        pend = iov[i].offset + iov[i].len - 1;
+        if (iov[i].len > stream->max_size) { //** Kick out if request is bigger than the stream buf
+            if (stream->is_dirty == 0) goto failure;  //** If not dirty kick out
+
+            //** See if we need to flush due to a partial overlap
+            if (((iov[i].offset <= stream->offset) && (pend >= stream->offset)) ||  //**lo-side overlap
+                ((iov[i].offset <= stream->offset_end) && (pend >= stream->offset_end)) || //** Hi side overlap
+                ((iov[i].offset >= stream->offset) && (pend <= stream->offset_end))) { //** Full overlap
+                _stream_flush(fd);
+            }
+            goto failure;   //** Now we can kick out since we flushed the data if needed.
+        }
+
+        //** If we made it here then we know the request is small enough to fit in the stream buffer
+        //** Check for a full overlap
+        dn = stream->offset + stream->max_size - 1;
+        if ((iov[i].offset >= stream->offset) && (pend <= dn)) { //** **Could** be a full overlap
+            if (iov[i].offset <= (stream->offset_end+1))  { //** Starts within the existing range so fully in or can be grown
+                stream->is_dirty = 1;
+                if (pend > stream->offset_end) stream->offset_end = pend;
+                stream->used = stream->offset_end - stream->offset + 1;
+                tbx_tbuf_copy(buffer, boff, &(stream->tbuf), iov[i].offset - stream->offset, iov[i].len, 1);
+            } else {  //**It's a hole. So flush and reposition
+                if (stream->is_dirty) _stream_flush(fd);
+
+                //** Reposition the stream and dump the data
+                stream->is_dirty = 1;
+                stream->offset = iov[i].offset;
+                stream->offset_end = pend;
+                stream->used = iov[i].len;
+                tbx_tbuf_copy(buffer, boff, &(stream->tbuf), 0, iov[i].len, 1);
+            }
+        } else {  //** Need to reposition the buffer
+            if (stream->is_dirty) _stream_flush(fd);  //** Flush the existing data
+
+            //** Reposition the stream and dump the data
+            stream->is_dirty = 1;
+            stream->offset = iov[i].offset;
+            stream->offset_end = pend;
+            stream->used = iov[i].len;
+            tbx_tbuf_copy(buffer, boff, &(stream->tbuf), 0, iov[i].len, 1);
+        }
+
+        boff += iov[i].len;
+    }
+    apr_thread_mutex_unlock(fd->fh->lock);
+
+    return(OP_STATE_SUCCESS);
+
+failure:
+    apr_thread_mutex_unlock(fd->fh->lock);
+    return(OP_STATE_FAILURE);
+}
+
+//*************************************************************************
+
 gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
 {
     lio_rw_op_t *op = (lio_rw_op_t *)arg;
@@ -67,7 +209,7 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     ex_tbx_iovec_t *iov = op->iov;
     tbx_tbuf_t *buffer = op->buffer;
     gop_op_status_t status;
-    int i, err, size, in_flight;
+    int i, err, size, in_flight, ret_size;
     apr_time_t now;
     double dt;
     ex_off_t t1, t2;
@@ -102,7 +244,13 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
 
     //** Do the read op
     if ((err = lio_tier_check_and_handle(op, 0, &in_flight)) != OP_STATE_SUCCESS) {
-        err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
+        if (fd->fh->stream) {
+            if ((err = stream_read(op)) != OP_STATE_SUCCESS) {
+                err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
+            }
+        } else {
+            err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
+        }
     }
 
     dt = apr_time_now() - now;
@@ -117,14 +265,21 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     }
 
     //** Update the file position to the last read and the stats
+    t1 = iov[op->n_iov-1].offset + iov[op->n_iov-1].len;
+    t2 = tbx_tbuf_size(buffer);
+    ret_size = size;
+    if ((op->n_iov == 1) && (t2 < iov[0].len)) {
+        t1 = iov[0].offset + t2;  //** This is if we are doing a readahead
+        ret_size = t2;
+    }
     segment_lock(fd->fh->seg);
-    fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
+    fd->curr_offset = t1;
     fd->tally_ops[0]++;
     fd->tally_bytes[0] += size;
     _lio_dec_in_flight_and_unlock(fd, in_flight);
     //segment_unlock(fd->fh->seg);
 
-    status.error_code = size;
+    status.error_code = ret_size;
     return(status);
 
 error:  //** Only make it here on an error
@@ -172,7 +327,13 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
 
     //** Do the write op
     if ((err = lio_tier_check_and_handle(op, 1, &in_flight)) != OP_STATE_SUCCESS) {
-        err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
+        if (fd->fh->stream) {
+            if ((err = stream_write(op)) != OP_STATE_SUCCESS) {
+                err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
+            }
+        } else {
+            err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
+        }
     }
 
     dt = apr_time_now() - now;

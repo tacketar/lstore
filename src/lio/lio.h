@@ -61,6 +61,16 @@ struct lio_unified_object_iter_t {
 struct wq_context_s;
 typedef struct wq_context_s wq_context_t;
 
+typedef struct {  //** This is used for small I/O buffering to minimize having to hit the cache which is designed for multi-megabyte I/O
+    tbx_tbuf_t tbuf;
+    ex_off_t max_size;
+    ex_off_t used;
+    ex_off_t offset;
+    ex_off_t offset_end;
+    int is_dirty;
+    char buf[];
+} stream_buf_t;
+
 struct lio_file_handle_t {  //** Shared file handle
     lio_exnode_t *ex;
     lio_segment_t *seg;
@@ -69,6 +79,7 @@ struct lio_file_handle_t {  //** Shared file handle
     apr_thread_mutex_t *lock;
     apr_thread_cond_t *cond;
     apr_pool_t *mpool;
+    stream_buf_t *stream;
     tbx_mon_object_t mo;
     char *fname;         //** This is just used for dumping info and represents the name used for adding the FH
     char *data;          //** This holds small file data which gets stored as metadata
@@ -129,7 +140,8 @@ gop_op_generic_t *wq_op_new(wq_context_t *ctx, lio_rw_op_t *rw_op, int rw_mode);
 extern tbx_sl_compare_t ex_id_compare;
 
 mode_t ftype_lio2posix(int ftype);
-void _lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size, char *mount_prefix, char **flink);
+void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size, char **flink, int *lio_ftype);
+int lio_get_symlink_inode(lio_config_t *lc, lio_creds_t *creds, const char *fname, char *rpath, int fetch_realpath, ex_id_t *ino);
 
 int lio_update_error_counts(lio_config_t *lc, lio_creds_t *creds, char *path, lio_segment_t *seg, int mode);
 int lio_update_exnode_attrs(lio_fd_t *fd, lio_segment_errors_t *serr);
