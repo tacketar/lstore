@@ -37,6 +37,7 @@ set(TOOL_OBJS
     log.c
     lru.c
     monitor.c
+    normalize_path.c
     packer.c
     pigeon_coop.c
     pigeon_hole.c
@@ -78,6 +79,7 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/monitor.h
     tbx/net_sock.h
     tbx/network.h
+    tbx/normalize_path.h
     tbx/object.h
     tbx/packer.h
     tbx/pigeon_coop.h
