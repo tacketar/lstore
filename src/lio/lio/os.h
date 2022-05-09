@@ -133,7 +133,7 @@ LIO_API void os_log_iter_destroy(os_log_iter_t *oli);
 
 // More generic Functions
 LIO_API char *lio_os_glob2regex(char *glob);
-LIO_API int lio_os_local_filetype(char *path);
+LIO_API int lio_os_local_filetype(const char *path);
 LIO_API lio_os_regex_table_t *lio_os_path_glob2regex(char *path);
 LIO_API void lio_os_path_split(const char *path, char **dir, char **file);
 LIO_API lio_os_regex_table_t *lio_os_regex2table(char *regex);
