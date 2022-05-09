@@ -76,6 +76,17 @@
     ASSERT_EXISTS(write);
     ASSERT_EXISTS(writev);
     ASSERT_EXISTS(lseek);
+
+    ASSERT_EXISTS(fseek);
+    ASSERT_EXISTS(ftell);
+    ASSERT_EXISTS(rewind);
+    ASSERT_EXISTS(fseeko);
+    ASSERT_EXISTS(ftello);
+    ASSERT_EXISTS(fgetpos);
+    ASSERT_EXISTS(fsetpos);
+    ASSERT_EXISTS(truncate);
+    ASSERT_EXISTS(ftruncate);
+
     ASSERT_EXISTS(dup);
     ASSERT_EXISTS(dup2);
     ASSERT_EXISTS(readlinkat);

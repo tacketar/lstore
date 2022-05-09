@@ -76,6 +76,17 @@ TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(writev))(int fd, const struct io
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pwritev))(int fd, const struct iovec *iov, int iovcnt, off_t offset) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pwritev2))(int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN off_t (*TBX_IO_WRAP_NAME(lseek))(int fd, off_t offset, int whence) TBX_IO_DECLARE_END
+
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fseek))(FILE *stream, long offset, int whence) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN long (*TBX_IO_WRAP_NAME(ftell))(FILE *stream) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN void (*TBX_IO_WRAP_NAME(rewind))(FILE *stream) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fseeko))(FILE *stream, off_t offset, int whence) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN off_t (*TBX_IO_WRAP_NAME(ftello))(FILE *stream) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fgetpos))(FILE *stream, fpos_t *pos);
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fsetpos))(FILE *stream, const fpos_t *pos);
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(truncate))(const char *path, off_t length) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(ftruncate))(int fd, off_t length) TBX_IO_DECLARE_END
+
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(dup))(int oldfd) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(dup2))(int oldfd, int newfd) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(readlinkat))(int dirfd, const char *pathname, char *buf, size_t bufsiz) TBX_IO_DECLARE_END
