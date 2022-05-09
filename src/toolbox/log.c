@@ -41,6 +41,7 @@
 #include "tbx/assert_result.h"
 #include "tbx/atomic_counter.h"
 #include "tbx/iniparse.h"
+#include "tbx/io.h"
 #include "tbx/visibility.h"
 #include "tbx/type_malloc.h"
 
@@ -92,11 +93,7 @@ void _log_init()
 
 void tbx_log_open(char *fname, int dolock)
 {
-    if (dolock == 1) {
-        if (_log_lock == NULL) _log_init();
-
-        _lock_log();
-    }
+    if (dolock == 1) { _lock_log();  }
 
     _log_currsize = 0;
 
@@ -117,7 +114,7 @@ void tbx_log_open(char *fname, int dolock)
         _log_fd = stderr;
     } else if (strcmp(_log_fname, "NULL") == 0) {
         _log_fd = NULL;
-    } else if ((_log_fd = fopen(_log_fname, "w")) == NULL) {
+    } else if ((_log_fd = tbx_io_fopen(_log_fname, "w")) == NULL) {
         fprintf(stderr, "OPEN_LOG failed! Attempted to us log file %s\n", _log_fname);
         perror("OPEN_LOG: ");
     }
@@ -125,10 +122,12 @@ void tbx_log_open(char *fname, int dolock)
     if (dolock == 1) _unlock_log();
 }
 
+//***************************************************************
+
 void _close_log()
 {
     if ((strcmp(_log_fname, "stdout") != 0) && (strcmp(_log_fname, "stderr") != 0)) {
-        fclose(_log_fd);
+        tbx_io_fclose(_log_fd);
     }
 }
 
@@ -147,8 +146,6 @@ int tbx_mlog_printf(int suppress_header, int module_index, int level, const char
     if (_log_fd == NULL) return(0);
     if (level > _mlog_table[module_index]) return(0);
     if (level > _log_level) return(0);
-
-    if (_log_lock == NULL) _log_init();
 
     _lock_log();
 
@@ -182,8 +179,6 @@ int tbx_mlog_printf(int suppress_header, int module_index, int level, const char
 
 void tbx_log_flush()
 {
-    if (_log_lock == NULL) _log_init();
-
     _lock_log();
     fflush(_log_fd);
     _unlock_log();
@@ -200,9 +195,6 @@ void tbx_mlog_load(tbx_inip_file_t *fd, char *output_override, int log_level_ove
     int n, default_level;
     tbx_inip_group_t *g;
     tbx_inip_element_t *ele;
-
-
-    if (_log_lock == NULL) _log_init();
 
     group_index = "log_index";
     group_level = "log_level";
@@ -305,8 +297,6 @@ tbx_log_fd_t *tbx_info_create(FILE *fd, int header_type, int level)
     tbx_log_fd_t *ifd;
 
     tbx_type_malloc(ifd, tbx_log_fd_t, 1);
-
-    if (_log_lock == NULL) _log_init();  //** WE use the log mpool
 
     assert_result(apr_thread_mutex_create(&(ifd->lock), APR_THREAD_MUTEX_DEFAULT, _log_mpool), APR_SUCCESS);
     ifd->fd = fd;

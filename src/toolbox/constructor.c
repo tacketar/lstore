@@ -22,6 +22,8 @@
 
 #include "tbx/constructor_wrapper.h"
 
+void _log_init();
+
 #ifdef ACCRE_CONSTRUCTOR_PREPRAGMA_ARGS
 #pragma ACCRE_CONSTRUCTOR_PREPRAGMA_ARGS(tbx_construct_fn)
 #endif
@@ -41,7 +43,9 @@ ACCRE_DEFINE_DESTRUCTOR(tbx_destruct_fn)
 static void tbx_construct_fn() {
     tbx_io_init(RTLD_DEFAULT, 0);  //** Init all the IO wrapper functions
     apr_status_t ret = apr_initialize();
-   FATAL_UNLESS(ret == APR_SUCCESS);
+    FATAL_UNLESS(ret == APR_SUCCESS);
+
+    _log_init();
 }
 
 static void tbx_destruct_fn() {
