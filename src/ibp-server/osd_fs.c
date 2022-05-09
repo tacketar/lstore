@@ -29,6 +29,7 @@
 #include "osd_fs.h"
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/type_malloc.h>
 #ifdef _HAS_XFS
 #include <xfs/xfs.h>
@@ -891,11 +892,11 @@ int fs_id_exists(osd_t *d, osd_id_t id)
 
     char fname[fs->pathlen];
 
-    FILE *fd = fopen(_id2fname(fs, id, fname, sizeof(fname)), "r");
+    FILE *fd = tbx_io_fopen(_id2fname(fs, id, fname, sizeof(fname)), "r");
     if (fd == NULL)
         return (0);
 
-    fclose(fd);
+    tbx_io_fclose(fd);
     return (1);
 }
 
@@ -912,8 +913,8 @@ int _fs_read_block_header(osd_fs_fd_t *fsfd, uint32_t *block_bytes_used, char *c
 
     err = 0;
 
-    n = fread(block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
-    n = n + fread(cs_value, 1, cs_len, fsfd->fd);
+    n = tbx_io_fread(block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
+    n = n + tbx_io_fread(cs_value, 1, cs_len, fsfd->fd);
 
     m = cs_len + sizeof(uint32_t);
     if (m != n)
@@ -936,8 +937,8 @@ int _fs_write_block_header(osd_fs_fd_t *fsfd, uint32_t block_bytes_used, char *c
 {
     osd_off_t n, m;
 
-    n = fwrite(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
-    n = n + fwrite(cs_value, 1, cs_len, fsfd->fd);
+    n = tbx_io_fwrite(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
+    n = n + tbx_io_fwrite(cs_value, 1, cs_len, fsfd->fd);
 
     m = cs_len + sizeof(uint32_t);
     if (m != n)
@@ -969,7 +970,7 @@ osd_id_t fs_create_id(osd_t *d, int chksum_type, int header_size, int block_size
         } while (fs_id_exists(d, id));
     }
 
-    FILE *fd = fopen(_id2fname(fs, id, fname, sizeof(fname)), "w");     //Make sure and create the file so no one else can use it
+    FILE *fd = tbx_io_fopen(_id2fname(fs, id, fname, sizeof(fname)), "w");     //Make sure and create the file so no one else can use it
     if (fd == NULL) {
         apr_thread_mutex_unlock(fs->lock);
         log_printf(1, "ERROR creating allocations! fname=%s\n", fname);
@@ -987,15 +988,15 @@ osd_id_t fs_create_id(osd_t *d, int chksum_type, int header_size, int block_size
         dbytes = 0;
         cs_size = tbx_chksum_size(&chksum, CHKSUM_DIGEST_BIN);
         memset(cs_value, 0, cs_size);
-        n = fwrite(&header, 1, sizeof(header), fd);     //** Store the header and also the initial chksum
-        n = n + fwrite(&dbytes, 1, sizeof(int32_t), fd);
-        n = n + fwrite(cs_value, 1, cs_size, fd);
+        n = tbx_io_fwrite(&header, 1, sizeof(header), fd);     //** Store the header and also the initial chksum
+        n = n + tbx_io_fwrite(&dbytes, 1, sizeof(int32_t), fd);
+        n = n + tbx_io_fwrite(cs_value, 1, cs_size, fd);
         if (n != (int) (sizeof(header) + sizeof(int32_t) + cs_size)) {
             log_printf(0, "fs_create_id:  Error storing magic header+chksum! id=" LU " \n", id);
         }
     }
 
-    fclose(fd);
+    tbx_io_fclose(fd);
 
     apr_thread_mutex_unlock(fs->lock);
 
@@ -1235,12 +1236,12 @@ int fs_truncate(osd_t *d, osd_id_t id, osd_off_t l_size)
         cs_len = tbx_chksum_size(&cs, CHKSUM_DIGEST_BIN);
         tbx_chksum_reset(&cs);
         n = boff + cs_len + sizeof(uint32_t);
-        fseeko(fsfd->fd, n, SEEK_SET);
+        tbx_io_fseeko(fsfd->fd, n, SEEK_SET);
 
         fsfd_lock(fs, fsfd, OSD_WRITE_MODE, b, b, &n);
         _chksum_buffered_read(fs, fsfd, rem, buffer, FS_BUF_SIZE, &cs, NULL);
         tbx_chksum_get(&cs, CHKSUM_DIGEST_BIN, cs_value);
-        fseeko(fsfd->fd, boff, SEEK_SET);
+        tbx_io_fseeko(fsfd->fd, boff, SEEK_SET);
         _fs_write_block_header(fsfd, bused, cs_value, cs_len);
         fsfd_unlock(fs, fsfd);
     }
@@ -1263,8 +1264,8 @@ osd_off_t fs_fd_size(osd_t *d, osd_fd_t *ofd)
     if (fsfd == NULL)
         return (0);
 
-    fseeko(fsfd->fd, 0, SEEK_END);
-    n = ftell(fsfd->fd);
+    tbx_io_fseeko(fsfd->fd, 0, SEEK_END);
+    n = tbx_io_ftell(fsfd->fd);
 
     n = fs_offset_p2l(fs, fsfd, n);
 
@@ -1284,8 +1285,8 @@ osd_off_t fs_size(osd_t *d, osd_id_t id)
     if (fsfd == NULL)
         return (0);
 
-    fseeko(fsfd->fd, 0, SEEK_END);
-    n = ftell(fsfd->fd);
+    tbx_io_fseeko(fsfd->fd, 0, SEEK_END);
+    n = tbx_io_ftell(fsfd->fd);
 
     n = fs_offset_p2l(fs, fsfd, n);
 
@@ -1303,15 +1304,15 @@ osd_off_t fs_trash_size(osd_t *d, int trash_type, const char *trash_id)
     osd_fs_t *fs = (osd_fs_t *) (d->private);
 
     char fname[fs->pathlen];
-    FILE *fout = fopen(_trashid2fname(fs, trash_type, trash_id, fname, sizeof(fname)), "r");
+    FILE *fout = tbx_io_fopen(_trashid2fname(fs, trash_type, trash_id, fname, sizeof(fname)), "r");
 
     if (fout == NULL)
         return (0);
 
-    fseeko(fout, 0, SEEK_END);
-    osd_off_t n = ftell(fout);
+    tbx_io_fseeko(fout, 0, SEEK_END);
+    osd_off_t n = tbx_io_ftell(fout);
 
-    fclose(fout);
+    tbx_io_fclose(fout);
 
     return (n);
 }
@@ -1322,8 +1323,8 @@ osd_off_t fs_trash_size(osd_t *d, int trash_type, const char *trash_id)
 
 int fs_read_header(FILE *fd, fs_header_t *header)
 {
-    fseeko(fd, 0, SEEK_SET);
-    return (fread(header, 1, sizeof(fs_header_t), fd));
+    tbx_io_fseeko(fd, 0, SEEK_SET);
+    return (tbx_io_fread(header, 1, sizeof(fs_header_t), fd));
 }
 
 //*************************************************************
@@ -1332,8 +1333,8 @@ int fs_read_header(FILE *fd, fs_header_t *header)
 
 int fs_write_header(FILE *fd, fs_header_t *header)
 {
-    fseeko(fd, 0, SEEK_SET);
-    return (fwrite(header, 1, sizeof(fs_header_t), fd));
+    tbx_io_fseeko(fd, 0, SEEK_SET);
+    return (tbx_io_fwrite(header, 1, sizeof(fs_header_t), fd));
 }
 
 //*************************************************************
@@ -1367,13 +1368,13 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
 
     normal = 1;
 
-    FILE *fd = fopen(_id2fname(fs, obj->id, fname, sizeof(fname)), "r+");
+    FILE *fd = tbx_io_fopen(_id2fname(fs, obj->id, fname, sizeof(fname)), "r+");
     if (fd != NULL) {
         n = fs_read_header(fd, &(obj->header));
         if (n == sizeof(fs_header_t)) {
             normal = memcmp(obj->header.magic, CHKSUM_MAGIC, sizeof(CHKSUM_MAGIC));
         }
-        log_printf(10, "object_open: id=" LU " fs=%s normal=%d fread=%d\n", obj->id,
+        log_printf(10, "object_open: id=" LU " fs=%s normal=%d tbx_io_fread=%d\n", obj->id,
                    fs->devicename, normal, n);
         tbx_log_flush();
     } else {
@@ -1402,7 +1403,7 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
         if (tbx_chksum_type_valid(obj->header.chksum_type) == 0) {
             n = obj->header.chksum_type;
             log_printf(0, "object_open:  Invalid chksum type! id=" LU " type=%d \n", obj->id, n);
-            fclose(fd);
+            tbx_io_fclose(fd);
             return (-2);
         }
 
@@ -1423,7 +1424,7 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
     }
 
     if (fd != NULL)
-        fclose(fd);
+        tbx_io_fclose(fd);
 
     if (obj->state != OSD_STATE_GOOD)
         _insert_corrupt_hash(fs, obj->id, "chksum");
@@ -1645,12 +1646,12 @@ osd_fd_t *fs_open(osd_t *d, osd_id_t id, int mode)
     if (fsfd == NULL)
         return (NULL);
 
-    fsfd->fd = fopen(_id2fname(fs, id, fname, sizeof(fname)), "r+");
+    fsfd->fd = tbx_io_fopen(_id2fname(fs, id, fname, sizeof(fname)), "r+");
     if (fsfd->fd == NULL) {
         if (mode == OSD_WRITE_MODE) {
             log_printf(10, "fs_open(" LU ", %d, w+) doesn't exist so creating the file\n", id,
                        mode);
-            fsfd->fd = fopen(_id2fname(fs, id, fname, sizeof(fname)), "w+");
+            fsfd->fd = tbx_io_fopen(_id2fname(fs, id, fname, sizeof(fname)), "w+");
             if (fsfd->fd == NULL) {
                 log_printf(0, "fs_open(" LU ", %d) open error = %d\n", id, mode, errno);
                 fsfd_remove(fs, fsfd);
@@ -1683,7 +1684,7 @@ int fs_close(osd_t *d, osd_fd_t *ofd)
     log_printf(10, "fs_close(%p)\n", fsfd->fd);
 
     if (fsfd->fd != NULL) {
-        fclose(fsfd->fd);
+        tbx_io_fclose(fsfd->fd);
         fsfd->fd = NULL;
     }
 
@@ -1710,14 +1711,14 @@ int fs_native_open(osd_t *d, osd_id_t id, osd_off_t offset, int mode)
         flags = O_CREAT | O_RDWR;
     }
 
-    int fd = open(_id2fname(fs, id, fname, sizeof(fname)), flags, S_IRUSR | S_IWUSR);
+    int fd = tbx_io_open(_id2fname(fs, id, fname, sizeof(fname)), flags, S_IRUSR | S_IWUSR);
     if (fd == -1) {
         log_printf(0, "fs_native_open(" LU ", " OT ", %d) open error = %d\n", id, offset, mode,
                    errno);
         return (-1);
     }
 
-    lseek(fd, offset, SEEK_SET);
+    tbx_io_lseek(fd, offset, SEEK_SET);
 
     return (fd);
 }
@@ -1728,7 +1729,7 @@ int fs_native_open(osd_t *d, osd_id_t id, osd_off_t offset, int mode)
 
 int fs_native_close(osd_t *d, int fd)
 {
-    return (close(fd));
+    return (tbx_io_close(fd));
 }
 
 //**************************************************************************************
@@ -1747,7 +1748,7 @@ osd_off_t _chksum_buffered_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t len, 
     nblocks = len / bufsize;
     n = 0;
     for (i = 0; i < nblocks; i++) {
-        n = n + fread(buffer, 1, bufsize, fsfd->fd);
+        n = n + tbx_io_fread(buffer, 1, bufsize, fsfd->fd);
         fs_chksum_add(cs1, bufsize, buffer);
         if (cs2 != NULL)
             fs_chksum_add(cs2, bufsize, buffer);
@@ -1758,7 +1759,7 @@ osd_off_t _chksum_buffered_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t len, 
         log_printf(10,
                    "_chksum_buffered_read: len=" I64T " bufsize=" I64T " nblocks=" I64T " nleft="
                    I64T "\n", len, bufsize, nblocks, nleft);
-        n = n + fread(buffer, 1, nleft, fsfd->fd);
+        n = n + tbx_io_fread(buffer, 1, nleft, fsfd->fd);
         fs_chksum_add(cs1, nleft, buffer);
         if (cs2 != NULL)
             fs_chksum_add(cs2, nleft, buffer);
@@ -1793,7 +1794,7 @@ osd_off_t chksum_merged_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, 
     }
 
     n = 0;
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);     //** Move to the start of the block
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);     //** Move to the start of the block
 
     //** Get the chksum and block bytes from disk
     nbytes = tbx_chksum_size(cs, CHKSUM_DIGEST_BIN);
@@ -1824,8 +1825,8 @@ osd_off_t chksum_merged_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, 
         return (n2);
     }
     //** Move to the correct offset and write the data
-    fseeko(fsfd->fd, obj_offset + sizeof(uint32_t) + nbytes + offset, SEEK_SET);        //** Move to the start of the block
-    n = fwrite(data, 1, len, fsfd->fd);
+    tbx_io_fseeko(fsfd->fd, obj_offset + sizeof(uint32_t) + nbytes + offset, SEEK_SET);        //** Move to the start of the block
+    n = tbx_io_fwrite(data, 1, len, fsfd->fd);
     if (n != len) {
         d = block_bytes_used;
         log_printf(0,
@@ -1840,14 +1841,14 @@ osd_off_t chksum_merged_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, 
     n2 = offset + len;
     if (n2 > block_bytes_used)
         block_bytes_used = n2;  //** check if we grow the block
-    fseeko(fsfd->fd, obj_offset + sizeof(uint32_t) + nbytes, SEEK_SET); //** Move to the start of the block
+    tbx_io_fseeko(fsfd->fd, obj_offset + sizeof(uint32_t) + nbytes, SEEK_SET); //** Move to the start of the block
     tbx_chksum_reset(cs);       //** Reset the chksum
     d = block_bytes_used;
     _chksum_buffered_read(fs, fsfd, d, buffer, FS_BUF_SIZE, cs, NULL);  //** Read the original
     tbx_chksum_get(cs, CHKSUM_DIGEST_BIN, cs_value);
 
     //** lastly store the new header
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);     //** Move to the start of the block
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);     //** Move to the start of the block
     herr = _fs_write_block_header(fsfd, block_bytes_used, cs_value, nbytes);
     if (herr != 0) {
         log_printf(0, "chksum_merged_write(%p, " I64T ", " I64T ") error writing header!\n", fsfd,
@@ -1882,13 +1883,13 @@ osd_off_t chksum_full_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, bu
 
     //** Move to the correct location
     obj_offset = FS_MAGIC_HEADER + ocs->hbs_with_chksum + (block - 1) * ocs->bs_with_chksum;
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
     //** Store the data and the chksum
     nbytes = tbx_chksum_size(cs, CHKSUM_DIGEST_BIN);    //** Now the chksum
     block_bytes_used = ocs->blocksize;
     herr = _fs_write_block_header(fsfd, block_bytes_used, cs_value, nbytes);
-    n = fwrite(buffer, 1, ocs->blocksize, fsfd->fd);    //** Lastly the data
+    n = tbx_io_fwrite(buffer, 1, ocs->blocksize, fsfd->fd);    //** Lastly the data
 
     if ((n != ocs->blocksize) || (herr != 0)) {
         log_printf(0,
@@ -2035,13 +2036,13 @@ osd_off_t fs_normal_write(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd
 {
     osd_off_t n, err;
 
-    fseeko(fsfd->fd, offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, offset, SEEK_SET);
 
     log_printf(15, "fs_normal_write(%s, %p, " I64T ", " I64T ", %p)\n", fs->devicename, fsfd,
                offset, len, buffer);
 
     err = 0;
-    n = fwrite(buffer, 1, len, fsfd->fd);
+    n = tbx_io_fwrite(buffer, 1, len, fsfd->fd);
     if (n != len) {
         log_printf(0, "fs_normal_write(%p, " I64T ", " I64T ") write error = %d n=" I64T "\n",
                    fsfd, offset, len, errno, n);
@@ -2103,9 +2104,9 @@ osd_off_t chksum_direct_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
 
     log_printf(10, "chksum_direct_read(%p) off=" OT " len=" OT "\n", fsfd, offset, len);
 
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
-    n = fread(data, 1, len, fsfd->fd);
+    n = tbx_io_fread(data, 1, len, fsfd->fd);
 
     if (n != len)
         return (OSD_STATE_BAD_BLOCK);
@@ -2140,7 +2141,7 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
         bs = ocs->blocksize;
     }
 
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
     tbx_chksum_reset(cs);       //** Reset the chksum
 
@@ -2166,7 +2167,7 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
     if (offset < block_bytes_used) {    //** Siphon the requested data if available
         off = offset + len;
         len2 = (off >= block_bytes_used) ? block_bytes_used - offset : len;
-        n = n + fread(data, 1, len2, fsfd->fd);
+        n = n + tbx_io_fread(data, 1, len2, fsfd->fd);
         if (off >= block_bytes_used) {  //** Add blanks as needed
             off = len - len2;
             memset(&(data[len2]), 0, off);
@@ -2229,7 +2230,7 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
 
     //** Move to the correct location
     obj_offset = FS_MAGIC_HEADER + ocs->hbs_with_chksum + (block - 1) * ocs->bs_with_chksum;
-    fseeko(fsfd->fd, obj_offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
     log_printf(0, "chksum_full_read: block=" I64T " fpos=" I64T "\n", block, obj_offset);
     tbx_log_flush();
@@ -2241,7 +2242,7 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
 
     n = 0;
     if (block_bytes_used > 0)
-        n = fread(buffer, 1, block_bytes_used, fsfd->fd);
+        n = tbx_io_fread(buffer, 1, block_bytes_used, fsfd->fd);
     nleft = ocs->blocksize - block_bytes_used;
     if (nleft > 0)
         memset(&(buffer[block_bytes_used]), 0, nleft);
@@ -2285,13 +2286,13 @@ osd_off_t fs_normal_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t offset, osd_
 
     posix_fadvise(fileno(fsfd->fd), offset, len, POSIX_FADV_WILLNEED);
 
-    fseeko(fsfd->fd, offset, SEEK_SET);
+    tbx_io_fseeko(fsfd->fd, offset, SEEK_SET);
 
     log_printf(10, "fs_normal_read(%s, %p, " I64T ", " I64T ", %p)\n", fs->devicename, fsfd,
                offset, len, buffer);
 
     err = 0;
-    n = fread(buffer, 1, len, fsfd->fd);
+    n = tbx_io_fread(buffer, 1, len, fsfd->fd);
     if (n != len) {
         log_printf(0, "fs_normal_read(%p, " I64T ", " I64T ") write error = %d n=" I64T "\n", fsfd,
                    offset, len, errno, n);
@@ -2548,10 +2549,10 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
     //** Get the header 1st if needed
     if (start_block == 0) {
         fpos = FS_MAGIC_HEADER;
-        fseeko(fsfd->fd, fpos, SEEK_SET);
+        tbx_io_fseeko(fsfd->fd, fpos, SEEK_SET);
 
         block_bytes_used = -1;
-        n = fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
+        n = tbx_io_fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
         if (block_len != 0)
             block_len[slot] = block_bytes_used;
         if (n != sizeof(uint32_t)) {
@@ -2561,7 +2562,7 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         }
 
         fsfd_lock(fs, fsfd, OSD_READ_MODE, 0, 0, &got_block);
-        n = fread(disk_value, 1, cs_size, fsfd->fd);
+        n = tbx_io_fread(disk_value, 1, cs_size, fsfd->fd);
         if (disk_buffer != NULL)
             memcpy(&(disk_buffer[bpos]), disk_value, cs_size);
         fsfd_unlock(fs, fsfd);
@@ -2600,12 +2601,12 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         fsfd_lock(fs, fsfd, OSD_READ_MODE, start_block, end_block, &end_got);
 
         for (block = start_block; block <= end_got; block++) {
-            fseeko(fsfd->fd, fpos, SEEK_SET);
+            tbx_io_fseeko(fsfd->fd, fpos, SEEK_SET);
             log_printf(5, "fs_get_chksum: block=" I64T " fpos=" I64T "\n", block, fpos);
             tbx_log_flush();
 
             block_bytes_used = -1;
-            n = fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
+            n = tbx_io_fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
             if (block_len != 0)
                 block_len[slot] = block_bytes_used;
             if (n != sizeof(uint32_t)) {
@@ -2614,7 +2615,7 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
                            I64T "\n", id, block);
             }
 
-            n = fread(disk_value, 1, cs_size, fsfd->fd);
+            n = tbx_io_fread(disk_value, 1, cs_size, fsfd->fd);
             if (disk_buffer != NULL)
                 memcpy(&(disk_buffer[bpos]), disk_value, cs_size);
             if (n != cs_size) {
@@ -2681,18 +2682,18 @@ int _fs_calculate_chksum(osd_fs_t *fs, osd_fs_fd_t *fsfd, tbx_chksum_t *cs, osd_
         max_block = ocs->blocksize;
     }
 
-    fseeko(fsfd->fd, fpos, SEEK_SET);   //** Move to the start of the block
+    tbx_io_fseeko(fsfd->fd, fpos, SEEK_SET);   //** Move to the start of the block
     tbx_chksum_reset(cs);       //** Reset the chksum
 
 
     //** Get the chksum and block bytes from disk
     n = 0;
-    n = fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
+    n = tbx_io_fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
     cs_size = tbx_chksum_size(cs, CHKSUM_DIGEST_BIN);
-    n = n + fread(disk_value, 1, cs_size, fsfd->fd);
+    n = n + tbx_io_fread(disk_value, 1, cs_size, fsfd->fd);
     nbytes = cs_size + sizeof(uint32_t);
     if (n != nbytes) {
-        log_printf(0, "_fs_calculate_chksum: Error reading chksum information:  fread=" I64T "\n",
+        log_printf(0, "_fs_calculate_chksum: Error reading chksum information:  tbx_io_fread=" I64T "\n",
                    n);
         return (1);
     } else if (block_bytes_used > max_block) {
@@ -2703,12 +2704,12 @@ int _fs_calculate_chksum(osd_fs_t *fs, osd_fs_fd_t *fsfd, tbx_chksum_t *cs, osd_
     n = 0;
     nblocks = block_bytes_used / bufsize;
     for (nleft = 0; nleft < nblocks; nleft++) {
-        n = n + fread(buffer, 1, bufsize, fsfd->fd);
+        n = n + tbx_io_fread(buffer, 1, bufsize, fsfd->fd);
         fs_chksum_add(cs, bufsize, buffer);
     }
     nleft = block_bytes_used % bufsize;
     if (nleft > 0) {
-        n = n + fread(buffer, 1, nleft, fsfd->fd);
+        n = n + tbx_io_fread(buffer, 1, nleft, fsfd->fd);
         fs_chksum_add(cs, nleft, buffer);
     }
 
@@ -2733,8 +2734,8 @@ int _fs_calculate_chksum(osd_fs_t *fs, osd_fs_fd_t *fsfd, tbx_chksum_t *cs, osd_
 
             if (correct_errors == 1) {  //** Correct it if they want
                 fpos = fpos + sizeof(uint32_t);
-                fseeko(fsfd->fd, fpos, SEEK_SET);       //** Move to the start of the block
-                n = fwrite(cs_value, 1, cs_size, fsfd->fd);
+                tbx_io_fseeko(fsfd->fd, fpos, SEEK_SET);       //** Move to the start of the block
+                n = tbx_io_fwrite(cs_value, 1, cs_size, fsfd->fd);
                 if (n != cs_size) {
                     log_printf(0,
                                "_fs_calculate_chksum: Error storing corrected chksum information:  fwrite="
@@ -2785,8 +2786,8 @@ int fs_validate_chksum(osd_t *d, osd_id_t id, int correct_errors)
         return (0);
     }
     //** Find out how many bytes there are and the corresponding number of blocks
-    fseeko(fsfd->fd, 0, SEEK_END);
-    nbytes = ftell(fsfd->fd);
+    tbx_io_fseeko(fsfd->fd, 0, SEEK_END);
+    nbytes = tbx_io_ftell(fsfd->fd);
     n = fs_offset_p2l(fs, fsfd, nbytes) - fcs->header_blocksize;
     end_block = n / fcs->blocksize;
 

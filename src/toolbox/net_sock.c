@@ -45,6 +45,7 @@
 #include "tbx/log.h"
 #include "transfer_buffer.h"
 #include <tbx/type_malloc.h>
+#include <tbx/io.h>
 
 //#define SOCK_DEFAULT_TIMEOUT 1000*1000
 #define SOCK_DEFAULT_TIMEOUT (100*1000)
@@ -94,7 +95,7 @@ int sock_close(net_sock_t *nsock)
 
     if (sock == NULL) return(0);
 
-    if (sock->fd != -1) close(sock->fd);
+    if (sock->fd != -1) tbx_io_close(sock->fd);
 
     free(sock);
 
@@ -119,7 +120,7 @@ int sock_io_wait(tbx_net_sock_t *sock, tbx_ns_timeout_t tm, int mode)
     pfd.events = mode;
 
     do {
-        state = poll(&pfd, 1, dt);
+        state = tbx_io_poll(&pfd, 1, dt);
     } while ((state == -1) && (errno == EINTR));
 
     ddt = apr_time_now() - start;
@@ -152,7 +153,7 @@ apr_size_t my_read(tbx_net_sock_t *sock, tbx_tbuf_t *buf, apr_size_t pos, apr_si
         tbv.nbytes = len;
         tbx_tbuf_next(buf, pos, &tbv);
         if (tbv.n_iov > IOV_MAX) tbv.n_iov = IOV_MAX;  //** Make sure we don't have to many entries
-        n = readv(sock->fd, tbv.buffer, tbv.n_iov);
+        n = tbx_io_readv(sock->fd, tbv.buffer, tbv.n_iov);
         leni=tbv.buffer[0].iov_len;
         ni = n;
         nbi = tbv.nbytes;
@@ -193,7 +194,7 @@ apr_size_t my_write(tbx_net_sock_t *sock, tbx_tbuf_t *buf, apr_size_t bpos, apr_
         tbv.nbytes = len;
         tbx_tbuf_next(buf, bpos, &tbv);
         if (tbv.n_iov > IOV_MAX) tbv.n_iov = IOV_MAX;  //** Make sure we don't have to many entries
-        n = writev(sock->fd, tbv.buffer, tbv.n_iov);
+        n = tbx_io_writev(sock->fd, tbv.buffer, tbv.n_iov);
         leni=tbv.buffer->iov_len;
         ni = n;
         log_printf(10, "s->fd=%d  writev()=%d errno=%d nio=%d iov[0].len=%d\n", sock->fd, ni, errno, tbv.n_iov, leni);
@@ -294,7 +295,7 @@ int sock_connect(net_sock_t *nsock, const char *hostname, int port, tbx_ns_timeo
 
     if (sock == NULL) return(-1);   //** If NULL exit
 
-    if (sock->fd != -1) close(sock->fd);
+    if (sock->fd != -1) tbx_io_close(sock->fd);
 
     sock->fd = -1;
 
@@ -318,10 +319,10 @@ int sock_connect(net_sock_t *nsock, const char *hostname, int port, tbx_ns_timeo
 
     if (connect(sock->fd, &sa, sizeof(sa)) == -1) goto fail;
 
-    flags = fcntl(sock->fd, F_GETFL, 0);
+    flags = tbx_io_fcntl(sock->fd, F_GETFL, 0);
     if (flags < 0) goto fail;
     flags = flags|O_NONBLOCK;
-    if (fcntl(sock->fd, F_SETFL, flags) == -1) goto fail;
+    if (tbx_io_fcntl(sock->fd, F_SETFL, flags) == -1) goto fail;
 
     tbx_ns_timeout_set(&tm, 0, SOCK_DEFAULT_TIMEOUT);
     sock_timeout_set(sock, tm);  //** Technically this is overkill since we have non-blocking I/O with timed waits before ops.
@@ -331,7 +332,7 @@ int sock_connect(net_sock_t *nsock, const char *hostname, int port, tbx_ns_timeo
 
 fail:
     log_printf(20, "FAIL host=%s errno=%d\n", hostname, errno);
-    close(sock->fd);
+    tbx_io_close(sock->fd);
     sock->fd = -1;
     return(-1);
 }
@@ -354,7 +355,7 @@ int sock_connection_request(net_sock_t *nsock, int timeout)
     pfd.events = POLLIN;
     pfd.revents = 0;
 
-    return(poll(&pfd, 1, timeout*1000));
+    return(tbx_io_poll(&pfd, 1, timeout*1000));
 }
 
 //*********************************************************************
@@ -414,7 +415,7 @@ int sock_bind(net_sock_t *nsock, char *address, int port)
     flags = fcntl(sock->fd, F_GETFL, 0);
     if (flags < 0) goto fail;
     flags = flags|O_NONBLOCK;
-    if (fcntl(sock->fd, F_SETFL, flags) == -1) goto fail;
+    if (tbx_io_fcntl(sock->fd, F_SETFL, flags) == -1) goto fail;
 
     flags = 1;
     if (setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(int)) < 0) goto fail;
@@ -431,7 +432,7 @@ int sock_bind(net_sock_t *nsock, char *address, int port)
     return(0);
 
 fail:
-    close(sock->fd);
+    tbx_io_close(sock->fd);
     sock->fd = -1;
     return(-1);
 }

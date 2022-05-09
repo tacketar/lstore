@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <tbx/io.h>
 #include "tbx/fork_helper.h"
 
 //***************************************************************************
@@ -35,19 +36,19 @@ int tbx_fork_redirect(const char *fname_stdout, const char *fname_stderr)
     FILE *stdout_new, *stderr_new;
 
     //** Make sure we can open the new output files
-    stdout_new = fopen(fname_stdout, "w");
+    stdout_new = tbx_io_fopen(fname_stdout, "w");
     if (stdout_new == NULL) return(1);
-    stderr_new = fopen(fname_stderr, "w");
+    stderr_new = tbx_io_fopen(fname_stderr, "w");
     if (stderr_new == NULL) return(2);
 
     //** dup them. This will silently and atomically close/reopen the std* versions
-    dup2(fileno(stdout_new), STDOUT_FILENO);
-    dup2(fileno(stderr_new), STDERR_FILENO);
+    tbx_io_dup2(fileno(stdout_new), STDOUT_FILENO);
+    tbx_io_dup2(fileno(stderr_new), STDERR_FILENO);
 
     //** Close the original file I opened since they aren't needed anymore
-    fclose(stdin);      //** Also  close stdin
-    fclose(stdout_new);
-    fclose(stderr_new);
+    tbx_io_fclose(stdin);      //** Also  close stdin
+    tbx_io_fclose(stdout_new);
+    tbx_io_fclose(stderr_new);
 
     return(0);
 }

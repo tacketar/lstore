@@ -37,6 +37,7 @@
 #include <tbx/lio_monitor.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/random.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
@@ -2240,7 +2241,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
 
     if (cp->src_tuple.is_lio == 0) {  //** Source is a local file and dest is lio (or local if enabled)
         ftype = lio_os_local_filetype(cp->src_tuple.path);
-        sffd = fopen(cp->src_tuple.path, "r");
+        sffd = tbx_io_fopen(cp->src_tuple.path, "r");
         if (sffd) tbx_dio_init(sffd);
 
         if (cp->dest_tuple.is_lio == 1) {
@@ -2266,12 +2267,12 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                     }
                 }
             }
-            if (sffd != NULL) { tbx_dio_finish(sffd, 0); fclose(sffd); }
+            if (sffd != NULL) { tbx_dio_finish(sffd, 0); tbx_io_fclose(sffd); }
         } else if (cp->enable_local == 1) {  //** local2local copy
             info_printf(lio_ifd, 0, "copy %s %s\n", cp->src_tuple.path, cp->dest_tuple.path);
             ftype = os_local_filetype_stat(cp->src_tuple.path, &stat_link, &stat_object);
             already_exists = lio_os_local_filetype(cp->dest_tuple.path); //** Track if the file was already there for cleanup
-            dffd = fopen(cp->dest_tuple.path, "w");
+            dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
             if (dffd) tbx_dio_init(dffd);
 
             if ((sffd == NULL) || (dffd == NULL)) { //** Got an error
@@ -2282,8 +2283,8 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                 tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
                 status = gop_sync_exec_status(lio_cp_local2local_gop(sffd, dffd, cp->bufsize, buffer, 0, 0, -1, 1, cp->rw_hints, 0));
             }
-            if (dffd != NULL) { tbx_dio_finish(dffd, 0); fclose(dffd); }
-            if (sffd != NULL) { tbx_dio_finish(sffd, 0); fclose(sffd); }
+            if (dffd != NULL) { tbx_dio_finish(dffd, 0); tbx_io_fclose(dffd); }
+            if (sffd != NULL) { tbx_dio_finish(sffd, 0); tbx_io_fclose(sffd); }
 
             if (status.op_status == OP_STATE_SUCCESS) {
                 if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
@@ -2297,7 +2298,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
         ftype = lio_exists(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path); //** Get the source's type
 
         gop_sync_exec(lio_open_gop(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, lio_fopen_flags("r"), NULL, &slfd, 60));
-        dffd = fopen(cp->dest_tuple.path, "w");
+        dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
         if (dffd) tbx_dio_init(dffd);
 
         if ((dffd == NULL) || (slfd == NULL)) { //** Got an error
@@ -2309,7 +2310,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             status = gop_sync_exec_status(lio_cp_lio2local_gop(slfd, dffd, cp->bufsize, buffer, 0, -1, cp->rw_hints));
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
-        if (dffd != NULL) { tbx_dio_finish(dffd, 0); fclose(dffd); }
+        if (dffd != NULL) { tbx_dio_finish(dffd, 0); tbx_io_fclose(dffd); }
         if (status.op_status == OP_STATE_SUCCESS) {
             if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
                 already_exists = os_local_filetype_stat(cp->dest_tuple.path, &stat_link, &stat_object);

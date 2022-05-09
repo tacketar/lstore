@@ -27,6 +27,7 @@
 #include <strings.h>
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 
 #include "erasure_tools.h"
 #include "raid4.h"
@@ -83,7 +84,7 @@ int nearest_prime(int w, int which)
 int bread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
     int i;
-    size_t n = fread(ptr, size, nmemb, stream);
+    size_t n = tbx_io_fread(ptr, size, nmemb, stream);
 
     if (n != nmemb) {
         i = (nmemb - n)*size;
@@ -344,15 +345,15 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     long long int rpos, apos, bpos, ppos;
 
     //** Open the files
-    fd_file = fopen(fname, "r");
+    fd_file = tbx_io_fopen(fname, "r");
     if (fd_file == NULL) {
         printf("et_encode: Error opening data file %s\n", fname);
         return(1);
     }
 
-    fd_parity = fopen(pname, "r+");
+    fd_parity = tbx_io_fopen(pname, "r+");
     if (fd_parity == NULL) {
-        fd_parity = fopen(pname, "w");  //** Doesn't exist so create it.
+        fd_parity = tbx_io_fopen(pname, "w");  //** Doesn't exist so create it.
     }
     if (fd_parity == NULL) {
         printf("et_encode: Error opening parity file %s\n", pname);
@@ -399,7 +400,7 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
         //** Read the data
         bpos = apos;
         for (i=0; i<plan->data_strips; i++) {
-            fseek(fd_file, bpos, SEEK_SET);
+            tbx_io_fseek(fd_file, bpos, SEEK_SET);
             bread(data[i], 1, bsize, fd_file);
             bpos = bpos + plan->strip_size;
         }
@@ -411,8 +412,8 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
         //** Store the parity
         bpos = ppos;
         for (i=0; i<plan->parity_strips; i++) {
-            fseek(fd_parity, bpos, SEEK_SET);
-            fwrite(parity[i], 1, bsize, fd_parity);
+            tbx_io_fseek(fd_parity, bpos, SEEK_SET);
+            tbx_io_fwrite(parity[i], 1, bsize, fd_parity);
             bpos = bpos + plan->strip_size;
         }
         ppos = ppos + block_size;
@@ -424,8 +425,8 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     free(ptr);
     free(buffer);
 
-    fclose(fd_file);
-    fclose(fd_parity);
+    tbx_io_fclose(fd_file);
+    tbx_io_fclose(fd_parity);
 
     return(0);
 }
@@ -494,13 +495,13 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
     if (i == 0) return(0);  //**Nothing missing so exit
 
     //** Open the files
-    fd_file = fopen(fname, "r+");
+    fd_file = tbx_io_fopen(fname, "r+");
     if (fd_file == NULL) {
         printf("et_decode: Error opening data file %s\n", fname);
         return(1);
     }
 
-    fd_parity = fopen(pname, "r+");
+    fd_parity = tbx_io_fopen(pname, "r+");
     if (fd_parity == NULL) {
         printf("et_decode: Error opening parity file %s\n", pname);
         return(1);
@@ -547,7 +548,7 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         bpos = apos;
         for (i=0; i<plan->data_strips; i++) {
             if (missing_data[i] == 0) {
-                fseek(fd_file, bpos, SEEK_SET);
+                tbx_io_fseek(fd_file, bpos, SEEK_SET);
                 bread(data[i], 1, bsize, fd_file);
             }
             bpos = bpos + plan->strip_size;
@@ -556,8 +557,8 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         bpos = ppos;   //**...and the parity
         for (i=0; i<plan->parity_strips; i++) {
             if (missing_parity[i] == 0) {
-                fseek(fd_parity, bpos, SEEK_SET);
-                if (fread(parity[i], 1, bsize, fd_parity) != (size_t)bsize) abort();
+                tbx_io_fseek(fd_parity, bpos, SEEK_SET);
+                if (tbx_io_fread(parity[i], 1, bsize, fd_parity) != (size_t)bsize) abort();
             }
             bpos = bpos + plan->strip_size;
         }
@@ -569,17 +570,17 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         bpos = apos;
         for (i=0; i<plan->data_strips-1; i++) {  //** Skip the last block
             if (missing_data[i] == 1) {
-                fseek(fd_file, bpos, SEEK_SET);
-                if (fwrite(data[i], 1, bsize, fd_file) != (size_t)bsize) abort();
+                tbx_io_fseek(fd_file, bpos, SEEK_SET);
+                if (tbx_io_fwrite(data[i], 1, bsize, fd_file) != (size_t)bsize) abort();
             }
             bpos = bpos + plan->strip_size;
         }
         //** Handle the last strip individually to handle truncation
         i = plan->data_strips-1;
         if (missing_data[i] == 1) {
-            fseek(fd_file, bpos, SEEK_SET);
+            tbx_io_fseek(fd_file, bpos, SEEK_SET);
             bpos = (bpos + bsize) > fsize ? fsize - bpos : bsize;
-            fwrite(data[i], 1, bpos, fd_file);
+            tbx_io_fwrite(data[i], 1, bpos, fd_file);
         }
 
         //** Update the file positions
@@ -592,8 +593,8 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
     free(ptr);
     free(buffer);
 
-    fclose(fd_file);
-    fclose(fd_parity);
+    tbx_io_fclose(fd_file);
+    tbx_io_fclose(fd_parity);
 
     return(0);
 }

@@ -33,6 +33,7 @@
 #include "resource.h"
 #include "db_resource.h"
 #include <tbx/network.h>
+#include <tbx/io.h>
 #include <tbx/net_sock.h>
 #include <tbx/type_malloc.h>
 #ifdef _ENABLE_PHOEBUS
@@ -3297,7 +3298,7 @@ void rid_log_append(char *crid, char *mode, char *result, char *msg, apr_time_t 
     FILE *fd;
     char sbuf[128], ebuf[128];
 
-    fd = fopen(global_config->server.rid_log, "a");
+    fd = tbx_io_fopen(global_config->server.rid_log, "a");
     if (fd == NULL) {
         log_printf(0, "ERROR opening RID log!  rid_log=%s\n", global_config->server.rid_log);
         return;
@@ -3309,7 +3310,7 @@ void rid_log_append(char *crid, char *mode, char *result, char *msg, apr_time_t 
     apr_thread_mutex_lock(shutdown_lock);
     fprintf(fd, "%s (" TT ") - %s (" TT ")|%s|%s|%s|%s\n", sbuf, start, ebuf, end, crid, mode,
             result, msg);
-    fclose(fd);
+    tbx_io_fclose(fd);
     apr_thread_mutex_unlock(shutdown_lock);
 
 }

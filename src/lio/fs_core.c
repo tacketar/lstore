@@ -70,6 +70,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
@@ -1221,7 +1222,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
         return(-1);
     }
 
-    dfd = fopen(dest_local_fname, "w");
+    dfd = tbx_io_fopen(dest_local_fname, "w");
     if (!dfd) {
         lio_fs_close(fs, sfd);
         log_printf(1, "ERROR: Failed opening destination local file: %s\n", dest_local_fname);
@@ -1260,7 +1261,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     //** Clean up
     if (buf2 != buffer) free(buf2);
     lio_fs_close(fs, sfd);
-    fclose(dfd);
+    tbx_io_fclose(dfd);
 
     return(err);
 }
@@ -1278,7 +1279,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     struct stat sbuf;
 
     //** Set things up
-    sfd = fopen(src_local_fname, "r");
+    sfd = tbx_io_fopen(src_local_fname, "r");
     if (!sfd) {
         log_printf(1, "ERROR: Failed opening local src file: %s\n", src_local_fname);
         return(-1);
@@ -1286,7 +1287,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
 
     dfd = lio_fs_open(fs, ug, dest_lio_fname, LIO_READ_MODE);
     if (!dfd) {
-        fclose(sfd);
+        tbx_io_fclose(sfd);
         log_printf(1, "ERROR: Failed opening destination lio file: %s\n", dest_lio_fname);
         return(-1);
     }
@@ -1312,7 +1313,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
 
     //** Clean up
     if (buf2 != buffer) free(buf2);
-    fclose(sfd);
+    tbx_io_fclose(sfd);
     lio_fs_close(fs, dfd);
 
     return(err);

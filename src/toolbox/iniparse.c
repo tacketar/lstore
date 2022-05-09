@@ -17,6 +17,7 @@
 #include "tbx/atomic_counter.h"
 #include "tbx/fmttypes.h"
 #include "tbx/iniparse.h"
+#include "tbx/io.h"
 #include "tbx/log.h"
 #include "tbx/stack.h"
 #include "tbx/string_token.h"
@@ -363,10 +364,10 @@ FILE *bfile_fopen(tbx_stack_t *include_paths, char *fname, const char *jail_pref
     char *path;
 
     if (fname[0] == '/') { //** Absolute path so just try and open it
-        fd = fopen(fname, "r");
+        fd = tbx_io_fopen(fname, "r");
         if (fd) { //** Check the path
             if (_jail_check(fname, jail_prefix, n_jail_len)) return(fd);
-            fclose(fd);
+            tbx_io_fclose(fd);
             return(NULL);
         }
         return(NULL);
@@ -376,11 +377,11 @@ FILE *bfile_fopen(tbx_stack_t *include_paths, char *fname, const char *jail_pref
     tbx_stack_move_to_top(include_paths);
     while ((path = tbx_stack_get_current_data(include_paths)) != NULL) {
         snprintf(fullpath, BUFMAX, "%s/%s", path, fname);
-        fd = fopen(fullpath, "r");
+        fd = tbx_io_fopen(fullpath, "r");
         log_printf(15, "checking path=%s fname=%s fullpath=%s fd=%p\n", path, fname, fullpath, fd);
         if (fd != NULL) { //** Found a possible match so check if it's in the jail
             if (_jail_check(fullpath, jail_prefix, n_jail_len)) return(fd);
-            fclose(fd);  //** Not in the jail so try another prefix
+            tbx_io_fclose(fd);  //** Not in the jail so try another prefix
         }
 
         tbx_stack_move_down(include_paths);
@@ -400,7 +401,7 @@ void bfile_cleanup(tbx_stack_t *stack)
     if (!stack) return;
 
     while ((entry = (bfile_entry_t *)tbx_stack_pop(stack)) != NULL) {
-        if (entry->fd) fclose(entry->fd);
+        if (entry->fd) tbx_io_fclose(entry->fd);
         free(entry);
     }
 }
@@ -455,7 +456,7 @@ again:
     log_printf(15, "_get_line: fgets=%s\n", comment);
 
     if (comment == NULL) {  //** EOF or error
-        if (bfd->curr->fd) fclose(bfd->curr->fd);
+        if (bfd->curr->fd) tbx_io_fclose(bfd->curr->fd);
         free(bfd->curr);
 
         bfd->curr = (bfile_entry_t *) tbx_stack_pop(bfd->stack);
@@ -934,7 +935,7 @@ tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, 
     if(!strcmp(fname, "-")) {
         fd = stdin;
     } else {
-        fd = fopen(fname, "r");
+        fd = tbx_io_fopen(fname, "r");
     }
     if (fd == NULL) {  //** Can't open the file
         log_printf(-1, "Problem opening file %s, errorno: %d\n", fname, errno);
@@ -1071,7 +1072,7 @@ int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, c
     if(!strcmp(fname, "-")) {
         fd = stdin;
     } else {
-        fd = fopen(fname, "r");
+        fd = tbx_io_fopen(fname, "r");
     }
     if (fd == NULL) {  //** Can't open the file
         log_printf(-1, "Problem opening file %s, errorno: %d\n", fname, errno);

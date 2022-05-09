@@ -48,6 +48,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/pigeon_coop.h>
 #include <tbx/random.h>
 #include <tbx/stack.h>
@@ -1478,16 +1479,16 @@ int osf_is_dir_empty(char *path)
 
     int empty = 1;
 
-    d = opendir(path);
+    d = tbx_io_opendir(path);
     if (d == NULL) return(1);
 
-    while ((empty == 1) && ((entry = readdir(d)) != NULL)) {
+    while ((empty == 1) && ((entry = tbx_io_readdir(d)) != NULL)) {
         if ( ! ((strcmp(entry->d_name, FILE_ATTR_PREFIX) == 0) ||
                 (strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0)) ) empty = 0;
     }
 
     if (empty == 0) log_printf(15, "path=%s found entry=%s\n", path, entry->d_name);
-    closedir(d);
+    tbx_io_closedir(d);
 
     return(empty);
 }
@@ -1517,7 +1518,7 @@ char *my_readdir(osf_dir_t *d)
 
     if (d->type == 0) {
         if (d->d == NULL) return(NULL);
-        d->entry = readdir(d->d);
+        d->entry = tbx_io_readdir(d->d);
         if (d->entry == NULL) return(NULL);
         fname = &(d->entry->d_name[0]);
         return(fname);
@@ -1540,7 +1541,7 @@ osf_dir_t *my_opendir(char *fullname, char *frag)
 
     if (frag == NULL) {
         d->type = 0;
-        d->d = opendir(fullname);
+        d->d = tbx_io_opendir(fullname);
     } else {
         d->type = 1;
         d->frag = frag;
@@ -1555,7 +1556,7 @@ osf_dir_t *my_opendir(char *fullname, char *frag)
 void my_closedir(osf_dir_t *d)
 {
     if (d->type == 0) {
-        if (d->d) closedir(d->d);
+        if (d->d) tbx_io_closedir(d->d);
     }
 
     free(d);
@@ -1566,7 +1567,7 @@ void my_closedir(osf_dir_t *d)
 long my_telldir(osf_dir_t *d)
 {
     if (d->type == 0) {
-        return((d->d) ? telldir(d->d) : 0);
+        return((d->d) ? tbx_io_telldir(d->d) : 0);
     }
 
     return(d->slot);
@@ -1577,7 +1578,7 @@ long my_telldir(osf_dir_t *d)
 void my_seekdir(osf_dir_t *d, long offset)
 {
     if (d->type == 0) {
-        if (d->d) seekdir(d->d, offset);
+        if (d->d) tbx_io_seekdir(d->d, offset);
     } else {
         d->slot = offset;
     }
@@ -2430,13 +2431,13 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     osf_obj_lock(lock);
 
     if (op->type & OS_OBJECT_FILE_FLAG) {
-        fd = fopen(fname, "w");
+        fd = tbx_io_fopen(fname, "w");
         if (fd == NULL) {
             osf_obj_unlock(lock);
             return(gop_failure_status);
         }
 
-        fclose(fd);
+        tbx_io_fclose(fd);
 
         if (op->type & OS_OBJECT_EXEC_FLAG) { //** See if we need to set the executable bit
             osf_object_exec_modify(op->os, fname, op->type);
@@ -3330,7 +3331,7 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
 
     *atype = lio_os_local_filetype(fname);
 
-    fd = fopen(fname, "r");
+    fd = tbx_io_fopen(fname, "r");
     if (fd == NULL) {
         if (*v_size < 0) *val = NULL;
         *v_size = -1;
@@ -3338,13 +3339,13 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     }
 
     if (*v_size < 0) { //** Need to determine the size
-        fseek(fd, 0L, SEEK_END);
-        n = ftell(fd);
-        fseek(fd, 0L, SEEK_SET);
+        tbx_io_fseek(fd, 0L, SEEK_END);
+        n = tbx_io_ftell(fd);
+        tbx_io_fseek(fd, 0L, SEEK_SET);
         if (n < 1) {    //** Either have an error (-1) or an empty file (0)
            *v_size = 0;
             *val = NULL;
-            fclose(fd);
+            tbx_io_fclose(fd);
             return((n<0) ? 1 : 0);
         } else {
             *v_size = (n > (-*v_size)) ? -*v_size : n;
@@ -3356,13 +3357,13 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         bsize = *v_size;
     }
 
-    *v_size = fread(*val, 1, *v_size, fd);
+    *v_size = tbx_io_fread(*val, 1, *v_size, fd);
     if (bsize > *v_size) {
         ca = (char *)(*val);    //** Add a NULL terminator in case it may be a string
         ca[*v_size] = 0;
     }
 
-    fclose(fd);
+    tbx_io_fclose(fd);
 
 done:
     osaz_attr_filter_apply(osf->osaz, attr, OS_MODE_READ_BLOCKING, val, v_size, filter);
@@ -3523,10 +3524,10 @@ int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, v
     if (v_size < 0) { //** Want to remove the attribute
         safe_remove(os, fname);
     } else {
-        fd = fopen(fname, "w");
+        fd = tbx_io_fopen(fname, "w");
         if (fd == NULL) return(-1);
-        if (v_size > 0) fwrite(val, v_size, 1, fd);
-        fclose(fd);
+        if (v_size > 0) tbx_io_fwrite(val, v_size, 1, fd);
+        tbx_io_fclose(fd);
     }
 
     return(0);
@@ -3597,12 +3598,12 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         if (osaz_attr_create(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
     }
 
-    fd = fopen(fname, (append_val == 0) ? "w" : "a");
+    fd = tbx_io_fopen(fname, (append_val == 0) ? "w" : "a");
 
     if (fd == NULL) log_printf(0, "ERROR opening attr file attr=%s val=%p v_size=%d fname=%s append=%d\n", attr, val, v_size, fname, append_val);
     if (fd == NULL) return(-1);
-    if (v_size > 0) fwrite(val, v_size, 1, fd);
-    fclose(fd);
+    if (v_size > 0) tbx_io_fwrite(val, v_size, 1, fd);
+    tbx_io_fclose(fd);
 
     return(0);
 }
@@ -4270,9 +4271,9 @@ int osf_fsck_check_file(lio_object_service_fn_t *os, lio_creds_t *creds, char *f
         }
 
         log_printf(15, "repair  fullname=%s\n", fullname);
-        fd = fopen(fullname, "w");
+        fd = tbx_io_fopen(fullname, "w");
         if (fd == NULL) return(OS_FSCK_MISSING_OBJECT);
-        fclose(fd);
+        tbx_io_fclose(fd);
 
         ftype = OS_OBJECT_FILE_FLAG;
     }

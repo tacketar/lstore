@@ -35,6 +35,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/object.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
@@ -96,8 +97,8 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
     int i, err_cnt;
     gop_op_status_t err;
 
-    FILE *fd = fopen(s->fname, "r+");
-    if (fd == NULL) fd = fopen(s->fname, "w+");
+    FILE *fd = tbx_io_fopen(s->fname, "r+");
+    if (fd == NULL) fd = tbx_io_fopen(s->fname, "w+");
 
     log_printf(15, "segfile_rw_func: fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " mode=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, srw->mode);
     tbx_log_flush();
@@ -108,7 +109,7 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
     bleft = blen;
     err_cnt = 0;
     for (i=0; i<srw->n_iov; i++) {
-        fseeko(fd, srw->iov[i].offset, SEEK_SET);
+        tbx_io_fseeko(fd, srw->iov[i].offset, SEEK_SET);
         bleft = srw->iov[i].len;
         err = gop_success_status;
         while ((bleft > 0) && (err.op_status == OP_STATE_SUCCESS)) {
@@ -116,9 +117,9 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
             tbx_tbuf_next(srw->buffer, boff, &tbv);
             blen = tbv.nbytes;
             if (srw->mode == 0) {
-                nbytes = readv(fileno(fd), tbv.buffer, tbv.n_iov);
+                nbytes = tbx_io_readv(fileno(fd), tbv.buffer, tbv.n_iov);
             } else {
-                nbytes = writev(fileno(fd), tbv.buffer, tbv.n_iov);
+                nbytes = tbx_io_writev(fileno(fd), tbv.buffer, tbv.n_iov);
             }
 
             int ib = blen;
@@ -146,7 +147,7 @@ gop_op_status_t segfile_rw_func(void *arg, int id)
 
     log_printf(15, "segfile_rw_func: fname=%s n_iov=%d off[0]=" XOT " len[0]=" XOT " bleft=" XOT " err_cnt=%d\n", s->fname, srw->n_iov, srw->iov[0].offset, srw->iov[0].len, bleft, err_cnt);
     tbx_log_flush();
-    fclose(fd);
+    tbx_io_fclose(fd);
     return(err);
 }
 
@@ -271,23 +272,23 @@ gop_op_generic_t *segfile_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_f
     case (INSPECT_QUICK_CHECK):
     case (INSPECT_SCAN_CHECK):
     case (INSPECT_FULL_CHECK):
-        fd = fopen(s->fname, "r");
+        fd = tbx_io_fopen(s->fname, "r");
         if (fd == NULL) {
             err = gop_failure_status;
         } else {
             err = gop_success_status;
-            fclose(fd);
+            tbx_io_fclose(fd);
         }
         break;
     case (INSPECT_QUICK_REPAIR):
     case (INSPECT_SCAN_REPAIR):
     case (INSPECT_FULL_REPAIR):
-        fd = fopen(s->fname, "w+");
+        fd = tbx_io_fopen(s->fname, "w+");
         if (fd == NULL) {
             err = gop_failure_status;
         } else {
             err = gop_success_status;
-            fclose(fd);
+            tbx_io_fclose(fd);
         }
         break;
     case (INSPECT_SOFT_ERRORS):
@@ -345,35 +346,34 @@ gop_op_status_t segfile_clone_func(void *arg, int id)
     int n, m;
     FILE *sfd, *dfd;
 
-    dfd = fopen(sd->fname, "w+");
+    dfd = tbx_io_fopen(sd->fname, "w+");
     if (dfd == NULL) return(gop_failure_status);  //** Failed making the dest file
 
     //** If no data then return
     if (sfc->copy_data == 0) {
-        fclose(dfd);
+        tbx_io_fclose(dfd);
         return(gop_success_status);
     }
 
 
-    sfd = fopen(ss->fname, "r");
+    sfd = tbx_io_fopen(ss->fname, "r");
     if (sfd == NULL) {
-        fclose(dfd);    //** Nothing to copy
+        tbx_io_fclose(dfd);    //** Nothing to copy
         return(gop_success_status);
     }
 
     tbx_type_malloc(buffer, char, bufsize);
-    while ((n = fread(buffer, 1, bufsize, sfd)) > 0) {
-        m = fwrite(buffer, 1, n, dfd);
-//log_printf(0, "r=%d w=%d bufsize=%d\n", n, m, bufsize);
+    while ((n = tbx_io_fread(buffer, 1, bufsize, sfd)) > 0) {
+        m = tbx_io_fwrite(buffer, 1, n, dfd);
         if (m != n) {
-            fclose(sfd);
-            fclose(dfd);
+            tbx_io_fclose(sfd);
+            tbx_io_fclose(dfd);
             return(gop_failure_status);
         }
     }
 
-    fclose(sfd);
-    fclose(dfd);
+    tbx_io_fclose(sfd);
+    tbx_io_fclose(dfd);
 
     free(buffer);
 
@@ -437,13 +437,13 @@ ex_off_t segfile_size(lio_segment_t *seg)
 {
     segfile_priv_t *s = (segfile_priv_t *)seg->priv;
     ex_off_t nbytes;
-    FILE *fd = fopen(s->fname, "r+");
+    FILE *fd = tbx_io_fopen(s->fname, "r+");
 
     if (fd == NULL) return(-1);
-    fseeko(fd, 0, SEEK_END);
-    nbytes = ftell(fd);
+    tbx_io_fseeko(fd, 0, SEEK_END);
+    nbytes = tbx_io_ftell(fd);
 
-    fclose(fd);
+    tbx_io_fclose(fd);
     return(nbytes);
 }
 
@@ -626,13 +626,13 @@ gop_op_generic_t *segment_file_make_gop(lio_segment_t *seg, data_attr_t *da, cha
     FILE *fd;
 
     s->fname = strdup(fname);
-    fd = fopen(fname, "r+");
+    fd = tbx_io_fopen(fname, "r+");
 
     if (fd ==  NULL) {
         return(gop_dummy(gop_failure_status));  //** Return an error
     }
 
-    fclose(fd);
+    tbx_io_fclose(fd);
     return(gop_dummy(gop_success_status));
 }
 

@@ -41,6 +41,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/monitor.h>
 #include <tbx/skiplist.h>
 #include <tbx/siginfo.h>
@@ -477,7 +478,7 @@ void lio_find_lfs_mounts()
 
     stack = tbx_stack_new();
 
-    fd = fopen("/proc/mounts", "r");
+    fd = tbx_io_fopen("/proc/mounts", "r");
     if (fd) {
         text = NULL;
         while (getline(&text, &ns, fd) != -1) {
@@ -1823,7 +1824,7 @@ no_args:
         } else if (strcmp(info_fname, "stderr") == 0) {
             fd = stderr;
         } else {
-            fd = fopen(info_fname, "w+");
+            fd = tbx_io_fopen(info_fname, "w+");
         }
         if (fd != NULL) _lio_ifd = fd;
     }
@@ -1865,7 +1866,7 @@ no_args:
     }
 
     if (strncasecmp(cfg_name, "file://", 7) == 0) { //** Load the default and see what we have
-        fd = fopen(cfg_name+7, "r");
+        fd = tbx_io_fopen(cfg_name+7, "r");
         if (!fd) {
             printf("Failed to open config file: %s  errno=%d\n", cfg_name+8, errno);
             exit(1);
@@ -1874,7 +1875,7 @@ no_args:
             printf("No data in config file: %s  errno=%d\n", cfg_name, errno);
             exit(1);
         }
-        fclose(fd);
+        tbx_io_fclose(fd);
 
         i = strlen(text);
         if (i == 0) {

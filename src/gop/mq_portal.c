@@ -33,6 +33,7 @@
 #include <tbx/log.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
+#include <tbx/io.h>
 
 #include "gop.h"
 #include "gop/portal.h"
@@ -1481,7 +1482,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
     if (c->cefd[0] != -1) {
         do {
-            i = write(c->cefd[1], &v, 1);
+            i = tbx_io_write(c->cefd[1], &v, 1);
         } while (i != 1);
     }
 
@@ -1570,7 +1571,7 @@ cleanup:
     if (c->cefd[0] != -1) {
         struct pollfd pfd2;
         pfd2.fd = c->cefd[0]; pfd2.events = POLLIN;
-        while (poll(&pfd2, 1, 0) == 1) {
+        while (tbx_io_poll(&pfd2, 1, 0) == 1) {
             usleep(1000);
         }
     }
@@ -1636,7 +1637,7 @@ int mq_conn_create_actual(gop_mq_portal_t *p, int dowait)
     err = 0;
     if (dowait == 1) {  //** If needed wait until connected
         do {
-            err = read(c->cefd[0], &v, 1);
+            err = tbx_io_read(c->cefd[0], &v, 1);
         } while (err != 1);
 
         //** n==1 is a success anything else is an error
@@ -1689,7 +1690,7 @@ void gop_mq_conn_teardown(gop_mq_conn_t *c)
     apr_hash_clear(c->heartbeat_lut);
     apr_pool_destroy(c->mpool);
     if (c->cefd[0] != -1) {
-        close(c->cefd[0]), close(c->cefd[0]);
+        tbx_io_close(c->cefd[0]), tbx_io_close(c->cefd[0]);
     }
     if (c->sock != NULL) gop_mq_socket_destroy(c->pc->ctx, c->sock);
 }

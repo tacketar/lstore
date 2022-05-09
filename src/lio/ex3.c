@@ -32,6 +32,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/skiplist.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
@@ -363,18 +364,18 @@ lio_exnode_exchange_t *lio_exnode_exchange_load_file(char *fname)
     char *text;
     int i, n;
 
-    fd = fopen(fname, "r");
+    fd = tbx_io_fopen(fname, "r");
    FATAL_UNLESS(fd != NULL);
-    fseek(fd, 0, SEEK_END);
-    i = ftell(fd);
+    tbx_io_fseek(fd, 0, SEEK_END);
+    i = tbx_io_ftell(fd);
     tbx_type_malloc(text, char, i + 2);
     fseek(fd, 0, SEEK_SET);
     do {
-        n = fread(text, i, 1, fd);
+        n = tbx_io_fread(text, i, 1, fd);
     } while (n != 1);
     text[i] = '\n';
     text[i+1] = '\0';
-    fclose(fd);
+    tbx_io_fclose(fd);
 
     return(lio_exnode_exchange_text_parse(text));
 }

@@ -32,6 +32,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/pigeon_coop.h>
@@ -53,19 +54,19 @@
 
 //** Macros for reading/writing the log file
 #define aread(fd, buffer, nbytes, ...) \
-   if ((int)fread(buffer, 1, nbytes, fd) != nbytes) { \
+   if ((int)tbx_io_fread(buffer, 1, nbytes, fd) != nbytes) { \
       log_printf(0, __VA_ARGS__); \
       return(1); \
    }
 
 #define awrite(fd, buffer, nbytes, ...) \
-   if ((int)fwrite(buffer, 1, nbytes, fd) != nbytes) { \
+   if ((int)tbx_io_fwrite(buffer, 1, nbytes, fd) != nbytes) { \
       log_printf(0, __VA_ARGS__); \
       return(1); \
    }
 
 #define awrite_ul(fd, buffer, nbytes, ...) \
-   if ((int)fwrite(buffer, 1, nbytes, fd) != nbytes) { \
+   if ((int)tbx_io_fwrite(buffer, 1, nbytes, fd) != nbytes) { \
       log_printf(0, __VA_ARGS__); \
       apr_thread_mutex_unlock(_alog_lock); \
       return(1); \
@@ -73,7 +74,7 @@
 
 //** Macro for checking alog size and forcing data to be sent
 #define alog_checksize() \
-   if ((int)ftell(_alog->fd) > _alog_max_size) { \
+   if ((int)tbx_io_ftell(_alog->fd) > _alog_max_size) { \
       _alog_send_data(); \
    }
 
@@ -922,7 +923,7 @@ int _alog_append_alias_read32(int tid, int ri, osd_id_t pid, osd_id_t id, uint64
 
     alog_mode_check();
 
-//int d = ftell(_alog->fd);
+//int d = tbx_io_ftell(_alog->fd);
 //log_printf(0, "_alog_append_alias_read32:  Start!!!!!!!!!!! fpos=%d\n", d);
     a.id = id;
     a.pid = pid;
@@ -934,10 +935,10 @@ int _alog_append_alias_read32(int tid, int ri, osd_id_t pid, osd_id_t id, uint64
     alog_checksize();
 
     _alog->append_header(_alog->fd, tid, ALOG_REC_ALIAS_READ32);
-//d = ftell(_alog->fd);
+//d = tbx_io_ftell(_alog->fd);
 //log_printf(0, "_alog_append_alias_read32: after header fpos=%d\n", d);
     awrite_ul(_alog->fd, &a, sizeof(a), "alog_append_alias_read32: Error with write!\n");
-//d = ftell(_alog->fd);
+//d = tbx_io_ftell(_alog->fd);
 //log_printf(0, "_alog_append_alias_read32: after rec fpos=%d\n", d);
 
     alog_unlock();
@@ -2715,7 +2716,7 @@ int _alog_config()
 
     _alog->append_header(_alog->fd, 0, ALOG_REC_IBP_CONFIG);
 
-    start_pos = ftell(_alog->fd);       //** Keep track of the starting position
+    start_pos = tbx_io_ftell(_alog->fd);       //** Keep track of the starting position
 
     //** Preserve the space for the config length
     awrite_ul(_alog->fd, &nbytes, sizeof(nbytes), "_alog_config: Error storing placeholder!\n");
@@ -2724,11 +2725,11 @@ int _alog_config()
     print_config(buffer, &used, sizeof(buffer), global_config);
     fprintf(_alog->fd, "%s", buffer);
 
-    end_pos = ftell(_alog->fd); //*** Keep track of my final position
-    fseek(_alog->fd, start_pos, SEEK_SET);      //** Move back to the length field
+    end_pos = tbx_io_ftell(_alog->fd); //*** Keep track of my final position
+    tbx_io_fseek(_alog->fd, start_pos, SEEK_SET);      //** Move back to the length field
     nbytes = end_pos - (start_pos + sizeof(nbytes));    //** and write it
     awrite_ul(_alog->fd, &nbytes, sizeof(nbytes), "_alog_config: Error storing config size!\n");
-    fseek(_alog->fd, end_pos, SEEK_SET);        //** Move to the end of the record
+    tbx_io_fseek(_alog->fd, end_pos, SEEK_SET);        //** Move to the end of the record
 
     return (0);
 }
@@ -2751,10 +2752,10 @@ int alog_read_ibp_config_rec(activity_log_t *alog, int cmd, FILE *outfd)
             if (j > bufsize)
                 j = bufsize;
             aread(alog->fd, buffer, j, "alog_read_ibp_config_rec:  Short read!\n");
-            fwrite(buffer, j, 1, outfd);
+            tbx_io_fwrite(buffer, j, 1, outfd);
         }
     } else {
-        fseek(alog->fd, nbytes, SEEK_CUR);
+        tbx_io_fseek(alog->fd, nbytes, SEEK_CUR);
     }
 
     return (0);
@@ -3029,7 +3030,7 @@ int _alog_transfer_data(char *fname)
     tbx_ns_timeout_set(&dt, 1, 0);
 
     //** Get the info for the command
-    alog.fd = fopen(fname, "r");
+    alog.fd = tbx_io_fopen(fname, "r");
     if (alog.fd == NULL) {
         log_printf(0, "_alog_transfer_Data: Can't open %s for READ!\n", fname);
         tbx_ns_destroy(ns);
@@ -3042,8 +3043,8 @@ int _alog_transfer_data(char *fname)
     }
     //** Prep and pack the message for sending
     //** Add the message header reserving space for the envelope
-    fseeko(alog.fd, 0, SEEK_END);
-    messagesize = ftell(alog.fd);
+    tbx_io_fseeko(alog.fd, 0, SEEK_END);
+    messagesize = tbx_io_ftell(alog.fd);
     n = sprintf(&(buffer[ENVELOPE_SIZE]), "%s " LU " " TT " " TT " " TT "\n",
                 global_config->server.iface[0].hostname, messagesize, alog.header.start_time,
                 alog.header.end_time, apr_time_now());
@@ -3083,12 +3084,12 @@ int _alog_transfer_data(char *fname)
     //** Transfer the data
     nbytes = -100;
     err = 0;
-    fseeko(alog.fd, 0, SEEK_SET);
+    tbx_io_fseeko(alog.fd, 0, SEEK_SET);
     for (pos = 0; (pos < messagesize) && (err == 0); pos = pos + bufsize) {
         bsize = bufsize;
         if ((pos + bsize) > messagesize)
             bsize = messagesize - pos;
-        nbytes = fread(buffer, bsize, 1, alog.fd);      //** Read the next block
+        nbytes = tbx_io_fread(buffer, bsize, 1, alog.fd);      //** Read the next block
 
         bpos = 0;
         nleft = bsize;
@@ -3317,10 +3318,10 @@ int activity_log_read_next_entry(activity_log_t *alog, FILE *fd)
     apr_time_t t;
     int id, command, n;
 
-//int d1 = ftell(alog->fd);
+//int d1 = tbx_io_ftell(alog->fd);
 //log_printf(0, "next_entry start fpos=%d\n", d);
     n = alog->read_header(alog->fd, &t, &id, &command);
-//int d2 = ftell(alog->fd);
+//int d2 = tbx_io_ftell(alog->fd);
 //log_printf(0, "next_entry: header block: (%d,%d) * cmd=%d %d\n", d1, d2, command, errno);
 
     if (n != 0)
@@ -3379,7 +3380,7 @@ int activity_log_read_open_rec(activity_log_t *alog, int cmd, FILE *outfd)
     if (alog->max_id > 255) {   //** open rec is always done with 1byte header
         apr_time_t t;
         int id, command;
-        fseek(alog->fd, -sizeof(alog_header2_t), SEEK_CUR);     //** Rewind to the beginning of the record
+        tbx_io_fseek(alog->fd, -sizeof(alog_header2_t), SEEK_CUR);     //** Rewind to the beginning of the record
         activity_log_read_header_1byte_id(alog->fd, &t, &id, &command); //** Reread the header properly
     }
     //** At this point we can read the max_id and set the fn table properly
@@ -3549,19 +3550,19 @@ void activity_log_move_to_eof(activity_log_t *alog)
     size_t pos;
 
     do {                        //** find the last valid record
-        pos = ftell(alog->fd);
+        pos = tbx_io_ftell(alog->fd);
     } while (activity_log_read_next_entry(alog, NULL) == 0);
 
     //** Move back to the end of the last good record
     pos--;
-    fseek(alog->fd, pos, SEEK_SET);
+    tbx_io_fseek(alog->fd, pos, SEEK_SET);
 
     //** Truncate the file here
     pos++;                      //** This is the number of good "bytes"
-    assert_result(ftruncate(fileno(alog->fd), pos), 0);
+    assert_result(tbx_io_ftruncate(fileno(alog->fd), pos), 0);
 
     //** Now move to where the next byte should go
-    fseek(alog->fd, pos, SEEK_SET);
+    tbx_io_fseek(alog->fd, pos, SEEK_SET);
 }
 
 //************************************************************************
@@ -3573,7 +3574,7 @@ int write_file_header(activity_log_t *alog)
     uint64_t n;
     alog_file_header_t *h = &(alog->header);
 
-    fseek(alog->fd, 0, SEEK_SET);
+    tbx_io_fseek(alog->fd, 0, SEEK_SET);
 
     h->version = ALOG_VERSION;
     h->start_time = time(0);
@@ -3610,7 +3611,7 @@ int read_file_header(activity_log_t *alog)
     uint64_t n;
     alog_file_header_t *h = &(alog->header);
 
-    fseek(alog->fd, 0, SEEK_SET);
+    tbx_io_fseek(alog->fd, 0, SEEK_SET);
 
     aread(alog->fd, &n, sizeof(n), "read_file_header: error reading version\n");
     h->version = n;             //** Version
@@ -3635,12 +3636,12 @@ int update_file_header(activity_log_t *alog, int state)
     alog->header.state = state;
 
     if (state == STATE_BAD) {
-        fseek(alog->fd, 3 * sizeof(n), SEEK_SET);
+        tbx_io_fseek(alog->fd, 3 * sizeof(n), SEEK_SET);
 
         n = STATE_BAD;
         awrite(alog->fd, &n, sizeof(n), "update_file_header: Error setting STATE_BAD\n");       //** Mark the state as in use
     } else {
-        fseek(alog->fd, 2 * sizeof(n), SEEK_SET);
+        tbx_io_fseek(alog->fd, 2 * sizeof(n), SEEK_SET);
 
         alog->header.end_time = time(0);
         n = alog->header.end_time;
@@ -3748,7 +3749,7 @@ activity_log_t *activity_log_open(const char *logname, int max_id, int mode)
     alog->curr_size = 0;
 
     if (mode == ALOG_READ) {
-        alog->fd = fopen(alog->name, "r");
+        alog->fd = tbx_io_fopen(alog->name, "r");
         if (alog->fd == NULL) {
             log_printf(0, "activity_log_open: Can't open %s for READ!\n", alog->name);
             return (NULL);
@@ -3759,12 +3760,12 @@ activity_log_t *activity_log_open(const char *logname, int max_id, int mode)
             log_printf(0, "activity_log_open: alog %s was not closed properly!\n", alog->name);
         }
     } else {
-        alog->fd = fopen(alog->name, "r+");
+        alog->fd = tbx_io_fopen(alog->name, "r+");
         if (alog->fd == NULL) {
             log_printf(10, "activity_log_t: Doesn't look like %s exists. Creating new file\n",
                        alog->name);
 
-            alog->fd = fopen(alog->name, "w+");
+            alog->fd = tbx_io_fopen(alog->name, "w+");
             if (alog->fd == NULL) {
                 log_printf(0, "activity_log_t: Can't open %s for READ/WRITE!\n", alog->name);
                 return (NULL);
@@ -3780,14 +3781,14 @@ activity_log_t *activity_log_open(const char *logname, int max_id, int mode)
                 activity_log_move_to_eof(alog);
             } else {
                 update_file_header(alog, STATE_BAD);
-                fseek(alog->fd, 0, SEEK_END);
+                tbx_io_fseek(alog->fd, 0, SEEK_END);
             }
         }
 
         activity_log_open_rec(alog);    //** Write the open record
     }
 
-    _alog_size = ftell(alog->fd);       //** Set the initial size
+    _alog_size = tbx_io_ftell(alog->fd);       //** Set the initial size
 
     return (alog);
 }

@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <tbx/pipe_helper.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 
 
 
@@ -27,8 +28,8 @@
 
 void tbx_pipe_close(int fd[2])
 {
-    if (fd[0] != -1) close(fd[0]);
-    if (fd[1] != -1) close(fd[1]);
+    if (fd[0] != -1) tbx_io_close(fd[0]);
+    if (fd[1] != -1) tbx_io_close(fd[1]);
     return;
 }
 
@@ -41,16 +42,16 @@ int tbx_pipe_open(int fd[2])
     err = pipe(fd);
     if (err != 0) return(err);
 
-    err = fcntl(fd[0], F_SETFL, O_NONBLOCK|O_DIRECT);
+    err = tbx_io_fcntl(fd[0], F_SETFL, O_NONBLOCK|O_DIRECT);
     if (err != 0) goto oops;
-    err = fcntl(fd[1], F_SETFL, O_NONBLOCK|O_DIRECT);
+    err = tbx_io_fcntl(fd[1], F_SETFL, O_NONBLOCK|O_DIRECT);
     if (err != 0) goto oops;
 
     return(0);
 
 oops:
-    close(fd[0]);
-    close(fd[1]);
+    tbx_io_close(fd[0]);
+    tbx_io_close(fd[1]);
 
     return(err);
 }
@@ -70,10 +71,10 @@ again:
     tv.tv_usec = dt % APR_USEC_PER_SEC;
     FD_ZERO(&set);
     FD_SET(fd[1], &set);
-    err = select(fd[1]+1, NULL, &set, NULL, &tv);
+    err = tbx_io_select(fd[1]+1, NULL, &set, NULL, &tv);
     if (err != 1) return(-2);
 
-    err = write(fd[1], object, object_size);
+    err = tbx_io_write(fd[1], object, object_size);
     if (err == object_size) {
         err = 0;
     } else if (errno == EAGAIN) {  //** Somebody beat us to the pipe so try again
@@ -100,10 +101,10 @@ again:
     tv.tv_usec = dt % APR_USEC_PER_SEC;
     FD_ZERO(&set);
     FD_SET(fd[0], &set);
-    err = select(fd[0]+1, &set, NULL, NULL, &tv);
+    err = tbx_io_select(fd[0]+1, &set, NULL, NULL, &tv);
     if (err != 1) return(-2);
 
-    err = read(fd[0], object, object_size);
+    err = tbx_io_read(fd[0], object, object_size);
     if (err == object_size) {
         err = 0;
     } else if (errno == EAGAIN) {  //** Somebody beat us to the object so try again

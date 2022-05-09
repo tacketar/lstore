@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "tbx/fmttypes.h"
+#include "tbx/io.h"
 #include "tbx/siginfo.h"
 #include "tbx/stack.h"
 #include "tbx/apr_wrapper.h"
@@ -108,7 +109,7 @@ void *siginfo_thread(apr_thread_t *th, void *data)
     apr_thread_detach(th);  //** Detach us
 
     apr_thread_mutex_lock(_si_lock);
-    fd = fopen((_siginfo_name[signal]) ? _siginfo_name[signal] : sname, "w");
+    fd = tbx_io_fopen((_siginfo_name[signal]) ? _siginfo_name[signal] : sname, "w");
     if (fd == NULL) {
         log_printf(0, "Unable to dump info to %s for signal %ld\n", _siginfo_name[signal], signal);
         goto failed;
@@ -119,7 +120,7 @@ void *siginfo_thread(apr_thread_t *th, void *data)
         t->fn(t->arg, fd);
         tbx_stack_move_down(_si_list[signal]);
     }
-    fclose(fd);
+    tbx_io_fclose(fd);
 
 failed:
     apr_thread_mutex_unlock(_si_lock);

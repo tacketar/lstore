@@ -35,6 +35,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/io.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
@@ -86,10 +87,10 @@ void notify_open_check(notify_t *nlog, time_t *now, struct tm *tm_now)
         (tm_now->tm_year == nlog->tm_open.tm_year)) return;
 
     //** The day is different so we need to close and reopen the log
-    if (nlog->fd) fclose(nlog->fd);
+    if (nlog->fd) tbx_io_fclose(nlog->fd);
 
     snprintf(fname, sizeof(fname), "%s.%d-%02d-%02d", nlog->fname, 1900+tm_now->tm_year, 1+tm_now->tm_mon, tm_now->tm_mday); fname[sizeof(fname)-1] = '\0';
-    nlog->fd = fopen(fname, "a");
+    nlog->fd = tbx_io_fopen(fname, "a");
     if (nlog->fd == NULL) {
         log_printf(0, "ERROR opening activity_log (%s)!\n", fname);
     }
@@ -231,7 +232,7 @@ int ni_open(notify_iter_t *ni)
     int i;
 
     snprintf(fname, OS_PATH_MAX, "%s.%04d-%02d-%02d", ni->prefix, ni->year, ni->month, ni->day); fname[OS_PATH_MAX] = '\0';
-    ni->fd = fopen(fname, "r");
+    ni->fd = tbx_io_fopen(fname, "r");
     if (ni->fd == NULL) return(-1);
 
     //** Skip to the requested line
@@ -300,7 +301,7 @@ char *ni_next_entry(notify_iter_t *ni)
     }
 
     //** Nothing left in the file so cleanup and return;
-    fclose(ni->fd);
+    tbx_io_fclose(ni->fd);
     ni->fd = NULL;
     return(NULL);
 }
@@ -361,7 +362,7 @@ notify_iter_t *notify_iter_create(char *prefix, int year, int month, int day, in
 
 void notify_iter_destroy(notify_iter_t *ni)
 {
-    if (ni->fd) fclose(ni->fd);
+    if (ni->fd) tbx_io_fclose(ni->fd);
     if (ni->prefix) free(ni->prefix);
     free(ni);
 }
