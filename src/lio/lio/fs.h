@@ -30,6 +30,7 @@ limitations under the License.
 #include <lio/visibility.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 
 #ifdef __cplusplus
@@ -90,7 +91,8 @@ LIO_API int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const cha
 LIO_API int lio_fs_hardlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, const char *newname);
 LIO_API int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, char *buf, size_t bsize);
 LIO_API int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, const char *newname);
-LIO_API int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statvfs *sfs);
+LIO_API int lio_fs_statvfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statvfs *sfs);
+LIO_API int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statfs *sfs);
 
 LIO_API lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, char *fs_section, lio_config_t *lc, uid_t uid, gid_t gid);
 LIO_API void lio_fs_destroy(lio_fs_t *fs);

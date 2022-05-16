@@ -649,12 +649,12 @@ int lfs_symlink(const char *link, const char *newname)
 // lfs_statfs - Returns the files system size
 //*************************************************************************
 
-int lfs_statfs(const char *fname, struct statvfs *sfs)
+int lfs_statvfs(const char *fname, struct statvfs *sfs)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
 
-    return(lio_fs_statfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs));
+    return(lio_fs_statvfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs));
 }
 
 //*************************************************************************
@@ -782,8 +782,8 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 //lio_os_authz_local_t ug;
 //int i;
 //lio_fs_fill_os_authz_local(lfs->fs, &ug, 0, 0);
-//i = lio_fs_statfs(lfs->fs, &ug, "/", &sfs);
-//log_printf(0, "lio_fs_statfs=%d\n", i);
+//i = lio_fs_statvfs(lfs->fs, &ug, "/", &sfs);
+//log_printf(0, "lio_fs_statvfs=%d\n", i);
 
     // TODO: find a cleaner way to get fops here
     //lfs->fops = ctx->fuse->fuse_fs->op;
@@ -876,7 +876,7 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .link = lfs_hardlink,
     .readlink = lfs_readlink,
     .symlink = lfs_symlink,
-    .statfs = lfs_statfs,
+    .statfs = lfs_statvfs,
 
 #ifdef HAVE_XATTR
     .listxattr = lfs_listxattr,

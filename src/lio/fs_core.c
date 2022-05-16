@@ -2062,10 +2062,10 @@ int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, con
 }
 
 //*************************************************************************
-// lio_fs_statfs - Returns the files system size
+// lio_fs_statvfs - Returns the files system size
 //*************************************************************************
 
-int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statvfs *sfs)
+int lio_fs_statvfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statvfs *sfs)
 {
     lio_rs_space_t space;
     char *config;
@@ -2086,6 +2086,36 @@ int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, str
     sfs->f_files = 1;
     sfs->f_ffree = 10*1024*1024;
     sfs->f_namemax = 4096 - 100;
+
+    return(0);
+}
+
+//*************************************************************************
+// lio_fs_statfs - Returns the files system size
+//*************************************************************************
+
+int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct statfs *sfs)
+{
+    lio_rs_space_t space;
+    char *config;
+
+    memset(sfs, 0, sizeof(struct statvfs));
+
+    //** Get the config
+    config = rs_get_rid_config(fs->lc->rs);
+
+    //** And parse it
+    space = rs_space(config);
+    free(config);
+
+    sfs->f_bsize = 4096;
+    sfs->f_blocks = space.total_up / sfs->f_bsize;;
+    sfs->f_bfree = space.free_up / sfs->f_bsize;
+    sfs->f_bavail = sfs->f_bfree;
+    sfs->f_files = 1;
+    sfs->f_ffree = 10*1024*1024;
+    sfs->f_frsize = 6*16*1024;
+    sfs->f_namelen = 4096 - 100;
 
     return(0);
 }
