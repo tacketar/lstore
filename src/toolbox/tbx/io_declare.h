@@ -25,11 +25,21 @@ TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(open64))(const char *pathname, int f
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(openat64))(int dirfd, const char *pathname, int flags, ...) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fadvise64))(int fd, off_t offset, off_t len, int advice) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fcntl64))(int fd, int cmd, ...) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(getrlimit64))(__rlimit_resource_t resource, struct rlimit64 *rlim) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(setrlimit64))(__rlimit_resource_t resource, const struct rlimit64 *rlim) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pread64))(int fd, void *buf, size_t count, off_t offset) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pwrite64))(int fd, const void *buf, size_t count, off_t offset) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xstat64))(int __ver, const char *pathname, struct stat64 *statbuf) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN struct dirent64 *(*TBX_IO_WRAP_NAME(readdir64))(DIR *dirp) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__fxstat64))(int __ver, int fd, struct stat64 *statbuf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__fxstatat64))(int __ver, int dirfd, const char *pathname, struct stat64 *statbuf, int flags) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__lxstat64))(int __ver, const char *pathname, struct stat64 *statbuf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statvfs64))(const char *path, struct statvfs64 *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fstatvfs64))(int fd, struct statvfs64 *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statfs64))(const char *path, struct statfs64 *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fstatfs64))(int fd, struct statfs64 *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(truncate64))(const char *path, off_t length) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(ftruncate64))(int fd, off_t length) TBX_IO_DECLARE_END
 
 //These are normal version of those above
 TBX_IO_DECLARE_BEGIN FILE *(*TBX_IO_WRAP_NAME(fopen))(const char *pathname, const char *mode) TBX_IO_DECLARE_END
@@ -40,12 +50,19 @@ TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pread))(int fd, void *buf, size_
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pwrite))(int fd, const void *buf, size_t count, off_t offset) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xstat))(int __ver, const char *pathname, struct stat *statbuf) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN struct dirent *(*TBX_IO_WRAP_NAME(readdir))(DIR *dirp) TBX_IO_DECLARE_END
-TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__fxstatat))(int __ver, int dirfd, const char *pathanem, struct stat *statbuf, int flags) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__fxstatat))(int __ver, int dirfd, const char *pathname, struct stat *statbuf, int flags) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statvfs))(const char *path, struct statvfs *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fstatvfs))(int fd, struct statvfs *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statfs))(const char *path, struct statfs *buf) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fstatfs))(int fd, struct statfs *buf) TBX_IO_DECLARE_END
 
 //** These only have a single variant
 TBX_API char *(*TBX_IO_WRAP_NAME(get_current_dir_name))(void) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(chdir))(const char *path) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fchdir))(int fd) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(chmod))(const char *pathname, mode_t mode) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fchmod))(int fd,  mode_t mode) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fchmodat))(int fd,  const char *pathname, mode_t mode, int flags) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN char *(*TBX_IO_WRAP_NAME(getcwd))(char *buf, size_t size) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(symlinkat))(const char *target, int newdirfd, const char *linkpath) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(symlink))(const char *target, const char *linkpath) TBX_IO_DECLARE_END

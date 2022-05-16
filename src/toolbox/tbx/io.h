@@ -26,6 +26,10 @@
 #include <unistd.h>
 #include <sys/xattr.h>
 #include <tbx/visibility.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/statvfs.h>
+#include <sys/vfs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,12 +51,12 @@ extern "C" {
 //** And now the functions
 TBX_API void tbx_io_init(void *handle, int do_overwrite_fn);  //** This sets up all the fn pointers
 
-#define tbx_io_stat(path, sbuf) IO_WRAP_NAME(__xstat)(_STAT_VER, path, sbuf)
-#define tbx_io_fstat(fd, sbuf) IO_WRAP_NAME(__fxstat)(_STAT_VER, fd, sbuf)
-#define tbx_io_fstat64(fd, sbuf) IO_WRAP_NAME(__fxstat64)(_STAT_VER, fd, sbuf)
-#define tbx_io_fstatat(dirfd, sbuf) IO_WRAP_NAME(__fxstatat)(_STAT_VER, dirfd, sbuf)
-#define tbx_io_lstat(path, sbuf) IO_WRAP_NAME(__lxstat)(_STAT_VER, path, sbuf)
-#define tbx_posix_fadvise(fd, offset, len, advice) IO_WRAP_NAME(fadvise64)(fd, offset, len, advice)
+#define tbx_io_stat(path, sbuf) TBX_IO_WRAP_NAME(__xstat)(_STAT_VER, path, sbuf)
+#define tbx_io_fstat(fd, sbuf) TBX_IO_WRAP_NAME(__fxstat)(_STAT_VER, fd, sbuf)
+#define tbx_io_fstat64(fd, sbuf) TBX_IO_WRAP_NAME(__fxstat64)(_STAT_VER, fd, sbuf)
+#define tbx_io_fstatat(dirfd, pathname, sbuf, flags) TBX_IO_WRAP_NAME(__fxstatat)(_STAT_VER, dirfd, pathname, sbuf, flags)
+#define tbx_io_lstat(path, sbuf) TBX_IO_WRAP_NAME(__lxstat)(_STAT_VER, path, sbuf)
+#define tbx_posix_fadvise(fd, offset, len, advice) TBX_IO_WRAP_NAME(fadvise64)(fd, offset, len, advice)
 
 #ifdef __cplusplus
 }

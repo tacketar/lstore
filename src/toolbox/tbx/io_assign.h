@@ -25,11 +25,21 @@
     ASSERT_EXISTS(open64);
     ASSERT_EXISTS(openat64);
     ASSERT_EXISTS(fcntl64);
+    ASSERT_EXISTS(getrlimit64);
+    ASSERT_EXISTS(setrlimit64);
     ASSERT_EXISTS(pread64);
     ASSERT_EXISTS(pwrite64);
     ASSERT_EXISTS(__xstat64);
+    ASSERT_EXISTS(__lxstat64);
     ASSERT_EXISTS(__fxstat64);
+    ASSERT_EXISTS(__fxstatat64);
     ASSERT_EXISTS(readdir64);
+    ASSERT_EXISTS(statvfs64);
+    ASSERT_EXISTS(fstatvfs64);
+    ASSERT_EXISTS(statfs64);
+    ASSERT_EXISTS(fstatfs64);
+    ASSERT_EXISTS(truncate);
+    ASSERT_EXISTS(ftruncate);
 
     //** These are the normal interfaces
     ASSERT_EXISTS(fopen);
@@ -44,6 +54,9 @@
     //** Everything else has a single interface
     ASSERT_EXISTS(chdir);
     ASSERT_EXISTS(fchdir);
+    ASSERT_EXISTS(chmod);
+    ASSERT_EXISTS(fchmod);
+    ASSERT_EXISTS(fchmodat);
     ASSERT_EXISTS(getcwd);
     ASSERT_EXISTS(get_current_dir_name);
 
@@ -98,6 +111,10 @@
     ASSERT_EXISTS(__fxstat);
     ASSERT_EXISTS(__fxstatat);
     ASSERT_EXISTS(__lxstat);
+    ASSERT_EXISTS(statvfs);
+    ASSERT_EXISTS(fstatvfs);
+    ASSERT_EXISTS(statfs);
+    ASSERT_EXISTS(fstatfs);
 
     //** And everything else
     ASSERT_EXISTS(access);
