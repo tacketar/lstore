@@ -484,6 +484,7 @@ gop_op_status_t seglin_read_func(void *arg, int id)
     char *cbuffer;
     int i, j;
 
+    cbuffer = NULL;
     if (s->crypt_enabled) {
         tbx_type_malloc(cbuffer, char, s->stripe_size*n_max);
     }
@@ -630,6 +631,7 @@ int seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw_hints_t 
     char *cbuffer;
     int i, j, err;
 
+    cbuffer = NULL;
     if (s->crypt_enabled) {
         tbx_type_malloc(cbuffer, char, s->stripe_size*n_max);
     }
@@ -823,6 +825,7 @@ gop_op_generic_t *seglin_remove(lio_segment_t *seg, data_attr_t *da, int timeout
     }
 
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
+    gop = NULL;
     for (i=0; i<n; i++) {
         b = (seglin_slot_t *)tbx_isl_next(&it);
         gop = ds_remove(b->data->ds, da, ds_get_cap(b->data->ds, b->data->cap, DS_CAP_MANAGE), timeout);
@@ -948,6 +951,10 @@ gop_op_status_t seglin_inspect_func(void *arg, int id)
     n = tbx_isl_count(s->isl);
     op->n = n;
 
+    block_status = NULL;
+    b_list = NULL;
+    block = NULL;
+
     //** Print some details about the segment
     info_printf(op->fd, 1, XIDT ": linear segment information: n_blocks=%d n_rid_default=%d  crypt_enabled=%d  stripe_size=" XOT "  write_errors=%d used_size=" XOT "  total_size=" XOT "  max_block_size=" XOT "\n",
         segment_id(op->seg), op->n, s->n_rid_default, s->crypt_enabled, s->stripe_size, s->write_errors, s->used_size, s->total_size, s->max_block_size);
@@ -1035,9 +1042,9 @@ finished:
         b_list[i]->len = block[i].block_len;
     }
 
-    free(b_list);
-    free(block);
-    free(block_status);
+    if (b_list) free(b_list);
+    if (block) free(block);
+    if (block_status) free(block_status);
     rs_query_destroy(s->rs, query);
 
     return(status);

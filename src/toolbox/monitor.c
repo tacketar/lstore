@@ -794,6 +794,7 @@ apr_time_t _convert_str2time(const char *str)
 
     tmp = strdup(str);
     ptr = strchr(tmp, ':');
+    next = ptr;
     if (strchr(tmp, ':') != NULL) { //** Got a full time including the year
         token = tbx_stk_string_token(tmp, ":", &bstate, &fin);
 

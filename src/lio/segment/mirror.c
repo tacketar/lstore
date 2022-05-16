@@ -363,6 +363,16 @@ gop_op_status_t smi_repair_bad(seg_mirror_multi_op_t *op)
     ex_off_t n;
     int i, todo, loop, redo, good;
 
+    //** Find a "good" mirror
+    good = -1;
+    for (i=0; i<s->n_mirrors; i++) {
+        if (s->child_status[i] == s->write_count) {
+            good = i;
+            break;
+        }
+    }
+    if (good == -1) return(gop_failure_status);
+
     //** Preserve the original mirrors in case we need to restore them
     memcpy(child_seg_org, s->child_seg, sizeof(lio_segment_t *)*s->n_mirrors);
     memcpy(child_status_org, s->child_status, sizeof(ex_off_t)*s->n_mirrors);
@@ -376,14 +386,6 @@ gop_op_status_t smi_repair_bad(seg_mirror_multi_op_t *op)
     n = bufsize / s->block_size;
     if (n == 0) n = 1;
     bufsize = n*s->block_size;
-
-    //** Find a "good" mirror
-    for (i=0; i<s->n_mirrors; i++) {
-        if (s->child_status[i] == s->write_count) {
-            good = i;
-            break;
-        }
-    }
 
     q = gop_opque_new();
     q2 = NULL;
