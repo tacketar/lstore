@@ -39,6 +39,7 @@
 #define MON_INDEX_OS     24
 #define MON_INDEX_OSAZ   25
 #define MON_INDEX_SEG    26
+#define MON_INDEX_FS     27
 
 #ifdef __cplusplus
 }

@@ -46,6 +46,12 @@ typedef struct {
 } __attribute__((__packed__)) mon_group_t;
 
 typedef struct {
+    tbx_mon_object_t obj;
+    int16_t n;
+    tbx_mon_object_t a[];
+} __attribute__((__packed__)) mon_multigroup_t;
+
+typedef struct {
     int32_t tid;
     tbx_mon_object_t a;
 } __attribute__((__packed__)) mon_thread_group_t;
@@ -55,6 +61,13 @@ typedef struct {
     int16_t nbytes;
     char text[];
 } __attribute__((__packed__)) mon_text_t;
+
+typedef struct {
+    tbx_mon_object_t obj;
+    int64_t n;
+    int16_t nbytes;
+    char text[];
+} __attribute__((__packed__)) mon_text_int_t;
 
 typedef struct {
     int32_t tid;
@@ -68,6 +81,11 @@ typedef struct {
 } __attribute__((__packed__)) mon_int_t;
 
 typedef struct {
+    tbx_mon_object_t obj;
+    int64_t n[2];
+} __attribute__((__packed__)) mon_int2_t;
+
+typedef struct {
     int64_t n;
     int32_t tid;
 } __attribute__((__packed__)) mon_thread_int_t;
@@ -76,10 +94,13 @@ union __attribute__((__packed__)) mon_union_u {
     tbx_mon_object_t object;
     int32_t tid;
     mon_group_t group;
+    mon_multigroup_t mgroup;
     mon_thread_group_t thread_group;
     mon_text_t text;
+    mon_text_int_t text_int;
     mon_thread_text_t thread_text;
     mon_int_t  integer;
+    mon_int2_t  integer2;
     mon_thread_int_t  thread_integer;
 };
 
@@ -108,6 +129,8 @@ typedef struct {
     apr_pool_t *mpool;
     mon_hash_t tracking;
     mon_hash_t labels;
+    apr_hash_t *connections;
+    char **type_label;
 } mon_process_t;
 
 int monitor_state = 0;
@@ -201,6 +224,7 @@ void monitor_write(mon_full_record_t *r, int cmd)
 }
 
 //************************************************************************************
+
 void _obj_text_record(int cmd, tbx_mon_object_t *obj, const char *fmt, va_list ap)
 {
     mon_full_record_t *r;
@@ -208,9 +232,26 @@ void _obj_text_record(int cmd, tbx_mon_object_t *obj, const char *fmt, va_list a
 
     r = (mon_full_record_t *)buffer;
 
-    r->record.rec.text.nbytes = vsnprintf(r->record.rec.text.text, BUFSIZE - sizeof(mon_full_record_t) - 1, fmt, ap);
+    r->record.rec.text.nbytes = (fmt) ? vsnprintf(r->record.rec.text.text, BUFSIZE - sizeof(mon_full_record_t) - 1, fmt, ap) : 0;
     r->size = sizeof(mon_header_t) + sizeof(mon_text_t) + r->record.rec.text.nbytes + 1;
     r->record.rec.text.obj = *obj;
+
+    monitor_write(r, cmd);
+}
+
+//************************************************************************************
+
+void _obj_text_int_record(int cmd, tbx_mon_object_t *obj, int64_t n, const char *fmt, va_list ap)
+{
+    mon_full_record_t *r;
+    char buffer[BUFSIZE];
+
+    r = (mon_full_record_t *)buffer;
+
+    r->record.rec.text_int.nbytes = (fmt) ? vsnprintf(r->record.rec.text_int.text, BUFSIZE - sizeof(mon_full_record_t) - 1, fmt, ap) : 0;
+    r->size = sizeof(mon_header_t) + sizeof(mon_text_int_t) + r->record.rec.text_int.nbytes + 1;
+    r->record.rec.text_int.obj = *obj;
+    r->record.rec.text_int.n = n;
 
     monitor_write(r, cmd);
 }
@@ -226,6 +267,20 @@ void tbx_monitor_obj_create(tbx_mon_object_t *obj, const char *fmt, ...)
 
     va_start(args, fmt);
     _obj_text_record(MON_REC_OBJ_CREATE, obj, fmt, args);
+    va_end(args);
+}
+
+//************************************************************************************
+
+__attribute__((format (printf, 3, 4)))
+void tbx_monitor_obj_create_irate(tbx_mon_object_t *obj, const int64_t n, const char *fmt, ...)
+{
+    va_list args;
+
+    if (monitor_state == 0) return;
+
+    va_start(args, fmt);
+    _obj_text_int_record(MON_REC_OBJ_CREATE_IRATE, obj, n, fmt, args);
     va_end(args);
 }
 
@@ -263,6 +318,50 @@ void tbx_monitor_obj_destroy(tbx_mon_object_t *obj)
 
 //************************************************************************************
 
+void tbx_monitor_obj_destroy_irate(tbx_mon_object_t *obj, const int64_t n)
+{
+    mon_full_record_t *r;
+    char buffer[BUFSIZE];
+    if (monitor_state == 0) return;
+
+    r = (mon_full_record_t *)buffer;
+    r->size = sizeof(mon_header_t) + sizeof(mon_int_t);
+    r->record.rec.integer.obj = *obj;
+    r->record.rec.integer.n = n;
+
+    monitor_write(r, MON_REC_OBJ_DESTROY_IRATE);
+}
+
+//************************************************************************************
+
+__attribute__((format (printf, 2, 3)))
+void tbx_monitor_obj_destroy_message(tbx_mon_object_t *obj, const char *fmt, ...)
+{
+    va_list args;
+
+    if (monitor_state == 0) return;
+
+    va_start(args, fmt);
+    _obj_text_record(MON_REC_OBJ_DESTROY_MSG, obj, fmt, args);
+    va_end(args);
+}
+
+//************************************************************************************
+
+__attribute__((format (printf, 3, 4)))
+void tbx_monitor_obj_destroy_message_irate(tbx_mon_object_t *obj, const int64_t n, const char *fmt, ...)
+{
+    va_list args;
+
+    if (monitor_state == 0) return;
+
+    va_start(args, fmt);
+    _obj_text_int_record(MON_REC_OBJ_DESTROY_MSG_IRATE, obj, n, fmt, args);
+    va_end(args);
+}
+
+//************************************************************************************
+
 void tbx_monitor_obj_destroy_quick(unsigned char type, uint64_t id)
 {
     tbx_mon_object_t obj;
@@ -283,6 +382,20 @@ void tbx_monitor_obj_label(tbx_mon_object_t *obj, const char *fmt, ...)
 
     va_start(args, fmt);
     _obj_text_record(MON_REC_OBJ_LABEL, obj, fmt, args);
+    va_end(args);
+}
+
+//************************************************************************************
+
+__attribute__((format (printf, 3, 4)))
+void tbx_monitor_obj_label_irate(tbx_mon_object_t *obj, const int64_t n, const char *fmt, ...)
+{
+    va_list args;
+
+    if (monitor_state == 0) return;
+
+    va_start(args, fmt);
+    _obj_text_int_record(MON_REC_OBJ_LABEL_IRATE, obj, n, fmt, args);
     va_end(args);
 }
 
@@ -333,6 +446,23 @@ void tbx_monitor_obj_integer(tbx_mon_object_t *obj, int64_t n)
 
 //************************************************************************************
 
+void tbx_monitor_obj_integer2(tbx_mon_object_t *obj, int64_t n1, int64_t n2)
+{
+    mon_full_record_t *r;
+    char buffer[BUFSIZE];
+    if (monitor_state == 0) return;
+
+    r = (mon_full_record_t *)buffer;
+    r->size = sizeof(mon_header_t) + sizeof(mon_int2_t);
+    r->record.rec.integer2.obj = *obj;
+    r->record.rec.integer2.n[0] = n1;
+    r->record.rec.integer2.n[1] = n2;
+
+    monitor_write(r, MON_REC_OBJ_INT2);
+}
+
+//************************************************************************************
+
 void _obj_group_ungroup(int cmd, tbx_mon_object_t *a, tbx_mon_object_t *b)
 {
     mon_full_record_t *r;
@@ -349,6 +479,46 @@ void _obj_group_ungroup(int cmd, tbx_mon_object_t *a, tbx_mon_object_t *b)
 
 //************************************************************************************
 
+void tbx_monitor_obj_reference(tbx_mon_object_t *a, tbx_mon_object_t *b)
+{
+    _obj_group_ungroup(MON_REC_OBJ_REFERENCE, a, b);
+}
+
+//************************************************************************************
+
+void tbx_monitor_obj_reference_bulk(tbx_mon_object_t *obj, tbx_mon_object_t *a, int n)
+{
+    mon_full_record_t *r;
+    char buffer[BUFSIZE];
+    if (monitor_state == 0) return;
+
+    r = (mon_full_record_t *)buffer;
+
+    r->record.rec.mgroup.n = n;
+    r->size = sizeof(mon_header_t) + sizeof(mon_multigroup_t) + sizeof(tbx_mon_object_t)*n;
+    r->record.rec.mgroup.obj = *obj;
+    memcpy(r->record.rec.mgroup.a, a, sizeof(tbx_mon_object_t)*n);
+
+    monitor_write(r, MON_REC_OBJ_REFERENCE_BULK);
+}
+
+//************************************************************************************
+
+void tbx_monitor_obj_reference_chain(tbx_mon_object_t *obj)
+{
+    mon_full_record_t *r;
+    char buffer[BUFSIZE];
+    if (monitor_state == 0) return;
+
+    r = (mon_full_record_t *)buffer;
+    r->size = sizeof(mon_header_t) + sizeof(tbx_mon_object_t);
+    r->record.rec.object = *obj;
+
+    monitor_write(r, MON_REC_OBJ_REFERENCE_CHAIN);
+}
+
+//************************************************************************************
+
 void tbx_monitor_obj_group(tbx_mon_object_t *a, tbx_mon_object_t *b)
 {
     _obj_group_ungroup(MON_REC_OBJ_GROUP, a, b);
@@ -359,6 +529,20 @@ void tbx_monitor_obj_group(tbx_mon_object_t *a, tbx_mon_object_t *b)
 void tbx_monitor_obj_ungroup(tbx_mon_object_t *a, tbx_mon_object_t *b)
 {
     _obj_group_ungroup(MON_REC_OBJ_UNGROUP, a, b);
+}
+
+//************************************************************************************
+
+void tbx_monitor_obj_group_directed(tbx_mon_object_t *a, tbx_mon_object_t *b)
+{
+    _obj_group_ungroup(MON_REC_OBJ_GROUP_DIRECTED, a, b);
+}
+
+//************************************************************************************
+
+void tbx_monitor_obj_ungroup_directed(tbx_mon_object_t *a, tbx_mon_object_t *b)
+{
+    _obj_group_ungroup(MON_REC_OBJ_UNGROUP_DIRECTED, a, b);
 }
 
 
@@ -408,7 +592,7 @@ void tbx_monitor_thread_destroy(int32_t tid)
 
     r = (mon_full_record_t *)buffer;
     r->size = sizeof(mon_header_t) + sizeof(int32_t);
-    r->record.rec.tid = tid;
+    r->record.rec.tid = (tid == MON_MY_THREAD) ? tbx_atomic_thread_id : tid;
 
     monitor_write(r, MON_REC_THREAD_DESTROY);
 }
@@ -517,7 +701,7 @@ void tbx_monitor_close(FILE *fd)
 
 //************************************************************************************
 
-int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_mon_object_t *a, tbx_mon_object_t *b, char **text, int *text_size, int32_t *b_tid, int64_t *n)
+int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_mon_object_t *a, tbx_mon_object_t *b, char **text, int *text_size, int32_t *b_tid, int64_t *n, tbx_mon_object_t *b_array)
 {
     int16_t nbytes;
     char buffer[BUFSIZE];
@@ -545,21 +729,47 @@ int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_m
     case (MON_REC_OBJ_CREATE):
     case (MON_REC_OBJ_LABEL):
     case (MON_REC_OBJ_MESSAGE):
+    case (MON_REC_OBJ_DESTROY_MSG):
         *a = r->rec.text.obj;
         *text_size = r->rec.text.nbytes;
         *text = (*text_size) ? strdup(r->rec.text.text) : NULL;
+        break;
+    case (MON_REC_OBJ_CREATE_IRATE):
+    case (MON_REC_OBJ_LABEL_IRATE):
+    case (MON_REC_OBJ_DESTROY_MSG_IRATE):
+        *a = r->rec.text_int.obj;
+        *n = r->rec.text_int.n;
+        *text_size = r->rec.text_int.nbytes;
+        *text = (*text_size) ? strdup(r->rec.text_int.text) : NULL;
         break;
     case (MON_REC_OBJ_DESTROY):
         *a = r->rec.object;
         break;
     case (MON_REC_OBJ_INT):
+    case (MON_REC_OBJ_DESTROY_IRATE):
         *a = r->rec.integer.obj;
         *n = r->rec.integer.n;
         break;
+    case (MON_REC_OBJ_INT2):
+        *a = r->rec.integer2.obj;
+        n[0] = r->rec.integer2.n[0];
+        n[1] = r->rec.integer2.n[1];
+        break;
     case (MON_REC_OBJ_GROUP):
+    case (MON_REC_OBJ_GROUP_DIRECTED):
     case (MON_REC_OBJ_UNGROUP):
+    case (MON_REC_OBJ_UNGROUP_DIRECTED):
+    case (MON_REC_OBJ_REFERENCE):
         *a = r->rec.group.a;
         *b = r->rec.group.b;
+        break;
+    case (MON_REC_OBJ_REFERENCE_BULK):
+        *a = r->rec.mgroup.obj;
+        *n = r->rec.mgroup.n;
+        memcpy(b_array, r->rec.mgroup.a, sizeof(tbx_mon_object_t)*(*n));
+        break;
+    case (MON_REC_OBJ_REFERENCE_CHAIN):
+        *a = r->rec.object;
         break;
     case (MON_REC_THREAD_CREATE):
     case (MON_REC_THREAD_LABEL):
@@ -592,13 +802,19 @@ int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_m
 typedef struct {  //** This just allows us to unify the TID and objects in the way they are handled
     int type;
     uint64_t id;
+    int64_t count;  //** this is actually returned
 } _parse_obj_t;
 
 typedef struct {
     uint64_t id;
+    int64_t count;
     char *label;
+    char *buffer;
     int label_size;
+    int n_ref;
     apr_time_t start_time;
+    _parse_obj_t ref;
+    _parse_obj_t *r_array;
 } _label_entry_t;
 
 typedef struct {
@@ -606,7 +822,20 @@ typedef struct {
     int count;
 } _track_entry_t;
 
-void _mon_obj_label_set(mon_process_t *mp, _parse_obj_t *obj, char *text, int text_size, apr_time_t dt)
+typedef struct {
+    int type;
+    uint64_t id;
+} __attribute__((__packed__)) _obj_key_t;
+
+typedef struct {
+    _obj_key_t me;
+    apr_pool_t *mpool;
+    apr_hash_t *connections;
+} _obj_connections_t;
+
+//************************************************************************************
+
+void _mon_obj_label_set(mon_process_t *mp, _parse_obj_t *obj, int64_t count, char *text, int text_size, apr_time_t dt)
 {
     apr_hash_t *hash = mp->labels.obj_hash[obj->type];
     _label_entry_t *entry;
@@ -620,12 +849,14 @@ void _mon_obj_label_set(mon_process_t *mp, _parse_obj_t *obj, char *text, int te
     entry = apr_hash_get(hash, &(obj->id), sizeof(obj->id));
     if (entry) {  //** Already exists so just update the entry
         if (entry->label) free(entry->label);
+        if (count >= 0) entry->count = count;
         entry->label = text;
         entry->label_size = text_size;
         if (dt > 0) entry->start_time = dt;
     } else {  //** Got to make a new entry
         tbx_type_malloc_clear(entry, _label_entry_t, 1);
         entry->id = obj->id;
+        entry->count = count;
         entry->label = text;
         entry->label_size = text_size;
         if (dt > 0) entry->start_time = dt;
@@ -638,13 +869,27 @@ void _mon_obj_label_set(mon_process_t *mp, _parse_obj_t *obj, char *text, int te
 char *_mon_obj_label_get(mon_process_t *mp, _parse_obj_t *obj)
 {
     apr_hash_t *hash = mp->labels.obj_hash[obj->type];
-    _label_entry_t *entry;
+    _label_entry_t *entry, *rentry;
+    obj->count = -1;
 
     //** Make sure the hash exists
     if (!hash) return(NULL);
 
     entry = apr_hash_get(hash, &(obj->id), sizeof(obj->id));
     if (entry) {  //** Got it
+        obj->count = entry->count;
+
+        //** See if we have a reference
+        if (entry->ref.id != 0) {
+            rentry = apr_hash_get(mp->labels.obj_hash[entry->ref.type], &(entry->ref.id), sizeof(entry->ref.id));
+            if (rentry) {
+                if (!entry->buffer) {
+                    tbx_type_malloc_clear(entry->buffer, char, 1024);
+                }
+                snprintf(entry->buffer, 1024, "%s  ref: %s=" I64T " ref_label=%s", entry->label, mp->type_label[entry->ref.type], entry->ref.id, rentry->label);
+                return(entry->buffer);
+            }
+        }
         return(entry->label);
     }
 
@@ -682,10 +927,116 @@ apr_time_t _mon_obj_label_destroy(mon_process_t *mp, _parse_obj_t *obj)
         apr_hash_set(hash, &(obj->id), sizeof(obj->id), NULL);
         stime = entry->start_time;
         if (entry->label) free(entry->label);
+        if (entry->buffer) free(entry->buffer);
+        if (entry->n_ref > 1) free(entry->r_array);
         free(entry);
     }
 
     return(stime);
+}
+
+//************************************************************************************
+
+void _mon_obj_label_reference(mon_process_t *mp, _parse_obj_t *obj, _parse_obj_t *ref)
+{
+    apr_hash_t *hash = mp->labels.obj_hash[obj->type];
+    _label_entry_t *entry;
+
+    //** Make sure the hash exists
+    if (!hash) return;
+
+    entry = apr_hash_get(hash, &(obj->id), sizeof(obj->id));
+    if (!entry) return;
+
+    entry->n_ref = 1;
+    entry->ref = *ref;
+    entry->r_array = &(entry->ref);
+}
+
+//************************************************************************************
+
+void _mon_obj_label_reference_bulk(mon_process_t *mp, _parse_obj_t *obj, tbx_mon_object_t *ref, int n)
+{
+    apr_hash_t *hash = mp->labels.obj_hash[obj->type];
+    _label_entry_t *entry;
+    int i;
+
+    //** Make sure the hash exists
+    if (!hash) return;
+
+    entry = apr_hash_get(hash, &(obj->id), sizeof(obj->id));
+    if (!entry) return;
+
+    entry->n_ref = n;
+    tbx_type_malloc(entry->r_array, _parse_obj_t, n);
+    for (i=0; i<n; i++) {
+        entry->r_array[i].type = ref[i].type;
+        entry->r_array[i].id = ref[i].id;
+    }
+}
+
+//************************************************************************************
+
+__attribute__((format (printf, 4, 5)))
+void _mon_printf(FILE *fd, apr_time_t dt, int32_t tid, const char *fmt, ...)
+{
+    va_list args;
+    apr_time_exp_t texp;
+
+    //** Calculate the time offsets
+    apr_time_exp_lt(&texp, dt);
+
+    //** Print the header
+    if (texp.tm_year == 69) {  //** Looks like we are using a relative time
+        fprintf(fd, "HELLO [dt=%dh%02dm%02ds%06du tid=%d] ", texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
+    } else {   //** Full time format
+        texp.tm_year += 1900;
+        fprintf(fd, "[t=%04dy%02dm%02dd:%dh%02dm%02ds%06du tid=%d] ", texp.tm_year, texp.tm_mon, texp.tm_mday, texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
+    }
+
+    //** And the rest of the line
+    va_start(args, fmt);
+    vfprintf(fd, fmt, args);
+    va_end(args);
+}
+
+
+//************************************************************************************
+
+void _ref_dump_indent(FILE *fd, apr_time_t dt, int32_t tid, int indent_how_much)
+{
+    int i;
+    if (indent_how_much>0) _mon_printf(fd, dt, tid, "    ");
+    for (i=1; i<indent_how_much; i++) fprintf(fd, "    ");
+}
+
+//************************************************************************************
+
+void _mon_obj_reference_dump(mon_process_t *mp, _parse_obj_t obj, FILE *fd, apr_time_t dt, int32_t tid, int row, int col)
+{
+    apr_hash_t *hash;
+    _label_entry_t *entry;
+    int i;
+
+    hash = mp->labels.obj_hash[obj.type];
+    if (!hash) { fprintf(fd, "-C\n"); return; }
+
+    entry = apr_hash_get(hash, &(obj.id), sizeof(obj.id));
+    if (!entry) { fprintf(fd, "-D\n"); return; }
+
+    fprintf(fd, " --> REF[%d,%d] n_refs=%d: %s=" I64T " label=%s", row, col, entry->n_ref, mp->type_label[obj.type], obj.id, entry->label);
+    if (entry->n_ref == 0) fprintf(fd, "-E\n");
+    for (i=0; i<entry->n_ref; i++) {
+        _mon_obj_reference_dump(mp, entry->r_array[i], fd, dt, tid, row+i, col+1);
+        if ((i+1) < entry->n_ref) _ref_dump_indent(fd, dt, tid, col+1);
+    }
+}
+
+//************************************************************************************
+
+void _mon_obj_reference_chain(mon_process_t *mp, _parse_obj_t *robj, FILE *fd, apr_time_t dt, int32_t tid)
+{
+    _mon_obj_reference_dump(mp, *robj, fd, dt, tid, 0, 0);
 }
 
 //************************************************************************************
@@ -734,6 +1085,21 @@ void _mon_obj_ungroup(mon_process_t *mp, _parse_obj_t *a, _parse_obj_t *b)
 
 //************************************************************************************
 
+void _mon_tid_auto_group(mon_process_t *mp, int64_t tid, _parse_obj_t *a)
+{
+    apr_hash_t *tid_hash = mp->tracking.obj_hash[TID_INDEX];
+    _track_entry_t *entry;
+
+    if (!tid_hash) return;
+
+    entry = apr_hash_get(tid_hash, &tid, sizeof(tid));
+    if (entry) { //** We're tracking everything new in this thread
+        _mon_obj_count_delta(mp, a, 1);
+    }
+}
+
+//************************************************************************************
+
 char *_mon_obj_is_tracked(mon_process_t *mp, _parse_obj_t *a, int dump_everything)
 {
     apr_hash_t *hash = mp->tracking.obj_hash[a->type];
@@ -747,39 +1113,13 @@ char *_mon_obj_is_tracked(mon_process_t *mp, _parse_obj_t *a, int dump_everythin
     if (!hash) return(NULL);
 
     entry = apr_hash_get(hash, &(a->id), sizeof(a->id));
-    if (!entry)  return(NULL);
+    if (!entry) return(NULL);
 
 get_label:
     label = _mon_obj_label_get(mp, a);
     if (!label) label = EMPTY_LABEL;
     return(label);
 }
-
-//************************************************************************************
-
-__attribute__((format (printf, 4, 5)))
-void _mon_printf(FILE *fd, apr_time_t dt, int32_t tid, const char *fmt, ...)
-{
-    va_list args;
-    apr_time_exp_t texp;
-
-    //** Calculate the time offsets
-    apr_time_exp_lt(&texp, dt);
-
-    //** Print the header
-    if (texp.tm_year == 69) {  //** Looks like we are using a relative time
-        fprintf(fd, "HELLO [dt=%dh%02dm%02ds%06du tid=%d] ", texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
-    } else {   //** Full time format
-        texp.tm_year += 1900;
-        fprintf(fd, "[t=%04dy%02dm%02dd:%dh%02dm%02ds%06du tid=%d] ", texp.tm_year, texp.tm_mon, texp.tm_mday, texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
-    }
-
-    //** And the rest of the line
-    va_start(args, fmt);
-    vfprintf(fd, fmt, args);
-    va_end(args);
-}
-
 
 //************************************************************************************
 
@@ -894,6 +1234,28 @@ char * time2string(char *buf, apr_time_t dt)
 }
 
 //************************************************************************************
+
+char *print_final_dt(_parse_obj_t *aop, int64_t count, apr_time_t ptime, char *buf)
+{
+    char tstr[128], ppbuf[128];
+    double rate;
+
+    if (count < 0) {
+        if (aop->count >= 0) count = aop->count;
+    }
+
+    if (count >= 0) {
+        rate = count;
+        rate *= (double)(APR_USEC_PER_SEC)/(double)(ptime);
+        snprintf(buf, 256, "dt=%s count=" I64T " rate=%sB/s\n", time2string(tstr, ptime), count, tbx_stk_pretty_print_double_with_scale(1024, rate, ppbuf));
+    } else {
+        snprintf(buf, 256, "dt=%s\n", time2string(tstr, ptime));
+    }
+
+    return(buf);
+}
+
+//************************************************************************************
 // tbx_monitor_parse_log - Parses the monitor log file
 //************************************************************************************
 
@@ -903,17 +1265,18 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
     FILE *fd_in;
     int cmd, dump_everything;
     tbx_mon_object_t a_obj, b_obj;
+    tbx_mon_object_t b_array[4096];
     int32_t tid, b_tid;
     int i;
     _parse_obj_t aop, bop, btp;
     apr_time_t dt, dt_offset, ptime;
     char *text;
     int text_size;
-    int64_t n;
+    int64_t n[2];
     char *type_label[257];
     char *alabel, *blabel;
     char s[20];
-    char pbuf[16384], tstr[128];
+    char pbuf[16384], dtbuf[256];
     apr_ssize_t hlen;
     apr_hash_index_t *hi;
     _label_entry_t *le;
@@ -928,6 +1291,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
     //** Make the base structure
     memset(&mp, 0, sizeof(mp));
     apr_pool_create(&(mp.mpool), NULL);
+    mp.connections = apr_hash_make(mp.mpool);
 
     //** Make the type labels
     type_label[TID_INDEX] = "tid";
@@ -939,6 +1303,8 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             type_label[i] = (char *)obj_types[i];
         }
     }
+
+    mp.type_label = type_label;
 
     //** Set up what we track
     dump_everything = ((n_obj == 0) && (n_tid == 0)) ? 1 : 0;
@@ -966,7 +1332,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
     memset(&a_obj, 0, sizeof(a_obj));
     memset(&b_obj, 0, sizeof(b_obj));
     tid = b_tid = 0;
-    while (tbx_monitor_get_next(fd_in, &cmd, &tid, &dt, &a_obj, &b_obj, &text, &text_size, &b_tid, &n) == 0) {
+    while (tbx_monitor_get_next(fd_in, &cmd, &tid, &dt, &a_obj, &b_obj, &text, &text_size, &b_tid, n, b_array) == 0) {
         //**Adjust the time
         if (dt_offset == 1234567) dt_offset = dt;
         dt = dt - dt_offset;
@@ -977,13 +1343,27 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
 
         switch (cmd) {
         case (MON_REC_OBJ_CREATE):
-            _mon_obj_label_set(&mp, &aop, text, text_size, dt);
+            _mon_obj_label_set(&mp, &aop, -1, text, text_size, dt);
+            _mon_tid_auto_group(&mp, tid, &aop);
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                _mon_printf(fd_out, dt, tid, "CREATE: %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel);
+            }
+            break;
+        case (MON_REC_OBJ_CREATE_IRATE):
+            _mon_obj_label_set(&mp, &aop, n[0], text, text_size, dt);
+            _mon_tid_auto_group(&mp, tid, &aop);
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "CREATE: %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel);
             }
             break;
         case (MON_REC_OBJ_LABEL):
-            _mon_obj_label_set(&mp, &aop, text, text_size, 0);
+            _mon_obj_label_set(&mp, &aop, -1, text, text_size, 0);
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                _mon_printf(fd_out, dt, tid, "LABEL: %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel);
+            }
+            break;
+        case (MON_REC_OBJ_LABEL_IRATE):
+            _mon_obj_label_set(&mp, &aop, n[0], text, text_size, 0);
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "LABEL: %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel);
             }
@@ -996,16 +1376,77 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             break;
         case (MON_REC_OBJ_DESTROY):
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
-                snprintf(pbuf, sizeof(pbuf), "DESTROY: %s=" LU " label=%s", type_label[aop.type], aop.id, alabel);
+                snprintf(pbuf, sizeof(pbuf), "DESTROY: %s=" LU " label=%s ", type_label[aop.type], aop.id, alabel);
             }
             ptime = dt - _mon_obj_label_destroy(&mp, &aop);
             if (alabel) {
-                _mon_printf(fd_out, dt, tid, "%s dt=%s\n", pbuf, time2string(tstr, ptime));
+                _mon_printf(fd_out, dt, tid, "%s %s", pbuf, print_final_dt(&aop, -1, ptime, dtbuf));
+            }
+            break;
+        case (MON_REC_OBJ_DESTROY_IRATE):
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                snprintf(pbuf, sizeof(pbuf), "DESTROY: %s=" LU " label=%s ", type_label[aop.type], aop.id, alabel);
+            }
+            ptime = dt - _mon_obj_label_destroy(&mp, &aop);
+            if (alabel) {
+                _mon_printf(fd_out, dt, tid, "%s %s", pbuf, print_final_dt(&aop, n[0], ptime, dtbuf));
+            }
+            break;
+        case (MON_REC_OBJ_DESTROY_MSG):
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                snprintf(pbuf, sizeof(pbuf), "DESTROY: %s=" LU " label=%s message=%s ", type_label[aop.type], aop.id, alabel, text);
+            }
+            ptime = dt - _mon_obj_label_destroy(&mp, &aop);
+            if (alabel) {
+                _mon_printf(fd_out, dt, tid, "%s %s", pbuf, print_final_dt(&aop, -1, ptime, dtbuf));
+            }
+            break;
+        case (MON_REC_OBJ_DESTROY_MSG_IRATE):
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                snprintf(pbuf, sizeof(pbuf), "DESTROY: %s=" LU " label=%s message=%s ", type_label[aop.type], aop.id, alabel, text);
+            }
+            ptime = dt - _mon_obj_label_destroy(&mp, &aop);
+            if (alabel) {
+                _mon_printf(fd_out, dt, tid, "%s %s", pbuf, print_final_dt(&aop, n[0], ptime, dtbuf));
             }
             break;
         case (MON_REC_OBJ_INT):
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
-                _mon_printf(fd_out, dt, tid, "COUNT: %s=" LU " label=%s count=" I64T "\n", type_label[aop.type], aop.id, alabel, n);
+                _mon_printf(fd_out, dt, tid, "COUNT: %s=" LU " label=%s count=" I64T "\n", type_label[aop.type], aop.id, alabel, n[0]);
+            }
+            break;
+        case (MON_REC_OBJ_INT2):
+            if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
+                _mon_printf(fd_out, dt, tid, "COUNT2: %s=" LU " label=%s count[0]=" I64T " count[1]=" I64T "\n", type_label[aop.type], aop.id, alabel, n[0], n[1]);
+            }
+            break;
+        case (MON_REC_OBJ_REFERENCE):
+            alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything);
+            if (alabel != NULL) {
+                blabel = _mon_obj_is_tracked(&mp, &bop, dump_everything);
+                _mon_printf(fd_out, dt, tid, "REFERENCE: %s=" LU " label=%s ----> %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel, type_label[bop.type], bop.id, blabel);
+                _mon_obj_label_reference(&mp, &aop, &bop);
+            }
+            break;
+        case (MON_REC_OBJ_REFERENCE_BULK):
+            alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything);
+            if (alabel != NULL) {
+                _mon_printf(fd_out, dt, tid, "REFERENCE_BULK: n_ref=" I64T " %s=" LU " label=%s", n[0], type_label[aop.type], aop.id, alabel);
+                for (i=0; i< n[0]; i++) {
+                    bop.type = b_array[i].type; bop.id = b_array[i].id;
+                    blabel = _mon_obj_is_tracked(&mp, &bop, dump_everything);
+                    fprintf(fd_out, " ----> REF[%d] %s=" LU " label=%s", i, type_label[bop.type], bop.id, blabel);
+                }
+                fprintf(fd_out, "\n");
+                _mon_obj_label_reference_bulk(&mp, &aop, b_array, n[0]);
+            }
+            break;
+        case (MON_REC_OBJ_REFERENCE_CHAIN):
+            alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything);
+            if (alabel != NULL) {
+                _mon_printf(fd_out, dt, tid, "REFERENCE_CHAIN: ");
+                _mon_obj_reference_chain(&mp, &aop, fd_out, dt, tid);
+                _mon_printf(fd_out, dt, tid, "REFERENCE_CHAIN: END\n");
             }
             break;
         case (MON_REC_OBJ_GROUP):
@@ -1013,6 +1454,14 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             blabel = _mon_obj_is_tracked(&mp, &bop, dump_everything);
             if ((alabel != NULL) || (blabel != NULL)) {
                 _mon_printf(fd_out, dt, tid, "GROUP: %s=" LU " label=%s %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel, type_label[bop.type], bop.id, blabel);
+                _mon_obj_group(&mp, &aop, &bop);
+            }
+            break;
+        case (MON_REC_OBJ_GROUP_DIRECTED):
+            alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything);
+            if (alabel != NULL) {
+                blabel = _mon_obj_is_tracked(&mp, &bop, dump_everything);
+                _mon_printf(fd_out, dt, tid, "GROUP_DIRECTED: %s=" LU " label=%s %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel, type_label[bop.type], bop.id, blabel);
                 _mon_obj_group(&mp, &aop, &bop);
             }
             break;
@@ -1024,15 +1473,22 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
                 _mon_obj_ungroup(&mp, &aop, &bop);
             }
             break;
+        case (MON_REC_OBJ_UNGROUP_DIRECTED):
+            alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything);
+            if (alabel != NULL) {
+                blabel = _mon_obj_is_tracked(&mp, &bop, dump_everything);
+                _mon_printf(fd_out, dt, tid, "UNGROUP_DIRECTED: %s=" LU " label=%s %s=" LU " label=%s\n", type_label[aop.type], aop.id, alabel, type_label[bop.type], bop.id, blabel);
+                _mon_obj_ungroup(&mp, &aop, &bop);
+            }
             break;
         case (MON_REC_THREAD_CREATE):
-            _mon_obj_label_set(&mp, &btp, text, text_size, dt);
+            _mon_obj_label_set(&mp, &btp, -1, text, text_size, dt);
             if ((alabel = _mon_obj_is_tracked(&mp, &btp, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "CREATE: %s=" LU " label=%s\n", type_label[btp.type], btp.id, alabel);
             }
             break;
         case (MON_REC_THREAD_LABEL):
-            _mon_obj_label_set(&mp, &btp, text, text_size, 0);
+            _mon_obj_label_set(&mp, &btp, -1, text, text_size, 0);
             if ((alabel = _mon_obj_is_tracked(&mp, &btp, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "LABEL: %s=" LU " label=%s\n", type_label[btp.type], btp.id, alabel);
             }
@@ -1051,7 +1507,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             break;
         case (MON_REC_THREAD_INT):
             if ((alabel = _mon_obj_is_tracked(&mp, &btp, dump_everything)) != NULL) {
-                _mon_printf(fd_out, dt, tid, "COUNT: %s=" LU " label=%s count=" I64T "\n", type_label[btp.type], btp.id, alabel, n);
+                _mon_printf(fd_out, dt, tid, "COUNT: %s=" LU " label=%s count=" I64T "\n", type_label[btp.type], btp.id, alabel, n[0]);
             }
             break;
         case (MON_REC_THREAD_GROUP):

@@ -26,6 +26,8 @@ void populate_types()
 {
     memset(type_label, 0, sizeof(type_label));
 
+    type_label[MON_INDEX_NSSEND] = "nssend";
+    type_label[MON_INDEX_NSRECV] = "nsrecv";
     type_label[MON_INDEX_GOP] = "gid";
     type_label[MON_INDEX_QUE] = "qid";
     type_label[MON_INDEX_HPSEND]  = "hpsend";
@@ -40,6 +42,7 @@ void populate_types()
     type_label[MON_INDEX_OS]    = "os";
     type_label[MON_INDEX_OSAZ]  = "osaz";
     type_label[MON_INDEX_SEG]   = "sid";
+    type_label[MON_INDEX_FS]   = "fsid";
 }
 
 //*************************************************************************
