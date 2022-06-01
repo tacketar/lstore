@@ -382,15 +382,15 @@ tbx_ns_timeout_t *tbx_ns_timeout_set(tbx_ns_timeout_t *tm, int sec, int us)
 //  _ns_monitor_create - Creates the NS send/recv monitoring objects
 //*********************************************************************
 
-void _ns_monitor_create(tbx_ns_t *ns)
+void _ns_monitor_create(tbx_ns_t *ns, int port, char *type)
 {
     char *label;
 
     label = tbx_ns_encrypt_status(ns) ? "encrypted" : "plain";
     tbx_monitor_object_fill(&(ns->mo_send), MON_INDEX_NSSEND, ns->id);
     tbx_monitor_object_fill(&(ns->mo_recv), MON_INDEX_NSRECV, ns->id);
-    tbx_monitor_obj_create(&(ns->mo_send), label);
-    tbx_monitor_obj_create(&(ns->mo_recv), label);
+    tbx_monitor_obj_create(&(ns->mo_send), "type=%s host=%s port=%d mode=%s", type, ns->peer_address, port, label);
+    tbx_monitor_obj_create(&(ns->mo_recv), "type=%s host=%s port=%d mode=%s", type, ns->peer_address, port, label);
 }
 
 //*********************************************************************
@@ -665,7 +665,7 @@ int tbx_ns_connect(tbx_ns_t *ns, const char *hostname, int port, tbx_ns_timeout_
 
     err = (ns->encrypted) ? _ns_encrypt_client(ns) : 0;
 
-    _ns_monitor_create(ns);
+    _ns_monitor_create(ns, port, "connect");
 
     log_printf(10, "net_connect: final ns=%d\n", ns->id);
     unlock_ns(ns);
@@ -799,7 +799,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
     nm->trigger_lock = net->ns_lock;
     nm->trigger_count = &(net->accept_pending);
     ns->id = tbx_ns_generate_id();
-    _ns_monitor_create(ns);
+    _ns_monitor_create(ns, port, "bind");
 
     if (apr_thread_create(&(nm->thread),
                           NULL,
@@ -1133,6 +1133,8 @@ int _tbx_ns_write(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsize
 
     if (dolock == 1) unlock_write_ns(ns);
 
+    tbx_monitor_obj_integer2(&(ns->mo_send), total_bytes, bsize);
+
     return(total_bytes);
 }
 
@@ -1456,6 +1458,8 @@ int _tbx_ns_read(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int size, 
 
     if (dolock == 1) unlock_read_ns(ns);
 
+    tbx_monitor_obj_integer2(&(ns->mo_recv), total_bytes, size);
+
     return(total_bytes);
 }
 
@@ -1654,7 +1658,8 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
 
         err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
-        _ns_monitor_create(ns);
+        _ns_monitor_create(ns, 0, "accept");
+        tbx_monitor_obj_message(&ns->mo_recv, "accepted nsid=%d", ns->id);
     } else {
         log_printf(10, "accept_pending_connection: Failed getting a new connection\n");
     }
