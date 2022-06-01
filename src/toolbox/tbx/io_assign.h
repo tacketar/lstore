@@ -68,7 +68,7 @@
     ASSERT_EXISTS(posix_fadvise);
     ASSERT_EXISTS(rename);
     ASSERT_EXISTS(renameat);
-    ASSERT_EXISTS(renameat2);
+    OK_IF_MISSING(renameat2);
 
     ASSERT_EXISTS(fclose);
     ASSERT_EXISTS(close);
