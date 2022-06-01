@@ -95,7 +95,7 @@ set(LSTORE_PROJECT_OBJS
 set(LSTORE_PROJECT_INCLUDES_OLD)
 set(LSTORE_PROJECT_INCLUDES_NAMESPACE lio_stdio_wrapper)
 set(LSTORE_PROJECT_INCLUDES
-        lio_stdio_wrapper/lib_stdio_wrapper.h
+        lio_stdio_wrapper/lio_stdio_wrapper.h
 )
 
 set(LSTORE_PROJECT_EXECUTABLES
