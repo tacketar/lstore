@@ -134,6 +134,7 @@ struct lio_cache_segment_t {
     char *ppages_buffer;
     int direct_io;
     int cache_check_in_progress;
+    int full_flush_in_progress;
     int flushing_count;
     int n_ppages;
     int ppages_used;

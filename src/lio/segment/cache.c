@@ -3426,6 +3426,8 @@ gop_op_generic_t *cache_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     cache_rw_op_t *cop;
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
     gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(cop, cache_rw_op_t, 1);
     cop->seg = seg;
@@ -3437,15 +3439,18 @@ gop_op_generic_t *cache_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     cop->boff = boff;
     cop->buf = buffer;
 
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
     if (s->direct_io == 1) {
         gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
-        tbx_monitor_obj_label(gop_mo(gop), "CACHE_READ_DIRECT: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_READ_DIRECT: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     } else {
         gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
-        tbx_monitor_obj_label(gop_mo(gop), "CACHE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_READ: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     }
 
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -3460,6 +3465,8 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     cache_rw_op_t *cop;
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
     gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(cop, cache_rw_op_t, 1);
     cop->seg = seg;
@@ -3471,15 +3478,18 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     cop->boff = boff;
     cop->buf = buffer;
 
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
     if (s->direct_io == 1) {
         gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
-        tbx_monitor_obj_label(gop_mo(gop), "CACHE_WRITE_DIRECT: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_WRITE_DIRECT: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     } else {
         gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
-        tbx_monitor_obj_label(gop_mo(gop), "CACHE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_WRITE: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     }
 
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -3500,7 +3510,7 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
     tbx_stack_t stack;
     dio_range_lock_t drng;
     lio_cache_range_t *curr, *r;
-    int progress;
+    int progress, full_flush;
     int mode, err;
     ex_off_t lo, hi, hi_got;
     double dt;
@@ -3513,7 +3523,22 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
 
     now = apr_time_now();
     log_printf(15, "COP seg=" XIDT " offset=" XOT " len=" XOT " size=" XOT "\n", segment_id(cop->seg), cop->iov_single.offset, cop->iov_single.len, segment_size(cop->seg));
+    tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop: offset=" XOT " len=" XOT " size=" XOT, cop->iov_single.offset, cop->iov_single.len, segment_size(cop->seg));
     tbx_log_flush();
+
+    if ((cop->iov_single.offset == 0) && (cop->iov_single.len == -1)) { //** Got a full flush so see is another flush is in progress
+        segment_lock(cop->seg);
+        if (s->full_flush_in_progress) {
+            s->flushing_count--;
+            segment_unlock(cop->seg);
+tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress. Kicking out");
+            return(gop_success_status);
+        }
+        s->full_flush_in_progress++;
+        full_flush = 1;
+tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress=%d", s->full_flush_in_progress);
+        segment_unlock(cop->seg);
+    }
 
     total_pages = 0;
     flush_id[2] = 0;
@@ -3555,6 +3580,7 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
         dio_range_lock_set(&drng, CACHE_READ, curr->lo, curr->hi, s->pio_execing, s->page_size);
         dio_range_lock(cop->seg, &drng);
         status = cache_dirty_pages_get(cop->seg, mode, curr->lo, curr->hi, &hi_got, page, &n_pages);
+tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop: n_pages=%d lo=" XOT " hi=" XOT, n_pages, curr->lo, hi_got);
         dio_range_lock_contract(cop->seg, &drng, curr->lo, hi_got, s->page_size);
         log_printf(15, "seg=" XIDT " processing range: lo=" XOT " hi=" XOT " hi_got=" XOT " mode=%d skip_mode=%d n_pages=%d\n", segment_id(cop->seg), curr->lo, curr->hi, hi_got, mode, status, n_pages);
 
@@ -3627,6 +3653,9 @@ finished:
     sid = segment_id(cop->seg);
     segment_lock(cop->seg);
     s->flushing_count--;
+    if (full_flush == 1) s->full_flush_in_progress--;
+
+if (full_flush == 1) tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress=COMPLETE");
     segment_unlock(cop->seg);
 
     dt = apr_time_now() - now;
@@ -3657,7 +3686,6 @@ gop_op_generic_t *cache_flush_range_gop(lio_segment_t *seg, data_attr_t *da, ex_
     cop->boff = 0;
     cop->buf = NULL;
     cop->timeout = timeout;
-
 
     segment_lock(seg);
     s->flushing_count++;
@@ -4143,7 +4171,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
     //** Group the child together
     tbx_mon_object_t cmo;
     tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, id);
-    tbx_monitor_obj_group(&(seg->header.mo), &cmo);
+    tbx_monitor_obj_reference(&(seg->header.mo), &cmo);
 
     s->child_seg = load_segment(seg->ess, id, exp);
     if (s->child_seg == NULL) {
