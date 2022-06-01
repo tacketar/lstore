@@ -82,9 +82,9 @@ void ibppc_form_host(ibp_context_t *ic, char *hoststr, int n_host, char *host, i
 //    NOTE:  host, key, and typekey should have at least 256 char
 //*************************************************************
 
-int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *key, char *typekey)
+int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *key, char *typekey, char *rid)
 {
-    char *bstate;
+    char *bstate, *kptr, *rptr;
     int finished = 0;
     int i, j, n, m;
     char rr[16];
@@ -110,6 +110,19 @@ int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *ke
 
     strncpy(key, tbx_stk_string_token(NULL, "/", &bstate, &finished), 255);
     strncpy(typekey, tbx_stk_string_token(NULL, "/", &bstate, &finished), 255);
+
+    if (rid) {
+        kptr = key; rptr = rid;
+        *rptr = '\0';
+        while (*kptr != '\0') {
+            if (*kptr == '#') {
+                *rptr = '\0';
+                break;
+            }
+            *rptr = *kptr;
+            rptr++; kptr++;
+        }
+    }
 
     switch (ic->connection_mode) {
     case IBP_CMODE_RID:

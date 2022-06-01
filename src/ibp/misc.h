@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 void ibp_configure_signals();
-int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *key, char *typekey);
+int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *key, char *typekey, char *rid);
 int parse_cmpstr(char *str, char *host, int *port, int *size);
 void ibppc_form_host(ibp_context_t *ic, char *hoststr, int n_host, char *host, ibp_rid_t rid);
 
