@@ -31,6 +31,7 @@
 #include <tbx/fork_helper.h>
 #include <tbx/siginfo.h>
 #include <tbx/type_malloc.h>
+#include <tbx/lio_monitor.h>
 #include "lock_alloc.h"
 #include "activity_log.h"
 
@@ -408,7 +409,8 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     server->rid_log = "/log/rid.log";
     server->rid_eject_script = NULL;
     server->rid_eject_tmp_path = "/tmp";
-
+    cfg->monitor_fname = "/log/ibp.mon";
+    cfg->monitor_enable = 0;
     cfg->db_mem = 256;
     cfg->force_resource_rebuild = force_rebuild;
     cfg->truncate_expiration = 0;
@@ -500,6 +502,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     server->rid_eject_tmp_path =
         tbx_inip_get_string(keyfile, "server", "rid_eject_tmp_path", server->rid_eject_tmp_path);
 
+
     if (force_rebuild == 0) {   //** The command line option overrides the file
         cfg->force_resource_rebuild =
             tbx_inip_get_integer(keyfile, "server", "force_resource_rebuild",
@@ -511,11 +514,17 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     i = tbx_inip_get_integer(keyfile, "server", "soft_fail", 0);
     cfg->soft_fail = (i == 0) ? -1 : 0;
 
+    cfg->monitor_fname = tbx_inip_get_string(keyfile, "server", "monitor_fname", cfg->monitor_fname);
+    cfg->monitor_enable = tbx_inip_get_integer(keyfile, "server", "monitor_enable", cfg->monitor_enable);
+
     //*** Do some initial config of the log and debugging info ***
     tbx_log_open(cfg->server.logfile, 1);
     tbx_set_log_level(cfg->server.log_level);
     set_debug_level(cfg->server.debug_level);
     tbx_set_log_maxsize(cfg->server.log_maxsize);
+
+    tbx_monitor_create(cfg->monitor_fname);
+    tbx_monitor_set_state(cfg->monitor_enable);
 
     //*** Now iterate through each resource which is assumed to be all groups beginning with "resource" ***
     //*** NOTE: RocksDB Will lock based on the PID which changes pre/post fork so this MUST be done
@@ -633,7 +642,64 @@ int ibp_shutdown(Config_t *cfg)
     }
     resource_list_iterator_destroy(cfg->rl, &it);
 
+    tbx_monitor_destroy();
+
     return (0);
+}
+
+//***************************************************************
+//** monitor_check_fn - See if we need to adjust the monitoring state
+//***************************************************************
+
+void monitor_check_fn(void *arg, FILE *fd)
+{
+    Config_t *cfg = (Config_t *)arg;
+    char buffer[PATH_MAX];
+    FILE *mfd;
+
+    snprintf(buffer, sizeof(buffer), "%s-enable", cfg->monitor_fname);
+    buffer[PATH_MAX-1] = '\0';
+    if ((mfd=fopen(buffer, "r")) != NULL) {
+        fclose(mfd);
+        if (cfg->monitor_enable == 0) {
+            fprintf(fd, "#-------- Enabling monitoring logs fname:%s\n\n", cfg->monitor_fname);
+            cfg->monitor_enable = 1;
+            tbx_monitor_set_state(1);
+            return;  //** Kick out
+        }
+    }
+
+    snprintf(buffer, sizeof(buffer), "%s-disable", cfg->monitor_fname);
+    buffer[PATH_MAX] = '\0';
+    if ((mfd=fopen(buffer, "r")) != NULL) {
+        fclose(mfd);
+        if (cfg->monitor_enable == 1) {
+            fprintf(fd, "#-------- Disabling monitoring logs fname:%s\n\n", cfg->monitor_fname);
+            cfg->monitor_enable = 0;
+            tbx_monitor_set_state(0);
+            return;  //** Kick out
+        }
+    }
+}
+
+//***************************************************************
+// server_dump_fn - Dump the server config
+//***************************************************************
+
+void server_dump_fn(void *arg, FILE *fd)
+{
+    Config_t *cfg = (Config_t *)arg;
+    char buffer[100*1024];
+    int used = 0;
+
+    //** Adjust the monitoring state 1st
+    monitor_check_fn(arg, fd);
+
+    //** Then dump the config
+    print_config(buffer, &used, sizeof(buffer), cfg);
+    fprintf(fd, "%s", buffer);
+
+    return;
 }
 
 //*****************************************************************************
@@ -670,6 +736,7 @@ void snap_all_rids_handler(void *arg, FILE *fd)
     snap_all_rids("snap", 0, fd);
 }
 
+
 //*****************************************************************************
 // configure_signals - Configures the signals
 //*****************************************************************************
@@ -685,6 +752,10 @@ void configure_signals()
 #ifdef SIGPIPE
     apr_signal_block(SIGPIPE);
 #endif
+
+    //** Add the handler for dumping the config
+    tbx_siginfo_install("/log/ibp_dump.cfg", SIGUSR1);
+    tbx_siginfo_handler_add(SIGUSR1, server_dump_fn, global_config);
 
     //** Lastly set up the handler for the doing a DB snap
     tbx_siginfo_install("/log/snap.log", SIGRTMIN);

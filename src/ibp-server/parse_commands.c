@@ -196,6 +196,8 @@ int read_allocate(ibp_task_t *task, char **bstate)
             if ((tbx_chksum_type_valid(d) == 0) && (d != CHKSUM_NONE)) {
                 log_printf(10, "read_allocate: bad chksum_type=%d\n", d);
                 send_cmd_result(task, IBP_E_CHKSUM_TYPE);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: bad chksum_type=%d", cmd->name, d);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
 
@@ -205,6 +207,8 @@ int read_allocate(ibp_task_t *task, char **bstate)
             if ((len > (int64_t) 2147483648) || ((len <= 0) && (d != CHKSUM_NONE))) {
                 log_printf(10, "read_allocate: bad chksum blocksize =" I64T "\n", len);
                 send_cmd_result(task, IBP_E_CHKSUM_BLOCKSIZE);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: bad chksum_blocksize=" I64T, cmd->name, len);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
 
@@ -218,12 +222,16 @@ int read_allocate(ibp_task_t *task, char **bstate)
             if (ibp_str2rid(tmp, rid) != 0) {
                 log_printf(10, "read_allocate: Bad RID: %s\n", tmp);
                 send_cmd_result(task, IBP_E_INVALID_RID);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid RID: %s", cmd->name, tmp);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
         } else {                //** IBP_SPLIT_ALLOCATE/IBP_SPLIT_ALLOCATE_CHKSUM
             if (parse_key2(bstate, &(cmd->cargs.allocate.master_cap), rid, NULL, 0) != 0) {
                 log_printf(10, "read_allocate: Bad RID/mcap!\n");
                 send_cmd_result(task, IBP_E_INVALID_RID);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid RID/mcap", cmd->name);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
         }
@@ -245,6 +253,8 @@ int read_allocate(ibp_task_t *task, char **bstate)
     } else {
         log_printf(1, "read_allocate: Bad reliability: %d\n", d);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad reliability=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -255,12 +265,16 @@ int read_allocate(ibp_task_t *task, char **bstate)
     if ((d != IBP_BYTEARRAY) && (d != IBP_BUFFER) && (d != IBP_FIFO) && (d != IBP_CIRQ)) {
         log_printf(1, "read_allocate: Bad type: %d\n", d);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad type=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //================ Disabling all allocation types except BYTEARRAYS ================
     if (a->type != IBP_BYTEARRAY) {
         log_printf(1, "read_allocate: Only support IBP_BYTEARRAY!  type: %d\n", d);
         send_cmd_result(task, IBP_E_TYPE_NOT_SUPPORTED);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Only support IBP_BYTEARRAY!  type=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
 
     }
@@ -273,6 +287,8 @@ int read_allocate(ibp_task_t *task, char **bstate)
     if (d == 0) {
         log_printf(1, "read_allocate: Bad duration: %d\n", d);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad duration=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     } else if (d == -1) {       //** Infinite duration is requested
         a->expiration = INT_MAX;
@@ -286,6 +302,8 @@ int read_allocate(ibp_task_t *task, char **bstate)
     if (len == 0) {
         log_printf(1, "read_allocate: Bad size : " I64T "\n", len);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad size=%d", cmd->name, len);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Right now we only support a 2GB-1 byte allocations
@@ -293,11 +311,15 @@ int read_allocate(ibp_task_t *task, char **bstate)
         if (global_config->server.big_alloc_enable == 0) {
             log_printf(1, "read_allocate: Size > 2GB : " I64T "\n", len);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Size > 2GiB limit. len=" I64T, cmd->name, len);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
     }
 
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s reliability=%d duration=%d size=" I64T, cmd->name, ibp_rid2str(*rid, dummy), a->reliability, d, a->max_size);
 
     debug_printf(1, "read_allocate: Successfully parsed allocate command\n");
     return (0);
@@ -325,6 +347,8 @@ int read_merge_allocate(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(op->mkey), &(op->rid), op->crid, sizeof(op->crid)) != 0) {
         log_printf(10, "read_merge_allocate: Bad RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad master RID/mcap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -332,6 +356,8 @@ int read_merge_allocate(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(op->ckey), &child_rid, NULL, 0) != 0) {
         log_printf(10, "read_merge_allocate: Child RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad child RID/mcap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -339,8 +365,12 @@ int read_merge_allocate(ibp_task_t *task, char **bstate)
     if (ibp_compare_rid(op->rid, child_rid) != 0) {
         log_printf(10, "read_merge_allocate: Child/Master RID!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad child master RID", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] Master: RID=%s id=" LU " -- child id=" LU, cmd->name, op->crid, op->mkey.id, op->ckey.id);
 
     get_command_timeout(task, bstate);
 
@@ -405,6 +435,8 @@ int read_status(ibp_task_t *task, char **bstate)
             if (ibp_str2rid(tmp, &(status->rid)) != 0) {
                 log_printf(1, "read_status: Bad RID: %s\n", tmp);
                 send_cmd_result(task, IBP_E_INVALID_RID);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, tmp);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
 
@@ -437,9 +469,11 @@ int read_status(ibp_task_t *task, char **bstate)
         ibp_empty_rid(&(status->rid));
         status->password[PASSLEN - 1] = '\0';
         strncpy(status->password, global_config->server.password, sizeof(status->password) - 1);
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_ST_RES", cmd->name);
         get_command_timeout(task, bstate);      //** Get the timeout
         break;
     case IBP_ST_VERSION:       //** Return the version
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_ST_VERSION", cmd->name);
         get_command_timeout(task, bstate);      //** Get the timeout
         break;
     case IBP_ST_STATS:         //** Stats command not standard IBP
@@ -452,14 +486,18 @@ int read_status(ibp_task_t *task, char **bstate)
         if (d == 0) {
             log_printf(1, "read_status: Invalid start time %d\n", d);
             send_cmd_result(task, IBP_E_BAD_FORMAT);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: IBP_ST_STATS Invalid start time=%d", cmd->name, d);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_ST_STATS", cmd->name);
         get_command_timeout(task, bstate);      //** Get the timeout
         break;
     case IBP_ST_INQ:
         status->password[0] = '\0';
         sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), "%31s", status->password);
         debug_printf(15, "read_status: IBP_ST_INQ password = %s\n", status->password);
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_ST_INQ", cmd->name);
         get_command_timeout(task, bstate);      //** Get the timeout
         break;
     case IBP_ST_CHANGE:
@@ -472,6 +510,8 @@ int read_status(ibp_task_t *task, char **bstate)
                    tbx_ns_getid(task->ns));
         send_cmd_result(task, IBP_E_INVALID_CMD);
         tbx_ns_close(task->ns);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: IBP_ST_CHANGE request ignored!", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
 
         int nbytes;
@@ -503,6 +543,8 @@ int read_status(ibp_task_t *task, char **bstate)
     default:
         log_printf(1, "read_status: Unknown sub-command %d\n", status->subcmd);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Unknown sub-command=%d", cmd->name, status->subcmd);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -545,6 +587,8 @@ int read_manage(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(manage->cap), &(manage->rid), manage->crid, sizeof(manage->crid)) != 0) {
         log_printf(10, "read_merge_allocate: Bad RID/mcap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/mcap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (global_config->soft_fail);
     }
 
@@ -558,6 +602,8 @@ int read_manage(ibp_task_t *task, char **bstate)
         && (d != IBP_TRUNCATE)) {
         log_printf(1, "read_manage: Unknown sub-command %d\n", d);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: unknown sub-command=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     manage->subcmd = d;
@@ -580,6 +626,8 @@ int read_manage(ibp_task_t *task, char **bstate)
             if ((manage->subcmd == IBP_INCR) || (manage->subcmd == IBP_DECR)) { //** Ignored for other commands
                 log_printf(10, "read_manage:  Invalid cap type (%d)!\n", d);
                 send_cmd_result(task, IBP_E_BAD_FORMAT);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid cap type=%d", cmd->name, d);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
         }
@@ -593,6 +641,8 @@ int read_manage(ibp_task_t *task, char **bstate)
             if (parse_key2(bstate, &(manage->master_cap), NULL, NULL, 0) != 0) {
                 log_printf(10, "read_merge_allocate: Bad RID/master_cap!\n");
                 send_cmd_result(task, IBP_E_INVALID_RID);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/mcap for INCR/DECR", cmd->name);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (global_config->soft_fail);
             }
 
@@ -600,6 +650,7 @@ int read_manage(ibp_task_t *task, char **bstate)
         }
 
         get_command_timeout(task, bstate);
+        tbx_monitor_obj_create(&(task->mo), "[%s] %s id=" LU, cmd->name, ((manage->subcmd==IBP_INCR) ? "IBP_INCR" : "IBP_DECR"), manage->cap.id);
         return (0);
 
     case IBP_PROBE:            //**Skip the unused fields - This needs to be cleaned up in the protocol!
@@ -608,7 +659,9 @@ int read_manage(ibp_task_t *task, char **bstate)
             tbx_stk_string_token(NULL, " ", bstate, &finished);
             tbx_stk_string_token(NULL, " ", bstate, &finished);
         }
+
         get_command_timeout(task, bstate);
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_PROBE id=" LU, cmd->name, manage->cap.id);
         return (0);
     case IBP_TRUNCATE:         //**Get the new size!
         //** Get the new size
@@ -618,6 +671,7 @@ int read_manage(ibp_task_t *task, char **bstate)
         log_printf(15, "read_manage: IBP_TRUNCATE new size=%llu\n", llu);
 
         get_command_timeout(task, bstate);
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_TRUNCATE id=" LU " new_size=" I64T, cmd->name, manage->cap.id, manage->new_size);
         return (0);
     case IBP_CHNG:
         if (cmd->command == IBP_ALIAS_MANAGE) { //** Get the new offset
@@ -632,6 +686,8 @@ int read_manage(ibp_task_t *task, char **bstate)
         if ((llu == 0) && (manage->subcmd == IBP_CHNG)) {
             log_printf(10, "read_manage:  Invalid new size (" LU ")!\n", manage->new_size);
             send_cmd_result(task, IBP_E_WOULD_DAMAGE_DATA);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Can't truncate alloication to 0 bytes", cmd->name);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
         //**Read the new duration
@@ -642,6 +698,8 @@ int read_manage(ibp_task_t *task, char **bstate)
             if (d == 0) {
                 log_printf(1, "read_manage: Bad duration: %d\n", d);
                 send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad duaration=%d", cmd->name, d);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             } else if (d < 0) { //** No change requested on duration
                 manage->new_duration = -1;
@@ -667,6 +725,8 @@ int read_manage(ibp_task_t *task, char **bstate)
                 } else if (manage->subcmd == IBP_CHNG) {
                     log_printf(1, "read_manage: Bad reliability: %d\n", d);
                     send_cmd_result(task, IBP_E_BAD_FORMAT);
+                    tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad reliability=%d", cmd->name, d);
+                    tbx_monitor_obj_destroy(&(task->mo));
                     return (-1);
                 }
             }
@@ -677,14 +737,19 @@ int read_manage(ibp_task_t *task, char **bstate)
             if (parse_key2(bstate, &(manage->master_cap), NULL, NULL, 0) != 0) {
                 log_printf(10, "read_merge_allocate: Bad RID/master_cap!\n");
                 send_cmd_result(task, IBP_E_INVALID_RID);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/master cap", cmd->name);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (global_config->soft_fail);
             }
         }
 
         get_command_timeout(task, bstate);
+        tbx_monitor_obj_create(&(task->mo), "[%s] IBP_CHNG id=" LU, cmd->name, manage->cap.id);
         return (0);
     default:
         log_printf(10, "read_manage:  Invalid subcmd (%d)!\n", manage->subcmd);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: invalid subcmd=%d", cmd->name, manage->subcmd);
+        tbx_monitor_obj_destroy(&(task->mo));
         send_cmd_result(task, IBP_E_BAD_FORMAT);
         return (-1);
     }
@@ -709,12 +774,16 @@ int read_rename(ibp_task_t *task, char **bstate)
     debug_printf(1, "read_rename:  Starting to process buffer\n");
 
     if (parse_key2(bstate, &(manage->cap), &(manage->rid), manage->crid, sizeof(manage->crid)) != 0) {
-        log_printf(10, "read_rename_allocate: Bad RID/master_cap!\n");
+        log_printf(10, "read_rename_allocate: Bad RID/cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/cap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (global_config->soft_fail);
     }
 
     debug_printf(10, "read_mange: RID=%s\n", manage->crid);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] id=" LU " rid=%s", cmd->name, manage->cap.id, manage->crid);
 
     get_command_timeout(task, bstate);
     return (0);
@@ -745,6 +814,8 @@ int read_alias_allocate(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(cmd->cap), &(cmd->rid), cmd->crid, sizeof(cmd->crid)) != 0) {
         log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/cap", task->cmd.name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (global_config->soft_fail);
     }
 
@@ -757,22 +828,30 @@ int read_alias_allocate(ibp_task_t *task, char **bstate)
     if (sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), I64T, &(cmd->offset)) != 1) {
         log_printf(5, "read_alias_allocate: Bad offset cap= %s\n", cmd->crid);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad offset", task->cmd.name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Get the len **
     if (sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), I64T, &(cmd->len)) != 1) {
         log_printf(5, "read_alias_allocate: Bad length cap= %s\n", cmd->crid);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad length", task->cmd.name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Get the duration **
     if (sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), LU, &lu) != 1) {
         log_printf(5, "read_alias_allocate: Bad duration cap= %s\n", cmd->crid);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad duration", task->cmd.name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     cmd->expiration = 0;
     if (lu != 0) cmd->expiration = lu + ibp_time_now();
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] id=" LU, task->cmd.name, cmd->cap.id);
 
     get_command_timeout(task, bstate);
     return (0);
@@ -799,6 +878,8 @@ int read_validate_get_chksum(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(w->cap), &(w->rid), w->crid, sizeof(w->crid)) != 0) {
         log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID/cap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -813,10 +894,14 @@ int read_validate_get_chksum(ibp_task_t *task, char **bstate)
         log_printf(10,
                    "read_validate_get_chksum:  Invalid correct_errors/chksum_info_only (%d)!\n", i);
         send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid correct_errors or chksum_ino_only field=%d", cmd->name, i);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (global_config->soft_fail);
     }
     //** and finally the timeout
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] id=" LU, cmd->name, w->cap.id);
 
     debug_printf(1, "read_validate_get_chksum: Successfully parsed\n");
     return (0);
@@ -859,6 +944,8 @@ int read_write(ibp_task_t *task, char **bstate)
         if (i != 0) {
             log_printf(10, "read_write:  Invalid chksum error(%d)!\n", i);
             send_cmd_result(task, i);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid chksum error=%d", cmd->name, i);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
     } else {
@@ -870,6 +957,8 @@ int read_write(ibp_task_t *task, char **bstate)
     if (parse_key2(bstate, &(w->cap), &(w->rid), w->crid, sizeof(w->crid)) != 0) {
         log_printf(10, "Bad RID/master_cap!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid RID/cap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -882,11 +971,15 @@ int read_write(ibp_task_t *task, char **bstate)
         if (llu < 1) {
             log_printf(10, "read_write:  Invalid IOVEC count (%llu)!\n", llu);
             send_cmd_result(task, IBP_E_FILE_SEEK_ERROR);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC count=%llu", cmd->name, llu);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
         if (llu > IOVEC_MAX) {
             log_printf(10, "read_write:  IOVEC count too big (%llu)!\n", llu);
             send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC count=%llu is to big", cmd->name, llu);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
 
@@ -909,6 +1002,8 @@ int read_write(ibp_task_t *task, char **bstate)
             if (i64t < 0) {
                 log_printf(10, "read_write:  Invalid vec offset[%d] (" I64T ")!\n", i, i64t);
                 send_cmd_result(task, IBP_E_FILE_SEEK_ERROR);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC offset[%d]=" I64T, cmd->name, i, i64t);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
             iovec->vec[i].off = i64t;
@@ -920,6 +1015,8 @@ int read_write(ibp_task_t *task, char **bstate)
         if (llu < 1) {
             log_printf(10, "read_write:  Invalid vec length[%d] (%llu)!\n", i, llu);
             send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC len[%d]=%llu", cmd->name, i, llu);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
 
@@ -934,6 +1031,9 @@ int read_write(ibp_task_t *task, char **bstate)
 
     debug_printf(1, "read_write: Successfully parsed io->n=%d off[0]=" I64T " len[0]=" I64T "\n",
                  w->iovec.n, w->iovec.vec[0].off, w->iovec.vec[0].len);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] id=" LU " n_iov=%d off[0]=" I64T " len[0]=" I64T, cmd->name, w->cap.id, w->iovec.n, w->iovec.vec[0].off, w->iovec.vec[0].len);
+
     return (0);
 }
 
@@ -995,6 +1095,8 @@ int read_read(ibp_task_t *task, char **bstate)
         if (i != 0) {
             log_printf(10, "read_read:  Invalid chksum error(%d)!\n", i);
             send_cmd_result(task, i);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid chksum error=%d", cmd->name, i);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
     } else {
@@ -1021,6 +1123,8 @@ int read_read(ibp_task_t *task, char **bstate)
         if ((ctype != IBP_TCP) && (ctype != IBP_PHOEBUS)) {
             log_printf(10, "read_read:  Invalid ctype(%d)!\n", ctype);
             send_cmd_result(task, IBP_E_TYPE_NOT_SUPPORTED);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid network ctype=%d", cmd->name, ctype);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
         break;
@@ -1072,6 +1176,8 @@ int read_read(ibp_task_t *task, char **bstate)
     if (sscanf(tmp, LU , &(r->cap.id)) != 1) {
         log_printf(10, "ERROR parsing ID!\n");
         send_cmd_result(task, IBP_E_INVALID_READ_CAP);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid reap cap", cmd->name);
+        tbx_monitor_obj_destroy(&(task->mo));
         return(-1);
     }
 
@@ -1081,11 +1187,15 @@ int read_read(ibp_task_t *task, char **bstate)
         if (llu < 1) {
             log_printf(10, "read_read:  Invalid IOVEC count (%llu)!\n", llu);
             send_cmd_result(task, IBP_E_FILE_SEEK_ERROR);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC count=%llu", cmd->name, llu);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
         if (llu > IOVEC_MAX) {
             log_printf(10, "read_read:  IOVEC count too big (%llu)!\n", llu);
             send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC count=%llu is to big", cmd->name, llu);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
 
@@ -1103,6 +1213,8 @@ int read_read(ibp_task_t *task, char **bstate)
             if (ll < 0) {
                 log_printf(10, "read_read:  Invalid offset[%d] (%llu)!\n", i, ll);
                 send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC offset[%d]=%llu", cmd->name, i, ll);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
             //** Get the length
@@ -1112,6 +1224,8 @@ int read_read(ibp_task_t *task, char **bstate)
             if (llu < 1) {
                 log_printf(10, "read_read:  Invalid length[%d] (%llu)!\n", i, llu);
                 send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+                tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Invalid IOVEC len[%d]=%llu", cmd->name, i, ll);
+                tbx_monitor_obj_destroy(&(task->mo));
                 return (-1);
             }
 
@@ -1181,6 +1295,8 @@ int read_read(ibp_task_t *task, char **bstate)
         if (lu == 0) {
             log_printf(1, "read_read(SEND): Bad Remote server timeout value %lu\n", lu);
             task->cmd.state = CMD_STATE_FINISHED;
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: SEND Bad remote server timeout value", cmd->name);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (send_cmd_result(task, IBP_E_INVALID_PARAMETER));
         }
 
@@ -1190,6 +1306,8 @@ int read_read(ibp_task_t *task, char **bstate)
         if (lu == 0) {
             log_printf(1, "read_read(SEND): Bad Remote client timeout value %lu\n", lu);
             task->cmd.state = CMD_STATE_FINISHED;
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: SEND Bad remote client timeout value", cmd->name);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (send_cmd_result(task, IBP_E_INVALID_PARAMETER));
         }
         log_printf(20, "read_read: remote_sto=" TT " remote_cto=" TT "\n", r->remote_sto,
@@ -1198,6 +1316,9 @@ int read_read(ibp_task_t *task, char **bstate)
 
     debug_printf(1, "read_read: Successfully parsed iovec->n=%d off[0]=" I64T " len[0]=" I64T "\n",
                  r->iovec.n, r->iovec.vec[0].off, r->iovec.vec[0].len);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] id=" LU " n_iov=%d off[0]=" I64T "len[0]=" I64T, cmd->name, r->cap.id, r->iovec.n, r->iovec.vec[0].off, r->iovec.vec[0].len);
+
     return (0);
 }
 
@@ -1228,6 +1349,8 @@ int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -1237,6 +1360,8 @@ int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
     if (d <= 0) {
         log_printf(1, "Bad duration: %d\n", d);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad duration=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     arg->new_duration = ibp_time_now() + d;
@@ -1247,6 +1372,8 @@ int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
     if ((d < 1) || (d > global_config->server.max_warm)) {
         log_printf(10, "Invalid n_caps (%d)!\n", d);
         send_cmd_result(task, IBP_E_INV_PAR_SIZE);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad n_caps=%d", cmd->name, d);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     arg->n_caps = d;
@@ -1259,10 +1386,14 @@ int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
             free(caps);
             log_printf(10, "Bad RID/master_cap!\n");
             send_cmd_result(task, IBP_E_INVALID_RID);
+            tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID for cap index=%d", cmd->name, i);
+            tbx_monitor_obj_destroy(&(task->mo));
             return (-1);
         }
     }
     arg->caps = caps;
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s n_cap=%d", cmd->name, arg->crid, arg->n_caps);
 
     get_command_timeout(task, bstate);
     return (0);
@@ -1294,10 +1425,14 @@ int read_internal_get_corrupt(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_get_corrupt: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
     debug_printf(10, "read_internal_get_corrupt: RID=%s\n", arg->crid);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s", cmd->name, arg->crid);
 
     get_command_timeout(task, bstate);
     return (0);
@@ -1332,13 +1467,17 @@ int read_internal_get_alloc(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_get_alloc: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //*** Get the id ***
     str = tbx_stk_string_token(NULL, " ", bstate, &finished);
     if (sscanf(str, LU, &(arg->id)) != 1) {
         log_printf(10, "ERROR parsing ID!\n");
-        send_cmd_result(task, IBP_E_INVALID_RID);
+        send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad ID");
+        tbx_monitor_obj_destroy(&(task->mo));
         return(-1);
     }
 
@@ -1356,6 +1495,7 @@ int read_internal_get_alloc(ibp_task_t *task, char **bstate)
     //** and the length
     sscanf(tbx_stk_string_token(NULL, " ", bstate, &finished), LU, &(arg->len));
 
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s id=" LU " offset=" LU " len=" LU, cmd->name, arg->crid,arg->id, arg->offset, arg->len);
 
     debug_printf(10, "read_internal_get_alloc: RID=%s\n", arg->crid);
 
@@ -1373,6 +1513,8 @@ int read_internal_get_alloc(ibp_task_t *task, char **bstate)
 int read_internal_get_config(ibp_task_t *task, char **bstate)
 {
     debug_printf(1, "read_internal_get_config:  Starting to process buffer\n");
+
+    tbx_monitor_obj_create(&(task->mo), "[%s]", task->cmd.name);
 
     get_command_timeout(task, bstate);
 
@@ -1403,6 +1545,8 @@ int read_internal_date_free(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_date_free: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //*** Get the size ***
@@ -1411,12 +1555,17 @@ int read_internal_date_free(ibp_task_t *task, char **bstate)
     if (d == 0) {
         log_printf(1, "read_internal_date_free: Bad size: " LU "\n", arg->size);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad size=" LU, cmd->name, arg->size);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
     get_command_timeout(task, bstate);
 
     debug_printf(1, "read_internal_date_free: Successfully parsed allocate command\n");
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s size=" LU, cmd->name, arg->crid, arg->size);
+
     return (0);
 }
 
@@ -1445,14 +1594,19 @@ int read_internal_expire_list(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_expire_list: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
+
     //*** Get the mode ***
     arg->mode = 0;
     d = sscanf(tbx_stk_string_token(NULL, " ", bstate, &fin), "%d", &(arg->mode));
     if (d == 0) {
         log_printf(1, "read_internal_expire_list: Bad mode: %d\n", arg->mode);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad mode=%d RID=%s", cmd->name, arg->mode, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //*** Get the time ***
@@ -1461,6 +1615,8 @@ int read_internal_expire_list(ibp_task_t *task, char **bstate)
     if (d == 0) {
         log_printf(1, "read_internal_expire_list: Bad time: " TT "\n", arg->start_time);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad time=" TT " RID=%s", cmd->name, arg->start_time, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -1471,14 +1627,18 @@ int read_internal_expire_list(ibp_task_t *task, char **bstate)
     arg->max_rec = 0;
     d = sscanf(tbx_stk_string_token(NULL, " ", bstate, &fin), "%d", &(arg->max_rec));
     if (d == 0) {
-        log_printf(1, "read_internal_expire_list: Bad recrd count: %d\n", arg->max_rec);
+        log_printf(1, "read_internal_expire_list: Bad record count: %d\n", arg->max_rec);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad record count=%d RID=%s", cmd->name, arg->max_rec, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
     arg->direction = DBR_NEXT;
 
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s start_time=" TT " max_rec=%d", cmd->name, arg->crid, arg->start_time, arg->max_rec);
 
     debug_printf(1, "read_internal_expire_list: Successfully parsed allocate command\n");
     return (0);
@@ -1508,6 +1668,8 @@ int read_internal_undelete(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_expire_list: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //*** Get the trash_type ***
@@ -1516,6 +1678,8 @@ int read_internal_undelete(ibp_task_t *task, char **bstate)
     if ((arg->trash_type != RES_DELETE_INDEX) && (arg->trash_type != RES_EXPIRE_INDEX)) {
         log_printf(1, "read_internal_undelete: Bad Trash_type: %d\n", arg->trash_type);
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad trash_type=%d RID=%s", cmd->name, arg->trash_type, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
@@ -1529,10 +1693,14 @@ int read_internal_undelete(ibp_task_t *task, char **bstate)
     if (duration == 0) {
         log_printf(1, "read_internal_undelete: Bad duration\n");
         send_cmd_result(task, IBP_E_BAD_FORMAT);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad duration=" LU " RID=%s", cmd->name, duration, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s trash_type=%d duration=" LU, cmd->name, arg->crid, arg->trash_type, duration);
 
     debug_printf(1, "read_internal_undelete: Successfully parsed undelete command\n");
     return (0);
@@ -1563,10 +1731,14 @@ int read_internal_rescan(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_expire_list: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
 
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s", cmd->name, arg->crid);
 
     debug_printf(1, "read_internal_rescan: Successfully parsed rescan command\n");
     return (0);
@@ -1595,18 +1767,24 @@ int read_internal_set_mode(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_set_mode: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Make sure it's not RID 0
     if (ibp_rid_is_empty(arg->rid) == 1) {
         log_printf(1, "read_internal_set_mode: Can't use RID 0!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s. Can't use 0!", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** and that it's mounted
     if (resource_lookup(global_config->rl, arg->crid) == NULL) {
         log_printf(10, "read_internal_set_mode: Invalid RID :%s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s. RID is unmounted!", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (0);
     }
     //** Get the new_mode
@@ -1615,11 +1793,15 @@ int read_internal_set_mode(ibp_task_t *task, char **bstate)
     if ((opt < 0) && (opt > 2)) {
         log_printf(1, "read_internal_set_mode: Invalid force_rebuild=%d\n", opt);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad force_rebuild=%d RID=%s", cmd->name, opt, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     arg->mode = opt;
 
     get_command_timeout(task, bstate);
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s mode=%d", cmd->name, arg->crid, opt);
 
     debug_printf(1, "read_internal_set_mode: Successfully parsed rescan command\n");
     return (0);
@@ -1649,12 +1831,16 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "read_internal_mount: Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Make sure it's not RID 0
     if (ibp_rid_is_empty(arg->rid) == 1) {
         log_printf(1, "read_internal_mount: Can't use RID 0!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s. Can't use 0!", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Checking if it's already mounted is done by the handle_mountroutines
@@ -1665,6 +1851,8 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
     if ((opt < 0) && (opt > 2)) {
         log_printf(1, "read_internal_mount: Invalid force_rebuild=%d\n", opt);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad force_rebuild=%d RID=%s", cmd->name, opt, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     arg->force_rebuild = opt;
@@ -1689,6 +1877,9 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
         log_printf(5, "msg=!%s!\n", arg->msg);
     }
     debug_printf(1, "read_internal_mount: Successfully parsed rescan command\n");
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s force_rebuild=%d RID=%s", cmd->name, arg->crid, opt);
+
     return (0);
 }
 
@@ -1716,18 +1907,24 @@ int read_internal_umount(ibp_task_t *task, char **bstate)
     if (ibp_str2rid(arg->crid, &(arg->rid)) != 0) {
         log_printf(1, "Bad RID: %s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Make sure it's not RID 0
     if (ibp_rid_is_empty(arg->rid) == 1) {
         log_printf(1, "Can't use RID 0!\n");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s. Can't use 0!", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** and that it's mounted
     if (resource_lookup(global_config->rl, arg->crid) == NULL) {
         log_printf(10, "RID :%s NOT mounted\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID=%s. RID is unmounted!", cmd->name, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     //** Now get the delay between removing the RID from the list and performing the umount
@@ -1736,6 +1933,8 @@ int read_internal_umount(ibp_task_t *task, char **bstate)
     if (opt < 1) {
         log_printf(1, "Invalid delay=%d\n", opt);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad time delay=%d. RID=%s", cmd->name, opt, arg->crid);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }
     arg->delay = opt;
@@ -1751,6 +1950,8 @@ int read_internal_umount(ibp_task_t *task, char **bstate)
         arg->msg[opt] = 0;
         log_printf(5, "msg=!%s!\n", arg->msg);
     }
+
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s delay=%d", cmd->name, arg->crid, opt);
 
     debug_printf(1, "Successfully parsed rescan command\n");
     return (0);

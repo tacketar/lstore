@@ -23,6 +23,7 @@
 
 #include <apr_thread_mutex.h>
 #include <tbx/network.h>
+#include <tbx/lio_monitor.h>
 #include "allocation.h"
 #include "resource.h"
 #include "transfer_stats.h"
@@ -233,6 +234,7 @@ typedef struct {                //** Stores the state of the command
     int state;                  //** Internal command state or phase
     int command;                //** Command being processed
     int version;                //** Command version
+    char *name;                 //** Command name
     Cmd_args_t cargs;           //** Command args
 } Cmd_state_t;
 
@@ -240,6 +242,9 @@ typedef struct ibp_task_struct {        //** Data structure sent to the job_pool
     tbx_ns_t *ns;               //** Stream to use
     tbx_network_t *net;         //** Network connection is managed by
     tbx_ns_chksum_t ncs;        //** NS Chksum to use if needed
+    tbx_mon_object_t mo_send;   //** Monitoring object corresponding to the send/recv bit of the ns
+    tbx_mon_object_t mo_recv;
+    tbx_mon_object_t mo;        //** This is the monitoring object for the specific task
     int enable_chksum;
     Allocation_address_t ipadd; //** Used for updating allocations
     Cmd_state_t cmd;

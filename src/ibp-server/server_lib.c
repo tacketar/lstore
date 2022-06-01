@@ -296,6 +296,8 @@ int print_config(char *buffer, int *used, int nbytes, Config_t *cfg)
     tbx_append_printf(buffer, used, nbytes, "backoff_max = %d\n", server->backoff_max);
     d = server->log_maxsize / 1024 / 1024;
     tbx_append_printf(buffer, used, nbytes, "log_maxsize = %d\n", d);
+    tbx_append_printf(buffer, used, nbytes, "monitor_fname = %s\n", cfg->monitor_fname);
+    tbx_append_printf(buffer, used, nbytes, "monitor_enable = %d  # To change state touch a file with %s-enable or %s-disable and then hit the IBP process with USR1 signal\n", cfg->monitor_enable, cfg->monitor_fname, cfg->monitor_fname);
     tbx_append_printf(buffer, used, nbytes, "debug_level = %d\n", server->debug_level);
     tbx_append_printf(buffer, used, nbytes, "timestamp_interval = %d\n",
                       server->timestamp_interval);
@@ -395,6 +397,9 @@ int read_command(ibp_task_t *task)
     task->cmd_timeout = apr_time_now() + apr_time_make(1, 0);   //** Set a default timeout for any errors
 
     if (status == 0) {          //** Not enough buffer space or nothing to do
+        tbx_monitor_object_fill(&(task->mo), MON_INDEX_GOP, 0);
+        tbx_monitor_obj_create(&(task->mo), "ERROR: Empty buffer or mangled command");
+        tbx_monitor_obj_destroy(&(task->mo));
         if (nbytes != 0) {      //** Out of buffer space
             send_cmd_result(task, IBP_E_BAD_FORMAT);
         }
@@ -404,10 +409,14 @@ int read_command(ibp_task_t *task)
                    tbx_ns_getid(task->ns), task->tid, status, nbytes);
         return (-1);
     } else if (status == -1) {
+        tbx_monitor_object_fill(&(task->mo), MON_INDEX_GOP, 0);
+        tbx_monitor_obj_create(&(task->mo), "Nothing to do. nbytes=%d", nbytes);
+        tbx_monitor_obj_destroy(&(task->mo));
         log_printf(10, "read_command: end of routine ns=%d tid=" LU " status=%d nbytes=%d\n",
                    tbx_ns_getid(task->ns), task->tid, status, nbytes);
         return (-1);
     }
+
     //** Looks like we have actual data so inc the tid **
     apr_thread_mutex_lock(task_count_lock);
     task->tid = task_count;
@@ -415,6 +424,8 @@ int read_command(ibp_task_t *task)
     if (task_count > 1000000000)
         task_count = 0;
     apr_thread_mutex_unlock(task_count_lock);
+
+    tbx_monitor_object_fill(&(task->mo), MON_INDEX_GOP, task->tid);
 
     cmd->version = -1;
     cmd->command = -1;
@@ -428,6 +439,8 @@ int read_command(ibp_task_t *task)
     tbx_log_flush();
 
     if (cmd->version == -1) {
+        tbx_monitor_obj_create(&(task->mo), "ERROR: Invalid version");
+        tbx_monitor_obj_destroy(&(task->mo));
         send_cmd_result(task, IBP_E_BAD_FORMAT);
         cmd->state = CMD_STATE_FINISHED;
         return (-1);
@@ -435,12 +448,15 @@ int read_command(ibp_task_t *task)
     //** Rest of arguments depends on the command **
     err = 0;
     if ((cmd->command < 0) || (cmd->command > COMMAND_TABLE_MAX)) {
+        tbx_monitor_obj_create(&(task->mo), "ERROR: Unknown command");
+        tbx_monitor_obj_destroy(&(task->mo));
         log_printf(10, "read_command:  Unknown command! ns=%d\n", tbx_ns_getid(task->ns));
         send_cmd_result(task, IBP_E_UNKNOWN_FUNCTION);
         cmd->state = CMD_STATE_FINISHED;
         err = -1;
     } else {
         mycmd = &(global_config->command[cmd->command]);
+        cmd->name = mycmd->name;
         if (mycmd->read != NULL)
             err = mycmd->read(task, &bstate);
 
@@ -448,6 +464,8 @@ int read_command(ibp_task_t *task)
             log_printf(10,
                        "read_command:  Can't execute command due to ACL restriction! ns=%d cmd=%d\n",
                        tbx_ns_getid(task->ns), cmd->command);
+            tbx_monitor_obj_create(&(task->mo), "[%s] ERROR: ACL restricted", cmd->name);
+            tbx_monitor_obj_destroy(&(task->mo));
             send_cmd_result(task, IBP_E_UNKNOWN_FUNCTION);
             cmd->state = CMD_STATE_FINISHED;
             err = -1;
@@ -522,7 +540,6 @@ void *worker_task(apr_thread_t *ath, void *arg)
     log_printf(10, "worker_task: ns=%d ***START*** Got a connection at " TT "\n",
                tbx_ns_getid(th->ns), apr_time_now());
 
-
     task.tid = 0;
     task.ns = th->ns;
     task.net = global_network;
@@ -530,12 +547,6 @@ void *worker_task(apr_thread_t *ath, void *arg)
     ncommands = 0;
 
     if (th->reject_connection > 0) {    //** Rejecting the connection
-//char buffer[1024];
-//int status;
-//tbx_ns_timeout_t dt;
-//tbx_ns_timeout_set(&dt,1,0);
-//server_ns_readline_raw(task.ns, buffer, sizeof(buffer), dt, &status);
-
         reject_task(task.ns, 0);        //** Reject the connections
         tbx_ns_close(task.ns);  //** And close it
 
@@ -552,6 +563,14 @@ void *worker_task(apr_thread_t *ath, void *arg)
         retval = 0;
         apr_thread_exit(th->thread, retval);
     }
+
+    //** Set up the monitoring bits
+    tbx_monitor_object_fill(&(task.mo_send), MON_INDEX_NSSEND, tbx_ns_getid(th->ns));
+    tbx_monitor_object_fill(&(task.mo_recv), MON_INDEX_NSRECV, tbx_ns_getid(th->ns));
+    tbx_monitor_thread_label(MON_MY_THREAD, "worker_task: ns=%d peer=%s", tbx_ns_getid(th->ns), tbx_ns_peer_address_get(th->ns));
+    tbx_monitor_thread_group(&(task.mo_send), MON_MY_THREAD);
+    tbx_monitor_thread_group(&(task.mo_recv), MON_MY_THREAD);
+
     //** Store the address for use in the time stamps
     task.ipadd.atype = AF_INET;
     ipdecstr2address(tbx_ns_peer_address_get(task.ns), task.ipadd.ip);
@@ -615,6 +634,9 @@ void *worker_task(apr_thread_t *ath, void *arg)
 
     log_printf(10, "worker_task: ns=%d myid=%d ***END*** exiting at " TT "\n",
                tbx_ns_getid(th->ns), myid, apr_time_now());
+
+    tbx_monitor_thread_ungroup(&(task.mo_send), MON_MY_THREAD);
+    tbx_monitor_thread_ungroup(&(task.mo_recv), MON_MY_THREAD);
 
     retval = 0;
     apr_thread_exit(th->thread, retval);

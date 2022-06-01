@@ -82,6 +82,7 @@ int handle_allocate(ibp_task_t *task)
         alog_append_ibp_allocate(task->myid, -1, alloc->max_size, alloc->type, alloc->reliability,
                                  alloc->expiration);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid RID");
         return (global_config->soft_fail);
     }
     //** Check the duration **
@@ -102,6 +103,7 @@ int handle_allocate(ibp_task_t *task)
                        cmd->cargs.allocate.master_cap.cap.v, cmd->cargs.allocate.master_cap.id, res->name);
             unlock_osd_id(ma.id);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid master cap: " LU , cmd->cargs.allocate.master_cap.id);
             return (global_config->soft_fail);
         }
     } else {
@@ -114,11 +116,12 @@ int handle_allocate(ibp_task_t *task)
     flush_debug();
 
     if (res->max_duration < d) {
-        log_printf(1, "handle_allocate: Duration(%d sec) exceeds that for RID %s of %d sec\n", d,
-                   res->name, res->max_duration);
+        log_printf(1, "handle_allocate: Duration(%d sec) exceeds that for RID max=%d sec\n", d,
+                   res->max_duration);
         if (got_lock == 1)
             unlock_osd_id(ma.id);
         send_cmd_result(task, IBP_E_LONG_DURATION);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Duration %d to large for RID", d);
         return (global_config->soft_fail);
     }
     //** Perform the allocation **
@@ -133,6 +136,7 @@ int handle_allocate(ibp_task_t *task)
                        res->name, d);
             unlock_osd_id(ma.id);       //** Now we can unlock the master
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Allocation split failed! error=%d", d);
             return (global_config->soft_fail);
         }
         //** Update the master's manage timestamp
@@ -149,6 +153,7 @@ int handle_allocate(ibp_task_t *task)
                        "handle_allocate: create_allocation_resource failed on RID %s!  Error=%d\n",
                        res->name, d);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Create failed! Error=%d", d);
             return (global_config->soft_fail);
         }
     }
@@ -166,6 +171,7 @@ int handle_allocate(ibp_task_t *task)
                    "handle_allocate:  Error with modify_allocation_resource for new queue allocation!  err=%d, type=%d\n",
                    err, a.type);
     }
+
     //** Send the result back **
     cid = 0;
     if (global_config->server.return_cap_id == 1)
@@ -181,6 +187,8 @@ int handle_allocate(ibp_task_t *task)
 
     tbx_ns_timeout_t dt;
     convert_epoch_time2net(&dt, task->cmd_timeout);
+
+    tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_SUCCESS: id=" LU, cid);
 
     debug_code(apr_time_t tt = apr_time_now();)
     debug_printf(1, "handle_allocate: before sending result time: " TT "\n", tt);
@@ -215,6 +223,7 @@ int handle_merge(ibp_task_t *task)
         log_printf(1, "handle_merge: Invalid resource: %s\n", op->crid);
         alog_append_ibp_merge(task->myid, 0, 0, -1);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -229,6 +238,7 @@ int handle_merge(ibp_task_t *task)
         alog_append_ibp_merge(task->myid, 0, 0, r->rl_index);
         unlock_osd_id_pair(ma.id, ca.id);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Master cap missing");
         return (global_config->soft_fail);
     }
     //** and the child allocation
@@ -237,6 +247,7 @@ int handle_merge(ibp_task_t *task)
         alog_append_ibp_merge(task->myid, ma.id, 0, r->rl_index);
         unlock_osd_id_pair(ma.id, ca.id);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Child cap missing");
         return (global_config->soft_fail);
     }
     //** Update the manage timestamp
@@ -251,6 +262,7 @@ int handle_merge(ibp_task_t *task)
                        r->name, err);
             unlock_osd_id_pair(ma.id, ca.id);
             send_cmd_result(task, IBP_E_GENERIC);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: merge_allocation failed! error=%d", err);
             return (global_config->soft_fail);
         }
     } else {
@@ -258,10 +270,13 @@ int handle_merge(ibp_task_t *task)
                    r->name, ca.read_refcount, ca.write_refcount);
         unlock_osd_id_pair(ma.id, ca.id);
         send_cmd_result(task, IBP_E_GENERIC);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Bad child ref count!");
         return (global_config->soft_fail);
     }
 
     unlock_osd_id_pair(ma.id, ca.id);
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
     send_cmd_result(task, IBP_OK);
 
@@ -296,6 +311,7 @@ int handle_rename(ibp_task_t *task)
         log_printf(1, "handle_allocate: Invalid resource: %s\n", ibp_rid2str(manage->rid, token));
         alog_append_ibp_rename(task->myid, -1, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -308,8 +324,10 @@ int handle_rename(ibp_task_t *task)
         log_printf(10, "handle_rename: Invalid cap: %s " LU " rid=%s\n", manage->cap.cap.v, manage->cap.id, res->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(a.id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
+
     //** Update the manage timestamp
     update_manage_history(res, a.id, a.is_alias, &(task->ipadd), cmd->command, 0, a.reliability,
                           a.expiration, a.max_size, 0);
@@ -320,6 +338,7 @@ int handle_rename(ibp_task_t *task)
                    res->name, d);
         send_cmd_result(task, IBP_E_GENERIC);
         unlock_osd_id(a.id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: rename failed");
         return (global_config->soft_fail);
     }
 
@@ -343,6 +362,9 @@ int handle_rename(ibp_task_t *task)
     alog_append_osd_id(task->myid, a.id);
 
     debug_printf(1, "handle_rename: Allocation: %s", token);
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS: new id=" LU, a.id);
+    tbx_monitor_obj_destroy(&(task->mo));
 
     debug_code(if (debug_level() > 5) print_allocation_resource(res, log_fd(), &a);)
         return (err);
@@ -383,6 +405,7 @@ int handle_internal_get_corrupt(ibp_task_t *task)
         log_printf(1, "handle_internal_get_corrupt: Invalid resource: %s\n",
                    ibp_rid2str(arg->rid, buffer));
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -404,6 +427,9 @@ int handle_internal_get_corrupt(ibp_task_t *task)
     }
 
     debug_printf(1, "handle_internal_get_corrupt: completed\n");
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS: n_corrupt=" I64T, n);
+    tbx_monitor_obj_destroy(&(task->mo));
 
     return (err);
 }
@@ -451,6 +477,7 @@ int handle_internal_get_alloc(ibp_task_t *task)
                    ibp_rid2str(arg->rid, token));
         alog_append_internal_get_alloc(task->myid, -1, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -462,6 +489,7 @@ int handle_internal_get_alloc(ibp_task_t *task)
         log_printf(10, "handle_internal_get_alloc: Invalid cap/id: rid=%s ns=%d\n", res->name,
                    tbx_ns_getid(task->ns));
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -470,6 +498,7 @@ int handle_internal_get_alloc(ibp_task_t *task)
         log_printf(10, "handle_internal_get_alloc: Cant read the history! rid=%s ns=%d\n",
                    res->name, tbx_ns_getid(task->ns));
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Missing history!");
         return (global_config->soft_fail);
     }
 
@@ -567,6 +596,8 @@ int handle_internal_get_alloc(ibp_task_t *task)
     debug_code(if (debug_level() > 5) print_allocation_resource(res, log_fd(), &a);)
         debug_printf(1, "handle_internal_get_alloc: completed\n");
 
+    tbx_monitor_obj_destroy(&(task->mo));
+
     return (err);
 }
 
@@ -598,6 +629,7 @@ int handle_alias_allocate(ibp_task_t *task)
         log_printf(1, "handle_alias_allocate: Invalid resource: %s\n", ibp_rid2str(pa->rid, token));
         alog_append_alias_alloc(task->myid, -1, 0, 0, 0, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -609,6 +641,7 @@ int handle_alias_allocate(ibp_task_t *task)
         alog_append_alias_alloc(task->myid, -1, 0, 0, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(a.id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -635,6 +668,7 @@ int handle_alias_allocate(ibp_task_t *task)
                    "\n", epos, a.max_size);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         unlock_osd_id(a.id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: ALIAS range > actual allocation");
         return (global_config->soft_fail);
     }
     //*** Create the alias ***
@@ -646,6 +680,7 @@ int handle_alias_allocate(ibp_task_t *task)
                    res->name, d);
         send_cmd_result(task, IBP_E_GENERIC);
         unlock_osd_id(a.id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: create failed");
         return (global_config->soft_fail);
     }
     //** Store the creation timestamp **
@@ -691,7 +726,11 @@ int handle_alias_allocate(ibp_task_t *task)
     debug_printf(1, "handle_alias_allocate: Allocation: %s", token);
 
     debug_code(if (debug_level() > 5) print_allocation_resource(res, log_fd(), &alias_alloc);)
-        return (err);
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS: id=" LU, alias_alloc.id);
+    tbx_monitor_obj_destroy(&(task->mo));
+
+    return (err);
 }
 
 
@@ -932,12 +971,15 @@ int handle_status(ibp_task_t *task)
 
         alog_append_cmd_result(task->myid, IBP_OK);
 
+        tbx_monitor_obj_destroy(&(task->mo));
+
         return (0);
     }
 
     if (strcmp(global_config->server.password, status->password) != 0) {
         log_printf(10, "handle_status:  Invalid password: %s\n", status->password);
         send_cmd_result(task, IBP_E_WRONG_PASSWD);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid Password");
         return (global_config->soft_fail);
     }
 
@@ -963,6 +1005,7 @@ int handle_status(ibp_task_t *task)
         log_printf(10, "handle_status: Sending resource list: %s\n", result);
         server_ns_write_block(task->ns, task->cmd_timeout, result, strlen(result));
 
+        tbx_monitor_obj_destroy(&(task->mo));
         alog_append_cmd_result(task->myid, IBP_OK);
     } else if (status->subcmd == IBP_ST_STATS) {        //** Send the depot stats
         alog_append_status_stats(task->myid, status->start_time);
@@ -970,6 +1013,8 @@ int handle_status(ibp_task_t *task)
         convert_epoch_time2net(&dt, task->cmd_timeout);
         log_printf(10, "handle_status: Sending stats\n");
         send_stats(task->ns, status->start_time, dt);
+
+        tbx_monitor_obj_destroy(&(task->mo));
         alog_append_cmd_result(task->myid, IBP_OK);
     } else if (status->subcmd == IBP_ST_INQ) {
         char buffer[2048];
@@ -981,6 +1026,7 @@ int handle_status(ibp_task_t *task)
             log_printf(10, "handle_status:  Invalid RID :%s\n", status->crid);
             alog_append_status_inq(task->myid, -1);
             send_cmd_result(task, IBP_E_INVALID_RID);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid RID");
             return (global_config->soft_fail);
         }
 
@@ -1041,6 +1087,8 @@ int handle_status(ibp_task_t *task)
             server_ns_write_block(task->ns, task->cmd_timeout, result, nres);
         server_ns_write_block(task->ns, task->cmd_timeout, buffer, n);
 
+        tbx_monitor_obj_destroy(&(task->mo));
+
         alog_append_cmd_result(task->myid, IBP_OK);
 
         log_printf(10, "handle_status: Succesfully processed IBP_ST_INQ on RID %s\n", r->name);
@@ -1052,6 +1100,7 @@ int handle_status(ibp_task_t *task)
                    status->crid, tbx_ns_getid(task->ns));
         alog_append_status_change(task->myid);
         send_cmd_result(task, IBP_E_INVALID_CMD);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_ST_CHANGE not supported!");
         tbx_ns_close(task->ns);
         return (-1);
 
@@ -1088,6 +1137,7 @@ int handle_status(ibp_task_t *task)
     } else {
         log_printf(10, "handle_status:  Invalid sub command :%d\n", status->subcmd);
         send_cmd_result(task, IBP_E_INVALID_CMD);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid sub-command=%d", status->subcmd);
         return (0);
     }
 
@@ -1140,6 +1190,7 @@ int handle_manage(ibp_task_t *task)
         log_printf(10, "handle_manage:  Invalid RID :%s\n", manage->crid);
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
     //** Resource is not mounted with manage access
@@ -1148,6 +1199,7 @@ int handle_manage(ibp_task_t *task)
                    manage->cap.id, r->name);
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_FILE_ACCESS);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Resource is disabled");
         return (0);
     }
 
@@ -1157,9 +1209,9 @@ int handle_manage(ibp_task_t *task)
                    manage->cap.id, r->name);
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
-
 
     pid = a->id;
 
@@ -1179,6 +1231,7 @@ int handle_manage(ibp_task_t *task)
             log_printf(10, "handle_manage: Invalid alias id: " LU " rid=%s\n", id, r->name);
             alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
             return (global_config->soft_fail);
         }
 
@@ -1191,6 +1244,7 @@ int handle_manage(ibp_task_t *task)
                        r->name);
             alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
             send_cmd_result(task, IBP_E_INVALID_CMD);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid subcmd");
             return (global_config->soft_fail);
         }
     }
@@ -1201,6 +1255,7 @@ int handle_manage(ibp_task_t *task)
                        r->name);
             alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
             return (global_config->soft_fail);
         }
 
@@ -1211,6 +1266,7 @@ int handle_manage(ibp_task_t *task)
                        tbx_ns_getid(task->ns));
             alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
             send_cmd_result(task, IBP_E_INVALID_MANAGE_CAP);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid master cap");
             return (global_config->soft_fail);
         }
     }
@@ -1225,6 +1281,7 @@ int handle_manage(ibp_task_t *task)
         alog_append_manage_bad(task->myid, cmd->command, manage->subcmd);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(id);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -1265,6 +1322,7 @@ int handle_manage(ibp_task_t *task)
             remove_allocation_resource(r, OSD_DELETE_ID, a);
         }
         send_cmd_result(task, err);
+        tbx_monitor_obj_destroy(&(task->mo));
         break;
     case IBP_TRUNCATE:
         status = IBP_OK;
@@ -1431,6 +1489,8 @@ int handle_manage(ibp_task_t *task)
 
     unlock_osd_id(a->id);
 
+    tbx_monitor_obj_destroy(&(task->mo));
+
     return (0);
 }
 
@@ -1461,6 +1521,8 @@ int handle_rid_bulk_warm(ibp_task_t *task)
         alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
         send_cmd_result(task, IBP_E_INVALID_RID);
         err = global_config->soft_fail;
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
+        goto cleanup;
     }
     //** Resource is not mounted with manage access
     if ((resource_get_mode(r) & RES_MODE_MANAGE) == 0) {
@@ -1468,6 +1530,7 @@ int handle_rid_bulk_warm(ibp_task_t *task)
         alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
         send_cmd_result(task, IBP_E_FILE_ACCESS);
         err = global_config->soft_fail;
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Manage access is disabled");
         goto cleanup;
     }
 
@@ -1477,6 +1540,7 @@ int handle_rid_bulk_warm(ibp_task_t *task)
         alog_append_manage_bad(task->myid, cmd->command, IBP_CHNG);
         send_cmd_result(task, IBP_E_FILE_ACCESS);
         err = global_config->soft_fail;
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Duration > max_duration");
         goto cleanup;
     }
 
@@ -1490,6 +1554,7 @@ int handle_rid_bulk_warm(ibp_task_t *task)
         if ((get_allocation_by_cap_id_resource(r, MANAGE_CAP, &(args->caps[i]), &a)) != 0) {
             n_bad++;
             tbx_append_printf(result, &pos, bufsize, "%d ", i);
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: bad cap=" LU, args->caps[i].id);
             goto next;
         }
 
@@ -1501,6 +1566,7 @@ int handle_rid_bulk_warm(ibp_task_t *task)
         if (modify_allocation_resource(r, a.id, &a, 0) != 0) {
             n_bad++;
             tbx_append_printf(result, &pos, bufsize, "%d ", i);
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: error with update cap=" LU, args->caps[i].id);
             goto next;
         }
 next:
@@ -1513,11 +1579,14 @@ next:
         i = snprintf(buf, 20, "%d %d \n", IBP_OK, n_bad);
         server_ns_write_block(task->ns, task->cmd_timeout, buf, strlen(buf));
     } else {
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS: n_bad=%d", n_bad);
         i = snprintf(buf, 20, "%d %d ", IBP_OK, n_bad);
         server_ns_write_block(task->ns, task->cmd_timeout, buf, strlen(buf));
         tbx_append_printf(result, &pos, bufsize, "\n");
         server_ns_write_block(task->ns, task->cmd_timeout, result, pos);
     }
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
 cleanup:
     free(args->caps);
@@ -1556,6 +1625,7 @@ int handle_validate_chksum(ibp_task_t *task)
                           w->iovec.vec[0].len);
         alog_append_validate_get_chksum(task->myid, cmd->command, -1, 0, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -1564,6 +1634,7 @@ int handle_validate_chksum(ibp_task_t *task)
                    w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         alog_append_validate_get_chksum(task->myid, cmd->command, w->r->rl_index, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -1586,6 +1657,7 @@ int handle_validate_chksum(ibp_task_t *task)
                        "handle_validate_chksum: Invalid alias_id: " LU " for resource = %s  tid="
                        LU " ns=%d\n", id, w->r->name, task->tid, tbx_ns_getid(task->ns));
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid master cap");
             return (global_config->soft_fail);
         }
 
@@ -1603,6 +1675,7 @@ int handle_validate_chksum(ibp_task_t *task)
                    "handle_validate_chksum: Attempt to validate an alias allocation without full access! cap: %s " LU " r = %s  tid="
                    LU "\n", w->cap.cap.v, w->cap.id,  w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Don't have full access on cap");
         return (global_config->soft_fail);
     }
     //** Now we can execute the validate operation
@@ -1614,6 +1687,8 @@ int handle_validate_chksum(ibp_task_t *task)
     log_printf(10, "handle_validate_chksum: ns=%d Return string: %s", tbx_ns_getid(task->ns),
                buffer);
     log_printf(10, "handle_validate_chksum: Exiting write tid=" LU " err=%d\n", task->tid, err);
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
     return (0);
 }
@@ -1656,6 +1731,7 @@ int handle_get_chksum(ibp_task_t *task)
         log_printf(10, "handle_get_chksum:  Invalid RID :%s  tid=" LU "\n", w->crid, task->tid);
         alog_append_validate_get_chksum(task->myid, cmd->command, -1, 0, 0);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
 
@@ -1664,6 +1740,7 @@ int handle_get_chksum(ibp_task_t *task)
                    w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         alog_append_validate_get_chksum(task->myid, cmd->command, w->r->rl_index, 0, 0);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -1686,6 +1763,7 @@ int handle_get_chksum(ibp_task_t *task)
                        "handle_get_chksum: Invalid alias_id: " LU " for resource = %s  tid=" LU
                        " ns=%d\n", id, w->r->name, task->tid, tbx_ns_getid(task->ns));
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid alias cap");
             return (global_config->soft_fail);
         }
 
@@ -1704,6 +1782,7 @@ int handle_get_chksum(ibp_task_t *task)
                    "handle_get_chksum: Attempt to validate an alias allocation without full access! cap: %s " LU " r = %s  tid="
                    LU "\n", w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Don't have full access on cap");
         return (global_config->soft_fail);
     }
     //** Get the chksum information
@@ -1712,6 +1791,7 @@ int handle_get_chksum(ibp_task_t *task)
         log_printf(10, "handle_get_chksum: No chksum info. cap: %s " LU " r = %s tid=" LU "\n", w->cap.cap.v, w->cap.id,
                    w->r->name, task->tid);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR:No chksum info");
         return (global_config->soft_fail);
     }
     tbx_chksum_set(&chksum, cs_type);
@@ -1733,6 +1813,7 @@ int handle_get_chksum(ibp_task_t *task)
     if (w->iovec.total_len == 1) {
         log_printf(10, "handle_validate_chksum: Exiting chksum_only=1 tid=" LU " err=%d\n",
                    task->tid, err);
+        tbx_monitor_obj_destroy(&(task->mo));
         return (0);
     }
     //** Now stream the chksum data back
@@ -1763,9 +1844,12 @@ int handle_get_chksum(ibp_task_t *task)
             log_printf(10, "handle_get_chksum: Command or network error! ns=%d err=%d\n",
                        tbx_ns_getid(task->ns), err);
             tbx_ns_close(task->ns);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: lost connection");
             return (-1);
         }
     }
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
     log_printf(10, "handle_validate_chksum: Exiting write tid=" LU " err=%d\n", task->tid, err);
 
@@ -1814,6 +1898,7 @@ int handle_write(ibp_task_t *task)
         alog_append_write(task->myid, cmd->command, -1, 0, 0, w->iovec.vec[0].off,
                           w->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (global_config->soft_fail);
     }
     //** Resource is not mounted with write access
@@ -1823,6 +1908,7 @@ int handle_write(ibp_task_t *task)
         alog_append_write(task->myid, cmd->command, w->r->rl_index, 0, 0, w->iovec.vec[0].off,
                           w->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_FILE_WRITE);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: write access is diabled");
         return (0);
     }
 
@@ -1832,6 +1918,7 @@ int handle_write(ibp_task_t *task)
         alog_append_write(task->myid, cmd->command, w->r->rl_index, 0, 0, w->iovec.vec[0].off,
                           w->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (global_config->soft_fail);
     }
 
@@ -1856,6 +1943,7 @@ int handle_write(ibp_task_t *task)
                        "handle_write: Invalid alias_id: " LU " for resource = %s  tid=" LU
                        " ns=%d\n", id, w->r->name, task->tid, tbx_ns_getid(task->ns));
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
             return (global_config->soft_fail);
         }
 
@@ -1880,6 +1968,7 @@ int handle_write(ibp_task_t *task)
                    "handle_write: Attempt to append to an allocation with a alias cap without full access! cap: %s " LU " r = %s tid="
                    LU "\n", w->cap.cap.v, w->cap.id, w->r->name, task->tid);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
         return (global_config->soft_fail);
 
     }
@@ -1895,6 +1984,7 @@ int handle_write(ibp_task_t *task)
                        LU " len=" LU "  tid=" LU "\n", w->cap.cap.v, w->cap.id, w->r->name, i, off, len,
                        task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (global_config->soft_fail);
         }
         //** check if we are inside the alias bounds
@@ -1905,6 +1995,7 @@ int handle_write(ibp_task_t *task)
                        I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", w->cap.cap.v,
                        w->cap.id, w->r->name, i, off, len, alias_offset, alias_len, task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (global_config->soft_fail);
         }
     }
@@ -1915,6 +2006,7 @@ int handle_write(ibp_task_t *task)
     if (state != OSD_STATE_GOOD) {
         close_allocation(w->r, fd);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Bad allocation state");
         return (global_config->soft_fail);
     }
 
@@ -1949,6 +2041,7 @@ int handle_write(ibp_task_t *task)
                            tbx_ns_getid(task->ns));
                 close_allocation(w->r, fd);
                 send_cmd_result(task, IBP_E_CHKSUM);
+                tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Checksum error");
                 return (global_config->soft_fail);
             } else {
                 err = 1;
@@ -1964,6 +2057,7 @@ int handle_write(ibp_task_t *task)
     if (err == -1) {            //** Dead connection
         log_printf(10, "handle_write:  Disk error occured! ns=%d\n", tbx_ns_getid(task->ns));
         alog_append_cmd_result(task->myid, IBP_E_SOCK_WRITE);
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: network error");
         tbx_ns_close(task->ns);
     } else if (err == 1) {      //** Finished command
         //** Update the amount of data written if needed
@@ -1988,14 +2082,17 @@ int handle_write(ibp_task_t *task)
                                "handle_write:  ns=%d ERROR with modify_allocation_resource(%s, " LU
                                ", a)=%d\n", tbx_ns_getid(task->ns), w->crid, a->id, err);
                     err = IBP_E_INTERNAL;
+                    tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: modify_allocaion_resource error");
                 }
             }
         } else {
             log_printf(10,
                        "handle_write: ns=%d error with final get_allocation_resource(%s, " LU
                        ", a)=%d\n", tbx_ns_getid(task->ns), w->r->name, a->id, err);
-            if (err != 0)
+            if (err != 0) {
                 err = IBP_E_INTERNAL;
+                tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: get_allocation error");
+            }
         }
         unlock_osd_id(a->id);
 
@@ -2005,6 +2102,7 @@ int handle_write(ibp_task_t *task)
             state = get_allocation_state(w->r, fd);
             if (state != OSD_STATE_GOOD) {
                 err = IBP_E_CHKSUM;
+                tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: Bad allocation chksum state");
             } else {
                 err = IBP_OK;
             }
@@ -2014,11 +2112,14 @@ int handle_write(ibp_task_t *task)
         snprintf(buffer, bufsize - 1, "%d " LU " \n", err, len);
         log_printf(10, "handle_write:  ns=%d Sending result: %s\n", tbx_ns_getid(task->ns), buffer);
         server_ns_write_block(task->ns, task->cmd_timeout, buffer, strlen(buffer));
-        if (err == IBP_OK)
+        if (err == IBP_OK) {
             err = 0;
+        }
     }
 
     close_allocation(w->r, fd);
+
+    tbx_monitor_obj_destroy_irate(&(task->mo), w->iovec.total_len);
 
     log_printf(10, "handle_write: Exiting write tid=" LU "\n", task->tid);
     return (err);
@@ -2056,6 +2157,7 @@ int handle_read(ibp_task_t *task)
         alog_append_read(task->myid, -1, 0, 0, r->iovec.vec[0].off, r->iovec.vec[0].len);
         log_printf(10, "handle_read:  Invalid RID :%s\n", r->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
     //** Resource is not mounted with read access
@@ -2065,6 +2167,7 @@ int handle_read(ibp_task_t *task)
         alog_append_read(task->myid, r->r->rl_index, 0, 0, r->iovec.vec[0].off,
                          r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_FILE_READ);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: RID invalid state");
         return (0);
     }
 
@@ -2074,6 +2177,7 @@ int handle_read(ibp_task_t *task)
         alog_append_read(task->myid, r->r->rl_index, 0, 0, r->iovec.vec[0].off,
                          r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (0);
     }
 
@@ -2097,6 +2201,7 @@ int handle_read(ibp_task_t *task)
             alog_append_read(task->myid, r->r->rl_index, pid, id, r->iovec.vec[0].off,
                              r->iovec.vec[0].len);
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
             return (global_config->soft_fail);
         }
 
@@ -2121,6 +2226,7 @@ int handle_read(ibp_task_t *task)
                        "handle_read: Attempt to read beyond end of allocation! cap: %s " LU " r = %s i=%d off="
                        LU " len=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, i, off, len);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (0);
         }
         //** check if we are inside the alias bounds
@@ -2131,6 +2237,7 @@ int handle_read(ibp_task_t *task)
                        I64T " len=" I64T " poff = " I64T " plen= " I64T " tid=" LU "\n", r->cap.cap.v,
                        r->cap.id, r->r->name, i, off, len, alias_offset, alias_len, task->tid);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (global_config->soft_fail);
         }
         //*** and make sure there is data ***
@@ -2139,6 +2246,7 @@ int handle_read(ibp_task_t *task)
                        "handle_read: Not enough data! cap: %s " LU " r = %s i=%d off=" LU " alen=" LU
                        " curr_size=" LU "\n", r->cap.cap.v, r->cap.id, r->r->name, i, off, len, a->size);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (0);
         }
 
@@ -2153,6 +2261,7 @@ int handle_read(ibp_task_t *task)
     if (state != OSD_STATE_GOOD) {
         close_allocation(r->r, fd);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: chksum error");
         return (global_config->soft_fail);
     }
 
@@ -2209,16 +2318,20 @@ int handle_read(ibp_task_t *task)
         log_printf(10, "handle_read:  Dead connection!\n");
         alog_append_cmd_result(task->myid, IBP_E_SOCK_WRITE);
         tbx_ns_close(task->ns);
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: Network error");
     } else {
         alog_append_cmd_result(task->myid, IBP_OK);
         err = 0;
         state = get_allocation_state(r->r, fd);
         if (state != OSD_STATE_GOOD) {
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: chksum error");
             err = IBP_E_CHKSUM;
         }
     }
 
     close_allocation(r->r, fd);
+
+    tbx_monitor_obj_destroy_irate(&(task->mo), r->iovec.total_len);
 
     log_printf(10, "handle_read: Exiting read\n");
     return (err);
@@ -2258,6 +2371,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
     if (ibp_str2rid(tmp, &(drid)) != 0) {
         log_printf(1, "same_depot_copy: Bad RID: %s\n", tmp);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         cmd->state = CMD_STATE_FINISHED;
         return (0);
     }
@@ -2272,6 +2386,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
         log_printf(10, "ERROR parsing ID!\n");
         send_cmd_result(task, IBP_E_WRONG_CAP_FORMAT);
         cmd->state = CMD_STATE_FINISHED;
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (0);
     }
 
@@ -2282,6 +2397,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
     if (rem_r == NULL) {
         log_printf(10, "same_depot_copy:  Invalid RID :%s\n", dcrid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 
@@ -2293,6 +2409,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
         log_printf(10, "same_depot_copy: Invalid destcap: %s for resource = %s\n", dcap.cap.v,
                    rem_r->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (0);
     }
 
@@ -2321,6 +2438,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                    rem_r->name);
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
         unlock_osd_id(did);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (0);
     }
 
@@ -2337,6 +2455,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                        LU "\n", dcap.cap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
             unlock_osd_id(did);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (0);
         }
 
@@ -2349,6 +2468,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                    LU "\n", dcap.cap.v, rem_r->name, rem_offset, r->iovec.vec[0].len);
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
         unlock_osd_id(did);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
         return (0);
     }
 
@@ -2386,6 +2506,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
     if (src_state != OSD_STATE_GOOD) {
         close_allocation(src_r, src_fd);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: source chksum error");
         return (global_config->soft_fail);
     }
     dest_fd = open_allocation(dest_r, dest_a->id, OSD_READ_MODE);
@@ -2394,6 +2515,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
         close_allocation(src_r, src_fd);
         close_allocation(dest_r, dest_fd);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: dest chksum error");
         return (global_config->soft_fail);
     }
 
@@ -2405,9 +2527,11 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                           task->cmd_timeout);
     if (err != IBP_OK) {
         send_cmd_result(task, err);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: disk_to_disk_copy error");
         cmd->state = CMD_STATE_FINISHED;
         return (0);
     }
+
     //** Verify no chksum errors during the transfer process
     src_state = get_allocation_state(src_r, src_fd);
     dest_state = get_allocation_state(dest_r, dest_fd);
@@ -2416,6 +2540,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
     if ((src_state != OSD_STATE_GOOD) || (dest_state != OSD_STATE_GOOD)) {
         send_cmd_result(task, IBP_E_CHKSUM);
         cmd->state = CMD_STATE_FINISHED;
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: checksum error");
         return (0);
     }
 
@@ -2445,6 +2570,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                            "same_depot_copy:  ns=%d ERROR with modify_allocation_resource(%s, " LU
                            ", a)=%d for dest\n", tbx_ns_getid(task->ns), dcrid, rem_a.id, err);
                 err = IBP_E_INTERNAL;
+                tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: mondify_allocaion error");
             }
         }
     } else {
@@ -2452,6 +2578,7 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
                    "same_depot_copy: ns=%d error with final get_allocation_resource(%s, " LU
                    ", a)=%d for dest\n", tbx_ns_getid(task->ns), dcrid, rem_a.id, err);
         err = IBP_E_INTERNAL;
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: failed getting final allocation");
     }
 
     //** Now update the timestamp for the read allocation
@@ -2461,8 +2588,11 @@ int same_depot_copy(ibp_task_t *task, char *rem_cap, char *rem_id, int rem_offse
     unlock_osd_id(dest_a->id);
 
     if (err == 0) {
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
         err = IBP_OK;
     }
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
     alog_append_cmd_result(task->myid, err);
     snprintf(result, 511, "%d " LU " \n", err, r->iovec.vec[0].len);
@@ -2518,6 +2648,7 @@ int handle_copy(ibp_task_t *task)
         alog_append_dd_copy(cmd->command, task->myid, -1, 0, 0, r->iovec.vec[0].len, 0, 0,
                             r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap, "");
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 
@@ -2531,6 +2662,7 @@ int handle_copy(ibp_task_t *task)
                             0, r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap,
                             "");
         send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
         return (0);
     }
 
@@ -2553,6 +2685,7 @@ int handle_copy(ibp_task_t *task)
                        "handle_copy: Invalid alias_id: " LU " for resource = %s  tid=" LU
                        " ns=%d\n", id, r->r->name, task->tid, tbx_ns_getid(task->ns));
             send_cmd_result(task, IBP_E_CAP_NOT_FOUND);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid cap");
             return (global_config->soft_fail);
         }
 
@@ -2574,6 +2707,7 @@ int handle_copy(ibp_task_t *task)
                             r->iovec.vec[0].len, r->iovec.vec[0].off, r->remote_offset,
                             r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap, "");
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
         return (0);
     }
     //** check if we are inside the alias bounds
@@ -2588,6 +2722,7 @@ int handle_copy(ibp_task_t *task)
                             r->iovec.vec[0].len, r->iovec.vec[0].off, r->remote_offset,
                             r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap, "");
         send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
         return (global_config->soft_fail);
     }
     //*** and make sure there is data for PUSH commands***
@@ -2603,6 +2738,7 @@ int handle_copy(ibp_task_t *task)
                                 r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap,
                                 "");
             send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
             return (0);
         }
     }
@@ -2661,6 +2797,7 @@ int handle_copy(ibp_task_t *task)
                                 r->write_mode, r->ctype, r->path, 0, AF_INET, addr, r->remote_cap,
                                 "");
             send_cmd_result(task, IBP_E_TYPE_NOT_SUPPORTED);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: PHOEBUS support not compiled");
             tbx_ns_destroy(ns);
             free(temp);
             return (0);
@@ -2687,6 +2824,7 @@ int handle_copy(ibp_task_t *task)
         log_printf(5, "handle_copy: tbx_ns_connect returned an error err=%d to host %s:%d\n", err,
                    rhost, rport);
         send_cmd_result(task, IBP_E_CONNECTION);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Failed making the connection");
         if (ppath.p_count != 0)
             phoebus_path_destroy(&ppath);
         tbx_ns_destroy(ns);
@@ -2743,6 +2881,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
     if (state != OSD_STATE_GOOD) {
         close_allocation(r->r, fd);
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Resource in bad state");
         return (global_config->soft_fail);
     }
 
@@ -2810,6 +2949,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
         close_allocation(r->r, fd);
         tbx_ns_close(ns);
         send_cmd_result(task, IBP_E_CONNECTION);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Network connection error");
         return (0);
     } else if (write_cmd[strlen(write_cmd) - 1] == '\n') {      //** Got a complete line
         log_printf(15, "handle_transfer: ns=%d BBBBBBBBBBBBB response=%s\n",
@@ -2822,6 +2962,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
             close_allocation(r->r, fd);
             send_cmd_result(task, err);
             tbx_ns_close(ns);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: transfer error=%d", err);
             return (0);
         }
         if (r->transfer_dir == IBP_PULL) {      //** Check the nbytes
@@ -2832,6 +2973,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
                 close_allocation(r->r, fd);
                 send_cmd_result(task, IBP_E_WOULD_EXCEED_LIMIT);
                 tbx_ns_close(ns);
+                tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: IBP_E_WOULD_EXCEED_LIMIT");
                 return (0);
             }
         }
@@ -2902,15 +3044,18 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
     state = get_allocation_state(r->r, fd);
     if (state != OSD_STATE_GOOD) {
         err = IBP_E_CHKSUM;
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: Chksum error");
     }
 
     if (err == -1) {            //** Dead connection
         if (task->cmd_timeout > apr_time_now()) {
             log_printf(10, "handle_transfer: TIMEOUT Error sencind/recving data! err=%d\n", err);
             send_cmd_result(task, IBP_E_SERVER_TIMEOUT);
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: server timeout");
         } else {
             log_printf(10, "handle_transfer:  Dead connection\n");
             send_cmd_result(task, IBP_E_CONNECTION);
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: dead connection");
         }
         tbx_ns_close(ns);
     } else if (err == 1) {      //** Finished command
@@ -2931,6 +3076,7 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
         if (err != IBP_OK) {    //** Got an error
             log_printf(10, "handle_transfer:  Response had an error remote_ns=%d  Error=%d\n",
                        tbx_ns_getid(ns), err);
+            tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: remote response error=%d", err);
         }
 
         alog_append_cmd_result(task->myid, err);
@@ -2960,14 +3106,17 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
                                    "handle_transfer:  ns=%d ERROR with modify_allocation_resource(%s, "
                                    LU ", a)=%d\n", tbx_ns_getid(task->ns), r->crid, a->id, err);
                         err = IBP_E_INTERNAL;
+                        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: final mondify_allocation error");
                     }
                 }
             } else {
                 log_printf(10,
                            "handle_transfer: ns=%d error with final get_allocation_resource(%s, "
                            LU ", a)=%d\n", tbx_ns_getid(task->ns), r->r->name, a->id, err);
-                if (err != 0)
+                if (err != 0) {
                     err = IBP_E_INTERNAL;
+                    tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: final get_alloication error");
+                }
             }
         }
         unlock_osd_id(a->id);
@@ -2982,15 +3131,19 @@ int handle_transfer(ibp_task_t *task, osd_id_t rpid, tbx_ns_t *ns, const char *k
                    tbx_ns_getid(task->ns), tbx_ns_getid(ns));
     } else if (err == IBP_E_CHKSUM) {   //** chksum error
         send_cmd_result(task, IBP_E_CHKSUM);
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: chksum error");
     } else {                    //** Error!!!
         send_cmd_result(task, err);
         log_printf(0, "handle_transfer:  Invalid result!!!! err=%d\n", err);
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: transer error=%d", err);
     }
 
     log_printf(10, "handle_transfer: Completed. ns=%d err=%d\n", myid, err);
 
     close_allocation(r->r, fd);
 
+    if (err == 1) tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
     return (err);
 }
 
@@ -3025,6 +3178,9 @@ int handle_internal_get_config(ibp_task_t *task)
     log_printf(5, "handle_internal_get_config: End of routine.  ns=%d error=%d\n",
                tbx_ns_getid(task->ns), err);
 
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
+
     return (0);
 }
 
@@ -3055,6 +3211,7 @@ int handle_internal_date_free(ibp_task_t *task)
         log_printf(10, "handle_internal_date_free:  Invalid RID :%s\n", arg->crid);
         alog_append_internal_date_free(task->myid, -1, arg->size);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 
@@ -3131,6 +3288,9 @@ int handle_internal_date_free(ibp_task_t *task)
     log_printf(5, "handle_internal_date_free: End of routine.  ns=%d error=%d\n",
                tbx_ns_getid(task->ns), err);
 
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
+
     return (0);
 }
 
@@ -3160,6 +3320,7 @@ int handle_internal_expire_list(ibp_task_t *task)
         log_printf(10, "handle_internal_expire_list:  Invalid RID :%s\n", arg->crid);
         alog_append_internal_expire_list(task->myid, -1, arg->start_time, arg->max_rec);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 
@@ -3202,6 +3363,9 @@ int handle_internal_expire_list(ibp_task_t *task)
     log_printf(5, "handle_internal_expire_list: End of routine.  ns=%d error=%d\n",
                tbx_ns_getid(task->ns), err);
 
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
+
     return (0);
 }
 
@@ -3226,8 +3390,8 @@ int handle_internal_undelete(ibp_task_t *task)
     r = resource_lookup(global_config->rl, arg->crid);
     if (r == NULL) {
         log_printf(10, "handle_internal_undelete:  Invalid RID :%s\n", arg->crid);
-//     alog_append_internal_undelete(task->myid, -1, arg->trash_type, arg->trash_id, arg->duration);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 //  alog_append_internal_undelete(task->myid, r->rl_index, arg->trash_type, arg->trash_id, arg->duration);
@@ -3242,6 +3406,9 @@ int handle_internal_undelete(ibp_task_t *task)
 
     log_printf(5, "handle_internal_undelete: End of routine.  ns=%d error=%d\n",
                tbx_ns_getid(task->ns), err);
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
 
     return (0);
 }
@@ -3273,8 +3440,9 @@ int handle_internal_rescan(ibp_task_t *task)
     } else {
         r = resource_lookup(global_config->rl, arg->crid);
         if (r == NULL) {
-            log_printf(10, "handle_internal_rescn:  Invalid RID :%s\n", arg->crid);
+            log_printf(10, "handle_internal_rescan:  Invalid RID :%s\n", arg->crid);
             send_cmd_result(task, IBP_E_INVALID_RID);
+            tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid RID");
             return (0);
         }
         resource_rescan(r);
@@ -3284,6 +3452,9 @@ int handle_internal_rescan(ibp_task_t *task)
     send_cmd_result(task, IBP_OK);
 
     log_printf(5, "handle_internal_rescan: End of routine.  ns=%d\n", tbx_ns_getid(task->ns));
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
 
     return (0);
 }
@@ -3312,7 +3483,6 @@ void rid_log_append(char *crid, char *mode, char *result, char *msg, apr_time_t 
             result, msg);
     tbx_io_fclose(fd);
     apr_thread_mutex_unlock(shutdown_lock);
-
 }
 
 
@@ -3344,8 +3514,10 @@ int handle_internal_mount(ibp_task_t *task)
     if (keyfile == NULL) {
         log_printf(0, "handle_internal_mount:  Error parsing config file! file=%s\n",
                    global_config->config_file);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Error parsing config");
         return (IBP_E_INTERNAL);
     }
+
     //** Find the group
     sgrp = NULL;
     igrp = tbx_inip_group_first(keyfile);
@@ -3372,6 +3544,7 @@ int handle_internal_mount(ibp_task_t *task)
         tbx_inip_destroy(keyfile);
         rid_log_append(arg->crid, "ATTACH", "Not in config", arg->msg, start, apr_time_now());
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
     //** Make sure it's not already being added
@@ -3392,6 +3565,7 @@ int handle_internal_mount(ibp_task_t *task)
 
         //*** Send back the results ***
         send_cmd_result(task, IBP_E_WOULD_DAMAGE_DATA);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Already trying to insert RID");
         return (0);
     }
     //*** Send back the results while I go ahead and process things***
@@ -3417,6 +3591,7 @@ int handle_internal_mount(ibp_task_t *task)
         rid_log_append(arg->crid, "ATTACH", "ERROR during mount", arg->msg, start, apr_time_now());
         send_cmd_result(task, IBP_E_INTERNAL);
         free(r);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Error during mount");
         return (0);
     }
     //** Activate it
@@ -3428,6 +3603,9 @@ int handle_internal_mount(ibp_task_t *task)
     launch_resource_cleanup_thread(r);
 
     log_printf(5, "handle_internal_mount: End of routine.  ns=%d\n", tbx_ns_getid(task->ns));
+
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
 
     return (0);
 }
@@ -3500,11 +3678,15 @@ fail:
     if (err != 0) {
         log_printf(0, "handle_internal_umount:  Error mounting resource!! Exiting\n");
         rid_log_append(arg->crid, "DETACH", "ERROR", arg->msg, start, apr_time_now());
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_ERROR: Error with detach");
         send_cmd_result(task, IBP_E_INTERNAL);
     } else {
         rid_log_append(arg->crid, "DETACH", "SUCCESS", arg->msg, start, apr_time_now());
+        tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
         send_cmd_result(task, IBP_OK);
     }
+
+    tbx_monitor_obj_destroy(&(task->mo));
 
     log_printf(5, "handle_internal_umount: End of routine.\n");
 
@@ -3530,6 +3712,7 @@ int handle_internal_set_mode(ibp_task_t *task)
     if (r == NULL) {
         log_printf(10, "handle_internal_set_mode:  Invalid RID :%s\n", arg->crid);
         send_cmd_result(task, IBP_E_INVALID_RID);
+        tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Invalid resource");
         return (0);
     }
 
@@ -3540,5 +3723,7 @@ int handle_internal_set_mode(ibp_task_t *task)
 
     log_printf(5, "handle_internal_set_mode: End of routine.  ns=%d\n", tbx_ns_getid(task->ns));
 
+    tbx_monitor_obj_message(&(task->mo), "HANDLE_SUCCESS");
+    tbx_monitor_obj_destroy(&(task->mo));
     return (0);
 }

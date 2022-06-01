@@ -35,6 +35,7 @@
 #include <tbx/fmttypes.h>
 #include "rid.h"
 #include <tbx/append_printf.h>
+#include <tbx/monitor.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/assert_result.h>
@@ -2609,6 +2610,7 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
     log_printf(5, "resource_cleanup_thread: Start.  rid=%s time= " TT "\n", r->name,
                apr_time_now());
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "resource_cleanup_thread: rid=%s", r->name);
     delete_oldest = 0;
     expire_oldest = 0;
 
@@ -2620,6 +2622,7 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
 
     apr_thread_mutex_lock(r->cleanup_lock);
     while (r->cleanup_shutdown == 0) {
+        tbx_monitor_thread_message(MON_MY_THREAD, "Starting run");
         count = tbx_atomic_get(r->counter);
         if (count > 1073741824)
             tbx_atomic_set(r->counter, 0);
@@ -2628,6 +2631,7 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
         if (ibp_time_now() > r->next_rescan) {
             apr_thread_mutex_unlock(r->cleanup_lock);
 
+            tbx_monitor_thread_message(MON_MY_THREAD, "Performing a rescans");
             delete_oldest = trash_rescan(r, RES_DELETE_INDEX);
             expire_oldest = trash_rescan(r, RES_EXPIRE_INDEX);
 
@@ -2659,6 +2663,8 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
                    r->name, ibp2apr_time(expire_oldest), ibp2apr_time(delete_oldest));
         resource_cleanup(r, start_time);
 
+        tbx_monitor_thread_message(MON_MY_THREAD, "run finished");
+
         t = 1000000 * r->cleanup_interval;      //Cleanup interval in us
         apr_thread_mutex_lock(r->cleanup_lock);
         if (r->cleanup_shutdown == 0) {
@@ -2672,6 +2678,8 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
     }
 
     apr_thread_mutex_unlock(r->cleanup_lock);
+
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
     log_printf(5, "resource_cleanup_thread: Exit.  rid=%s time= " TT "\n", r->name, apr_time_now());
     tbx_log_flush();

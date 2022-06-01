@@ -124,6 +124,8 @@ typedef struct {                //Main config structure
     int truncate_expiration;    // Force existing allocs duration to be the RID max.  Only used in rebuild!
     int soft_fail;              // defaults to -1 for all errors. Only used for commands that mey be recoverable
     Resource_list_t *rl;        // Searchable list of resources
+    char *monitor_fname;        // Monitoring filename
+    int  monitor_enable;        // Monitoring is enabled
     command_t command[COMMAND_TABLE_MAX + 1];   //** List of commands
 } Config_t;
 
