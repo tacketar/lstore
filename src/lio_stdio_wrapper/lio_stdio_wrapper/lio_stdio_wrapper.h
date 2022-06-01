@@ -116,7 +116,9 @@ LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(dup)(int oldfd);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(dup2)(int oldfd, int newfd);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(readlinkat)(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(readlink)(const char *pathname, char *buf, size_t bufsiz);
+#ifdef HAS_STATX
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(statx)(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);
+#endif
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(__fxstatat)(int __ver, int dirfd, const char *pathname, struct stat *statbuf, int flags);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(__fxstat)(int __ver, int fd, struct stat *statbuf);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(__lxstat)(int __ver, const char *pathname, struct stat *statbuf);

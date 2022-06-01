@@ -1936,6 +1936,7 @@ int WRAPPER_PREFIX(__fxstatat64)(int __ver, int dirfd, const char *pathname, str
 
 //***********************************************************************
 
+#ifdef HAS_STATX
 int WRAPPER_PREFIX(statx)(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf)
 {
     char buffer[PATH_MAX];
@@ -1978,6 +1979,7 @@ int WRAPPER_PREFIX(statx)(int dirfd, const char *pathname, int flags, unsigned i
     FPRINTF("statx: fname=%s errno=%d\n", pathname, errno);
     return(err);
 }
+#endif
 
 //***********************************************************************
 

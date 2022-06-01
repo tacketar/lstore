@@ -106,7 +106,9 @@ TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(dup))(int oldfd) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(dup2))(int oldfd, int newfd) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(readlinkat))(int dirfd, const char *pathname, char *buf, size_t bufsiz) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(readlink))(const char *pathname, char *buf, size_t bufsiz) TBX_IO_DECLARE_END
+#ifdef HAS_STATX
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statx))(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf) TBX_IO_DECLARE_END
+#endif
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__fxstat))(int __ver, int fd, struct stat *statbuf) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__lxstat))(int __ver, const char *pathname, struct stat *statbuf) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(access))(const char *pathname, int mode) TBX_IO_DECLARE_END

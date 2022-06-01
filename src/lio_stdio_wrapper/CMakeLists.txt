@@ -8,7 +8,9 @@ project(${LSTORE_PROJECT_NAME} C)
 if(NOT USE_SUPERBUILD)
     set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 endif()
+
 include(CheckIncludeFile)
+include(CheckSymbolExists)
 
 # Detect compiler flags.
 check_include_file(attr/xattr.h HAVE_ATTR_XATTR_H)
@@ -45,6 +47,11 @@ endif()
 
 if (HAS_FUSE3)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAS_FUSE3")
+endif()
+
+check_symbol_exists(statx "sys/stat.h" HAS_STATX)
+if (HAS_STATX)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAS_STATX")
 endif()
 
 set(LSTORE_LIBS toolbox

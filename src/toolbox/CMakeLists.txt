@@ -8,7 +8,9 @@ project(${LSTORE_PROJECT_NAME} C)
 if(NOT USE_SUPERBUILD)
     set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 endif()
+
 include(CheckIncludeFile)
+include(CheckSymbolExists)
 
 # Detect compiler flags.
 check_include_file("stdint.h" HAVE_STDINT_H)
@@ -118,6 +120,10 @@ set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
     )
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
 
+check_symbol_exists(statx "sys/stat.h" HAS_STATX)
+if (HAS_STATX)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAS_STATX")
+endif()
 
 # Common functionality is stored here
 if(NOT USE_SUPERBUILD)

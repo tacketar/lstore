@@ -105,7 +105,9 @@
 
     //**stat's go here
     ASSERT_EXISTS(__xstat);
+#ifdef HAS_STATX
     ASSERT_EXISTS(statx);
+#endif
     ASSERT_EXISTS(__fxstat);
     ASSERT_EXISTS(__fxstatat);
     ASSERT_EXISTS(__lxstat);
