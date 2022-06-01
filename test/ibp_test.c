@@ -1355,9 +1355,14 @@ int main(int argc, char **argv)
     int port1, port2, blocksize;
     int no_async;
     int net_cs_type;
+    int monitor_enable;
+    char *monitor_fname;
     ibp_rid_t rid1, rid2;
     tbx_chksum_t cs;
     tbx_ns_chksum_t *ns_cs = NULL;
+
+    monitor_enable = 0;
+    monitor_fname = "/tmp/ibp_test.mon";
 
     memset(&caps3, 0, sizeof(caps3));
     memset(&caps5, 0, sizeof(caps5));
@@ -1369,7 +1374,7 @@ int main(int argc, char **argv)
     failed_tests = 0;
 
     if (argc < 6) {
-        printf("ibp_test [-d loglevel] [-config ibp.cfg] [-network_chksum type blocksize] [-disk_chksum type blocksize]\n");
+        printf("ibp_test [--monitor_fname fname] [--monitor_enable 0|1] [-d loglevel] [-config ibp.cfg] [-network_chksum type blocksize] [-disk_chksum type blocksize]\n");
         printf("          [-no-async] host1 port1 rid1 host2 port2 rid2\n");
         printf("\n");
         printf("     2 depots are requred to test depot-depot copies.\n");
@@ -1412,6 +1417,14 @@ int main(int argc, char **argv)
             i++;
             tbx_set_log_level(atoi(argv[i]));
             i++;
+        } else if (strcmp(argv[i], "--monitor_fname") == 0) { //** Dump monitoring stats
+            i++;
+            monitor_fname = argv[i];
+            i++;
+        } else if (strcmp(argv[i], "--monitor_enable") == 0) { //** Dump monitoring stats
+            i++;
+            monitor_enable = atoi(argv[i]);
+            i++;
         } else if (strcmp(argv[i], "-config") == 0) { //** Read the config file
             i++;
             ibp_config_load_file(ic, argv[i], NULL);
@@ -1452,6 +1465,11 @@ int main(int argc, char **argv)
     } while (start_option < i);
 
     set_ibp_sync_context(ic);
+
+    if (monitor_enable == 1) {
+        tbx_monitor_create(monitor_fname);
+        tbx_monitor_set_state(monitor_enable);
+    }
 
     host1 = argv[i];
     i++;
@@ -2082,6 +2100,8 @@ log_printf(0, "AFTER ibp_rename_gop\n"); tbx_log_flush();
 
     if (ns_cs != NULL) tbx_ns_chksum_del(ns_cs);
     tbx_random_shutdown();
+
+    if (monitor_enable == 1) tbx_monitor_destroy();
 
     tbx_siginfo_shutdown();
     gop_shutdown();

@@ -408,6 +408,7 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_rw_t *cmd;
     ibp_rw_buf_t *rwbuf;
 
@@ -417,14 +418,14 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     gop_op_generic_t *gop = ibp_get_gop(op);
 
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[rw_type]));
     op->dop.cmd.hostport = strdup(hoststr);
 
     if (rw_type == IBP_READ) {
-        tbx_monitor_obj_label(gop_mo(gop), "IBP_READ: host=%s len=" I64T, op->dop.cmd.hostport, len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ: host=%s len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, len, rid, cmd->typekey);
     } else {
-        tbx_monitor_obj_label(gop_mo(gop), "IBP_WRITE: host=%s len=" I64T, op->dop.cmd.hostport, len);
+        tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE: host=%s len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, len, rid, cmd->typekey);
     }
 
     cmd->cap = cap;
@@ -477,19 +478,22 @@ gop_op_generic_t *ibp_validate_chksum_gop(ibp_context_t *ic, ibp_cap_t *mcap, in
         int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_validate_chksum_t *cmd;
     int port;
 
     init_ibp_base_op(op, "validate_chksum", timeout, op->ic->other_new_command, NULL, 1, IBP_VALIDATE_CHKSUM, IBP_NOP);
-    gop_op_generic_t *gop = ibp_get_gop(op);
 
     cmd = &(op->ops.validate_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_VALIDATE_CHKSUM]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_VALIDATE_CHKSUM: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
 
     cmd = &(op->ops.validate_op);
     cmd->correct_errors = correct_errors;
@@ -510,6 +514,7 @@ gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap,
     ibp_op_t *op = new_ibp_op(ic);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_get_chksum_t *cmd;
     int port;
 
@@ -518,9 +523,11 @@ gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t *mcap,
 
     cmd = &(op->ops.get_chksum_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_VALIDATE_CHKSUM]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_GET_CHKSUM: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
 
     cmd->cap = mcap;
     cmd = &(op->ops.get_chksum_op);
@@ -542,15 +549,18 @@ gop_op_generic_t *ibp_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_off_t
                                int disk_cs_type, ibp_off_t disk_blocksize, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char pchost[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_alloc_t *cmd;
 
     ibppc_form_host(op->ic, pchost, sizeof(pchost), depot->host, depot->rid);
     set_hostport(hoststr, sizeof(hoststr), pchost, depot->port, &(op->ic->cc[IBP_ALLOCATE]));
 
     init_ibp_base_op(op, "alloc", timeout, op->ic->other_new_command, strdup(hoststr), 1, IBP_ALLOCATE, IBP_NOP);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_ALLOC: host=%s rid=%s len=" I64T, op->dop.cmd.hostport, ibp_rid2str(depot->rid, rid), size);
 
     cmd = &(op->ops.alloc_op);
     cmd->caps = caps;
@@ -564,7 +574,6 @@ gop_op_generic_t *ibp_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_off_t
     cmd->disk_chksum_type = disk_cs_type;
     cmd->disk_blocksize = disk_blocksize;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = allocate_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = allocate_recv;
@@ -576,9 +585,10 @@ gop_op_generic_t *ibp_split_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
                                      ibp_attributes_t *attr, int disk_cs_type, ibp_off_t disk_blocksize, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_alloc_t *cmd;
     int port;
 
@@ -586,9 +596,11 @@ gop_op_generic_t *ibp_split_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
 
     cmd = &(op->ops.alloc_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_SPLIT_ALLOCATE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_SPLIT_ALLOC: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
 
     cmd = &(op->ops.alloc_op);
     cmd->caps = caps;
@@ -601,7 +613,6 @@ gop_op_generic_t *ibp_split_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
     cmd->disk_chksum_type = disk_cs_type;
     cmd->disk_blocksize = disk_blocksize;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = split_allocate_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = allocate_recv;
@@ -612,8 +623,10 @@ gop_op_generic_t *ibp_split_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
 gop_op_generic_t *ibp_rename_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_cap_t *mcap, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_alloc_t *cmd;
     int port;
 
@@ -623,13 +636,14 @@ gop_op_generic_t *ibp_rename_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_cap_
 
     cmd = &(op->ops.alloc_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_RENAME]));
     op->dop.cmd.hostport = strdup(hoststr);
 
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_RENAME: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
+
     cmd->caps = caps;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = rename_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = allocate_recv;
@@ -640,9 +654,11 @@ gop_op_generic_t *ibp_rename_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_cap_
 gop_op_generic_t *ibp_merge_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_cap_t *ccap, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
     char chost[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_merge_alloc_t *cmd;
     int port, cport;
 
@@ -652,13 +668,14 @@ gop_op_generic_t *ibp_merge_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
 
     cmd = &(op->ops.merge_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_MERGE_ALLOCATE]));
     op->dop.cmd.hostport = strdup(hoststr);
 
-    parse_cap(op->ic, ccap, chost, &cport, cmd->ckey, cmd->ctypekey);
+    parse_cap(op->ic, ccap, chost, &cport, cmd->ckey, cmd->ctypekey, rid);
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_MERGE_ALLOC: host=%s rid=%s mtypekey=%s ctypekey=%s", op->dop.cmd.hostport, rid, cmd->mtypekey, cmd->ctypekey);
+
     gop->op->cmd.send_command = merge_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = status_get_recv;
@@ -670,8 +687,10 @@ gop_op_generic_t *ibp_proxy_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp
                                      int duration, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_alloc_t *cmd;
     int port;
 
@@ -681,9 +700,11 @@ gop_op_generic_t *ibp_proxy_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp
 
     cmd = &(op->ops.alloc_op);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, mcap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_PROXY_ALLOCATE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_PROXY_ALLOC: host=%s rid=%s typekey=%s offset=" I64T " len=" I64T, op->dop.cmd.hostport, rid, cmd->typekey, offset, size);
 
     cmd->offset = offset;
     cmd->size = size;
@@ -696,7 +717,6 @@ gop_op_generic_t *ibp_proxy_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp
 
     cmd->caps = caps;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = proxy_allocate_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = allocate_recv;
@@ -706,9 +726,11 @@ gop_op_generic_t *ibp_proxy_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp
 
 void set_ibp_generic_modify_count_op(int command, ibp_op_t *op, ibp_cap_t *cap, ibp_cap_t *mcap, int mode, int captype, int timeout)
 {
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_probe_t *cmd;
 
     if ((command != IBP_MANAGE) && (command != IBP_PROXY_MANAGE)) {
@@ -728,18 +750,23 @@ void set_ibp_generic_modify_count_op(int command, ibp_op_t *op, ibp_cap_t *cap, 
 
     cmd = &(op->ops.probe_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[command]));
     op->dop.cmd.hostport = strdup(hoststr);
 
-    if (command == IBP_PROXY_MANAGE) parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey);
+    if (command == IBP_MANAGE) {
+        tbx_monitor_obj_label(gop_mo(gop), "IBP_MANAGE(%s): host=%s rid=%s typekey=%s", ((mode==IBP_INCR) ? "IBP_INCR" : "IBP_DECR"), op->dop.cmd.hostport, rid, cmd->typekey);
+    } else {
+        tbx_monitor_obj_label(gop_mo(gop), "IBP_PROXY_MANAGE(%s): host=%s rid=%s typekey=%s", ((mode==IBP_INCR) ? "IBP_INCR" : "IBP_DECR"), op->dop.cmd.hostport, rid, cmd->typekey);
+    }
+
+    if (command == IBP_PROXY_MANAGE) parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey, NULL);
 
     cmd->cmd = command;
     cmd->cap = cap;
     cmd->mode = mode;
     cmd->captype = captype;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = modify_count_command;
     if (command == IBP_PROXY_MANAGE) gop->op->cmd.send_command = proxy_modify_count_command;
     gop->op->cmd.send_phase = NULL;
@@ -767,25 +794,28 @@ gop_op_generic_t *ibp_proxy_modify_count_gop(ibp_context_t *ic, ibp_cap_t *cap, 
 gop_op_generic_t *ibp_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_off_t size, int duration, int reliability, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_modify_alloc_t *cmd;
 
     init_ibp_base_op(op, "modify_alloc", timeout, op->ic->other_new_command, NULL, 1, IBP_MANAGE, IBP_CHNG);
 
     cmd = &(op->ops.mod_alloc_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey,rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_MANAGE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_MANAGE(IBP_CHNG): host=%s rid=%s typekey=%s size=" I64T " duration=%d reliability=%d", op->dop.cmd.hostport, rid, cmd->typekey, size, duration, reliability);
 
     cmd->cap = cap;
     cmd->size = size;
     cmd->duration = duration;
     cmd->reliability = reliability;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = modify_alloc_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = status_get_recv;
@@ -796,27 +826,30 @@ gop_op_generic_t *ibp_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_of
 gop_op_generic_t *ibp_proxy_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_cap_t *mcap, ibp_off_t offset, ibp_off_t size, int duration, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_modify_alloc_t *cmd;
 
     init_ibp_base_op(op, "proxy_modify_alloc", timeout, op->ic->other_new_command, NULL, 1, IBP_PROXY_MANAGE, IBP_CHNG);
 
     cmd = &(op->ops.mod_alloc_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_PROXY_MANAGE]));
     op->dop.cmd.hostport = strdup(hoststr);
 
-    parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey);
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_PROXY_MANAGE(IBP_CHNG): host=%s rid=%s typekey=%s size=" I64T " duration=%d", op->dop.cmd.hostport, rid, cmd->typekey, size, duration);
+
+    parse_cap(op->ic, mcap, host, &port, cmd->mkey, cmd->mtypekey, rid);
 
     cmd->cap = cap;
     cmd->offset = offset;
     cmd->size = size;
     cmd->duration = duration;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = proxy_modify_alloc_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = status_get_recv;
@@ -827,23 +860,26 @@ gop_op_generic_t *ibp_proxy_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, 
 gop_op_generic_t *ibp_truncate_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_off_t size, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_modify_alloc_t *cmd;
 
     init_ibp_base_op(op, "truncate_alloc", timeout, op->ic->other_new_command, NULL, 1, IBP_MANAGE, IBP_CHNG);
 
     cmd = &(op->ops.mod_alloc_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_MANAGE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_TRUNCATE: host=%s rid=%s typekey=%s size=" I64T, op->dop.cmd.hostport, rid, cmd->typekey, size);
 
     cmd->cap = cap;
     cmd->size = size;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = truncate_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = status_get_recv;
@@ -864,9 +900,11 @@ gop_op_generic_t *ibp_proxy_remove_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_ca
 gop_op_generic_t *ibp_probe_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_capstatus_t *probe, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_probe_t *cmd;
 
     log_printf(15, " cctype=%d\n", op->ic->cc[IBP_MANAGE].type);
@@ -878,15 +916,16 @@ gop_op_generic_t *ibp_probe_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_capstatus
 
     cmd = &(op->ops.probe_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_MANAGE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_PROBE: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
 
     log_printf(15, "set_ibp_probe_gop: p=%p QWERT\n", probe);
     cmd->cap = cap;
     cmd->probe = probe;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = probe_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = probe_recv;
@@ -897,23 +936,26 @@ gop_op_generic_t *ibp_probe_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_capstatus
 gop_op_generic_t *ibp_proxy_probe_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_proxy_capstatus_t *probe, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_probe_t *cmd;
 
     init_ibp_base_op(op, "proxy_probe", timeout, op->ic->other_new_command, NULL, 1, IBP_PROXY_MANAGE, IBP_PROBE);
 
     cmd = &(op->ops.probe_op);
 
-    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey);
+    parse_cap(op->ic, cap, host, &port, cmd->key, cmd->typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_PROXY_MANAGE]));
     op->dop.cmd.hostport = strdup(hoststr);
+
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_PROXY_PROBE: host=%s rid=%s typekey=%s", op->dop.cmd.hostport, rid, cmd->typekey);
 
     cmd->cap = cap;
     cmd->proxy_probe = probe;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = proxy_probe_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = proxy_probe_recv;
@@ -925,18 +967,18 @@ gop_op_generic_t *ibp_copyappend_gop(ibp_context_t *ic, int ns_type, char *path,
                                     int src_timeout, int  dest_timeout, int dest_client_timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_copy_t *cmd;
 
     init_ibp_base_op(op, "copyappend", src_timeout, op->ic->rw_new_command + size, NULL, size, IBP_SEND, IBP_NOP);
 
     cmd = &(op->ops.copy_op);
 
-    parse_cap(op->ic, srccap, host, &port, cmd->src_key, cmd->src_typekey);
+    parse_cap(op->ic, srccap, host, &port, cmd->src_key, cmd->src_typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_SEND]));
     op->dop.cmd.hostport = strdup(hoststr);
 
@@ -958,6 +1000,8 @@ gop_op_generic_t *ibp_copyappend_gop(ibp_context_t *ic, int ns_type, char *path,
         }
     }
 
+    tbx_monitor_obj_label_irate(gop_mo(gop), size, "IBP_SEND_APPEND: command=%d [SOURCE] host=%s rid=%s typekey=%s offset=" I64T " size=" I64T, cmd->ibp_command, op->dop.cmd.hostport, rid, cmd->src_typekey, src_offset, size);
+
     cmd->srccap = srccap;
     cmd->destcap = destcap;
     cmd->len = size;
@@ -965,7 +1009,6 @@ gop_op_generic_t *ibp_copyappend_gop(ibp_context_t *ic, int ns_type, char *path,
     cmd->dest_timeout = dest_timeout;
     cmd->dest_client_timeout = dest_client_timeout;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = copyappend_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = copy_recv;
@@ -980,18 +1023,19 @@ gop_op_generic_t *ibp_copy_gop(ibp_context_t *ic, int mode, int ns_type,
                               int dest_timeout, int dest_client_timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     int port;
     char host[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
+    char *ibp_name;
     ibp_op_copy_t *cmd;
 
     init_ibp_base_op(op, "copy", src_timeout, op->ic->rw_new_command + size, NULL, size, IBP_SEND, IBP_NOP);
 
     cmd = &(op->ops.copy_op);
-
-    parse_cap(op->ic, srccap, host, &port, cmd->src_key, cmd->src_typekey);
+    ibp_name = (cmd->ibp_command == IBP_PUSH) ? "IBP_PUSH" : "IBP_PULL";
+    parse_cap(op->ic, srccap, host, &port, cmd->src_key, cmd->src_typekey, rid);
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[IBP_SEND]));
     op->dop.cmd.hostport = strdup(hoststr);
 
@@ -1009,10 +1053,14 @@ gop_op_generic_t *ibp_copy_gop(ibp_context_t *ic, int mode, int ns_type,
     if (tbx_ns_chksum_is_valid(&(op->ncs)) == 1) {
         if (cmd->ibp_command == IBP_PUSH) {
             cmd->ibp_command = IBP_PUSH_CHKSUM;
+            ibp_name = "IBP_PUSH_CHKSUM";
         } else {
             cmd->ibp_command = IBP_PULL_CHKSUM;
+            ibp_name = "IBP_PUSH_CHKSUM";
         }
     }
+
+    tbx_monitor_obj_label_irate(gop_mo(gop), size, "%s: [SOURCE] host=%s rid=%s typekey=%s offset=" I64T " size=" I64T " dest_offset=" I64T,  ibp_name, op->dop.cmd.hostport, rid, cmd->src_typekey, src_offset, size, dest_offset);
 
     cmd->srccap = srccap;
     cmd->destcap = destcap;
@@ -1022,7 +1070,6 @@ gop_op_generic_t *ibp_copy_gop(ibp_context_t *ic, int mode, int ns_type,
     cmd->dest_timeout = dest_timeout;
     cmd->dest_client_timeout = dest_client_timeout;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = pushpull_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = copy_recv;
@@ -1034,7 +1081,7 @@ gop_op_generic_t *ibp_depot_modify_gop(ibp_context_t *ic, ibp_depot_t *depot, ch
                                       int duration, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
+    gop_op_generic_t *gop = ibp_get_gop(op);
 
     ibp_op_depot_modify_t *cmd = &(op->ops.depot_modify_op);
 
@@ -1047,7 +1094,6 @@ gop_op_generic_t *ibp_depot_modify_gop(ibp_context_t *ic, ibp_depot_t *depot, ch
     cmd->max_soft = soft;
     cmd->max_duration = duration;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = depot_modify_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = status_get_recv;
@@ -1085,8 +1131,7 @@ gop_op_generic_t *ibp_depot_inq_gop(ibp_context_t *ic, ibp_depot_t *depot, char 
 gop_op_generic_t *ibp_version_gop(ibp_context_t *ic, ibp_depot_t *depot, char *buffer, int buffer_size, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char pchoststr[MAX_HOST_SIZE];
     ibp_op_version_t *cmd = &(op->ops.ver_op);
@@ -1097,11 +1142,12 @@ gop_op_generic_t *ibp_version_gop(ibp_context_t *ic, ibp_depot_t *depot, char *b
     init_ibp_base_op(op, "depot_version", timeout, op->ic->other_new_command, strdup(hoststr),
                      op->ic->other_new_command, IBP_STATUS, IBP_ST_VERSION);
 
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_VERSION: host=%s",  hoststr);
+
     cmd->depot = depot;
     cmd->buffer = buffer;
     cmd->buffer_size = buffer_size;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = depot_version_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = depot_version_recv;
@@ -1112,8 +1158,7 @@ gop_op_generic_t *ibp_version_gop(ibp_context_t *ic, ibp_depot_t *depot, char *b
 gop_op_generic_t *ibp_query_resources_gop(ibp_context_t *ic, ibp_depot_t *depot, ibp_ridlist_t *rlist, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char pchoststr[MAX_HOST_SIZE];
     ibp_op_rid_inq_t *cmd = &(op->ops.rid_op);
@@ -1124,10 +1169,11 @@ gop_op_generic_t *ibp_query_resources_gop(ibp_context_t *ic, ibp_depot_t *depot,
     init_ibp_base_op(op, "query_resources", timeout, op->ic->other_new_command, strdup(hoststr),
                         op->ic->other_new_command, IBP_STATUS, IBP_ST_RES);
 
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_QUERY_RESOURCES: host=%s",  hoststr);
+
     cmd->depot = depot;
     cmd->rlist = rlist;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = query_res_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = query_res_recv;
@@ -1138,10 +1184,10 @@ gop_op_generic_t *ibp_query_resources_gop(ibp_context_t *ic, ibp_depot_t *depot,
 gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, int duration, int n_caps, ibp_cap_t **mcaps, int *n_fail, int *results, int timeout)
 {
     ibp_op_t *op = new_ibp_op(ic);
-    if (op == NULL) return(NULL);
-
+    gop_op_generic_t *gop = ibp_get_gop(op);
     char hoststr[MAX_HOST_SIZE];
     char pchoststr[MAX_HOST_SIZE];
+    char rid[MAX_HOST_SIZE];
     ibp_op_rid_bulk_warm_t *cmd = &(op->ops.rid_bulk_warm_op);
 
     ibppc_form_host(op->ic, pchoststr, sizeof(pchoststr), depot->host, depot->rid);
@@ -1150,6 +1196,8 @@ gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, i
     init_ibp_base_op(op, "rid_bulk_warm", timeout, op->ic->rw_new_command*n_caps, strdup(hoststr),
                         op->ic->other_new_command, IBP_RID_BULK_WARM, IBP_NOP);
 
+    tbx_monitor_obj_label(gop_mo(gop), "IBP_BULK_WARM: host=%s rid=%s ncaps=%d",  hoststr, ibp_rid2str(depot->rid, rid), n_caps);
+
     cmd->depot = depot;
     cmd->duration = duration;
     cmd->n_caps = n_caps;
@@ -1157,7 +1205,6 @@ gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, i
     cmd->n_fail = n_fail;
     cmd->results = results;
 
-    gop_op_generic_t *gop = ibp_get_gop(op);
     gop->op->cmd.send_command = rid_bulk_warm_command;
     gop->op->cmd.send_phase = NULL;
     gop->op->cmd.recv_phase = rid_bulk_warm_recv;

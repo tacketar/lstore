@@ -1522,7 +1522,7 @@ gop_op_status_t rid_bulk_warm_command(gop_op_generic_t *gop, tbx_ns_t *ns)
             }
         }
 
-        parse_cap(op->ic, cmd->mcaps[i], host, &port, key, typekey);
+        parse_cap(op->ic, cmd->mcaps[i], host, &port, key, typekey, NULL);
         tbx_append_printf(buffer, &used, bufsize, " %s %s", key, typekey);
     }
 

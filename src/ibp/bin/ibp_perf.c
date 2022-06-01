@@ -37,6 +37,7 @@
 #include <tbx/chksum.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/network.h>
 #include <tbx/random.h>
 #include <tbx/siginfo.h>
@@ -680,6 +681,7 @@ int main(int argc, char **argv)
     tbx_chksum_t cs;
     tbx_ns_chksum_t ns_cs;
     int blocksize = INT_MIN;
+    int monitor_on = 0;
 
     base_caps = NULL;
 
@@ -717,6 +719,7 @@ int main(int argc, char **argv)
         printf("-progress           - Print completion progress.\n");
         printf("-random             - Initializes the transfer buffers with quasi-random data.\n");
         printf("                      Disabled if network chksums are enabled.\n");
+        printf("--monitor fname     - Set the monitoring log file and enable monitoring\n");
         printf("n_depots            - Number of depot tuplets\n");
         printf("depot               - Depot hostname\n");
         printf("port                - IBP port on depot\n");
@@ -771,6 +774,12 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-random") == 0) { //** Random buffers
             i++;
             identical_buffers = 0;
+        } else if (strcmp(argv[i], "--monitor") == 0) { //** Enable monitoring
+            i++;
+            tbx_monitor_create(argv[i]);
+            tbx_monitor_set_state(1);
+            monitor_on = 1;
+            i++;
         } else if (strcmp(argv[i], "-network_chksum") == 0) { //** Add checksum capability
             i++;
             net_cs_name = argv[i];
@@ -1198,6 +1207,8 @@ int main(int argc, char **argv)
     printf("Final network connection counter: %d\n", tbx_network_counter(NULL));
 
     ibp_context_destroy(ic);  //** Shutdown IBP
+
+    if (monitor_on) tbx_monitor_destroy();
 
     tbx_siginfo_shutdown();
     gop_shutdown();

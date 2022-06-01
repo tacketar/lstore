@@ -36,6 +36,7 @@
 #include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/transfer_buffer.h>
+#include <tbx/lio_monitor.h>
 #include <time.h>
 
 #include "op.h"
@@ -285,6 +286,7 @@ int main(int argc, char **argv)
     tbx_chksum_t cs;
     tbx_ns_chksum_t ns_cs;
     int blocksize = -1;
+    int monitor_on = 0;
     char *net_cs_name, *disk_cs_name;
 
     if (argc < 12) {
@@ -315,6 +317,7 @@ int main(int argc, char **argv)
         printf("-proxy-source       - Use proxy allocations for source allocations\n");
         printf("-proxy-dest         - Use proxy allocations for the destination allocations\n");
         printf("-progress           - Print completion progress.\n");
+        printf("--monitor fname     - Set the monitoring log file and enable monitoring\n");
         printf("src_n_depots        - Number of *source* depot tuplets\n");
         printf("src_depot           - Source depot hostname\n");
         printf("src_port            - Source depot IBP port\n");
@@ -356,6 +359,12 @@ int main(int argc, char **argv)
             i++;
         } else if (strcmp(argv[i], "-dd") == 0) { //** Enable debugging
             tbx_set_log_level(20);
+            i++;
+        } else if (strcmp(argv[i], "--monitor") == 0) { //** Enable monitoring
+            i++;
+            tbx_monitor_create(argv[i]);
+            tbx_monitor_set_state(1);
+            monitor_on = 1;
             i++;
         } else if (strcmp(argv[i], "-network_chksum") == 0) { //** Add checksum capability
             i++;
@@ -582,6 +591,8 @@ int main(int argc, char **argv)
     printf("Final network connection counter: %d\n", tbx_network_counter(NULL));
 
     ibp_context_destroy(ic);  //** Shutdown IBP
+
+    if (monitor_on) tbx_monitor_destroy();
 
     tbx_siginfo_shutdown();
     gop_shutdown();
