@@ -24,7 +24,7 @@
     ASSERT_EXISTS(fopen64);
     ASSERT_EXISTS(open64);
     ASSERT_EXISTS(openat64);
-    ASSERT_EXISTS(fcntl64);
+    OK_IF_MISSING(fcntl64);
     ASSERT_EXISTS(getrlimit64);
     ASSERT_EXISTS(setrlimit64);
     ASSERT_EXISTS(pread64);

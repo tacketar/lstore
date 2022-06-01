@@ -163,7 +163,9 @@ result WRAPPER_PREFIX(name)proto \
 void get_stdio_fn()
 {
 #define ASSERT_EXISTS(name) assert_result_not_null(STDIO_WRAP_NAME(name) = dlsym(RTLD_NEXT, #name)); TBX_IO_WRAP_NAME(name) = STDIO_WRAP_NAME(name);
+#define OK_IF_MISSING(name) STDIO_WRAP_NAME(name) = dlsym(RTLD_NEXT, #name); TBX_IO_WRAP_NAME(name) = STDIO_WRAP_NAME(name);
 #include <tbx/io_assign.h>
+#undef OK_IF_MISSING
 #undef ASSERT_EXISTS
 }
 

@@ -33,6 +33,11 @@
 //*********************************************************************************
 
 #define ASSERT_EXISTS(name) if ((TBX_IO_WRAP_NAME(name) == NULL) || (do_overwrite_fn)) { assert_result_not_null(TBX_IO_WRAP_NAME(name) = dlsym(handle, #name)); }
+#define OK_IF_MISSING(name) if ((TBX_IO_WRAP_NAME(name) == NULL) || (do_overwrite_fn)) { TBX_IO_WRAP_NAME(name) = dlsym(handle, #name); }
+
+//** Use these 2 lines to figure out if some symbols are missing ann need to be
+//#include <stdio.h>
+//#define ASSERT_EXISTS(name) if ((TBX_IO_WRAP_NAME(name) == NULL) || (do_overwrite_fn)) { TBX_IO_WRAP_NAME(name) = dlsym(handle, #name); fprintf(stderr, #name "=%p\n", TBX_IO_WRAP_NAME(name)); }
 
 void tbx_io_init(void *handle, int do_overwrite_fn)
 {
