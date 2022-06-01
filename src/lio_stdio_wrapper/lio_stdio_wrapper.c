@@ -64,6 +64,8 @@
 #define FD_MODE_STD    2
 #define FD_MODE_LIO    3
 
+#define FDMAX_HARD_LIMIT (100*1024)       //** MAx number of open files allowed
+
 #define _STDIO_PROTO(fn, ret, ...) ret fn (__VA_ARGS__)
 #define _STDIO_VAR_DECLARE(fn, ret, ...) ret (*fn ## _stdio)(__VA_ARGS__)
 #define STDIO_VAR_DLSYM(fn)  assert_result_not_null(fn ## _stdio = dlsym(RTLD_NEXT, #fn))
@@ -123,7 +125,7 @@ result WRAPPER_PREFIX(name)proto \
 { \
     fd_core_t *cfd; \
 \
-FPRINTF(#name ": start fd=%d\n", fd); \
+    FPRINTF(#name ": start fd=%d\n", fd); \
     SANITY_CHECK_FD(fd, -1); \
 \
     cfd = fd_table[fd].cfd; \
@@ -163,8 +165,6 @@ void get_stdio_fn()
 #define ASSERT_EXISTS(name) assert_result_not_null(STDIO_WRAP_NAME(name) = dlsym(RTLD_NEXT, #name)); TBX_IO_WRAP_NAME(name) = STDIO_WRAP_NAME(name);
 #include <tbx/io_assign.h>
 #undef ASSERT_EXISTS
-
-FPRINTF("get_stdio_fn: readv_stdio=%p tbx_io_readv=%p\n", readv_stdio, tbx_io_readv);
 }
 
 //***********************************************************************
@@ -177,7 +177,7 @@ const char *path_map(int dirfd, const char *path, int *index, int *len, char *bu
     const char *mypath = path;
     char *npath = NULL;
 
-FPRINTF("path_map: dirfd=%d cwd=%s path=%s\n", dirfd, cwd, path);
+    FPRINTF("path_map: dirfd=%d cwd=%s path=%s\n", dirfd, cwd, path);
 
     buffer[0] = '\0';
     if (path[0] != '/') { //**Relative path so convert it
@@ -187,20 +187,20 @@ FPRINTF("path_map: dirfd=%d cwd=%s path=%s\n", dirfd, cwd, path);
             cfd = fd_table[dirfd].cfd;
             if ((cfd) && (cfd->sname_dir)) {
                 snprintf(buffer, PATH_MAX, "%s/%s", cfd->sname_dir, path);
-FPRINTF("path_map: dirfd=%d path=%s dir_path=%s fullpath=%s\n", dirfd, path, cfd->sname_dir, buffer);
+                FPRINTF("path_map: dirfd=%d path=%s dir_path=%s fullpath=%s\n", dirfd, path, cfd->sname_dir, buffer);
             } else {
-FPRINTF("path_map: dirfd=%d path=%s MISSING directory!\n", dirfd, path);
+                FPRINTF("path_map: dirfd=%d path=%s MISSING directory!\n", dirfd, path);
                 apr_thread_mutex_unlock(lock);
                 if (fullpath != NULL)  *fullpath = (char *)path;  //** Don't have a dir fd so this is actually an error
                 return(NULL);
             }
         } else {
             snprintf(buffer, PATH_MAX, "%s/%s", cwd, path);
-FPRINTF("path_map: dirfd=%d CWD adjustment cwd=%s path=%s\n", dirfd, cwd, buffer);
+            FPRINTF("path_map: dirfd=%d CWD adjustment cwd=%s path=%s\n", dirfd, cwd, buffer);
         }
         apr_thread_mutex_unlock(lock);
         mypath = buffer;
-FPRINTF("path_map: dirfd=%d pretest path=%s\n", dirfd, mypath);
+        FPRINTF("path_map: dirfd=%d pretest path=%s\n", dirfd, mypath);
         if (fullpath != NULL) {
             *fullpath = fbuffer;
             strncpy(fbuffer, mypath, PATH_MAX);
@@ -219,9 +219,9 @@ FPRINTF("path_map: dirfd=%d pretest path=%s\n", dirfd, mypath);
     }
 
 
-FPRINTF("path_map: path=%s n_prefix=%d\n", mypath, n_prefix);
+    FPRINTF("path_map: path=%s n_prefix=%d\n", mypath, n_prefix);
     for (i=0; i<n_prefix; i++) {
-FPRINTF("path_map: path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
+        FPRINTF("path_map: path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
         if (strncmp(prefix_table[i].prefix, mypath, prefix_table[i].len) == 0) {
             *index = i;
             if (prefix_table[i].link) { //** Got a link
@@ -233,10 +233,10 @@ FPRINTF("path_map: path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i)
                     snprintf(buffer, PATH_MAX, "%s%s", prefix_table[i].link, mypath + prefix_table[i].len);
                     mypath = buffer;
                 }
-FPRINTF("path_map: MATCH-LINK path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
+                FPRINTF("path_map: MATCH-LINK path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
             } else {
                 *len = prefix_table[i].len;
-FPRINTF("path_map: MATCH path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
+                FPRINTF("path_map: MATCH path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
             }
             return(mypath);
         }
@@ -274,9 +274,7 @@ int get_free_slot(int dup_fd, fd_core_t *cfd, int get_lowest)
     start = (get_lowest) ? 0 : next_slot;
     for (i=0; i<n_fd_max; i++) {
         slot = ((i+start) % n_fd_max) + n_fd_max;
-//slot = 3;
-//FPRINTF("GET_FREE_SLOT: Hard coded return of 3\n");
-FPRINTF("GET_FREE_SLOT: returning %d\n", slot);
+        FPRINTF("GET_FREE_SLOT: returning %d\n", slot);
         if (fd_table[slot].cfd == NULL) {
             if (get_lowest == 0) next_slot = slot + 1;
             if (dup_fd >= 0) {
@@ -303,7 +301,7 @@ int close_and_reserve(int fd, FILE *stream, fd_core_t *cfd_new, int delta)
     fd_core_t *cfd;
     int close_parent, ret;
 
-FPRINTF("CAR: n_fd_max=%d fd=%d stream=%p cfd_new=%p delta=%d\n", n_fd_max, fd, stream, cfd_new, delta);
+    FPRINTF("CAR: n_fd_max=%d fd=%d stream=%p cfd_new=%p delta=%d\n", n_fd_max, fd, stream, cfd_new, delta);
 
     ret = 0;
 
@@ -390,28 +388,20 @@ int lio_dir_is_empty(const char *path)
     char *dname;
     struct stat stat;
 
+    //** Make sure the directory exists and we can open it
     dir = lio_fs_opendir(fs, NULL, path);
-FPRINTF("lio_dir_is_empty: path=%s dir=%p\n", path, dir);
     if (!dir) return(-1);
-dname = NULL;
-int err = lio_fs_readdir(dir, &dname, &stat, NULL, 1);
-FPRINTF("lio_dir_is_empty: path=%s err=%d dname1=%s\n", path, err, dname);
-if (err != 0) { lio_fs_closedir(dir); return(1); }
-//    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+
+    //** This should be the 1st entry of "."
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, 1) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
-dname = NULL;
-err = lio_fs_readdir(dir, &dname, &stat, NULL, 1);
-FPRINTF("lio_dir_is_empty: path=%s err=%d dname2=%s\n", path, err, dname);
-if (err != 0) { lio_fs_closedir(dir); return(1); }
-//    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+    //** This is ".."
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, 1) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
-dname = NULL;
-err = lio_fs_readdir(dir, &dname, &stat, NULL, 1);
-FPRINTF("lio_dir_is_empty: path=%s err=%d dname3=%s\n", path, err, dname);
-if (err != 0) { lio_fs_closedir(dir); return(1); }
-//    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+    //** This should be the 1st real entry
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, 1) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
     lio_fs_closedir(dir);
@@ -429,7 +419,7 @@ int chdir_lio(const char *path)
 
     mycwd = path;
     apr_thread_mutex_lock(lock);
-FPRINTF("chdir_lio: START cwd=%s path=%s\n", cwd, path);
+    FPRINTF("chdir_lio: START cwd=%s path=%s\n", cwd, path);
     if (path[0] != '/') { //**Relative path so convert it
         snprintf(buffer, PATH_MAX, "%s/%s", cwd, path);
         mycwd = buffer;
@@ -442,7 +432,7 @@ FPRINTF("chdir_lio: START cwd=%s path=%s\n", cwd, path);
         cwd_len--;
     }
 
-FPRINTF("chdir_lio: END cwd=%s\n", cwd);
+    FPRINTF("chdir_lio: END cwd=%s\n", cwd);
 
     apr_thread_mutex_unlock(lock);
 
@@ -459,12 +449,12 @@ int WRAPPER_PREFIX(chdir)(const char *path)
     const char *fname;
     int index, len, err;
 
-FPRINTF("chdir. path=%s\n", path);
+    FPRINTF("chdir. path=%s\n", path);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("chdir. normal path=%s\n", fullpath);
+        FPRINTF("chdir. normal path=%s\n", fullpath);
         apr_thread_mutex_lock(lock);
         err = chdir(fullpath);
         if (err == 0) {
@@ -483,7 +473,7 @@ FPRINTF("chdir. normal path=%s\n", fullpath);
     }
 
     err = chdir_lio(path);
-FPRINTF("chdir. lio newcwd=%s\n", cwd);
+    FPRINTF("chdir. lio newcwd=%s\n", cwd);
 
     return(err);
 }
@@ -495,7 +485,7 @@ int WRAPPER_PREFIX(fchdir)(int fd)
     fd_core_t *cfd;
     int err;
 
-FPRINTF("fchdir=%d\n", fd);
+    FPRINTF("fchdir=%d\n", fd);
     SANITY_CHECK_FD(fd, -1);
 
     cfd = fd_table[fd].cfd;
@@ -526,7 +516,7 @@ char *WRAPPER_PREFIX(getcwd)(char *buf, size_t size)
 
     ptr = NULL;
     apr_thread_mutex_lock(lock);
-FPRINTF("getcwd: cwd=%s buf=%p size=%d\n", cwd, buf, n);
+    FPRINTF("getcwd: cwd=%s buf=%p size=%d\n", cwd, buf, n);
     if (buf) {
         if (n < cwd_len) {
             errno = ERANGE;
@@ -547,7 +537,7 @@ FPRINTF("getcwd: cwd=%s buf=%p size=%d\n", cwd, buf, n);
     }
     apr_thread_mutex_unlock(lock);
 
-FPRINTF("getcwd: cwd=%s ptr=%s errno=%d\n", cwd, ptr, errno);
+    FPRINTF("getcwd: cwd=%s ptr=%s errno=%d\n", cwd, ptr, errno);
 
     return(ptr);
 }
@@ -576,12 +566,11 @@ int WRAPPER_PREFIX(fchmodat)(int dirfd, const char *pathname, mode_t mode, int f
     char *fullpath;
     int index, len, err;
 
-FPRINTF("fchmodat: dirfd=%d pathname=%s\n", dirfd, pathname);
+    FPRINTF("fchmodat: dirfd=%d pathname=%s\n", dirfd, pathname);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("fchmodat=%s normal\n", fullpath);
         return(fchmodat_stdio(dirfd, fullpath, mode, flags));
     }
 
@@ -602,7 +591,7 @@ int WRAPPER_PREFIX(fchmod)(int fd, mode_t mode)
     fd_core_t *cfd;
     int err;
 
-FPRINTF("fchmod: start fd=%d\n", fd);
+    FPRINTF("fchmod: start fd=%d\n", fd);
     SANITY_CHECK_FD(fd, -1);
 
     cfd = fd_table[fd].cfd;
@@ -643,7 +632,7 @@ int WRAPPER_PREFIX(renameat2)(int olddirfd, const char *oldpath, int newdirfd, c
     int index_old, index_new, len_old, len_new, err, ftype, is_dir, ftype_old;
     struct stat sbuf;
 
-FPRINTF("renameat2: old=%s new=%s\n", oldpath, newpath);
+    FPRINTF("renameat2: old=%s new=%s\n", oldpath, newpath);
 
     //** See if we handle it or pass it thru
     fold = path_map(olddirfd, oldpath, &index_old, &len_old, oldbuf, foldbuf, &oldfull);
@@ -657,12 +646,12 @@ FPRINTF("renameat2: old=%s new=%s\n", oldpath, newpath);
         if (flags) {errno = EINVAL; return(-1); }
         ftype_old = lio_fs_exists(fs, fold);
         is_dir = ftype_old & OS_OBJECT_DIR_FLAG;
-FPRINTF("renameat2: lio2local: ftype_old=%d is_dir=%d\n", ftype_old, is_dir);
+        FPRINTF("renameat2: lio2local: ftype_old=%d is_dir=%d\n", ftype_old, is_dir);
         if (is_dir) { //** It's a directory rename on different mounts.. So only works with empty dirs
             //** MAke sure the source is empty
             if (lio_dir_is_empty(fold) == 1) {
                 ftype = lio_os_local_filetype(newfull);
-FPRINTF("renameat2: lio2local: ftype_new=%d lio_dir_is_empty=1\n", ftype);
+                FPRINTF("renameat2: lio2local: ftype_new=%d lio_dir_is_empty=1\n", ftype);
                 if (ftype == 0) { //** Dest doesn't exist so create it
                     lio_fs_stat(fs, NULL, fold, &sbuf, NULL, 1);
                     err = mkdirat_stdio(newdirfd, newpath, sbuf.st_mode);
@@ -673,12 +662,12 @@ FPRINTF("renameat2: lio2local: ftype_new=%d lio_dir_is_empty=1\n", ftype);
                     }
                 }
             } else { //** It's not empty so no simple rename
-FPRINTF("renameat2: lio2local: lio_dir_is_empty=0\n");
+                FPRINTF("renameat2: lio2local: lio_dir_is_empty=0\n");
                 errno = EXDEV;
                 err = -1;
             }
         } else { //** It's a normal file
-FPRINTF("renameat2: lio2local: %s -> %s\n", fold, newfull);
+            FPRINTF("renameat2: lio2local: %s -> %s\n", fold, newfull);
             ftype = lio_os_local_filetype(newfull);
             if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory so kick out
                 errno = EXDEV;
@@ -686,10 +675,10 @@ FPRINTF("renameat2: lio2local: %s -> %s\n", fold, newfull);
             } else {
                 err = lio_fs_copy(fs, NULL, 1, fold, 0, newfull, -1, 0, 0, NULL);
             }
-FPRINTF("renameat2: lio2local: %s -> %s  err=%d\n", fold, newfull, err);
+            FPRINTF("renameat2: lio2local: %s -> %s  err=%d\n", fold, newfull, err);
         }
 
-FPRINTF("renameat2: lio2local: err=%d errno=%d\n", err, errno);
+        FPRINTF("renameat2: lio2local: err=%d errno=%d\n", err, errno);
         if (err == 0) lio_fs_object_remove(fs, NULL, fold, ftype);
         return(err);
     } if (fnew) { //** Source is local and dest is LIO
@@ -715,7 +704,7 @@ FPRINTF("renameat2: lio2local: err=%d errno=%d\n", err, errno);
                 err = -1;
             }
         } else { //** It's a normal file
-FPRINTF("renameat2: local2lio: %s -> %s\n", oldfull, fnew);
+            FPRINTF("renameat2: local2lio: %s -> %s\n", oldfull, fnew);
             ftype = lio_fs_exists(fs, fnew);
             if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory so kick out
                 errno = EXDEV;
@@ -723,10 +712,10 @@ FPRINTF("renameat2: local2lio: %s -> %s\n", oldfull, fnew);
             } else {
                 err = lio_fs_copy(fs, NULL, 0, oldfull, 1, fnew, -1, 0, 0, NULL);
             }
-FPRINTF("renameat2: local2lio: %s -> %s err=%d\n", oldfull, fnew, err);
+            FPRINTF("renameat2: local2lio: %s -> %s err=%d\n", oldfull, fnew, err);
         }
 
-FPRINTF("renameat2: local2lio: err=%d errno=%d\n", err, errno);
+        FPRINTF("renameat2: local2lio: err=%d errno=%d\n", err, errno);
         if (err == 0) remove_stdio(oldfull);
         return(err);
     }
@@ -760,12 +749,11 @@ int WRAPPER_PREFIX(symlinkat)(const char *target, int newdirfd, const char *link
     char *fullpath;
     int index, len, err;
 
-FPRINTF("symlinkat: dirfd=%d target=%s linkpath=%s\n", newdirfd, target, linkpath);
+    FPRINTF("symlinkat: dirfd=%d target=%s linkpath=%s\n", newdirfd, target, linkpath);
 
     //** See if we handle it or pass it thru
     fname = path_map(newdirfd, linkpath, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("symlinkat=%s normal\n", target);
         return(symlinkat_stdio(target, newdirfd, linkpath));
     }
 
@@ -796,7 +784,7 @@ int WRAPPER_PREFIX(linkat)(int olddirfd, const char *oldpath, int newdirfd, cons
     char *ofull, *nfull;
     int oindex, olen, nindex, nlen, err;
 
-FPRINTF("linkat: olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
+    FPRINTF("linkat: olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
 
     //** See if we handle it or pass it thru. You can only hardlink within LStore or external. No mixing
     //** So we have to check both the source and destination paths
@@ -804,19 +792,19 @@ FPRINTF("linkat: olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", oldd
     nfname = path_map(newdirfd, newpath, &nindex, &nlen, nbuf, fnbuf, &nfull);
 
     if ((ofname == NULL) && (nfname == NULL)) {
-FPRINTF("linkat: normal olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
+        FPRINTF("linkat: normal olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
         return(linkat_stdio(olddirfd, oldpath, newdirfd, newpath, flags));
     } else if ((ofname == NULL) || (nfname == NULL)) { //** Mix case so throw an error
-FPRINTF("linkat: ERROR mixed olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
+        FPRINTF("linkat: ERROR mixed olddirfd=%d oldpath=%s newdirfd=%d newpath=%s flags=%d\n", olddirfd, oldpath, newdirfd, newpath, flags);
         errno = EXDEV;
         return(-1);
     }
 
-FPRINTF("linkat: lio ofname=%s nfname=%s\n", ofname, nfname);
+    FPRINTF("linkat: lio ofname=%s nfname=%s\n", ofname, nfname);
 
     //** If we make it here then both paths are on LStore
     err = lio_fs_hardlink(fs, NULL, ofname, nfname);
-FPRINTF("linkat: lio ofname=%s nfname=%s err=%d\n", ofname, nfname, err);
+    FPRINTF("linkat: lio ofname=%s nfname=%s err=%d\n", ofname, nfname, err);
     if (err != 0) {
         errno = -err;
         err = -1;
@@ -870,23 +858,22 @@ FILE *WRAPPER_PREFIX(fopen64)(const char *pathname, const char *mode)
     int index, len, slot;
     lio_fd_t *lfd;
 
-FPRINTF("fopen64. pathname=%s, mode=%s\n", pathname, mode);
-//return(fopen_stdio(pathname, mode));
+    FPRINTF("fopen64. pathname=%s, mode=%s\n", pathname, mode);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("fopen64. normal file fname=%s\n", pathname);
+        FPRINTF("fopen64. normal file fname=%s\n", pathname);
         return(fopen64_stdio(fullpath, mode));
     }
 
-FPRINTF("fopen64. lio file fname=%s index=%d len=%d\n", fname, index, len);
+    FPRINTF("fopen64. lio file fname=%s index=%d len=%d\n", fname, index, len);
 
     //** It's a LIO file
     lfd = lio_fs_open(fs, NULL, fname + len, lio_fopen_flags(mode));
     if (lfd) {
         slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, fopen2open_flags(mode), -1, NULL, lfd, NULL, NULL), 0);
-FPRINTF("fopen64 lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
+        FPRINTF("fopen64 lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
         fd_table[slot].cfd->prefix_index = index;
         return(&(fd_table[slot].dfd));
     }
@@ -898,8 +885,6 @@ FPRINTF("fopen64 lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
 
 FILE *WRAPPER_PREFIX(fopen)(const char *pathname, const char *mode)
 {
-//FPRINTF("fopen=%s mode=%s CALLING fopen64\n", pathname, mode);
-//    return(WRAPPER_PREFIX(fopen64)(pathname, mode));
     char buffer[PATH_MAX];
     char fbuffer[PATH_MAX];
     char *fullpath;
@@ -907,27 +892,25 @@ FILE *WRAPPER_PREFIX(fopen)(const char *pathname, const char *mode)
     int index, len, slot;
     lio_fd_t *lfd;
 
-FPRINTF("fopen. pathname=%s mode=%s\n", pathname, mode); fflush(stderr);
-//return(fopen_stdio(pathname, mode));
+    FPRINTF("fopen. pathname=%s mode=%s\n", pathname, mode); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("fopen. normal file fname=%s fopen_stdio=%p\n", pathname, fopen_stdio);
+        FPRINTF("fopen. normal file fname=%s fopen_stdio=%p\n", pathname, fopen_stdio);
         if (!fopen_stdio) {   //** This can occur during startup when loading other libraries
-FPRINTF("fopen. fetching fopen_stdio\n");
             assert_result_not_null(fopen_stdio = dlsym(RTLD_NEXT, "fopen"));
         }
         return(fopen_stdio(fullpath, mode));
     }
 
-FPRINTF("fopen. lio file fname=%s index=%d len=%d\n", fname, index, len);
+    FPRINTF("fopen. lio file fname=%s index=%d len=%d\n", fname, index, len);
 
     //** It's a LIO file
     lfd = lio_fs_open(fs, NULL, fname + len, lio_fopen_flags(mode));
     if (lfd) {
         slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, fopen2open_flags(mode), -1, NULL, lfd, NULL, NULL), 0);
-FPRINTF("fopen lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
+        FPRINTF("fopen lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
         fd_table[slot].cfd->prefix_index = index;
         return(&(fd_table[slot].dfd));
     }
@@ -948,14 +931,14 @@ int vopenat64(int dirfd, const char *pathname, int flags, va_list ap)
     lio_fd_t *lfd;
     mode_t mode;
 
-     mode = (O_CREAT|O_TMPFILE) ? va_arg(ap, int) : 0;
-slot = mode;
-FPRINTF("vopenat64=%s flags=%d mode=%o O_DIRECTORY=%d O_PATH=%d flags&O_DIR=%d\n", pathname, flags, slot, O_DIRECTORY, O_PATH, (flags&O_DIRECTORY));
+    mode = (O_CREAT|O_TMPFILE) ? va_arg(ap, int) : 0;
+    slot = mode;
+    FPRINTF("vopenat64=%s flags=%d mode=%o O_DIRECTORY=%d O_PATH=%d flags&O_DIR=%d\n", pathname, flags, slot, O_DIRECTORY, O_PATH, (flags&O_DIRECTORY));
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("vopenat64=%s normal\n", pathname);
+        FPRINTF("vopenat64=%s normal\n", pathname);
         if (openat64_stdio == NULL) { assert_result_not_null(openat64_stdio = dlsym(RTLD_NEXT, "openat64")); }
         if (mode == 0) {
             fd = openat64_stdio(dirfd, pathname, flags);
@@ -973,7 +956,7 @@ FPRINTF("vopenat64=%s normal\n", pathname);
             fd_table[fd].cfd->sname_dir = strdup(fullpath);
             n = strlen(fullpath);
             if (fullpath[n-1] == '/') fd_table[fd].cfd->sname_dir[n-1] = '\0';
-FPRINTF("vopenat64 normal O_DIR slot=%d _fileno=%d\n", fd, fd_table[fd].dfd._fileno);
+            FPRINTF("vopenat64 normal O_DIR slot=%d _fileno=%d\n", fd, fd_table[fd].dfd._fileno);
             fd_table[fd].cfd->prefix_index = index;
             apr_thread_mutex_unlock(lock);
             return(fd_table[fd].dfd._fileno);
@@ -987,11 +970,11 @@ FPRINTF("vopenat64 normal O_DIR slot=%d _fileno=%d\n", fd, fd_table[fd].dfd._fil
         slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, flags, -1, NULL, NULL, NULL, NULL), 0);
         fd_table[slot].cfd->lname_dir = strdup(fname + len);
         fd_table[slot].cfd->sname_dir = strdup(fullpath);
-FPRINTF("vopenat64 lio O_DIR slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
+        FPRINTF("vopenat64 lio O_DIR slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
         fd_table[slot].cfd->prefix_index = index;
         return(fd_table[slot].dfd._fileno);
     } else if (flags & O_DIRECTORY) {
-FPRINTF("vopenat64 lio O_DIR set and it's not a directory fname=%s\n", fname + len);
+        FPRINTF("vopenat64 lio O_DIR set and it's not a directory fname=%s\n", fname + len);
         errno = ENOTDIR;
         return(-1);
     }
@@ -999,10 +982,10 @@ FPRINTF("vopenat64 lio O_DIR set and it's not a directory fname=%s\n", fname + l
 
     //** It's a LIO file
     lfd = lio_fs_open(fs, NULL, fname + len, lio_open_flags(flags, mode));
-FPRINTF("vopenat64. lio fname=%s lfd=%p\n", fname + len, lfd);
+    FPRINTF("vopenat64. lio fname=%s lfd=%p\n", fname + len, lfd);
     if (lfd) {
         slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, flags, -1, NULL, lfd, NULL, NULL), 0);
-FPRINTF("vopenat64. lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
+        FPRINTF("vopenat64. lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
         fd_table[slot].cfd->prefix_index = index;
         return(fd_table[slot].dfd._fileno);
     }
@@ -1017,7 +1000,7 @@ int vcreat(const char *pathname, ...)
     va_list ap;
     int n;
 
-FPRINTF("vcreat=%s CALLING vopen64\n", pathname);
+    FPRINTF("vcreat=%s CALLING vopen64\n", pathname);
 
     va_start(ap, pathname);
     n = vopenat64(AT_FDCWD, pathname, O_CREAT, ap);
@@ -1030,7 +1013,7 @@ FPRINTF("vcreat=%s CALLING vopen64\n", pathname);
 
 int WRAPPER_PREFIX(creat)(const char *pathname, mode_t mode)
 {
-FPRINTF("creat=%s CALLING vcreat\n", pathname);
+    FPRINTF("creat=%s CALLING vcreat\n", pathname);
     return(vcreat(pathname, mode));
 }
 
@@ -1041,7 +1024,7 @@ int WRAPPER_PREFIX(open64)(const char *pathname, int flags, ...)
     va_list ap;
     int n;
 
-FPRINTF("open64=%s flags=%d CALLING vopen64\n", pathname, flags);
+    FPRINTF("open64=%s flags=%d CALLING vopen64\n", pathname, flags);
 
     va_start(ap, flags);
     n = vopenat64(AT_FDCWD, pathname, flags, ap);
@@ -1057,7 +1040,7 @@ int WRAPPER_PREFIX(open)(const char *pathname, int flags, ...)
     va_list ap;
     int n;
 
-FPRINTF("open=%s flags=%d CALLING vopen64\n", pathname, flags);
+    FPRINTF("open=%s flags=%d CALLING vopen64\n", pathname, flags);
 
     va_start(ap, flags);
     n = vopenat64(AT_FDCWD, pathname, flags, ap);
@@ -1073,9 +1056,7 @@ int WRAPPER_PREFIX(openat64)(int dirfd, const char *pathname, int flags, ...)
     va_list ap;
     int n;
 
-//int od=O_DIRECTORY & flags;
-//int op=O_PATH & flags;
-//FPRINTF("openat64=%s flags=%d o_dir_set=%d o_path_set=%d CALLING vopenat64\n", pathname, flags, od, op);
+    FPRINTF("openat64=%s dirfd=%d flags=%d CALLING vopen64\n", pathname, dirfd, flags);
 
     va_start(ap, flags);
     n = WRAPPER_PREFIX(vopenat64)(dirfd, pathname, flags, ap);
@@ -1091,9 +1072,7 @@ int WRAPPER_PREFIX(openat)(int dirfd, const char *pathname, int flags, ...)
     va_list ap;
     int n;
 
-//int od=O_DIRECTORY & flags;
-//int op=O_PATH & flags;
-//FPRINTF("openat=%s flags=%d o_dir_set=%d o_path_set=%d CALLING vopenat64\n", pathname, flags, od, op);
+    FPRINTF("openat=%s dirfd=%d flags=%d CALLING vopen64\n", pathname, dirfd, flags);
 
     va_start(ap, flags);
     n = WRAPPER_PREFIX(vopenat64)(dirfd, pathname, flags, ap);
@@ -1107,11 +1086,9 @@ int WRAPPER_PREFIX(openat)(int dirfd, const char *pathname, int flags, ...)
 
 int WRAPPER_PREFIX(fclose)(FILE *fd)
 {
-FPRINTF("fclose=%d\n", fd->_fileno);
-//return(fclose_stdio(fd));
+    FPRINTF("fclose=%d\n", fd->_fileno);
 
     if (!fd) return(-1);
-
     return(close_and_reserve(fd->_fileno, fd, NULL, 0));
 }
 
@@ -1119,9 +1096,7 @@ FPRINTF("fclose=%d\n", fd->_fileno);
 
 int WRAPPER_PREFIX(close)(int fd)
 {
-FPRINTF("close=%d\n", fd);
-//return(close_stdio(fd));
-
+    FPRINTF("close=%d\n", fd);
     return(close_and_reserve(fd, NULL, NULL, 0));
 }
 
@@ -1135,12 +1110,12 @@ int WRAPPER_PREFIX(unlink)(const char *pathname)
     char *fullpath;
     int index, len;
 
-FPRINTF("unlink: fname=%s\n", pathname);
+    FPRINTF("unlink: fname=%s\n", pathname);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("unlink. normal file fname=%s\n", pathname);
+        FPRINTF("unlink. normal file fname=%s\n", pathname);
         return(unlink_stdio(fullpath));
     }
 
@@ -1151,7 +1126,7 @@ FPRINTF("unlink. normal file fname=%s\n", pathname);
 
 int WRAPPER_PREFIX(remove)(const char *pathname)
 {
-FPRINTF("remove: fname=%s\n", pathname);
+    FPRINTF("remove: fname=%s\n", pathname);
     return(WRAPPER_PREFIX(unlink)(pathname));
 }
 
@@ -1165,12 +1140,12 @@ int WRAPPER_PREFIX(unlinkat)(int dirfd, const char *pathname, int flags)
     char *fullpath;
     int index, len, ftype;
 
-FPRINTF("unlinkat: fname=%s dirfd=%d AT_FDCWD=%d\n", pathname, dirfd, AT_FDCWD);
+    FPRINTF("unlinkat: fname=%s dirfd=%d AT_FDCWD=%d\n", pathname, dirfd, AT_FDCWD);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("unlinkat. normal file fname=%s\n", pathname);
+        FPRINTF("unlinkat. normal file fname=%s\n", pathname);
         return(unlinkat_stdio(dirfd, fullpath, flags));
     }
 
@@ -1182,7 +1157,7 @@ FPRINTF("unlinkat. normal file fname=%s\n", pathname);
 
 int WRAPPER_PREFIX(rmdir)(const char *pathname)
 {
-FPRINTF("rmdir: fname=%s\n", pathname);
+    FPRINTF("rmdir: fname=%s\n", pathname);
     return(WRAPPER_PREFIX(unlinkat)(AT_FDCWD, pathname, AT_REMOVEDIR));
 }
 
@@ -1196,27 +1171,23 @@ int WRAPPER_PREFIX(mkdirat)(int dirfd, const char *pathname, mode_t mode)
     char *fullpath;
     int index, len;
 
-FPRINTF("mkdirat: fname=%s dirfd=%d AT_FDCWD=%d\n", pathname, dirfd, AT_FDCWD);
+    FPRINTF("mkdirat: fname=%s dirfd=%d AT_FDCWD=%d\n", pathname, dirfd, AT_FDCWD);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-FPRINTF("mkdirat. normal file fname=%s\n", pathname);
+        FPRINTF("mkdirat. normal file fname=%s\n", pathname);
         return(mkdirat_stdio(dirfd, fullpath, mode));
     }
 
-int err = lio_fs_mkdir(fs, NULL, fname + len, mode);
-FPRINTF("mkdirat: fname=%s err=%d\n", fname + len, err);
-return(err);
-
-//    return(lio_fs_mkdir(fs, NULL, fname + len, mode));
+    return(lio_fs_mkdir(fs, NULL, fname + len, mode));
 }
 
 //***********************************************************************
 
 int WRAPPER_PREFIX(mkdir)(const char *pathname, mode_t mode)
 {
-FPRINTF("mkdir: fname=%s\n", pathname);
+    FPRINTF("mkdir: fname=%s. calling mkdirat\n", pathname);
     return(WRAPPER_PREFIX(mkdirat)(AT_FDCWD, pathname,mode));
 }
 
@@ -1237,7 +1208,7 @@ int WRAPPER_PREFIX(truncate)(const char *path, off_t length)
     char *fullpath;
     int index, len;
 
-FPRINTF("truncate: fname=%s\n", path);
+    FPRINTF("truncate: fname=%s\n", path);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -1258,7 +1229,7 @@ int WRAPPER_PREFIX(truncate64)(const char *path, off_t length)
     char *fullpath;
     int index, len;
 
-FPRINTF("truncate64: fname=%s\n", path);
+    FPRINTF("truncate64: fname=%s\n", path);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -1277,7 +1248,7 @@ int WRAPPER_PREFIX(fgetpos)(FILE *stream, fpos_t *pos)
     int fd;
     ex_off_t nbytes;
 
-FPRINTF("fgetpos: slot=%d\n", stream->_fileno);
+    FPRINTF("fgetpos: slot=%d\n", stream->_fileno);
 
     fd = stream->_fileno;
     SANITY_CHECK_FD(fd, -1);
@@ -1303,7 +1274,7 @@ int WRAPPER_PREFIX(fsetpos)(FILE *stream, const fpos_t *pos)
     int fd;
     ex_off_t nbytes;
 
-FPRINTF("fsetpos: slot=%d\n", stream->_fileno);
+    FPRINTF("fsetpos: slot=%d\n", stream->_fileno);
 
     fd = stream->_fileno;
     SANITY_CHECK_FD(fd, -1);
@@ -1365,8 +1336,7 @@ size_t WRAPPER_PREFIX(fread)(void *ptr, size_t size, size_t nmemb, FILE *stream)
     int fd;
     size_t got, nbytes;
 
-FPRINTF("fread: slot=%d\n", stream->_fileno);
-//return(fread_stdio(ptr, size, nmemb, stream));
+    FPRINTF("fread: slot=%d\n", stream->_fileno);
 
     fd = stream->_fileno;
     SANITY_CHECK_FD(fd, -1);
@@ -1376,7 +1346,7 @@ FPRINTF("fread: slot=%d\n", stream->_fileno);
 
     nbytes = size * nmemb;
     got = lio_fs_read(fs, cfd->lfd, ptr, nbytes);
-FPRINTF("fread. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
+    FPRINTF("fread. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
     return(got / size);
 }
 
@@ -1384,8 +1354,7 @@ FPRINTF("fread. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
 
 size_t WRAPPER_PREFIX(fread_unlocked_UNUSED)(void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
-FPRINTF("fread_unlocked\n");
-
+    FPRINTF("fread_unlocked\n");
     return(fread_unlocked_stdio(ptr, size, nmemb, stream));
 }
 
@@ -1407,8 +1376,7 @@ size_t WRAPPER_PREFIX(fwrite)(const void *ptr, size_t size, size_t nmemb, FILE *
     int fd;
     size_t got, nbytes;
 
-FPRINTF("fwrite: slot=%d\n", stream->_fileno);
-//return(fread_stdio(ptr, size, nmemb, stream));
+    FPRINTF("fwrite: slot=%d\n", stream->_fileno);
 
     fd = stream->_fileno;
 
@@ -1419,7 +1387,7 @@ FPRINTF("fwrite: slot=%d\n", stream->_fileno);
 
     nbytes = size * nmemb;
     got = lio_fs_write(fs, cfd->lfd, ptr, nbytes);
-FPRINTF("fwrite. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
+    FPRINTF("fwrite. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
     return(got / size);
 }
 
@@ -1452,8 +1420,8 @@ FD_TEMPLATE(dup, int, (int fd), dup_stdio(fd), get_free_slot(fd, NULL, 1))
 int WRAPPER_PREFIX(dup2)(int oldfd, int newfd)
 {
     fd_stdio_t *jfd_old, *jfd_new;
-FPRINTF("dup2 old=%d new=%d\n", oldfd, newfd);
-//return(dup2_stdio(oldfd, newfd));
+
+    FPRINTF("dup2 old=%d new=%d\n", oldfd, newfd);
 
     //** Sanity check the value
     SANITY_CHECK_FD(oldfd, -1);
@@ -1463,17 +1431,17 @@ FPRINTF("dup2 old=%d new=%d\n", oldfd, newfd);
     SANITY_CHECK_FD(newfd, -1);
     jfd_new = &(fd_table[newfd]);
 
-FPRINTF("dup2 old=%d new=%d\n", oldfd, newfd);
+    FPRINTF("dup2 old=%d new=%d\n", oldfd, newfd);
 
     if ((jfd_old->cfd) && (jfd_old->cfd->mode != FD_MODE_STD)) {  //** Got an LStore file for the source
         apr_thread_mutex_lock(lock);
         if ((jfd_new->cfd) && (jfd_new->cfd->mode != FD_MODE_STD)) {
-FPRINTF("dup2 old=%d new=%d LIO with close\n", oldfd, newfd);
+            FPRINTF("dup2 old=%d new=%d LIO with close\n", oldfd, newfd);
             apr_thread_mutex_unlock(lock);
             close_and_reserve(newfd, NULL, jfd_old->cfd, 1);
             return(newfd);
         } else {
-FPRINTF("dup2 old=%d new=%d LIO dup\n", oldfd, newfd);
+            FPRINTF("dup2 old=%d new=%d LIO dup\n", oldfd, newfd);
             jfd_new->cfd = jfd_old->cfd;
             jfd_new->cfd->dup_count++;
         }
@@ -1484,12 +1452,12 @@ FPRINTF("dup2 old=%d new=%d LIO dup\n", oldfd, newfd);
     //** Not an LStore file for the source
     apr_thread_mutex_lock(lock);
     if ((jfd_new->cfd) && (jfd_new->cfd->mode != FD_MODE_STD)) {
-FPRINTF("dup2 old=%d new=%d LIO-src\n", oldfd, newfd);
+        FPRINTF("dup2 old=%d new=%d LIO-src\n", oldfd, newfd);
         close_and_reserve(newfd, NULL, NULL, 0);
     }
     apr_thread_mutex_unlock(lock);
 
-FPRINTF("dup2 old=%d new=%d STDIO\n", oldfd, newfd);
+    FPRINTF("dup2 old=%d new=%d STDIO\n", oldfd, newfd);
 
     return(dup2_stdio(oldfd, newfd));
 }
@@ -1555,7 +1523,7 @@ FPRINTF("select: nfds=%d r=%p w=%p e=%p\n", nfds, readfds, writefds, exceptfds);
     n_write_lio = fd_set_is_lio_prep(nfds, writefds, write_lio, &write_max);
     n_except_lio = fd_set_is_lio_prep(nfds, exceptfds, except_lio, &except_max);
 
-FPRINTF("select: rl=%d wl=%d el=%d\n", n_read_lio, n_write_lio, n_except_lio);
+    FPRINTF("select: rl=%d wl=%d el=%d\n", n_read_lio, n_write_lio, n_except_lio);
 
     if ((n_read_lio+n_write_lio+n_except_lio) == 0) {  //** No LIO Fds
         return(select_stdio(nfds, readfds, writefds, exceptfds, timeout));
@@ -1591,14 +1559,14 @@ int WRAPPER_PREFIX(pselect)(int nfds, fd_set *readfds, fd_set *writefds, fd_set 
 
     to_zero.tv_sec = 0; to_zero.tv_nsec = 0;
 
-FPRINTF("pselect: nfds=%d r=%p w=%p e=%p\n", nfds, readfds, writefds, exceptfds);
+    FPRINTF("pselect: nfds=%d r=%p w=%p e=%p\n", nfds, readfds, writefds, exceptfds);
 
     //** See if any of the fd's are LIO and also clear out any of them that are LIO fd's
     n_read_lio = fd_set_is_lio_prep(nfds, readfds, read_lio, &read_max);
     n_write_lio = fd_set_is_lio_prep(nfds, writefds, write_lio, &write_max);
     n_except_lio = fd_set_is_lio_prep(nfds, exceptfds, except_lio, &except_max);
 
-FPRINTF("pselect: rl=%d wl=%d el=%d\n", n_read_lio, n_write_lio, n_except_lio);
+    FPRINTF("pselect: rl=%d wl=%d el=%d\n", n_read_lio, n_write_lio, n_except_lio);
 
     if ((n_read_lio+n_write_lio+n_except_lio) == 0) {  //** No LIO Fds
         return(pselect_stdio(nfds, readfds, writefds, exceptfds, timeout, sigmask));
@@ -1631,7 +1599,7 @@ int WRAPPER_PREFIX(poll)(struct pollfd *fds, nfds_t nfds, int timeout)
     int lio_fds[n_fd_max2], lslot[n_fd_max2];
     struct pollfd *myfd;
 
-FPRINTF("poll: nfds=%lu\n", nfds);
+    FPRINTF("poll: nfds=%lu\n", nfds);
 
     //** See if any of the fd's are LIO and also clear out any of them that are LIO fd's
     nlio = 0;
@@ -1646,7 +1614,7 @@ FPRINTF("poll: nfds=%lu\n", nfds);
         }
     }
 
-FPRINTF("poll: nlio=%lu\n", nlio);
+    FPRINTF("poll: nlio=%lu\n", nlio);
 
     if (nlio == 0) {  //** No LIO FDs
         return(poll_stdio(fds, nfds, timeout));
@@ -1678,7 +1646,7 @@ int WRAPPER_PREFIX(ppoll)(struct pollfd *fds, nfds_t nfds, const struct timespec
     struct timespec to_zero;
 
     to_zero.tv_sec = 0; to_zero.tv_nsec = 0;
-FPRINTF("ppoll: nfds=%lu\n", nfds);
+    FPRINTF("ppoll: nfds=%lu\n", nfds);
 
     //** See if any of the fd's are LIO and also clear out any of them that are LIO fd's
     nlio = 0;
@@ -1693,7 +1661,7 @@ FPRINTF("ppoll: nfds=%lu\n", nfds);
         }
     }
 
-FPRINTF("ppoll: nlio=%lu\n", nlio);
+    FPRINTF("ppoll: nlio=%lu\n", nlio);
 
     if (nlio == 0) {  //** No LIO FDs
         return(ppoll_stdio(fds, nfds, tmo_p, sigmask));
@@ -1725,8 +1693,8 @@ ssize_t WRAPPER_PREFIX(readlinkat)(int dirfd, const char *pathname, char *buf, s
     const char *fname;
     char *fullpath;
     int index, len, err, n;
-len = 0;
-FPRINTF("readlinkat:  pathname=%s\n", pathname);
+
+    FPRINTF("readlinkat:  pathname=%s\n", pathname);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -1734,7 +1702,7 @@ FPRINTF("readlinkat:  pathname=%s\n", pathname);
         return(readlinkat_stdio(dirfd, fullpath, buf, bufsiz));
     }
 
-FPRINTF("readlinkat: before pathname=%s fname=%s len=%d\n", pathname, fname, len);
+    FPRINTF("readlinkat: before pathname=%s fname=%s len=%d\n", pathname, fname, len);
     err = lio_fs_readlink(fs, NULL, fname + len, buf, bufsiz);
     if (err) {
         errno = -err;
@@ -1750,7 +1718,7 @@ FPRINTF("readlinkat: before pathname=%s fname=%s len=%d\n", pathname, fname, len
         n = strlen(buf);
     }
 
-FPRINTF("readlinkat: after pathname=%s readlink=%s n=%d\n", pathname, buf, n);
+    FPRINTF("readlinkat: after pathname=%s readlink=%s n=%d\n", pathname, buf, n);
     return(n);
 
 }
@@ -1772,7 +1740,7 @@ int WRAPPER_PREFIX(__xstat)(int __ver, const char *pathname, struct stat *statbu
     char *fullpath;
     int index, len, err;
 
-FPRINTF("xstat: fname=%s\n", pathname);
+    FPRINTF("xstat: fname=%s\n", pathname);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -1781,7 +1749,7 @@ FPRINTF("xstat: fname=%s\n", pathname);
     }
 
     err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0);
-FPRINTF("xstat: LIO fname=%s err=%d\n", pathname, err);
+    FPRINTF("xstat: LIO fname=%s err=%d\n", pathname, err);
     if (err) {
         errno = -err;
         err = -1;
@@ -1800,7 +1768,7 @@ int WRAPPER_PREFIX(__xstat64)(int __ver, const char *pathname, struct stat64 *st
     char *fullpath;
     int index, len, err;
 
-FPRINTF("xstat64: fname=%s\n", pathname);
+    FPRINTF("xstat64: fname=%s\n", pathname);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -1809,7 +1777,7 @@ FPRINTF("xstat64: fname=%s\n", pathname);
     }
 
     err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0);
-FPRINTF("xstat64: LIO fname=%s err=%d ino=" XIDT "\n", pathname, err, statbuf->st_ino);
+    FPRINTF("xstat64: LIO fname=%s err=%d ino=" XIDT "\n", pathname, err, statbuf->st_ino);
     if (err) {
         errno = -err;
         err = -1;
@@ -1827,8 +1795,8 @@ int WRAPPER_PREFIX(__lxstat)(int __ver, const char *pathname, struct stat *statb
     const char *fname;
     char *fullpath;
     int index, len, err;
-len = 0;
-FPRINTF("lxstat: pathname=%s\n", pathname); fflush(stderr);
+
+    FPRINTF("lxstat: pathname=%s\n", pathname); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -1836,13 +1804,13 @@ FPRINTF("lxstat: pathname=%s\n", pathname); fflush(stderr);
         return(__lxstat_stdio(__ver, fullpath, statbuf));
     }
 
-FPRINTF("lxstat: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
+    FPRINTF("lxstat: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
     err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 1);
     if (err) {
         errno = -err;
         err = -1;
     }
-FPRINTF("lxstat: after pathname=%s fname=%s len=%d lio_fs_stat=%d\n", pathname, fname, len, err); fflush(stderr);
+    FPRINTF("lxstat: after pathname=%s fname=%s len=%d lio_fs_stat=%d\n", pathname, fname, len, err); fflush(stderr);
     return(err);
 }
 
@@ -1855,8 +1823,8 @@ int WRAPPER_PREFIX(__lxstat64)(int __ver, const char *pathname, struct stat64 *s
     const char *fname;
     char *fullpath;
     int index, len, err;
-len = 0;
-FPRINTF("lxstat64: pathname=%s\n", pathname); fflush(stderr);
+
+    FPRINTF("lxstat64: pathname=%s\n", pathname); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -1865,13 +1833,13 @@ FPRINTF("lxstat64: pathname=%s\n", pathname); fflush(stderr);
         return(__lxstat64_stdio(__ver, fullpath, statbuf));
     }
 
-FPRINTF("lxstat64: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
+    FPRINTF("lxstat64: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
     err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 1);
     if (err) {
         errno = -err;
         err = -1;
     }
-FPRINTF("lxstat64: after pathname=%s fname=%s len=%d lio_fs_stat=%d\n", pathname, fname, len, err); fflush(stderr);
+    FPRINTF("lxstat64: after pathname=%s fname=%s len=%d lio_fs_stat=%d\n", pathname, fname, len, err); fflush(stderr);
     return(err);
 }
 
@@ -1881,22 +1849,22 @@ int WRAPPER_PREFIX(__fxstat64)(int __ver, int fd, struct stat64 *statbuf)
 {
     fd_core_t *cfd;
     int err;
-FPRINTF("fxstat64: slot=%d\n", fd);
 
+    FPRINTF("fxstat64: slot=%d\n", fd);
     SANITY_CHECK_FD(fd, -1);
 
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) return(__fxstat64_stdio(__ver, fd, statbuf));
 
-FPRINTF("fxstat64: slot=%d before lio call lfd=%p\n", fd, cfd->lfd);
+    FPRINTF("fxstat64: slot=%d before lio call lfd=%p\n", fd, cfd->lfd);
     err = lio_fs_stat(fs, NULL, lio_fd_path(cfd->lfd), (struct stat *)statbuf, NULL, 0);
-FPRINTF("fxstat64: slot=%d err=%d\n", fd, err);
+    FPRINTF("fxstat64: slot=%d err=%d\n", fd, err);
     if (err) {
         errno = -err;
         err = -1;
     }
 
-FPRINTF("fxstat64: slot=%d errno=%d\n", fd, errno);
+    FPRINTF("fxstat64: slot=%d errno=%d\n", fd, errno);
     return(err);
 }
 
@@ -1906,8 +1874,8 @@ int WRAPPER_PREFIX(__fxstat)(int __ver, int fd, struct stat *statbuf)
 {
     fd_core_t *cfd;
     int err;
-FPRINTF("fxstat: slot=%d\n", fd);
 
+    FPRINTF("fxstat: slot=%d\n", fd);
     SANITY_CHECK_FD(fd, -1);
 
     cfd = fd_table[fd].cfd;
@@ -1931,30 +1899,25 @@ int WRAPPER_PREFIX(__fxstatat)(int __ver, int dirfd, const char *pathname, struc
     char *fullpath;
     int index, len, err;
 
-FPRINTF("fxstatat: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
+    FPRINTF("fxstatat: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-int err = __fxstatat_stdio(__ver, dirfd, fullpath, statbuf, flags);
-FPRINTF("fxstatat: fname=%s normal file err=%d\n", pathname, err);
-return(err);
-//        return(__fxstatat_stdio(__ver, dirfd, pathname, statbuf, flags));
+        FPRINTF("fxstatat: fname=%s normal file\n", pathname);
+        return(__fxstatat_stdio(__ver, dirfd, fullpath, statbuf, flags));
     }
 
     err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0);
-//int mode = statbuf->st_mode & S_IFREG;
-//int ftype = statbuf->st_mode & S_IFMT;
-//FPRINTF("fxstatat: fname=%s err=%d ftype=%d regfile=%d\n", pathname, err, ftype, mode);
-
     if (err) {
         errno = -err;
         err = -1;
     } else {
         errno = 0;
     }
-FPRINTF("fxstatat: fname=%s err=%d errno=%d\n", pathname, err, errno);
-return(err);
+
+    FPRINTF("fxstatat: fname=%s err=%d errno=%d\n", pathname, err, errno);
+    return(err);
 }
 
 //***********************************************************************
@@ -1967,30 +1930,24 @@ int WRAPPER_PREFIX(__fxstatat64)(int __ver, int dirfd, const char *pathname, str
     char *fullpath;
     int index, len, err;
 
-FPRINTF("fxstatat: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
+    FPRINTF("fxstatat: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-int err = __fxstatat64_stdio(__ver, dirfd, fullpath, statbuf, flags);
-FPRINTF("fxstatat: fname=%s normal file err=%d\n", pathname, err);
-return(err);
-//        return(__fxstatat_stdio(__ver, dirfd, pathname, statbuf, flags));
+        return(__fxstatat64_stdio(__ver, dirfd, fullpath, statbuf, flags));
     }
 
     err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0);
-//int mode = statbuf->st_mode & S_IFREG;
-//int ftype = statbuf->st_mode & S_IFMT;
-//FPRINTF("fxstatat: fname=%s err=%d ftype=%d regfile=%d\n", pathname, err, ftype, mode);
-
     if (err) {
         errno = -err;
         err = -1;
     } else {
         errno = 0;
     }
-FPRINTF("fxstatat: fname=%s err=%d errno=%d\n", pathname, err, errno);
-return(err);
+
+    FPRINTF("fxstatat: fname=%s err=%d errno=%d\n", pathname, err, errno);
+    return(err);
 }
 
 //***********************************************************************
@@ -2005,24 +1962,17 @@ int WRAPPER_PREFIX(statx)(int dirfd, const char *pathname, int flags, unsigned i
     int index, len, err;
     int stat_symlink;
 
-FPRINTF("statx: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
+    FPRINTF("statx: fname=%s dirfd=%d flags=%d AT_EMPTY_PATH=%d AT_SYMLINK_NOFOLLOW=%d\n", pathname, dirfd, flags, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
     if (fname == NULL) {
-int err = statx_stdio(dirfd, fullpath, flags, mask, statxbuf);
-FPRINTF("statx: fname=%s fullpath=%s normal file err=%d\n", pathname, fullpath, err);
-return(err);
-//        return(statx_stdio(dirfd, pathname, flags, mask, statxbuf));
+        return(statx_stdio(dirfd, fullpath, flags, mask, statxbuf));
     }
 
     //** It's an LStore file so do a stat
     stat_symlink = (flags & AT_SYMLINK_NOFOLLOW) ? 1 : 0;
     err = lio_fs_stat(fs, NULL, fname + len, &statbuf, NULL, stat_symlink);
-//int mode = statbuf.st_mode & S_IFREG;
-//int ftype = statbuf.st_mode & S_IFMT;
-//FPRINTF("statx: fname=%s err=%d ftype=%d regfile=%d\n", pathname, err, ftype, mode);
-
     if (err == 0) {  //** Convert it to a statx struct
         memset(statxbuf, 0, sizeof(struct statx));
         statxbuf->stx_ino = statbuf.st_ino;
@@ -2040,8 +1990,9 @@ return(err);
         errno = -err;
         err = -1;
     }
-FPRINTF("statx: fname=%s errno=%d\n", pathname, errno);
-return(err);
+
+    FPRINTF("statx: fname=%s errno=%d\n", pathname, errno);
+    return(err);
 }
 
 //***********************************************************************
@@ -2059,7 +2010,7 @@ int WRAPPER_PREFIX(statvfs)(const char *pathname, struct statvfs *buf)
     char *fullpath;
     int index, len;
 
-FPRINTF("statvfs: fname=%s\n", pathname);
+    FPRINTF("statvfs: fname=%s\n", pathname);
 
     if (access_stdio == NULL) {
         assert_result_not_null(statvfs_stdio = dlsym(RTLD_NEXT, "statvfs"));
@@ -2084,7 +2035,7 @@ int WRAPPER_PREFIX(statvfs64)(const char *pathname, struct statvfs64 *buf)
     char *fullpath;
     int index, len;
 
-FPRINTF("statvfs64: fname=%s\n", pathname);
+    FPRINTF("statvfs64: fname=%s\n", pathname);
 
     if (access_stdio == NULL) {
         assert_result_not_null(statvfs64_stdio = dlsym(RTLD_NEXT, "statvfs64"));
@@ -2114,7 +2065,7 @@ int WRAPPER_PREFIX(statfs)(const char *pathname, struct statfs *buf)
     char *fullpath;
     int index, len;
 
-FPRINTF("statfs: fname=%s\n", pathname);
+    FPRINTF("statfs: fname=%s\n", pathname);
 
     if (statfs_stdio == NULL) {
         assert_result_not_null(statfs_stdio = dlsym(RTLD_NEXT, "statfs"));
@@ -2139,7 +2090,7 @@ int WRAPPER_PREFIX(statfs64)(const char *pathname, struct statfs64 *buf)
     char *fullpath;
     int index, len;
 
-FPRINTF("statfs64: fname=%s\n", pathname);
+    FPRINTF("statfs64: fname=%s\n", pathname);
 
     if (statfs64_stdio == NULL) {
         assert_result_not_null(statfs64_stdio = dlsym(RTLD_NEXT, "statfs64"));
@@ -2164,7 +2115,7 @@ int WRAPPER_PREFIX(access)(const char *pathname, int mode)
     char *fullpath;
     int index, len;
 
-FPRINTF("access: fname=%s\n", pathname);
+    FPRINTF("access: fname=%s\n", pathname);
 
     if (access_stdio == NULL) {
         assert_result_not_null(access_stdio = dlsym(RTLD_NEXT, "access"));
@@ -2189,7 +2140,7 @@ int WRAPPER_PREFIX(faccessat)(int dirfd, const char *pathname, int mode, int fla
     char *fullpath;
     int index, len;
 
-FPRINTF("faccessat: fname=%s mode=%d flags=%d F_OK=%d R_OK=%d W_OK=%d X_OK=%d\n", pathname, mode, flags, F_OK, R_OK, W_OK, X_OK);
+    FPRINTF("faccessat: fname=%s mode=%d flags=%d F_OK=%d R_OK=%d W_OK=%d X_OK=%d\n", pathname, mode, flags, F_OK, R_OK, W_OK, X_OK);
 
     //** See if we handle it or pass it thru
     fname = path_map(dirfd, pathname, &index, &len, buffer, fbuffer, &fullpath);
@@ -2197,11 +2148,7 @@ FPRINTF("faccessat: fname=%s mode=%d flags=%d F_OK=%d R_OK=%d W_OK=%d X_OK=%d\n"
         return(faccessat_stdio(dirfd, fullpath, mode, flags));
     }
 
-int err = lio_fs_access(fs, NULL, fname + len, mode);
-FPRINTF("faccessat: fname=%s err=%d\n", fname, err);
-return(err);
-
-//    return(lio_fs_access(fs, NULL, fname + len, mode));
+    return(lio_fs_access(fs, NULL, fname + len, mode));
 }
 
 //***********************************************************************
@@ -2215,7 +2162,7 @@ DIR *WRAPPER_PREFIX(fdopendir)(int fd)
     fd_core_t *cfd;
     DIR *sdir;
 
-FPRINTF("fdopendir fd=%d\n", fd);
+    FPRINTF("fdopendir fd=%d\n", fd);
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) {
         sdir = fdopendir_stdio(fd);
@@ -2225,13 +2172,13 @@ FPRINTF("fdopendir fd=%d\n", fd);
 
     //** If we are here then it's an LStore file
     cfd->ldir = lio_fs_opendir(fs, NULL, cfd->lname_dir);
-FPRINTF("fdopendir  pathname=%s ldir=%p\n", cfd->lname_dir, cfd->ldir);
+    FPRINTF("fdopendir  pathname=%s ldir=%p\n", cfd->lname_dir, cfd->ldir);
     if (cfd->ldir == NULL) {
         errno = EACCES;
         return(NULL);
     }
 
-FPRINTF("fdopendir fd=%d is_lio\n", fd);
+    FPRINTF("fdopendir fd=%d is_lio\n", fd);
     return((DIR *)&(fd_table[fd].dfd._fileno));
 }
 
@@ -2247,8 +2194,7 @@ DIR *WRAPPER_PREFIX(opendir)(const char *name)
     DIR *sdir;
     lio_fs_dir_iter_t *ldir;
 
-FPRINTF("opendir  pathname=%s\n", name);
-//return(opendir_stdio(name));
+    FPRINTF("opendir  pathname=%s\n", name);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, name, &index, &len, buffer, fbuffer, &fullpath);
@@ -2256,21 +2202,21 @@ FPRINTF("opendir  pathname=%s\n", name);
         sdir = opendir_stdio(fullpath);
         if (sdir == NULL) return(NULL);
         index = dirfd_stdio(sdir);
-FPRINTF("opendir pathname=%s slot=%d STD\n", name, index);
+        FPRINTF("opendir pathname=%s slot=%d STD\n", name, index);
         fd_table[index].cfd = corefd_new(FD_MODE_STD, 0, index, NULL, NULL, sdir, NULL);
         return((DIR *)&(fd_table[index].dfd._fileno));
     }
 
     //** If we are here then it's an LStore file
     ldir = lio_fs_opendir(fs, NULL, fname + len);
-FPRINTF("opendir  pathname=%s ldir=%p\n", fname, ldir);
+    FPRINTF("opendir  pathname=%s ldir=%p\n", fname, ldir);
     if (ldir == NULL) {
         errno = EACCES;
         return(NULL);
     }
 
     slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, 0, -1, NULL, NULL, NULL, ldir), 0);
-FPRINTF("opendir lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
+    FPRINTF("opendir lio slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
     fd_table[slot].cfd->prefix_index = index;
     return((DIR *)&(fd_table[slot].dfd._fileno));
 }
@@ -2282,15 +2228,13 @@ int WRAPPER_PREFIX(closedir)(DIR *dirp)
     int fd = *(int *)dirp;
     fd_core_t *cfd;
 
-FPRINTF("closedir: slot=%d\n", fd);
-//return(closedir_stdio(dirp));
-
+    FPRINTF("closedir: slot=%d\n", fd);
     SANITY_CHECK_FD(fd, -1);
 
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) return(closedir_stdio(cfd->sdir));
 
-FPRINTF("closedir: slot=%d is_lio\n", fd);
+    FPRINTF("closedir: slot=%d is_lio\n", fd);
     return(lio_fs_closedir(cfd->ldir));
 }
 
@@ -2304,8 +2248,8 @@ struct dirent64 *WRAPPER_PREFIX(readdir64)(DIR *dirp)
     char *dname;
     struct stat stat;
     int err;
-FPRINTF("readdir64: slot=%d START\n", fd); fflush(stderr);
-//return(readdir64_stdio(dirp));
+
+    FPRINTF("readdir64: slot=%d START\n", fd); fflush(stderr);
 
     if ((fd<0) || (fd>=n_fd_max2)) {
         errno = EBADF;
@@ -2317,13 +2261,13 @@ FPRINTF("readdir64: slot=%d START\n", fd); fflush(stderr);
 
     dentry = &(cfd->ldentry64);
     err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, 1);
-FPRINTF("readdir64: slot=%d err=%d\n", fd, err); fflush(stderr);
+    FPRINTF("readdir64: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         if (err < 0) errno = err;
         return(NULL);
     }
 
-FPRINTF("readdir64: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
+    FPRINTF("readdir64: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
 
     //** Form the dentry
     memset(dentry, 0, sizeof(struct dirent64));
@@ -2351,8 +2295,8 @@ struct dirent *WRAPPER_PREFIX(readdir)(DIR *dirp)
     char *dname;
     struct stat stat;
     int err;
-FPRINTF("readdir: slot=%d START\n", fd); fflush(stderr);
-//return(readdir_stdio(dirp));
+
+    FPRINTF("readdir: slot=%d START\n", fd); fflush(stderr);
 
     if ((fd<0) || (fd>=n_fd_max2)) {
         errno = EBADF;
@@ -2364,13 +2308,13 @@ FPRINTF("readdir: slot=%d START\n", fd); fflush(stderr);
 
     dentry = &(cfd->ldentry);
     err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, 1);
-FPRINTF("readdir: slot=%d err=%d\n", fd, err); fflush(stderr);
+    FPRINTF("readdir: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         if (err < 0) errno = err;
         return(NULL);
     }
 
-FPRINTF("readdir: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
+    FPRINTF("readdir: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
 
     //** Form the dentry
     memset(dentry, 0, sizeof(struct dirent));
@@ -2397,7 +2341,8 @@ int WRAPPER_PREFIX(readdir_r)(DIR *dirp, struct dirent *dentry, struct dirent **
     char *dname;
     struct stat stat;
     int err;
-FPRINTF("readdir_r: slot=%d START\n", fd); fflush(stderr);
+
+    FPRINTF("readdir_r: slot=%d START\n", fd); fflush(stderr);
 
     if ((fd<0) || (fd>=n_fd_max2)) {
         return(EBADF);
@@ -2407,13 +2352,13 @@ FPRINTF("readdir_r: slot=%d START\n", fd); fflush(stderr);
     if (CFD_IS_STD(fd, cfd)) return(readdir_r_stdio(cfd->sdir, dentry, result));
 
     err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, 1);
-FPRINTF("readdir_r: slot=%d err=%d\n", fd, err); fflush(stderr);
+    FPRINTF("readdir_r: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         *result = NULL;
         return(0);
     }
 
-FPRINTF("readdir_r: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
+    FPRINTF("readdir_r: dname=%s ino=%lu\n", dname, stat.st_ino); fflush(stderr);
 
     //** Form the dentry
     memset(dentry, 0, sizeof(struct dirent));
@@ -2440,7 +2385,7 @@ int WRAPPER_PREFIX(dirfd)(DIR *dirp)
 {
     int fd = *(int *)dirp;
 
-FPRINTF("dirfd slot=%d\nm", fd);
+    FPRINTF("dirfd slot=%d\nm", fd);
     return(fd);
 }
 
@@ -2449,8 +2394,15 @@ FPRINTF("dirfd slot=%d\nm", fd);
 void WRAPPER_PREFIX(rewinddir)(DIR *dirp)
 {
     int fd = *(int *)dirp;
-FPRINTF("FIXME: rewinddir: slot=%d\n", fd);
-    rewinddir_stdio(fd_table[fd].cfd->sdir);
+    fd_core_t *cfd;
+
+    FPRINTF("rewinddir: slot=%d\n", fd);
+    if ((fd<0) || (fd>=n_fd_max2)) return;
+
+    cfd = fd_table[fd].cfd;
+    if (CFD_IS_STD(fd, cfd)) return(rewinddir_stdio(cfd->sdir));
+
+    fprintf(stderr, "UNSUPPORTED: rewinddir on an LIO object\n");
 }
 
 //***********************************************************************
@@ -2458,8 +2410,15 @@ FPRINTF("FIXME: rewinddir: slot=%d\n", fd);
 void WRAPPER_PREFIX(seekdir)(DIR *dirp, long loc)
 {
     int fd = *(int *)dirp;
-FPRINTF("FIXME: seekdir: slot=%d off=%ld\n", fd, loc);
-    seekdir_stdio(fd_table[fd].cfd->sdir, loc);
+    fd_core_t *cfd;
+
+    FPRINTF("seekdir: slot=%d off=%ld\n", fd, loc);
+    if ((fd<0) || (fd>=n_fd_max2)) return;
+
+    cfd = fd_table[fd].cfd;
+    if (CFD_IS_STD(fd, cfd)) return(seekdir_stdio(cfd->sdir, loc));
+
+    fprintf(stderr, "UNSUPPORTED: seekdir on an LIO object\n");
 }
 
 //***********************************************************************
@@ -2467,8 +2426,20 @@ FPRINTF("FIXME: seekdir: slot=%d off=%ld\n", fd, loc);
 long WRAPPER_PREFIX(telldir)(DIR *dirp)
 {
     int fd = *(int *)dirp;
-FPRINTF("FIXME: telldir: slot=%d\n", fd);
-    return(telldir_stdio(fd_table[fd].cfd->sdir));
+    fd_core_t *cfd;
+
+    FPRINTF("telldir: slot=%d\n", fd);
+    if ((fd<0) || (fd>=n_fd_max2)) {
+        errno = EBADF;
+        return(-1);
+    }
+
+    cfd = fd_table[fd].cfd;
+    if (CFD_IS_STD(fd, cfd)) return(telldir_stdio(cfd->sdir));
+
+    fprintf(stderr, "UNSUPPORTED: seekdir on an LIO object\n");
+    errno = EINVAL;
+    return(-1);
 }
 
 //***********************************************************************
@@ -2484,7 +2455,7 @@ ssize_t WRAPPER_PREFIX(getxattr)(const char *path, const char *name, void *value
     int index, len;
 
 
-FPRINTF("getxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("getxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2506,7 +2477,7 @@ ssize_t WRAPPER_PREFIX(lgetxattr)(const char *path, const char *name, void *valu
     int index, len;
 
 
-FPRINTF("lgetxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("lgetxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2523,7 +2494,7 @@ ssize_t WRAPPER_PREFIX(fgetxattr)(int fd, const char *name, void *value, size_t 
 {
     fd_core_t *cfd;
 
-FPRINTF("fgetxattr: slot=%d\n", fd);
+    FPRINTF("fgetxattr: slot=%d\n", fd);
 
     SANITY_CHECK_FD(fd, -1);
     cfd = fd_table[fd].cfd;
@@ -2542,7 +2513,7 @@ int WRAPPER_PREFIX(setxattr)(const char *path, const char *name, const void *val
     char *fullpath;
     int index, len;
 
-FPRINTF("setxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("setxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2563,7 +2534,7 @@ int WRAPPER_PREFIX(lsetxattr)(const char *path, const char *name, const void *va
     char *fullpath;
     int index, len;
 
-FPRINTF("lsetxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("lsetxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2581,7 +2552,7 @@ int WRAPPER_PREFIX(fsetxattr)(int fd, const char *name, const void *value, size_
 {
     fd_core_t *cfd;
 
-FPRINTF("fgetxattr: slot=%d\n", fd);
+    FPRINTF("fgetxattr: slot=%d\n", fd);
 
     SANITY_CHECK_FD(fd, -1);
     cfd = fd_table[fd].cfd;
@@ -2601,7 +2572,7 @@ int WRAPPER_PREFIX(removexattr)(const char *path, const char *name)
     int index, len;
 
 
-FPRINTF("removexattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("removexattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2623,7 +2594,7 @@ int WRAPPER_PREFIX(lremovexattr)(const char *path, const char *name)
     int index, len;
 
 
-FPRINTF("removexattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("removexattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2648,7 +2619,7 @@ ssize_t WRAPPER_PREFIX(listxattr)(const char *path, char *list, size_t size)
     char *fullpath;
     int index, len;
 
-FPRINTF("listxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("listxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2669,7 +2640,7 @@ ssize_t WRAPPER_PREFIX(llistxattr)(const char *path, char *list, size_t size)
     char *fullpath;
     int index, len;
 
-FPRINTF("listxattr  pathname=%s\n", path); fflush(stderr);
+    FPRINTF("listxattr:  pathname=%s\n", path); fflush(stderr);
 
     //** See if we handle it or pass it thru
     fname = path_map(AT_FDCWD, path, &index, &len, buffer, fbuffer, &fullpath);
@@ -2747,14 +2718,13 @@ int my_vfcntl64_lio(int fd, int cmd, va_list ap)
     fd_core_t *cfd;
     int n;
 
-FPRINTF("my_vfcntl64_lio: fd=%d cmd=%d F_DUPFD=%d F_DUPFD_CLOEXEC=%d F_GETFD=%d F_SETFD=%d F_GETFL=%d F_SETFL=%d\n", fd, cmd, F_DUPFD, F_DUPFD_CLOEXEC, F_GETFD, F_SETFD, F_GETFL, F_SETFL);
+    FPRINTF("my_vfcntl64_lio: fd=%d cmd=%d F_DUPFD=%d F_DUPFD_CLOEXEC=%d F_GETFD=%d F_SETFD=%d F_GETFL=%d F_SETFL=%d\n", fd, cmd, F_DUPFD, F_DUPFD_CLOEXEC, F_GETFD, F_SETFD, F_GETFL, F_SETFL);
     switch(cmd) {
         case F_DUPFD:  return(dup(fd));
-//        case F_DUPFD_CLOEXEC:  return(dup(fd));
-case F_DUPFD_CLOEXEC:
-    n = dup(fd);
-    FPRINTF("my_vfcntl64_lio: fd=%d dup=%d\n", fd, n);
-    return(n);
+        case F_DUPFD_CLOEXEC:
+            n = dup(fd);
+            FPRINTF("my_vfcntl64_lio: fd=%d dup=%d\n", fd, n);
+            return(n);
         case F_GETFD:  return(fd_table[fd].cfd->flags & O_CLOEXEC);
         case F_SETFD:
             cfd = fd_table[fd].cfd;
@@ -2772,7 +2742,7 @@ case F_DUPFD_CLOEXEC:
             cfd->flags ^= (va_arg(ap, int) & (O_APPEND | O_ASYNC | O_DIRECT | O_NOATIME | O_NONBLOCK));
             return(0);
         default:
-FPRINTF("my_vfcntl64_lio: fd=%d ERROR unsupported command. cmd=%d\n", fd, cmd);
+            FPRINTF("my_vfcntl64_lio: fd=%d ERROR unsupported command. cmd=%d\n", fd, cmd);
             return(-1);
     }
 
@@ -2786,7 +2756,8 @@ int WRAPPER_PREFIX(fcntl64)(int fd, int cmd, ...)
     int n;
     fd_core_t *cfd;
     va_list ap;
-FPRINTF("fcntl64: slot=%d cmd=%d\n", fd, cmd);
+
+    FPRINTF("fcntl64: slot=%d cmd=%d\n", fd, cmd);
 
     SANITY_CHECK_FD(fd, -1);
     cfd = fd_table[fd].cfd;
@@ -2812,7 +2783,8 @@ int WRAPPER_PREFIX(fcntl)(int fd, int cmd, ...)
     int n;
     fd_core_t *cfd;
     va_list ap;
-FPRINTF("fcntl: CALLING fcntl64 handlers! slot=%d cmd=%d\n", fd, cmd);
+
+    FPRINTF("fcntl: CALLING fcntl64 handlers! slot=%d cmd=%d\n", fd, cmd);
 
     SANITY_CHECK_FD(fd, -1);
     cfd = fd_table[fd].cfd;
@@ -2839,6 +2811,7 @@ int fdmax_suggested(struct rlimit64 *rl)
 {
     struct rlimit64 rlim;
     struct rlimit64 *myrl;
+    int n;
 
     myrl = (rl) ? rl : &rlim;
 
@@ -2846,8 +2819,9 @@ int fdmax_suggested(struct rlimit64 *rl)
 
     getrlimit64_stdio(RLIMIT_NOFILE, myrl);
 
-//    return(myrl->rlim_max/2);
-    return(10*1024);
+    n = myrl->rlim_max/2;
+    if (n > FDMAX_HARD_LIMIT) n = FDMAX_HARD_LIMIT;
+    return(n);
 }
 
 //***********************************************************************
@@ -2861,14 +2835,14 @@ int WRAPPER_PREFIX(getrlimit64)(__rlimit_resource_t resource, struct rlimit64 *r
 
     if (resource == RLIMIT_NOFILE) {
         n = fdmax_suggested(&rl);
-FPRINTF("getrlimit: override resource=%d curr=%lu max=%lu returning=%d\n", resource, rlim->rlim_cur, rlim->rlim_max, n);
+        FPRINTF("getrlimit: override resource=%d curr=%lu max=%lu returning=%d\n", resource, rlim->rlim_cur, rlim->rlim_max, n);
         rl.rlim_max = n;
         *rlim = rl;
         return(0);
     }
 
     err = getrlimit64_stdio(resource, rlim);
-FPRINTF("getrlimit: err=%d resource=%d curr=%lu max=%lu\n", err, resource, rlim->rlim_cur, rlim->rlim_max);
+    FPRINTF("getrlimit: err=%d resource=%d curr=%lu max=%lu\n", err, resource, rlim->rlim_cur, rlim->rlim_max);
     return(err);
 }
 
@@ -2881,7 +2855,7 @@ int WRAPPER_PREFIX(setrlimit64)(__rlimit_resource_t  resource, const struct rlim
     if (setrlimit64_stdio == NULL) { assert_result_not_null(setrlimit64_stdio = dlsym(RTLD_NEXT, "setrlimit64")); }
 
     err = setrlimit64_stdio(resource, rlim);
-FPRINTF("setrlimit: err=%d resource=%d curr=%lu max=%lu\n", err, resource, rlim->rlim_cur, rlim->rlim_max);
+    FPRINTF("setrlimit: err=%d resource=%d curr=%lu max=%lu\n", err, resource, rlim->rlim_cur, rlim->rlim_max);
     return(err);
 }
 
@@ -2912,16 +2886,11 @@ static void lio_stdio_wrapper_construct_fn()
     char *link;
     char *pwd;
 
-FPRINTF("STARTING\n");
+    FPRINTF("STARTING\n");
 
     //** Get the max number of open files
-//    n_fd_max = sysconf(_SC_OPEN_MAX);
-//    n_fd_max /= 2;   //** Need to only use a fraction of the range so that the existing "fd_set" structure works
-//    n_fd_max2 = 2*n_fd_max;
     n_fd_max = fdmax_suggested(NULL);
     n_fd_max2 = 2*n_fd_max;
-
-//FPRINTF("after sysconf n_fd_max=%d\n", n_fd_max);
 
     tbx_type_malloc_clear(fd_table, fd_stdio_t, n_fd_max2);
     for (i=0; i<n_fd_max2; i++) {
@@ -2929,35 +2898,13 @@ FPRINTF("STARTING\n");
     }
 
     //** Fill all the stdio symbols for passthru
-//    get_stdio_fn();
     get_stdio_fn();
-FPRINTF("after get_stdio_fn\n");
-FPRINTF("get_stdio_fn2: readv_stdio=%p tbx_io_readv=%p\n", readv_stdio, tbx_io_readv);
-
-//    tbx_io_init(RTLD_DEFAULT, 1);
-
-
-    //** And make the dummy FD
-//    fd_dummy = n_fd_max - 1;
-//    i = openat_stdio(AT_FDCWD, "/", O_PATH);
-//    if (i == -1) {
-//        FPRINTF("ERROR: Failed opening dummy FD\n");
-//        exit(1);
-//    }
-//    if (dup2_stdio(i, fd_dummy) != fd_dummy) {
-//        FPRINTF("ERROR: Failed dup2 of dummy FD\n");
-//        exit(1);
-//    }
-
 
     //** Get the arguments from the environment either LIO_OPTIONS_STDIO_WRAPPER or LIO_OPTIONS
     argc = 1;
     tbx_type_malloc(argv, char *, 1);
     argv[0] = "lio_stdio_wrapper";
-FPRINTF("before_init\n");
     lio_init(&argc, &argv);
-FPRINTF("lio_stdio_init=%d\n", i);
-//    FATAL_UNLESS(lio_stdio_init(&argc, &argv));
 
     //**Make the lock
     assert_result(apr_pool_create(&mpool, NULL), APR_SUCCESS);
@@ -2981,11 +2928,6 @@ FPRINTF("lio_stdio_init=%d\n", i);
             }
             prefix_table[i-1].prefix = argv[i];
             prefix_table[i-1].len = strlen(prefix_table[i-1].prefix);
-if (link) {
-    FPRINTF("PREFIX_LINK: i=%d prefix=%s plen=%d link=%s llen=%d\n", i-1, prefix_table[i-1].prefix, prefix_table[i-1].len, prefix_table[i-1].link, prefix_table[i-1].link_len);
-} else {
-    FPRINTF("PREFIX_MOUNT: i=%d prefix=%s plen=%d\n", i-1, prefix_table[i-1].prefix, prefix_table[i-1].len);
-}
         }
     }
 
@@ -3004,7 +2946,7 @@ if (link) {
         getcwd_stdio(cwd, sizeof(cwd));
         cwd_len = strlen(cwd) + 1;
     }
-FPRINTF("INIT: starting cwd=%s PWD=%s\n", cwd, getenv("PWD"));
+    FPRINTF("INIT: starting cwd=%s PWD=%s\n", cwd, getenv("PWD"));
 }
 
 //***********************************************************************
