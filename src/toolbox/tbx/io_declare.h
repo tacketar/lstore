@@ -81,13 +81,11 @@ TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(pselect))(int nfds, fd_set *readfds,
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(poll))(struct pollfd *fds, nfds_t nfds, int timeout) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(ppoll))(struct pollfd *fds, nfds_t nfds, const struct timespec *tmo_p, const sigset_t *sigmask) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN size_t (*TBX_IO_WRAP_NAME(fread))(void *ptr, size_t size, size_t nmemb, FILE *stream) TBX_IO_DECLARE_END
-TBX_IO_DECLARE_BEGIN size_t (*TBX_IO_WRAP_NAME(fread_unlocked))(void *ptr, size_t size, size_t nmemb, FILE *stream) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(read))(int fd, void *buf, size_t count) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(readv))(int fd, const struct iovec *iov, int iovcnt) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(preadv))(int fd, const struct iovec *iov, int iovcnt, off_t offset) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(preadv2))(int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN size_t (*TBX_IO_WRAP_NAME(fwrite))(const void *ptr, size_t size, size_t nmemb, FILE *stream) TBX_IO_DECLARE_END
-TBX_IO_DECLARE_BEGIN size_t (*TBX_IO_WRAP_NAME(fwrite_unlocked))(const void *ptr, size_t size, size_t nmemb, FILE *stream) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(write))(int fd, const void *buf, size_t count) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(writev))(int fd, const struct iovec *iov, int iovcnt) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN ssize_t (*TBX_IO_WRAP_NAME(pwritev))(int fd, const struct iovec *iov, int iovcnt, off_t offset) TBX_IO_DECLARE_END
