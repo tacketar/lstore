@@ -117,13 +117,18 @@ static int dt = 30*86400;
 void *setattr_thread(apr_thread_t *th, void *data)
 {
     tbx_que_t *que = (tbx_que_t *)data;
-    gop_opque_t *q = gop_opque_new();
+    gop_opque_t *q;
     gop_op_generic_t *gop;
     int i, n, running;
     int running_max = 1000;
     int n_max = 1000;
     char *fname[n_max], *fn;
     char *etext;
+
+    tbx_monitor_thread_create(MON_MY_THREAD, "setattr_thread");
+    q = gop_opque_new();
+    tbx_monitor_obj_label(gop_mo(opque_get_gop(q)), "setattr_thread_que");
+    tbx_monitor_thread_group(gop_mo(opque_get_gop(q)), MON_MY_THREAD);
 
     etext = NULL;
     opque_start_execution(q);
@@ -168,7 +173,9 @@ void *setattr_thread(apr_thread_t *th, void *data)
         gop_free(gop, OP_DESTROY);
     }
 
+    tbx_monitor_thread_ungroup(gop_mo(opque_get_gop(q)), MON_MY_THREAD);
     gop_opque_free(q, OP_DESTROY);
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
     return(NULL);
 }

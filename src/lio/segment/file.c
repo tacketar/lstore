@@ -159,6 +159,9 @@ gop_op_generic_t *segfile_read(lio_segment_t *seg, data_attr_t *da, lio_segment_
 {
     segfile_priv_t *s = (segfile_priv_t *)seg->priv;
     segfile_rw_op_t *srw;
+    gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(srw, segfile_rw_op_t, 1);
 
@@ -170,7 +173,14 @@ gop_op_generic_t *segfile_read(lio_segment_t *seg, data_attr_t *da, lio_segment_
     srw->buffer = buffer;
     srw->mode = 0;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGFILE_READ: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
+
+    return(gop);
 }
 
 //***********************************************************************
@@ -181,6 +191,9 @@ gop_op_generic_t *segfile_write(lio_segment_t *seg, data_attr_t *da, lio_segment
 {
     segfile_priv_t *s = (segfile_priv_t *)seg->priv;
     segfile_rw_op_t *srw;
+    gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(srw, segfile_rw_op_t, 1);
 
@@ -192,7 +205,14 @@ gop_op_generic_t *segfile_write(lio_segment_t *seg, data_attr_t *da, lio_segment
     srw->buffer = buffer;
     srw->mode = 1;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGFILE_WRITE: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
+
+    return(gop);
 }
 
 //***********************************************************************

@@ -566,7 +566,10 @@ void *warming_thread(apr_thread_t *th, void *data)
     gop_op_generic_t *gop;
     warm_hash_entry_t *wr;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "warming_thread");
     w->q = gop_opque_new();
+    tbx_monitor_thread_group(gop_mo(opque_get_gop(w->q)), MON_MY_THREAD);
+    tbx_monitor_obj_label(gop_mo(opque_get_gop(w->q)), "warming_thread_que");
 
     while (!tbx_que_is_finished(w->que)) {
         n = tbx_que_bulk_get(w->que, w->n_bulk, w->inode, TBX_QUE_BLOCK);
@@ -616,7 +619,10 @@ void *warming_thread(apr_thread_t *th, void *data)
         apr_hash_this(hi, NULL, &hlen, (void **)&wr);
         rid_todo_destroy(wr->warm);
     }
+
+    tbx_monitor_thread_ungroup(gop_mo(opque_get_gop(w->q)), MON_MY_THREAD);
     gop_opque_free(w->q, OP_DESTROY);
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
     free(w->inode);
     return(NULL);

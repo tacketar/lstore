@@ -436,6 +436,8 @@ void *rsrs_monitor_thread(apr_thread_t *th, void *data)
     int changed, shutdown;
     apr_time_t wakeup_time;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "rsrs_monitor_thread_thread");
+
     my_map = &(rsrs->my_map_version);
     notify_map = &(rsrs->notify_map_version);
 
@@ -458,9 +460,11 @@ void *rsrs_monitor_thread(apr_thread_t *th, void *data)
 
         if (changed == 1) { //** RID table has changed so propagate it to everone
             log_printf(5, "pushing update to all clients\n");
+            tbx_monitor_thread_message(MON_MY_THREAD, "Config changed so pushing update to all clients");
             rsrs_client_notify(rs, 1);
         } else if (apr_time_now() > wakeup_time) {  //** Got a client about to expire so handle it
             log_printf(5, "pushing udpate to expiring clients\n");
+            tbx_monitor_thread_message(MON_MY_THREAD, "Pushing update to expired clients");
             rsrs_client_notify(rs, 0);
         }
     } while (shutdown == 0);
@@ -473,6 +477,7 @@ void *rsrs_monitor_thread(apr_thread_t *th, void *data)
     //** Let everyone know we're exiting and clean up
     rsrs_client_notify(rs, 1);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

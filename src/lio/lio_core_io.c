@@ -1023,7 +1023,8 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, segment_id(fh->seg));
     tbx_monitor_obj_create(&(fh->mo), "OPEN: fname=%s mode=%d", op->path, op->mode);
-    tbx_monitor_obj_group(&(fh->mo), &(fh->seg->header.mo));
+    tbx_monitor_obj_reference(&(fh->mo), &(fh->seg->header.mo));
+    tbx_monitor_obj_reference_chain(&(fh->mo));
 
     if (lc->stream_buffer_max_size > 0) {  //** See if we are enabling a stream buffeer
         int n = sizeof(stream_buf_t) + lc->stream_buffer_max_size;

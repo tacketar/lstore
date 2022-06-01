@@ -845,6 +845,9 @@ gop_op_generic_t *seg_mirror_read(lio_segment_t *seg, data_attr_t *da, lio_segme
 {
     seg_mirror_priv_t *s = (seg_mirror_priv_t *)seg->priv;
     seg_mirror_rw_op_t *srw;
+    gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(srw, seg_mirror_rw_op_t, 1);
 
@@ -857,7 +860,14 @@ gop_op_generic_t *seg_mirror_read(lio_segment_t *seg, data_attr_t *da, lio_segme
     srw->timeout = timeout;
     srw->buffer = buffer;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_read_fn, (void *)srw, free, 1));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_read_fn, (void *)srw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGMIRROR_READ: n_iov=%d off[0]=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
+
+    return(gop);
 }
 
 //***********************************************************************
@@ -940,6 +950,9 @@ gop_op_generic_t *seg_mirror_write(lio_segment_t *seg, data_attr_t *da, lio_segm
 {
     seg_mirror_priv_t *s = (seg_mirror_priv_t *)seg->priv;
     seg_mirror_rw_op_t *srw;
+    gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc_clear(srw, seg_mirror_rw_op_t, 1);
 
@@ -952,7 +965,14 @@ gop_op_generic_t *seg_mirror_write(lio_segment_t *seg, data_attr_t *da, lio_segm
     srw->timeout = timeout;
     srw->buffer = buffer;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_write_fn, (void *)srw, free, 1));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_write_fn, (void *)srw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGMIRROR_WRITE: n_iov=%d off[0]=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
+
+    return(gop);
 }
 
 //***********************************************************************
@@ -1412,7 +1432,6 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
     tbx_inip_group_t *g;
     tbx_inip_element_t *ele;
     char *token, *bstate, *key, *value;
-    tbx_mon_object_t cmo;
 
     //** We can only handle the text/INI format
     if (exp->type != EX_TEXT) {
@@ -1477,9 +1496,6 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XIDT, &cid);
             free(token);
 
-            tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, cid);
-            tbx_monitor_obj_group(&(seg->header.mo), &cmo);
-
             cseg = load_segment(seg->ess, cid, exp);
             if (!cseg) fail = 1;
             s->child_seg[i] = cseg;
@@ -1500,6 +1516,13 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
         s->child_seg = NULL;
         return(-1);
     }
+
+    //** Make the associations for monitoring
+    tbx_mon_object_t cmo[s->n_mirrors];
+    for (i=0; i<s->n_mirrors; i++) {
+        tbx_monitor_object_fill(cmo + i, MON_INDEX_SEG, segment_id(s->child_seg[i]));
+    }
+    tbx_monitor_obj_reference_bulk(&(seg->header.mo), cmo, s->n_mirrors);
 
     if (s->block_size <= 0) { //** Need to calculate the blocksize
         bs = segment_block_size(s->child_seg[0], LIO_SEGMENT_BLOCK_NATURAL);

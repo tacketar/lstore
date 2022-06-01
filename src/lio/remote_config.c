@@ -664,11 +664,13 @@ void *rc_check_thread(apr_thread_t *th, void *data)
     rc_t *rc = data;
     apr_time_t dt;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "rc_check_thread: monitoring file=%s", rc->config_file);
     dt = apr_time_from_sec(rc->check_interval);
 
     apr_thread_mutex_lock(rc->lock);
     do {
         log_printf(5, "LOOP START check_interval=%d\n", rc->check_interval);
+        tbx_monitor_thread_message(MON_MY_THREAD, "Running check");
 
         _rc_configs_load(rc);  //** Do a quick check and see if the file has changed
 
@@ -676,6 +678,7 @@ void *rc_check_thread(apr_thread_t *th, void *data)
     } while (rc->shutdown == 0);
     apr_thread_mutex_unlock(rc->lock);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

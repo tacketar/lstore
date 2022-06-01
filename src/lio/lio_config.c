@@ -205,7 +205,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "cache = %s\n", lio->cache_section);
     fprintf(fd, "user = %s\n", lio->creds_user);
     fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
-    fprintf(fd, "monitor_enable = %d  #touch %s.enable to start logging or touch %s.disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
+    fprintf(fd, "monitor_enable = %d  #touch %s-enable to start logging or touch %s-disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
     fprintf(fd, "\n");
 
     rc_print_running_config(fd);
@@ -242,7 +242,7 @@ void lio_monitor_fn(void *arg, FILE *fd)
     lio_config_t *lc = (lio_config_t *)arg;
     char buffer[OS_PATH_MAX];
 
-    snprintf(buffer, sizeof(buffer), "%s_enable", lc->monitor_fname);
+    snprintf(buffer, sizeof(buffer), "%s-enable", lc->monitor_fname);
     buffer[OS_PATH_MAX-1] = '\0';
     if (lio_os_local_filetype(buffer)) {
         if (lc->monitor_enable == 0) {
@@ -253,7 +253,7 @@ void lio_monitor_fn(void *arg, FILE *fd)
         }
     }
 
-    snprintf(buffer, sizeof(buffer), "%s_disable", lc->monitor_fname);
+    snprintf(buffer, sizeof(buffer), "%s-disable", lc->monitor_fname);
     buffer[OS_PATH_MAX-1] = '\0';
     if (lio_os_local_filetype(buffer)) {
         if (lc->monitor_enable == 1) {

@@ -923,14 +923,20 @@ void *ds_ibp_warm_thread(apr_thread_t *th, void *data)
     gop_opque_t *q;
     int dt, err;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "ds_ibp_warm_thread");
+
     dt = 60;
     max_wait = apr_time_make(ds->warm_interval, 0);
     apr_thread_mutex_lock(ds->lock);
     while (ds->warm_stop == 0) {
         //** Generate all the tasks
         log_printf(10, "Starting auto-warming run\n");
+        tbx_monitor_thread_message(MON_MY_THREAD, "Starting warming run");
 
         q = gop_opque_new();
+        tbx_monitor_thread_group(gop_mo(opque_get_gop(q)), MON_MY_THREAD);
+        tbx_monitor_obj_label(gop_mo(opque_get_gop(q)), "ds_ibp_warm_thread_que");
+
         for (hi=apr_hash_first(NULL, ds->warm_table); hi != NULL; hi = apr_hash_next(hi)) {
             apr_hash_this(hi, (const void **)&mcap, &hlen, (void **)&w);
             gop_opque_add(q, ibp_modify_alloc_gop(ds->ic, mcap, -1, ds->warm_duration, -1, dt));
@@ -942,6 +948,7 @@ void *ds_ibp_warm_thread(apr_thread_t *th, void *data)
         err = opque_waitall(q);
         log_printf(10, "opque_waitall=%d\n", err);
 
+        tbx_monitor_thread_ungroup(gop_mo(opque_get_gop(q)), MON_MY_THREAD);
         gop_opque_free(q, OP_DESTROY);  //** Clean up.  Don;t care if we are successfull or not:)
 
         //** Sleep until the next time or we get an exit request

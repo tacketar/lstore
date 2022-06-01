@@ -224,16 +224,20 @@ void *psk_check_thread(apr_thread_t *th, void *data)
     struct stat sbuf;
     time_t modify_time;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "psk_check_thread: Monitoring file=%s", ap->fname);
     dt = apr_time_from_sec(ap->check_interval);
     sbuf.st_mtime = 0; stat(ap->fname, &sbuf); modify_time = sbuf.st_mtime;
 
     apr_thread_mutex_lock(ap->lock);
     do {
         log_printf(5, "LOOP START check_interval=%d\n", ap->check_interval);
+        tbx_monitor_thread_message(MON_MY_THREAD, "Checking");
         if (stat(ap->fname, &sbuf) != 0) {
+            tbx_monitor_thread_message(MON_MY_THREAD, "ERROR: PSK file missing!");
             log_printf(1, "PSK file missing!!! Using old definition. fname=%s\n", ap->fname);
         } else if (modify_time != sbuf.st_mtime) {  //** File changed so reload it
             modify_time = sbuf.st_mtime;
+            tbx_monitor_thread_message(MON_MY_THREAD, "Reloading");
             _psk_load(an);  //** Do a quick check and see if the file has changed
         }
         if (ap->shutdown == 0) apr_thread_cond_timedwait(ap->cond, ap->lock, dt);

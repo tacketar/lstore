@@ -361,9 +361,12 @@ void _pacl_load(lio_os_authz_t *az)
     log_printf(20, "ifd=%p obj_name=%s\n", ifd, obj_name);
     if (ifd) {
         log_printf(5, "RELOADING data\n");
+        tbx_monitor_thread_message(MON_MY_THREAD, "Reloading");
         if (osaz->pa) pacl_destroy(osaz->pa);
         osaz->pa = pacl_create(ifd, osaz->lfs_tmp_prefix);
         tbx_inip_destroy(ifd);
+    } else {
+        tbx_monitor_thread_message(MON_MY_THREAD, "No changes");
     }
 
     if (obj_name) free(obj_name);
@@ -379,6 +382,7 @@ void *pacl_check_thread(apr_thread_t *th, void *data)
     osaz_pacl_t *osaz = az->priv;
     apr_time_t dt;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "pacl_check_thread: Monitoring file=%s", osaz->pa_file);
     dt = apr_time_from_sec(osaz->check_interval);
 
     apr_thread_mutex_lock(osaz->lock);
@@ -390,6 +394,7 @@ void *pacl_check_thread(apr_thread_t *th, void *data)
     } while (osaz->shutdown == 0);
     apr_thread_mutex_unlock(osaz->lock);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

@@ -895,6 +895,7 @@ void *rss_check_thread(apr_thread_t *th, void *data)
     int do_notify, map_version, status_change;
     apr_interval_time_t dt;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "rss_check_thread: Monitoring file=%s", rss->fname);
     dt = apr_time_from_sec(rss->check_interval);
 
     apr_thread_mutex_lock(rss->lock);
@@ -913,8 +914,10 @@ void *rss_check_thread(apr_thread_t *th, void *data)
 
         status_change = (rss->check_timeout <= 0) ? 0 : rss_perform_check(rs);
 
-        if (((do_notify == 1) && (rss->dynamic_mapping == 1)) || (status_change != 0))  rss_mapping_notify(rs, map_version, status_change);
-
+        if (((do_notify == 1) && (rss->dynamic_mapping == 1)) || (status_change != 0)) {
+            tbx_monitor_thread_message(MON_MY_THREAD, "Update occurred. Notifying clients");
+            rss_mapping_notify(rs, map_version, status_change);
+        }
         log_printf(5, "LOOP END status_change=%d\n", status_change);
 
         apr_thread_mutex_lock(rss->lock);
@@ -925,6 +928,7 @@ void *rss_check_thread(apr_thread_t *th, void *data)
     _rss_clear_check_table(rss->ds, rss->rid_mapping, rss->mpool);
     apr_thread_mutex_unlock(rss->lock);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

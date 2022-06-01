@@ -327,6 +327,8 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
     tbx_sl_iter_t it;
     lio_segment_t **flush_list;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "amp_dirty_thread");
+
     cache_lock(c);
 
     log_printf(15, "Dirty thread launched\n");
@@ -394,8 +396,9 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
 
     cache_unlock(c);
 
-    return(NULL);
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
+    return(NULL);
 }
 
 //*************************************************************************

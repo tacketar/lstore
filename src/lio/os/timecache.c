@@ -463,6 +463,8 @@ int _ostc_cleanup(lio_object_service_fn_t *os, ostcdb_object_t *obj, apr_time_t 
     }
 
     log_printf(5, "fname=%s akept=%d okept=%d o+a=%d\n", obj->fname, akept, okept, akept+okept);
+    tbx_monitor_thread_message(MON_MY_THREAD, "_ostc_cleanup: fname=%s akept=%d okept=%d o+a=%d\n", obj->fname, akept, okept, akept+okept);
+
     return(akept + okept);
 }
 
@@ -475,6 +477,7 @@ void *ostc_cache_compact_thread(apr_thread_t *th, void *data)
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)data;
     ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "ostc_cache_compact_thread");
     OSTC_LOCK(ostc);
     while (ostc->shutdown == 0) {
         apr_thread_cond_timedwait(ostc->cond, ostc->lock, ostc->cleanup_interval);
@@ -484,7 +487,7 @@ void *ostc_cache_compact_thread(apr_thread_t *th, void *data)
         log_printf(5, "END: cleanup finished\n");
     }
     OSTC_UNLOCK(ostc);
-
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

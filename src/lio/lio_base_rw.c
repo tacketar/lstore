@@ -68,6 +68,7 @@ void _stream_flush(lio_fd_t *fd)
     iov.len = fd->fh->stream->used;
     if (iov.len == 0) return;  //** Nothing to do so kick out
 
+    tbx_monitor_obj_message(&fd->fh->mo, "_stream_flush");
     err = gop_sync_exec(segment_write(fd->fh->seg, fd->fh->lc->da, NULL, 1, &iov, &(fd->fh->stream->tbuf), 0, fd->fh->lc->timeout));
     fd->fh->stream->is_dirty = 0;
     if (err != OP_STATE_SUCCESS) {
@@ -88,9 +89,13 @@ int stream_read(lio_rw_op_t *op)
     ex_off_t boff, pend, dn, dm, len;
     int i;
 
+    tbx_monitor_thread_group(&fd->fh->mo, MON_MY_THREAD);
+
     boff = op->boff;
     apr_thread_mutex_lock(fd->fh->lock);
     for (i=0; i<op->n_iov; i++) {
+        tbx_monitor_obj_message(&fd->fh->mo, "stream_read: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
+
         if (iov[i].len > stream->max_size) goto failure; //** Kick out if request is bigger than the stream buf
         pend = iov[i].offset + iov[i].len - 1;
         if ((iov[i].offset >= stream->offset) && (pend <= stream->offset_end)) { //** Full overlap
@@ -116,6 +121,7 @@ int stream_read(lio_rw_op_t *op)
             stream->used = stream->offset_end - stream->offset + 1;
             siov.offset = iov[i].offset + dm;
             siov.len = stream->used;
+tbx_monitor_obj_message(&fd->fh->mo, "stream_read: i=%d offset=" XOT " len=" XOT " GOP_SYNC_EXEC", i, iov[i].offset, iov[i].len);
             if (gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, 1, &siov, &(stream->tbuf), 0, lc->timeout)) != OP_STATE_SUCCESS) goto failure;
             tbx_tbuf_copy(&(stream->tbuf), 0, buffer, boff+dm, len, 1);
         }
@@ -123,11 +129,14 @@ int stream_read(lio_rw_op_t *op)
         boff += iov[i].len;
     }
     apr_thread_mutex_unlock(fd->fh->lock);
+    tbx_monitor_thread_ungroup(&fd->fh->mo, MON_MY_THREAD);
 
     return(OP_STATE_SUCCESS);
 
 failure:
     apr_thread_mutex_unlock(fd->fh->lock);
+    tbx_monitor_thread_ungroup(&fd->fh->mo, MON_MY_THREAD);
+
     return(OP_STATE_FAILURE);
 }
 
@@ -145,6 +154,7 @@ int stream_write(lio_rw_op_t *op)
     boff = op->boff;
     apr_thread_mutex_lock(fd->fh->lock);
     for (i=0; i<op->n_iov; i++) {
+        tbx_monitor_obj_message(&fd->fh->mo, "stream_write: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
         pend = iov[i].offset + iov[i].len - 1;
         if (iov[i].len > stream->max_size) { //** Kick out if request is bigger than the stream buf
             if (stream->is_dirty == 0) goto failure;  //** If not dirty kick out
@@ -219,7 +229,10 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
 
     //** Calculate the size read
     size = iov[0].len;
-    for (i=1; i < op->n_iov; i++) size += iov[i].len;
+    for (i=1; i < op->n_iov; i++) {
+        tbx_monitor_obj_message(&fd->fh->mo, "lio_read_ex_fn_aio: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
+        size += iov[i].len;
+    }
 
     t1 = iov[0].len;
     t2 = iov[0].offset;
@@ -318,6 +331,12 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
             t2 = iov[i].offset+iov[i].len-1;
             log_printf(2, "LFS_WRITE:START " XOT " " XOT "\n", iov[i].offset, t2);
             log_printf(2, "LFS_WRITE:END " XOT "\n", t2);
+        }
+    }
+
+    if (tbx_monitor_enabled()) {
+        for (i=1; i < op->n_iov; i++) {
+            tbx_monitor_obj_message(&fd->fh->mo, "lio_write_ex_fn_aio: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
         }
     }
 
@@ -889,6 +908,8 @@ void *wq_backend_thread(apr_thread_t *th, void *data)
     apr_hash_t *table;;
     int finished;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "wq_backend_thread");
+
     apr_pool_create(&mpool, NULL);
     table = apr_hash_make(mpool);
 
@@ -900,6 +921,7 @@ void *wq_backend_thread(apr_thread_t *th, void *data)
 
     apr_pool_destroy(mpool);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

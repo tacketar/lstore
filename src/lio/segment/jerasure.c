@@ -1955,8 +1955,8 @@ gop_op_generic_t *segjerase_write(lio_segment_t *seg, data_attr_t *da, lio_segme
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, segjerase_write_func, (void *)sw, free, 1);
 
-    tbx_monitor_obj_label(gop_mo(gop), "JERASE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    tbx_monitor_obj_label_irate(gop_mo(gop), nbytes, "JERASE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -2006,8 +2006,8 @@ gop_op_generic_t *segjerase_read(lio_segment_t *seg, data_attr_t *da, lio_segmen
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, segjerase_read_func, (void *)sw, free, 1);
 
-    tbx_monitor_obj_label(gop_mo(gop), "JERASE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    tbx_monitor_obj_label_irate(gop_mo(gop), nbytes, "JERASE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -2231,7 +2231,7 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     //** Group the child together
     tbx_mon_object_t cmo;
     tbx_monitor_object_fill(&cmo, MON_INDEX_SEG, id);
-    tbx_monitor_obj_group(&(seg->header.mo), &cmo);
+    tbx_monitor_obj_reference(&(seg->header.mo), &cmo);
 
     s->child_seg = load_segment(seg->ess, id, exp);
     if (s->child_seg == NULL) {

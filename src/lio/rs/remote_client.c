@@ -411,6 +411,7 @@ void *rsrc_check_thread(apr_thread_t *th, void *data)
     gop_op_status_t status;
     int n;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "rsrc_check_thread");
     gop = NULL;
     do {
         if (gop == NULL) {
@@ -428,6 +429,7 @@ void *rsrc_check_thread(apr_thread_t *th, void *data)
         if (g != NULL) {
             status = gop_get_status(gop);
             log_printf(15, "update completed status=%d\n", status.op_status);
+            tbx_monitor_thread_message(MON_MY_THREAD, "update completed status=%d\n", status.op_status);
             tbx_log_flush();
             gop_free(gop, OP_DESTROY);
             gop = NULL;
@@ -446,6 +448,7 @@ void *rsrc_check_thread(apr_thread_t *th, void *data)
         }
     }
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     log_printf(15, "EXITING\n");
 
     return(NULL);

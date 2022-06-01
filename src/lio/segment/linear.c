@@ -594,7 +594,8 @@ gop_op_generic_t *seglin_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
     seglin_rw_t *sw;
     gop_op_generic_t *gop;
-
+    int i;
+    ex_off_t len;
 
     tbx_type_malloc(sw, seglin_rw_t, 1);
     sw->seg = seg;
@@ -605,7 +606,13 @@ gop_op_generic_t *seglin_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     sw->boff = boff;
     sw->buffer = buffer;
     sw->timeout = timeout;
+
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
     gop = gop_tp_op_new(s->tpc, NULL, seglin_read_func, (void *)sw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGLIN_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -785,7 +792,8 @@ gop_op_generic_t *seglin_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
     seglin_rw_t *sw;
     gop_op_generic_t *gop;
-
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc(sw, seglin_rw_t, 1);
     sw->seg = seg;
@@ -796,7 +804,13 @@ gop_op_generic_t *seglin_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sw->boff = boff;
     sw->buffer = buffer;
     sw->timeout = timeout;
+
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
     gop = gop_tp_op_new(s->tpc, NULL, seglin_write_func, (void *)sw, free, 1);
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGLIN_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -1468,7 +1482,6 @@ int seglin_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
         }
     }
     tbx_append_printf(buffer, used, bufsize, ")\n");
-
 
     return(0);
 }

@@ -67,9 +67,11 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <tbx/append_printf.h>
+#include <tbx/atomic_counter.h>
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/lio_monitor.h>
 #include <tbx/io.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
@@ -101,10 +103,17 @@
 
 #define LIO_FS_TAPE_ATTR "system.tape"
 
-//#define _inode_key_size 8
-//#define _inode_key_os_realpath_index 7
-//static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath"};
+static tbx_atomic_int_t _fs_atomic_counter = 0;
 
+#define FS_MON_OBJ_CREATE(...) tbx_mon_object_t mo; \
+                               tbx_monitor_obj_create(tbx_monitor_object_fill(&mo, MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), __VA_ARGS__); \
+                               tbx_monitor_thread_group(&mo, MON_MY_THREAD)
+#define FS_MON_OBJ_CREATE_IRATE(size, ...) tbx_mon_object_t mo; \
+                               tbx_monitor_obj_create_irate(tbx_monitor_object_fill(&mo, MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), size, __VA_ARGS__); \
+                               tbx_monitor_thread_group(&mo, MON_MY_THREAD)
+#define FS_MON_OBJ_DESTROY() tbx_monitor_thread_ungroup(&mo, MON_MY_THREAD); tbx_monitor_obj_destroy(&mo)
+#define FS_MON_OBJ_MESSAGE(...) tbx_monitor_obj_message(&mo, __VA_ARGS__)
+#define FS_MON_OBJ_DESTROY_MESSAGE(...) tbx_monitor_thread_ungroup(&mo, MON_MY_THREAD); tbx_monitor_obj_destroy_message(&mo, __VA_ARGS__)
 
 #define _inode_key_size_core 8
 #define _inode_key_size_security 11
@@ -136,6 +145,7 @@ struct lio_fs_dir_iter_t {
     char *dotdot_path;
     fs_dir_entry_t dot_de;
     fs_dir_entry_t dotdot_de;
+    tbx_mon_object_t mo;
     int state;
 };
 
@@ -463,7 +473,10 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     char *val[_inode_key_size_security];
     int v_size[_inode_key_size_security], i, err;
 
+    FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
+
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) == 0) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES/ENOENT");
         if (lio_fs_exists(fs, fname) > 0) return(-EACCES);
         return(-ENOENT);
     }
@@ -476,12 +489,13 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 
     if (err != OP_STATE_SUCCESS) {
         fs_unlock(fs);
+        FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
     _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 0);
     fs_unlock(fs);
 
-    tbx_log_flush();
+    FS_MON_OBJ_DESTROY();
 
     return(0);
 }
@@ -511,14 +525,21 @@ int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     char *fname;
     int prefix_len, is_empty;
     int obj_types = OS_OBJECT_FILE_FLAG | OS_OBJECT_DIR_FLAG | OS_OBJECT_SYMLINK_FLAG;
+
+    FS_MON_OBJ_CREATE("FS_DIR_IS_EMPTY: fname=%s", path);
+
     if (fs_osaz_object_access(fs, ug, path, OS_MODE_READ_IMMEDIATE) != 2) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-1);
     }
 
     snprintf(wpath, PATH_MAX, "%s/*", path);
     rp = lio_os_path_glob2regex(wpath);
     it = lio_create_object_iter(fs->lc, fs->lc->creds, rp, NULL, obj_types, NULL, 1,  NULL, 0);
-    if (it == NULL) { return(-1); };
+    if (it == NULL) {
+        FS_MON_OBJ_DESTROY_MESSAGE("ERROR: iter create failed");
+        return(-1);
+    };
 
     fname = NULL;
     is_empty = 0;
@@ -528,6 +549,7 @@ int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     lio_destroy_object_iter(fs->lc, it);
     lio_os_regex_table_destroy(rp);
 
+    FS_MON_OBJ_DESTROY();
     return(is_empty);
 }
 
@@ -538,6 +560,8 @@ int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 {
     if (dit == NULL) return(-EBADF);
+
+    tbx_monitor_obj_destroy(&(dit->mo));
 
     if (dit->dot_path) free(dit->dot_path);
     if (dit->dotdot_path) free(dit->dotdot_path);
@@ -577,8 +601,12 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     snprintf(path, OS_PATH_MAX, "%s/*", fname);
     dit->path_regex = lio_os_path_glob2regex(path);
 
+    tbx_monitor_obj_create(tbx_monitor_object_fill(&(dit->mo), MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), "FS_OPENDIR: fname=%s", fname);
+    tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
+
     dit->it = lio_create_object_iter_alist(dit->fs->lc, dit->fs->lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, _inode_keys, (void **)dit->val, dit->v_size, fs->_inode_key_size);
     if (dit->it == NULL) {
+        tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         lio_fs_closedir(dit);
         return(NULL);
     }
@@ -589,6 +617,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     dit->dot_path = strdup(fname);
     if (lio_fs_stat(fs, ug, fname, &(dit->dot_de.stat), NULL, 1) != 0) {
         lio_fs_closedir(dit);
+        tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         return(NULL);
     }
 
@@ -605,8 +634,11 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 
     if (lio_fs_stat(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), NULL, 1) != 0) {
         lio_fs_closedir(dit);
+        tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         return(NULL);
     }
+
+    tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
 
     return(dit);
 }
@@ -633,11 +665,14 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
         *stat = dit->dotdot_de.stat;
     }
 
+    tbx_monitor_obj_message(&(dit->mo), "FS_READDIR");
     dit->state++;
     if (dit->state <= 2) return(0);  //** See if we have an early kickout
 
     //** If we made it here then grab the next file and look it up.
+    tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
     ftype = lio_next_object(dit->fs->lc, dit->it, &fname, &prefix_len);
+    tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
     if (ftype <= 0) { //** No more files
         return((ftype == 0) ? 1 : -EIO);
     }
@@ -659,10 +694,13 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     int err, n, exec_mode;
     gop_op_status_t status;
 
+    FS_MON_OBJ_CREATE("FS_OBJECT_CREATE: fname=%s mode=%d ftype=%d", fname, mode, ftype);
+
     //** Make sure it doesn't exists
     n = lio_fs_exists(fs, fname);
     if (n != 0) {  //** File already exists
         log_printf(15, "File already exist! fname=%s\n", fullname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EEXIST");
         return(-EEXIST);
     }
 
@@ -676,8 +714,10 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fullname);
         if (strlen(fullname) > 3900) {  //** Probably a path length issue
+            FS_MON_OBJ_DESTROY_MESSAGE("ENAMETOOLONG");
             return(-ENAMETOOLONG);
         }
+        FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO");
         return(-EREMOTEIO);
     }
 
@@ -687,6 +727,8 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
         status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
         err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
     }
+
+    FS_MON_OBJ_DESTROY();
 
     return(err);
 }
@@ -709,15 +751,20 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
     gop_op_status_t status;
     int exec_mode, err;
 
+    FS_MON_OBJ_CREATE("FS_CHMOD: fname=%s mode=%d", fname, mode);
+
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
     err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+
+    FS_MON_OBJ_DESTROY();
 
     return(err);
 }
@@ -756,12 +803,14 @@ int fs_actual_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
 int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int ftype)
 {
     fs_open_file_t *fop;
+    int err;
 
-    tbx_log_flush();
+    FS_MON_OBJ_CREATE("FS_OBJECT_REMOVE: fname=%s ftype=%d", fname,ftype);
 
     //** Make sure we can access it
     if (!fs_osaz_object_remove(fs, ug, fname)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
@@ -770,11 +819,16 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
     if (fop != NULL) {
         fop->remove_on_close = 1;
+        fs_unlock(fs);
+        FS_MON_OBJ_DESTROY_MESSAGE("In use. Remove on close");
         return(0);
     }
     fs_unlock(fs);
 
-    return(fs_actual_remove(fs, ug, fname, ftype));
+    err = fs_actual_remove(fs, ug, fname, ftype);
+
+    FS_MON_OBJ_DESTROY();
+    return(err);
 }
 
 
@@ -808,16 +862,20 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
 
     log_printf(10, "fname=%s lflags=%d O_RDONLY=%d O_WRONLY=%d O_RDWR=%d LIO_READ=%d LIO_WRITE=%d\n", fname, lflags, O_RDONLY, O_WRONLY, O_RDWR, LIO_READ_MODE, LIO_WRITE_MODE);
 
+    FS_MON_OBJ_CREATE("FS_OPEN: fname=%s lflags=%d", fname, lflags);
+
     //** Make sure we can access it
     if (lflags & LIO_CREATE_MODE) {
         if (!fs_osaz_object_create(fs, ug, fname)) {
             log_printf(0, "Invalid access for create: path=%s\n", fname);
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCESS: CREATE");
             return(NULL);  //EACCESS
         }
     } else {
         os_mode = (lflags & LIO_WRITE_MODE) ? OS_MODE_WRITE_IMMEDIATE : OS_MODE_READ_IMMEDIATE;
         if (!fs_osaz_object_access(fs, ug, fname, os_mode)) {
             log_printf(0, "Invalid access: path=%s\n", fname);
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCESS");
             return(NULL);  //EACCESS
         }
     }
@@ -827,6 +885,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO: open failed");
         return(NULL);  //EREMOTEIO
     }
 
@@ -844,6 +903,8 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     //** See if we have WQ enabled
     if (fs->n_merge > 0) lio_wq_enable(fd, fs->n_merge);
 
+    FS_MON_OBJ_DESTROY();
+
     return(fd);
 }
 
@@ -857,6 +918,8 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
     int err, remove_on_close;
 
     remove_on_close = 0;
+
+    FS_MON_OBJ_CREATE("FS_CLOSE: fname=%s", fd->path);
 
     //** We lock overthe whole close process to make sure an immediate stat call
     //** doesn't get stale information.
@@ -884,9 +947,11 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
 
     if (err != OP_STATE_SUCCESS) {
         log_printf(0, "Failed closing file!\n");
+        FS_MON_OBJ_DESTROY_MESSAGE("EREMOREIO");
         return(-EREMOTEIO);
     }
 
+    FS_MON_OBJ_DESTROY();
     return(0);
 }
 
@@ -933,11 +998,15 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     t1 = size;
     t2 = off;
 
+    FS_MON_OBJ_CREATE_IRATE(size, "FS_PREAD: off=" OT " size=" ST, off, size);
     log_printf(1, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null file desriptor\n");
+        FS_MON_OBJ_DESTROY_MESSAGE("EDADF");
         return(-EBADF);
     }
+
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     now = apr_time_now();
 
@@ -959,6 +1028,7 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     log_printf(1, "END fname=%s seg=" XIDT " size=" XOT " off=%zu nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
     tbx_log_flush();
 
+    FS_MON_OBJ_DESTROY();
     return(nbytes);
 }
 
@@ -974,6 +1044,9 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
     nbytes = 0;
     for (i=0; i<iovcnt; i++) nbytes += iov[i].iov_len;
 
+    FS_MON_OBJ_CREATE_IRATE(nbytes, "FS_READV: n_iov=%d off=" OT " size=" XOT, iovcnt, offset, nbytes);
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
+
     tbx_atomic_inc(fs->read_cmds_inflight);
     tbx_atomic_add(fs->read_bytes_inflight, nbytes);
     n = lio_readv(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
@@ -981,6 +1054,8 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
     tbx_atomic_sub(fs->read_bytes_inflight, nbytes);
 
     ret = (n == nbytes) ? nbytes : 0;
+
+    FS_MON_OBJ_DESTROY();
 
     return(ret);
 }
@@ -1003,6 +1078,9 @@ int lio_fs_read_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex_
     tbx_tbuf_t tbuf;
     int err;
 
+    FS_MON_OBJ_CREATE_IRATE(iov_nbytes, "FS_READ_EX: n_ex=%d n_iov=%d off[0]=" OT " size=" XOT, n_ex_iov, iovcnt, ex_iov[0].offset, iov_nbytes);
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
+
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
     tbx_atomic_inc(fs->read_cmds_inflight);
@@ -1010,6 +1088,8 @@ int lio_fs_read_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex_
     err = gop_sync_exec(lio_read_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
     tbx_atomic_dec(fs->read_cmds_inflight);
     tbx_atomic_sub(fs->read_bytes_inflight, iov_nbytes);
+
+    FS_MON_OBJ_DESTROY();
 
     return(((err == OP_STATE_SUCCESS) ? 0 : -EIO));
 }
@@ -1030,12 +1110,16 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
     t1 = size;
     t2 = off;
 
+    FS_MON_OBJ_CREATE_IRATE(size, "FS_PWRITE: off=" OT " size=" ST, off, size);
+
     log_printf(1, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
     tbx_log_flush();
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null LFS handle\n");
         return(-EBADF);
     }
+
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     now = apr_time_now();
 
@@ -1050,6 +1134,8 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
     dt /= APR_USEC_PER_SEC;
     log_printf(1, "END fname=%s seg=" XIDT " size=" XOT " off=" XOT " nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
     tbx_log_flush();
+
+    FS_MON_OBJ_DESTROY();
 
     return(nbytes);
 }
@@ -1075,11 +1161,16 @@ ssize_t lio_fs_writev(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int i
     nbytes = 0;
     for (i=0; i<iovcnt; i++) nbytes += iov[i].iov_len;
 
+    FS_MON_OBJ_CREATE_IRATE(nbytes, "FS_WRITEV: n_iov=%d off=" OT " size=" XOT, iovcnt, offset, nbytes);
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
+
     tbx_atomic_inc(fs->write_cmds_inflight);
     tbx_atomic_add(fs->write_bytes_inflight, nbytes);
     n = lio_writev(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
     tbx_atomic_dec(fs->write_cmds_inflight);
     tbx_atomic_sub(fs->write_bytes_inflight, nbytes);
+
+    FS_MON_OBJ_DESTROY();
 
     ret = (n == nbytes) ? nbytes : 0;
 
@@ -1095,6 +1186,9 @@ int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex
     tbx_tbuf_t tbuf;
     int err;
 
+    FS_MON_OBJ_CREATE_IRATE(iov_nbytes, "FS_WRITE_EX: n_ex=%d n_iov=%d off[0]=" OT " size=" XOT, n_ex_iov, iovcnt, ex_iov[0].offset, iov_nbytes);
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
+
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
     tbx_atomic_inc(fs->write_cmds_inflight);
@@ -1102,6 +1196,8 @@ int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex
     err = gop_sync_exec(lio_write_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
     tbx_atomic_dec(fs->write_cmds_inflight);
     tbx_atomic_sub(fs->write_bytes_inflight, iov_nbytes);
+
+    FS_MON_OBJ_DESTROY();
 
     return(((err == OP_STATE_SUCCESS) ? 0 : -EIO));
 }
@@ -1124,10 +1220,16 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
 
     log_printf(1, "START fname=%s\n", fd->path);
 
+    FS_MON_OBJ_CREATE("FS_FLUSH");
+    tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
+
     err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
     if (err != OP_STATE_SUCCESS) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO");
         return(-EIO);
     }
+
+    FS_MON_OBJ_DESTROY();
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
@@ -1158,12 +1260,18 @@ ex_off_t lio_fs_copy_file_range(lio_fs_t *fs, lio_fd_t *fd_in, off_t offset_in, 
 
     log_printf(1, "START copy_file_range src=%s dest=%s\n", fd_in->path, fd_out->path);
 
+    FS_MON_OBJ_CREATE_IRATE(size, "FS_COPY_FILE_RANGE: fin=%s fout=%s off_in=" OT " off_out=" OT " size=" ST, fd_in->fh->fname, fd_out->fh->fname, offset_in, offset_out, size);
+    tbx_monitor_obj_reference(&mo, &(fd_in->fh->mo));
+    tbx_monitor_obj_reference(&mo, &(fd_out->fh->mo));
+
     //** Do the copy op
     err = gop_sync_exec(lio_cp_lio2lio_gop(fd_in, fd_out, 0, NULL, offset_in, offset_out, size, 0, fs->rw_hints));
     if (err != OP_STATE_SUCCESS) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO");
         return(-EIO);
     }
 
+    FS_MON_OBJ_DESTROY();
     return(size);
 
 }
@@ -1179,8 +1287,11 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
 
     log_printf(1, "oldname=%s newname=%s\n", oldname, newname);
 
+    FS_MON_OBJ_CREATE("FS_RENAME: old=%s new=%s", oldname, newname);
+
     //** Make sure we can access it
     if (!(fs_osaz_object_remove(fs, ug, oldname) && fs_osaz_object_create(fs, ug, newname))) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
@@ -1197,9 +1308,11 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     //** Do the move
     status = gop_sync_exec_status(lio_move_object_gop(fs->lc, fs->lc->creds, (char *)oldname, (char *)newname));
     if (status.op_status != OP_STATE_SUCCESS) {
+        FS_MON_OBJ_DESTROY_MESSAGE("ERROR");
         return((status.error_code != 0) ? -status.error_code : -EREMOTEIO);
     }
 
+    FS_MON_OBJ_DESTROY();
     return(0);
 }
 
@@ -1214,6 +1327,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     char *buf2;
     int err, ftype;
     struct stat sbuf;
+
 
     //** Set things up
     sfd = lio_fs_open(fs, ug, src_lio_fname, LIO_READ_MODE);
@@ -1422,7 +1536,9 @@ int lio_fs_copy(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const ch
 {
     int err;
 
+    FS_MON_OBJ_CREATE("FS_COPY: fsrc=%s src_is_lio=%d fdest=%s dest_is_lio=%d slow_copy=%d bufsize=" XOT, src_fname, src_is_lio, dest_fname, dest_is_lio, do_slow_copy, bufsize);
     err = gop_sync_exec(lio_fs_copy_gop(fs, ug, src_is_lio, src_fname, dest_is_lio, dest_fname, bufsize, do_slow_copy, enable_local2local, rw_hints));
+    FS_MON_OBJ_DESTROY();
     return((err == OP_STATE_SUCCESS) ? 0 : 1);
 }
 
@@ -1436,18 +1552,21 @@ int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, o
     ex_off_t ts;
     int result;
 
+    FS_MON_OBJ_CREATE("FS_TRUNCATE: fname=%s new_size=" OT, fname, new_size);
     ts = new_size;
     log_printf(15, "fname=%s adjusting size=" XOT "\n", fname, ts);
 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
     gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, LIO_RW_MODE, NULL, &fd, 60));
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO: open");
         return(-EIO);
     }
 
@@ -1462,6 +1581,7 @@ int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, o
         result = -EIO;
     }
 
+    FS_MON_OBJ_DESTROY();
     return(result);
 }
 
@@ -1478,11 +1598,15 @@ int lio_fs_ftruncate(lio_fs_t *fs, lio_fd_t *fd, off_t new_size)
         return(-EBADF);
     }
 
+    FS_MON_OBJ_CREATE("FS_FTRUNCATE: fname=%s new_size=" OT, fd->fh->fname, new_size);
+
     if (fd->mode & LIO_WRITE_MODE) {
         err = gop_sync_exec(lio_truncate_gop(fd, new_size));
+        FS_MON_OBJ_DESTROY();
         return((err == OP_STATE_SUCCESS) ? 0 : -EIO);
     }
 
+    FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
     return(-EACCES);
 }
 
@@ -1536,8 +1660,11 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
 
     bpos= size;
 
+    FS_MON_OBJ_CREATE("FS_LISTXATTR: fname=%s", fname);
+
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE)) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
@@ -1546,11 +1673,13 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_READ_IMMEDIATE, fs->id, &fd, fs->lc->timeout));
     if (err != OP_STATE_SUCCESS) {
         log_printf(15, "ERROR: opening file: %s err=%d\n", fname, err);
+        FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
     it = os_create_attr_iter(fs->lc->os, fs->lc->creds, fd, attr_regex, 0);
     if (it == NULL) {
         log_printf(15, "ERROR creating iterator for fname=%s\n", fname);
+        FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
 
@@ -1595,6 +1724,8 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
         log_printf(15, "ERANGE bpos=%d buf=%s\n", bpos, buf);
     }
     free(buf);
+
+    FS_MON_OBJ_DESTROY();
 
     return(bpos);
 }
@@ -1828,14 +1959,19 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     v_size= size;
 
+    FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
+
     if (fs->enable_osaz_acl_mappings) {
         if (strcmp("system.posix_acl_access", name) == 0) {
             ftype = lio_fs_exists(fs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
+                FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
                 return(-ENOATTR);
             }
-            return(osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode));
+            err = osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode);
+            FS_MON_OBJ_DESTROY();
+            return(err);
         }
     }
 
@@ -1843,9 +1979,11 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     if (fs->enable_security_attr_checks == 0) {
         if (strncmp("system.posix_acl_", name, 17) == 0) {
             if ((strcmp("access", name + 17) == 0) || (strcmp("default", name + 17) == 0)) {
+                FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
                 return(-ENOATTR);
             }
        } else if (strcmp("security.selinux", name) == 0) {
+          FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
           return(-ENOATTR);
        }
     }
@@ -1865,6 +2003,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) return(-EACCES);
         err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (err != OP_STATE_SUCCESS) {
+            FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
             return(-ENOATTR);
         }
         fs_osaz_attr_filter_apply(fs, name, OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
@@ -1885,6 +2024,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         log_printf(1, "ERANGE bpos=%d buf=%.*s\n", v_size, v_size, val);
     }
 
+    FS_MON_OBJ_DESTROY();
+
     if (val != NULL) free(val);
     return((v_size == 0) ? err : v_size);
 }
@@ -1904,6 +2045,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     if (strcmp("system.posix_acl_access", name) == 0) return(0);  //** We don't allow setting that now
     if (strcmp("system.exnode", name) == 0) return(0);  //** We don't allow setting the exnode from FUSE
 
+    FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
 
     if (flags != 0) { //** Got an XATTR_CREATE/XATTR_REPLACE
         v_size = 0;
@@ -1911,10 +2053,12 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (flags == XATTR_CREATE) {
             if (err == OP_STATE_SUCCESS) {
+                FS_MON_OBJ_DESTROY_MESSAGE("EEXIST");
                 return(-EEXIST);
             }
         } else if (flags == XATTR_REPLACE) {
             if (err != OP_STATE_SUCCESS) {
+                FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
                 return(-ENOATTR);
             }
         }
@@ -1933,9 +2077,12 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         }
         err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
+            FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
             return(-ENOENT);
         }
     }
+
+    FS_MON_OBJ_DESTROY();
 
     return(0);
 }
@@ -1948,23 +2095,33 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
 {
     int v_size, err;
 
+    FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
+
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {
+        FS_MON_OBJ_DESTROY();
         return(0);
     }
 
     //** Not allowed to remove the exnode
-    if (strcmp(name, "system.exnode") == 0) return(-EACCES);
+    if (strcmp(name, "system.exnode") == 0) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+        return(-EACCES);
+    }
 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
     v_size = -1;
     err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, NULL, v_size);
     if (err != OP_STATE_SUCCESS) {
+        FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
+
+    FS_MON_OBJ_DESTROY();
 
     return(0);
 }
@@ -1977,16 +2134,22 @@ int lio_fs_hardlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname,
 {
     int err;
 
+    FS_MON_OBJ_CREATE("FS_HARDLINK: oldname=%s newname=%s", oldname, newname);
+
     //** Make sure we can access it
     if (!(fs_osaz_object_remove(fs, ug, oldname) && fs_osaz_object_create(fs, ug, newname))) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
     //** Now do the hard link
     err = gop_sync_exec(lio_link_gop(fs->lc, fs->lc->creds, 0, (char *)oldname, (char *)newname, fs->id));
     if (err != OP_STATE_SUCCESS) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO");
         return(-EIO);
     }
+
+    FS_MON_OBJ_DESTROY();
 
     return(0);
 }
@@ -2001,10 +2164,12 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     char *val;
 
     log_printf(15, "fname=%s\n", fname);
-    tbx_log_flush();
+
+    FS_MON_OBJ_CREATE("FS_READLINK: fname=%s", fname);
 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE)) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
@@ -2013,9 +2178,11 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, "os.link", (void **)&val, &v_size);
     if (err != OP_STATE_SUCCESS) {
         buf[0] = 0;
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO");
         return(-EIO);
     } else if (v_size <= 0) {
         buf[0] = 0;
+        FS_MON_OBJ_DESTROY_MESSAGE("EINVAL");
         return(-EINVAL);
     }
 
@@ -2031,6 +2198,8 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     log_printf(15, "fname=%s bsize=%d link=%s\n", fname, i, buf);
     tbx_log_flush();
 
+    FS_MON_OBJ_DESTROY();
+
     return(0);
 }
 
@@ -2042,21 +2211,27 @@ int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, con
 {
     int err;
 
+    FS_MON_OBJ_CREATE("FS_SYMLINK: link=%s newname=%s", link, newname);
+
     //** Make sure we can access it
     if (!fs_osaz_object_create(fs, ug, newname)) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
     //** Now do the sym link
     err = gop_sync_exec(lio_link_gop(fs->lc, fs->lc->creds, 1, (char *)link, (char *)newname, fs->id));
     if (err != OP_STATE_SUCCESS) {
-
         if (lio_fs_exists(fs, newname) != 0) {
+            FS_MON_OBJ_DESTROY_MESSAGE("EEXIST");
             return(-EEXIST);
         }
 
+        FS_MON_OBJ_DESTROY_MESSAGE("EIO");
         return(-EIO);
     }
+
+    FS_MON_OBJ_DESTROY();
 
     return(0);
 }
@@ -2069,6 +2244,8 @@ int lio_fs_statvfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, st
 {
     lio_rs_space_t space;
     char *config;
+
+    FS_MON_OBJ_CREATE("FS_STATVFS");
 
     memset(sfs, 0, sizeof(struct statvfs));
 
@@ -2087,6 +2264,7 @@ int lio_fs_statvfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, st
     sfs->f_ffree = 10*1024*1024;
     sfs->f_namemax = 4096 - 100;
 
+    FS_MON_OBJ_DESTROY();
     return(0);
 }
 
@@ -2098,6 +2276,8 @@ int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, str
 {
     lio_rs_space_t space;
     char *config;
+
+    FS_MON_OBJ_CREATE("FS_STATFS");
 
     memset(sfs, 0, sizeof(struct statvfs));
 
@@ -2117,6 +2297,7 @@ int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, str
     sfs->f_frsize = 6*16*1024;
     sfs->f_namelen = 4096 - 100;
 
+    FS_MON_OBJ_DESTROY();
     return(0);
 }
 

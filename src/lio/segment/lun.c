@@ -1241,7 +1241,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     s->inprogress_count++;  //** Flag that we are doing an I/O op
 
     q = gop_opque_new();
-    tbx_monitor_obj_group(&(seg->header.mo), opque_mo(q));
+//QWERT    tbx_monitor_obj_group(&(seg->header.mo), opque_mo(q));
     stack = tbx_stack_new();
     bpos = boff;
 
@@ -1615,6 +1615,8 @@ gop_op_generic_t *seglun_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
     seglun_rw_t *sw;
     gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc(sw, seglun_rw_t, 1);
     sw->seg = seg;
@@ -1628,8 +1630,11 @@ gop_op_generic_t *seglun_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sw->rw_mode = 1;
     gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
 
-    tbx_monitor_obj_label(gop_mo(gop), "LUN_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "LUN_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -1643,6 +1648,8 @@ gop_op_generic_t *seglun_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
     seglun_rw_t *sw;
     gop_op_generic_t *gop;
+    ex_off_t len;
+    int i;
 
     tbx_type_malloc(sw, seglun_rw_t, 1);
     sw->seg = seg;
@@ -1656,8 +1663,11 @@ gop_op_generic_t *seglun_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     sw->rw_mode = 0;
     gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
 
-    tbx_monitor_obj_label(gop_mo(gop), "LUN_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, iov[0].len);
-    tbx_monitor_obj_group(&(seg->header.mo), gop_mo(gop));
+    len = iov[0].len;
+    for (i=1; i<n_iov; i++) len += iov[i].len;
+
+    tbx_monitor_obj_label_irate(gop_mo(gop), len, "LUN_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
+    tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
     return(gop);
 }
@@ -2634,7 +2644,6 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
             return(1);
         }
     }
-
 
     //** Cycle through the blocks storing both the segment block information and also the cap blocks
     g = tbx_inip_group_find(fd, seggrp);
