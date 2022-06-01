@@ -81,6 +81,8 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     int n, k;
     char *remote_host_string;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "ongoing_heartbeat_thread");
+
     apr_thread_mutex_lock(on->lock);
     do {
         now = apr_time_now() - apr_time_from_sec(5);  //** Give our selves a little buffer
@@ -187,6 +189,8 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     log_printf(5, "EXITING\n");
 
     apr_thread_mutex_unlock(on->lock);
+
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
     return(NULL);
 }
@@ -538,6 +542,8 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
     gop_opque_t *q;
     gop_op_generic_t *gop;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "mq_ongoing_seerver_thread");
+
     timeout = apr_time_make(mqon->check_interval, 0);
 
     q = gop_opque_new();
@@ -621,6 +627,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
 
     gop_opque_free(q, OP_DESTROY);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

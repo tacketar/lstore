@@ -288,7 +288,7 @@ void free_finished_stack(gop_opque_t *q, int mode)
 
     gop = (gop_op_generic_t *)tbx_stack_pop(stack);
     while (gop != NULL) {
-        tbx_monitor_obj_ungroup(qmo, gop_mo(gop));
+        tbx_monitor_obj_ungroup_directed(qmo, gop_mo(gop));
         if (gop->type == Q_TYPE_QUE) {
             gop_opque_free(gop->q->opque, mode);
         } else {
@@ -338,6 +338,8 @@ void gop_opque_free(gop_opque_t *opq, int mode)
 
     log_printf(15, "qid=%d nfin=%d nlist=%d nfailed=%d\n", gop_id(&(opq->op)), tbx_stack_count(q->finished), tbx_stack_count(q->list), tbx_stack_count(q->failed));
 
+   tbx_monitor_obj_destroy(gop_mo(opque_get_gop(opq)));
+
     lock_opque(&(opq->qd));  //** Lock it to make sure Everything is finished and safe to free
 
     //** Free the stacks
@@ -363,7 +365,7 @@ int internal_gop_opque_add(gop_opque_t *que, gop_op_generic_t *gop, int dolock)
     gop_que_data_t *q = &(que->qd);
 
     //** Associate the gop with the que
-    tbx_monitor_obj_group(&(q->opque->op.base.mo), gop_mo(gop));
+    tbx_monitor_obj_group_directed(&(q->opque->op.base.mo), gop_mo(gop));
 
     //** Create the callback **
     tbx_type_malloc(cb, gop_callback_t, 1);
@@ -440,6 +442,8 @@ void _opque_start_execution(gop_opque_t *que)
     if (gop->base.started_execution != 0) {
         return;
     }
+
+//QWERT    tbx_monitor_thread_group(gop_mo(gop), MON_MY_THREAD);
 
     gop->base.started_execution = 1;
 

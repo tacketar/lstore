@@ -1213,6 +1213,7 @@ void *hc_send_thread(apr_thread_t *th, void *data)
     gop_op_status_t finished;
     apr_status_t dummy;
     tbx_mon_object_t mo;
+    tbx_mon_object_t ns_mo;
 
     //** Attempt to connect
     err = hpc->fn->connect(ns, hp->connect_context, hp->host, hp->port, hp->hpc->dt_connect);
@@ -1231,6 +1232,7 @@ log_printf(15, "internal hp=%s SEND CONN_READY\n", hp->skey);
     tbx_que_put(hc->internal, &cmd, TBX_QUE_BLOCK);
 
     tbx_monitor_object_fill(&mo, MON_INDEX_HPSEND, tbx_ns_getid(ns));
+    tbx_monitor_object_fill(&ns_mo, MON_INDEX_NSSEND, tbx_ns_getid(ns));
     tbx_monitor_obj_create(&mo, "HP: %s:%d", hp->host, hp->port);
     tbx_monitor_thread_group(&mo, MON_MY_THREAD);
 
@@ -1273,6 +1275,7 @@ log_printf(15, "hp=%s gid=%d\n", hp->skey, gop_id(gop));
 
         //** Send the command
         tbx_monitor_obj_group(&mo, gop_mo(gop));
+        tbx_monitor_obj_group(&ns_mo, gop_mo(gop));
         finished = (hop->send_command != NULL) ? hop->send_command(gop, ns) : gop_success_status;
 log_printf(15, "hp=%s send_command=%d\n", hp->skey, finished.op_status);
 
@@ -1281,6 +1284,7 @@ log_printf(15, "hp=%s send_command=%d\n", hp->skey, finished.op_status);
             finished = (hop->send_phase != NULL) ? hop->send_phase(gop, ns) : gop_success_status;
 log_printf(15, "hp=%s send_phase=%d\n", hp->skey, finished.op_status);
         }
+        tbx_monitor_obj_ungroup(&ns_mo, gop_mo(gop));
         tbx_monitor_obj_ungroup(&mo, gop_mo(gop));
 
         cmd.status = finished;
@@ -1340,6 +1344,7 @@ void *hc_recv_thread(apr_thread_t *th, void *data)
     hpc_cmd_t cmd;
     gop_op_status_t status;
     tbx_mon_object_t mo;
+    tbx_mon_object_t ns_mo;
 
     //** Wait to make sure the send_thread connected
     tbx_que_get(hc->internal, &cmd, TBX_QUE_BLOCK);
@@ -1355,6 +1360,7 @@ log_printf(15, "hp=%s CONN_READY\n", hc->hp->skey);
     tbx_que_put(hc->outgoing, &cmd, TBX_QUE_BLOCK);
 
     tbx_monitor_object_fill(&mo, MON_INDEX_HPRECV, tbx_ns_getid(ns));
+    tbx_monitor_object_fill(&ns_mo, MON_INDEX_NSRECV, tbx_ns_getid(ns));
     tbx_monitor_obj_create(&mo, "HP: %s:%d", hp->host, hp->port);
     tbx_monitor_thread_group(&mo, MON_MY_THREAD);
 
@@ -1398,7 +1404,9 @@ log_printf(15, "hp=%s get=%d cmd=%d\n", hc->hp->skey, nbytes, cmd.cmd);
 log_printf(15, "hp=%s gid=%d\n", hp->skey, gop_id(gop));
         hop = &(gop->op->cmd);
         tbx_monitor_obj_group(&mo, gop_mo(gop));
+        tbx_monitor_obj_group(&ns_mo, gop_mo(gop));
         status = (hop->recv_phase != NULL) ? hop->recv_phase(gop, ns) : status;
+        tbx_monitor_obj_ungroup(&ns_mo, gop_mo(gop));
         tbx_monitor_obj_ungroup(&mo, gop_mo(gop));
         hop->end_time = apr_time_now();
         cmd.status = status;

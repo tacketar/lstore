@@ -504,6 +504,8 @@ void *mqs_flusher_thread(apr_thread_t *th, void *arg)
     gop_mq_stream_t *mqs = (gop_mq_stream_t *)arg;
     apr_time_t wakeup;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "mqs_flusher_thread msid=%d", mqs->msid);
+
     log_printf(1, "START: msid=%d\n", mqs->msid);
 
     //** Figure out when to flush
@@ -539,6 +541,8 @@ void *mqs_flusher_thread(apr_thread_t *th, void *arg)
     apr_thread_mutex_unlock(mqs->lock);
 
     log_printf(1, "END: msid=%d\n", mqs->msid);
+
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
 
     //** We can exit now cause it's up to the caller to send a new request
     //** Which will be handled by the callback

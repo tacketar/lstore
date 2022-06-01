@@ -59,6 +59,8 @@ static void *gd_thread_func(apr_thread_t *th, void *data)
 {
     gop_op_generic_t *gop;
 
+    tbx_monitor_thread_create(MON_MY_THREAD, "dummy-thread-handler");
+
     apr_thread_mutex_lock(gd_lock);
     while (gd_shutdown == 0) {
         //** Execute everything on the stack
@@ -74,6 +76,7 @@ static void *gd_thread_func(apr_thread_t *th, void *data)
     }
     apr_thread_mutex_unlock(gd_lock);
 
+    tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
 }
 

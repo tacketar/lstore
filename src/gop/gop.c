@@ -404,7 +404,7 @@ gop_op_generic_t *gop_waitany(gop_op_generic_t *g)
             lock_gop(g);
             gop = tbx_stack_pop(g->q->finished); //** Remove it from the finished list. This could be a different task so use whats on top
             unlock_gop(g);
-            tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
+            tbx_monitor_obj_ungroup_directed(gop_mo(g), gop_mo(gop));
             return(gop);
         } else {
             _gop_start_execution(g);  //** Make sure things have been submitted
@@ -415,7 +415,7 @@ gop_op_generic_t *gop_waitany(gop_op_generic_t *g)
 
         if (gop != NULL) {
             log_printf(15, "POP finished qid=%d gid=%d\n", gop_id(g), gop_id(gop));
-            tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
+            tbx_monitor_obj_ungroup_directed(gop_mo(g), gop_mo(gop));
         }
     } else {
         log_printf(15, "gop_waitany: BEFORE (type=op) While gid=%d state=%d\n", gop_id(g), g->base.state);
@@ -520,7 +520,7 @@ gop_op_generic_t *gop_waitany_timed(gop_op_generic_t *g, int dt)
             apr_thread_cond_timedwait(g->base.ctl->cond, g->base.ctl->lock, adt); //** Sleep until something completes
             loop++;
         }
-        if (gop) tbx_monitor_obj_ungroup(gop_mo(g), gop_mo(gop));
+        if (gop) tbx_monitor_obj_ungroup_directed(gop_mo(g), gop_mo(gop));
     } else {
         while ((g->base.state == 0) && (loop == 0)) {
             apr_thread_cond_timedwait(g->base.ctl->cond, g->base.ctl->lock, adt); //** Sleep until something completes
@@ -721,7 +721,7 @@ void gop_reset(gop_op_generic_t *gop)
     gop->base.id = tbx_atomic_global_counter();
 
     tbx_monitor_object_fill(&(gop->base.mo), gop->base.mo.type, gop->base.id);
-    tbx_monitor_obj_create(&(gop->base.mo), "");
+    tbx_monitor_obj_create(&(gop->base.mo), NULL);
 
     unlock_gop(gop);
     gop->base.cb = NULL;
@@ -746,7 +746,7 @@ void gop_init_mo(gop_op_generic_t *gop, unsigned char mtype)
 
     base->id = tbx_atomic_global_counter();
     tbx_monitor_object_fill(&(base->mo), mtype, base->id);
-    tbx_monitor_obj_create(&(base->mo), "");
+    tbx_monitor_obj_create(&(base->mo), NULL);
 
     log_printf(15, "gop ptr=%p gid=%d\n", gop, gop_id(gop));
 
