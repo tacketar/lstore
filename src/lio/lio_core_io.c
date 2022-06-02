@@ -1220,6 +1220,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
         if (fh->fname) free(fh->fname);
         if (fh->data) free(fh->data);
+        if (fh->stream) free(fh->stream);
         apr_thread_cond_destroy(fh->cond);
         apr_pool_destroy(fh->mpool);
         free(fh);
@@ -1279,6 +1280,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     if (fh->remove_on_close) status = gop_sync_exec_status(lio_remove_gop(lc, fd->creds, fd->path, NULL, lio_exists(lc, fd->creds, fd->path)));
     if (fh->fname) free(fh->fname);
     if (fh->data) free(fh->data);
+    if (fh->stream) free(fh->stream);
     apr_thread_cond_destroy(fh->cond);
     apr_pool_destroy(fh->mpool);
     free(fh);
