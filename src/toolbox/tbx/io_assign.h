@@ -78,12 +78,12 @@
     ASSERT_EXISTS(ppoll);
     ASSERT_EXISTS(fread);
     ASSERT_EXISTS(preadv);
-    ASSERT_EXISTS(preadv2);
+    OK_IF_MISSING(preadv2);
     ASSERT_EXISTS(read);
     ASSERT_EXISTS(readv);
     ASSERT_EXISTS(fwrite);
     ASSERT_EXISTS(pwritev);
-    ASSERT_EXISTS(pwritev2);
+    OK_IF_MISSING(pwritev2);
     ASSERT_EXISTS(write);
     ASSERT_EXISTS(writev);
     ASSERT_EXISTS(lseek);
