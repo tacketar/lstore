@@ -38,6 +38,9 @@ lio_segment_t *segment_disk_cache_load(void *arg, ex_id_t id, lio_exnode_exchang
 lio_segment_t *segment_disk_cache_create(void *arg);
 void segment_disk_cache_set_child(lio_segment_t *seg, lio_segment_t *child_seg);
 
+void *segment_disk_cache_context_create(void *arg, tbx_inip_file_t *fd, char *grp);
+void segment_disk_cache_context_destroy(void *arg);
+
 #ifdef __cplusplus
 }
 #endif
