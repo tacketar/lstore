@@ -2659,9 +2659,11 @@ int my_vfcntl64_stdio(int fd, int cmd, va_list ap)
         case F_SETLK:  goto flock_arg;
         case F_SETLKW: goto flock_arg;
         case F_GETLK:  goto flock_arg;
+#ifdef F_OFD_SETLK
         case F_OFD_SETLK:  goto flock_arg;
         case F_OFD_SETLKW: goto flock_arg;
         case F_OFD_GETLK:  goto flock_arg;
+#endif
         case F_GETOWN: goto void_arg;
         case F_SETOWN: goto int_arg;
         case F_GETOWN_EX: goto f_owner_ex_arg;
@@ -2673,12 +2675,16 @@ int my_vfcntl64_stdio(int fd, int cmd, va_list ap)
         case F_NOTIFY: goto int_arg;
         case F_SETPIPE_SZ: goto int_arg;
         case F_GETPIPE_SZ: goto void_arg;
+#ifdef F_ADD_SEALS
         case F_ADD_SEALS: goto int_arg;
         case F_GET_SEALS: goto void_arg;
+#endif
+#ifdef F_GET_RW_HINT
         case F_GET_RW_HINT: goto uint64_ptr_arg;
         case F_SET_RW_HINT: goto uint64_ptr_arg;
         case F_GET_FILE_RW_HINT: goto uint64_ptr_arg;
         case F_SET_FILE_RW_HINT: goto uint64_ptr_arg;
+#endif
     }
 
     return(-1);  //** We should never get here
@@ -2695,8 +2701,10 @@ flock_arg:
 f_owner_ex_arg:
     return(fcntl64_stdio(fd, cmd, va_arg(ap, struct f_owner_ex *)));
 
+#ifdef F_GET_RW_HINT
 uint64_ptr_arg:
     return(fcntl64_stdio(fd, cmd, va_arg(ap, uint64_t *)));
+#endif
 }
 
 //***********************************************************************
