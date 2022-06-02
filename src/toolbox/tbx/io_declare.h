@@ -57,7 +57,7 @@ TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(statfs))(const char *path, struct st
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fstatfs))(int fd, struct statfs *buf) TBX_IO_DECLARE_END
 
 //** These only have a single variant
-TBX_API char *(*TBX_IO_WRAP_NAME(get_current_dir_name))(void) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN char *(*TBX_IO_WRAP_NAME(get_current_dir_name))(void) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(chdir))(const char *path) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(fchdir))(int fd) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(chmod))(const char *pathname, mode_t mode) TBX_IO_DECLARE_END
