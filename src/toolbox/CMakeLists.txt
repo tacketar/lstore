@@ -111,6 +111,7 @@ set(LSTORE_LIBS ${APR_LIBRARY}
                     ${ZLIB_LIBRARY}
                     ${OPENSSL_LIBRARIES}
                     ${LIBSODIUM_LIBRARY}
+                    dl
     )
 set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${APRUTIL_INCLUDE_DIR}
