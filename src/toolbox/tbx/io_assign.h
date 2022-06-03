@@ -77,11 +77,13 @@
     ASSERT_EXISTS(poll);
     ASSERT_EXISTS(ppoll);
     ASSERT_EXISTS(fread);
+    ASSERT_EXISTS(fread_unlocked);
     ASSERT_EXISTS(preadv);
     OK_IF_MISSING(preadv2);
     ASSERT_EXISTS(read);
     ASSERT_EXISTS(readv);
     ASSERT_EXISTS(fwrite);
+    ASSERT_EXISTS(fwrite_unlocked);
     ASSERT_EXISTS(pwritev);
     OK_IF_MISSING(pwritev2);
     ASSERT_EXISTS(write);

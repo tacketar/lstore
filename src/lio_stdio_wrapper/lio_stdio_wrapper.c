@@ -167,6 +167,7 @@ void get_stdio_fn()
 #include <tbx/io_assign.h>
 #undef OK_IF_MISSING
 #undef ASSERT_EXISTS
+
 }
 
 //***********************************************************************
@@ -1354,6 +1355,28 @@ size_t WRAPPER_PREFIX(fread)(void *ptr, size_t size, size_t nmemb, FILE *stream)
 
 //***********************************************************************
 
+size_t WRAPPER_PREFIX(fread_unlocked)(void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    fd_core_t *cfd;
+    int fd;
+    size_t got, nbytes;
+
+    FPRINTF("fread_unlocked: slot=%d\n", stream->_fileno);
+
+    fd = stream->_fileno;
+    SANITY_CHECK_FD(fd, -1);
+
+    cfd = fd_table[fd].cfd;
+    if (CFD_IS_STD(fd, cfd)) return(fread_unlocked_stdio(ptr, size, nmemb, stream));
+
+    nbytes = size * nmemb;
+    got = lio_fs_read(fs, cfd->lfd, ptr, nbytes);
+    FPRINTF("fread_unlocked. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
+    return(got / size);
+}
+
+//***********************************************************************
+
 FD_TEMPLATE(read, ssize_t, (int fd, void *ptr, size_t count), read_stdio(fd, ptr, count), lio_fs_read(fs, cfd->lfd, ptr, count))
 FD_TEMPLATE(readv, ssize_t, (int fd, const struct iovec *iov, int iovcnt), readv_stdio(fd, iov, iovcnt), lio_fs_readv(fs, cfd->lfd, iov, iovcnt, -1))
 FD_TEMPLATE(pread64, ssize_t, (int fd, void *ptr, size_t count, off_t offset), pread64_stdio(fd, ptr, count, offset), lio_fs_pread(fs, cfd->lfd, ptr, count, offset))
@@ -1381,6 +1404,29 @@ size_t WRAPPER_PREFIX(fwrite)(const void *ptr, size_t size, size_t nmemb, FILE *
     nbytes = size * nmemb;
     got = lio_fs_write(fs, cfd->lfd, ptr, nbytes);
     FPRINTF("fwrite. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
+    return(got / size);
+}
+
+//***********************************************************************
+
+size_t WRAPPER_PREFIX(fwrite_unlocked)(const void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    fd_core_t *cfd;
+    int fd;
+    size_t got, nbytes;
+
+    FPRINTF("fwrite_unlocked: slot=%d\n", stream->_fileno);
+
+    fd = stream->_fileno;
+
+    SANITY_CHECK_FD(fd, -1);
+
+    cfd = fd_table[fd].cfd;
+    if (CFD_IS_STD(fd, cfd)) return(fwrite_unlocked_stdio(ptr, size, nmemb, stream));
+
+    nbytes = size * nmemb;
+    got = lio_fs_write(fs, cfd->lfd, ptr, nbytes);
+    FPRINTF("fwrite_unlocked. lio read nmemb=" ST " n=" ST "\n", nmemb, got);
     return(got / size);
 }
 
@@ -2649,6 +2695,8 @@ FD_TEMPLATE(flistxattr, ssize_t, (int fd, char *list, size_t size), flistxattr_s
 
 int my_vfcntl64_stdio(int fd, int cmd, va_list ap)
 {
+    if (!fcntl64_stdio) fcntl64_stdio = fcntl_stdio;
+
     switch(cmd) {
         case F_DUPFD:  goto int_arg;
         case F_DUPFD_CLOEXEC:  goto int_arg;
