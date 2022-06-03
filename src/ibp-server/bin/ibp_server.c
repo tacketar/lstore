@@ -670,7 +670,7 @@ void monitor_check_fn(void *arg, FILE *fd)
     }
 
     snprintf(buffer, sizeof(buffer), "%s-disable", cfg->monitor_fname);
-    buffer[PATH_MAX] = '\0';
+    buffer[PATH_MAX-1] = '\0';
     if ((mfd=fopen(buffer, "r")) != NULL) {
         fclose(mfd);
         if (cfg->monitor_enable == 1) {
