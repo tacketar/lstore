@@ -89,14 +89,34 @@ LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(fcntl)(int fd, int cmd, ...);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(getrlimit64)(__rlimit_resource_t  resource, struct rlimit64 *rlim);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(setrlimit64)(__rlimit_resource_t  resource, const struct rlimit64 *rlim);
 LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fread)(void *ptr, size_t size, size_t nmemb, FILE *stream);
+
+//** Some OSes have this defined as a macro like: __extension__ fread_unlocked(...) which trips up the WRAPPER_PREFIX macro
+#ifdef fread_unlocked
+#pragma push_macro("fread_unlocked")
+#undef fread_unlocked
 LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fread_unlocked)(void *ptr, size_t size, size_t nmemb, FILE *stream);
+#pragma push_macro("fread_unlocked")
+#else
+LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fread_unlocked)(void *ptr, size_t size, size_t nmemb, FILE *stream);
+#endif
+
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(pread)(int fd, void *buf, size_t count, off_t offset);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(read)(int fd, void *buf, size_t count);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(readv)(int fd, const struct iovec *iov, int iovcnt);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(preadv)(int fd, const struct iovec *iov, int iovcnt, off_t offset);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(preadv2)(int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags);
 LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fwrite)(const void *ptr, size_t size, size_t nmemb, FILE *stream);
+
+//** Some OSes have this defined as a macro like: __extension__ fwrite_unlocked(...) which trips up the WRAPPER_PREFIX macro
+#ifdef fwrite_unlocked
+#pragma push_macro("fwrite_unlocked")
+#undef fwrite_unlocked
 LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fwrite_unlocked)(const void *ptr, size_t size, size_t nmemb, FILE *stream);
+#pragma push_macro("fwrite_unlocked")
+#else
+LIO_STDIO_WRAPPER_API size_t WRAPPER_PREFIX(fwrite_unlocked)(const void *ptr, size_t size, size_t nmemb, FILE *stream);
+#endif
+
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(write)(int fd, const void *buf, size_t count);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(writev)(int fd, const struct iovec *iov, int iovcnt);
 LIO_STDIO_WRAPPER_API ssize_t WRAPPER_PREFIX(pwritev)(int fd, const struct iovec *iov, int iovcnt, off_t offset);
