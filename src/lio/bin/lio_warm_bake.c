@@ -390,7 +390,7 @@ void part_load_caps(warm_partition_t *wp, int n_part)
 {
     rocksdb_iterator_t *it;
     rid_prep_key_t rcap_dummy;
-    rid_prep_key_t *rcap_ptr;
+    rid_prep_key_t *rcap_ptr = NULL;
     size_t nbytes;
     int n_caps, n_caps_size, kick_out;
     ex_off_t *cap_size;

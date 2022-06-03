@@ -290,6 +290,7 @@ int lio_update_exnode_attrs_full(lio_fd_t *fd, lio_segment_errors_t *serr, int a
     lio_segment_errors_t my_serr;
     char ebuf[128];
 
+    ssize = 0;
     ret = 0;
     err_index = (also_data) ? 4 : 3;
 

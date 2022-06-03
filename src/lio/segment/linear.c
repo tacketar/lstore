@@ -824,7 +824,7 @@ gop_op_generic_t *seglin_remove(lio_segment_t *seg, data_attr_t *da, int timeout
 {
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
     gop_op_generic_t *gop;
-    gop_opque_t *q;
+    gop_opque_t *q = NULL;
     seglin_slot_t *b;
     tbx_isl_iter_t it;
     int i, n;
