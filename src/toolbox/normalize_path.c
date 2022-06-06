@@ -30,7 +30,7 @@ regex_t *tbx_normalize_check_make()
     int err;
     regex_t *r = malloc(sizeof(regex_t));
 
-    err = regcomp(r, "(^\\./)|(^\\.\\./)|(/\\.\\./)|(/\\./)|(//)|(/$)", REG_NOSUB|REG_EXTENDED);
+    err = regcomp(r, "(^\\./)|(^\\.\\./)|(/\\.\\./)|(/\\./)|(//)|(/$)|(/\\.$)|(/\\.\\.$)", REG_NOSUB|REG_EXTENDED);
     if (err) return(NULL);
 
     return(r);
