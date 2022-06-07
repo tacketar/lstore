@@ -22,6 +22,7 @@
 #include <fcntl.h>
 
 #include <sys/types.h>
+#include <grp.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -782,10 +783,11 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
     }
 
     //** Cleanup
-    free(fname);
     close(fdf);
     closedir(dir);
+    remove(fname);
     rmdir(dname);
+    free(fname);
     free(dname);
 }
 
@@ -882,21 +884,52 @@ void prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 }
 
 //**************************************************************************
+// _gid_found - Scans the GID list to see if it already exists and if so returns 1 otherwise 0
+//**************************************************************************
+
+int _gid_found(int n, gid_t *gid_list, gid_t gid)
+{
+    int i;
+    
+    for (i=0; i<n; i++) {
+        if (gid == gid_list[i]) return(1);
+    }
+    
+    return(0);
+}
+
+//**************************************************************************
+// _group2gid - converts the group name to a GID. Returns 0 on success -1 otherwise
+//**************************************************************************
+
+int _group2gid(const char *group, gid_t *gid)
+{
+    struct group *grp;
+
+    grp = getgrnam(group);
+    if (!grp) return(-1);
+    
+    *gid = grp->gr_gid;
+    return(0);
+}
+
+//**************************************************************************
 // gid2account_parse - Make the GID -> accoutn mappings
 //     NOTE: The INI file if from the LIO context and persists for
-//           dureation of the program so no need to dup strings
+//           duration of the program so no need to dup strings
 //**************************************************************************
 
 void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 {
     tbx_inip_group_t *ig;
     tbx_inip_element_t *ele;
-    char *key, *value, *account, *lfs;
-    tbx_stack_t *stack, *a2g_stack;
+    char *key, *value, *account;
+    tbx_stack_t *a2g_stack;
+    gid_t gid_list[100], lfs_gid, got_lfs_gid, g;
+    int n;
     account2gid_t *a2g;
     int i;
 
-    stack = tbx_stack_new();
     a2g_stack = tbx_stack_new();
 
     ig = tbx_inip_group_first(fd);
@@ -904,46 +937,64 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         if (strcmp("path_acl_mapping", tbx_inip_group_get(ig)) == 0) { //** Got a prefix
             ele = tbx_inip_ele_first(ig);
             account = NULL;
-            lfs = NULL;
+            got_lfs_gid = 0;
+            lfs_gid = 0;
+            n = 0;
             while (ele != NULL) {
                 key = tbx_inip_ele_get_key(ele);
                 value = tbx_inip_ele_get_value(ele);
                 if (strcmp(key, "account") == 0) {  //** Got the account
                     account = value;
                 } else if (strcmp(key, "gid") == 0) { //** Got a GID
-                    tbx_stack_move_to_bottom(stack);
-                    tbx_stack_insert_below(stack, value);
+                    g = tbx_stk_string_get_integer(value);
+                    if (_gid_found(n, gid_list, g) == 0) {
+                        gid_list[n] = g;
+                        n++;
+                    }
                 } else if (strcmp(key, "lfs_gid") == 0) { //** Got the default GID for LFS
-                    lfs = value;
+                    g = tbx_stk_string_get_integer(value);
+                    if (_gid_found(n, gid_list, g) == 0) {
+                        gid_list[n] = g;
+                        n++;
+                    }
+                    lfs_gid = g;
+                    got_lfs_gid = 1;
+                } else if (strcmp(key, "group") == 0) { //** Got a group name
+                    if (_group2gid(value, &g) == 0) {
+                        if (_gid_found(n, gid_list, g) == 0) {
+                            gid_list[n] = g;
+                            n++;
+                        }
+                    }
+                } else if (strcmp(key, "lfs_group") == 0) { //** Got an LFS group name
+                    if (_group2gid(value, &g) == 0) {
+                        if (_gid_found(n, gid_list, g) == 0) {
+                            gid_list[n] = g;
+                            n++;
+                        }
+                        lfs_gid = g;
+                        got_lfs_gid = 1;
+                    }
                 }
-
+            
                 ele = tbx_inip_ele_next(ele);
             }
 
-            if ((account) && (tbx_stack_count(stack)>0)) {
+            if ((account) && (n>0)) {
                 tbx_type_malloc_clear(a2g, account2gid_t, 1);
                 a2g->account = strdup(account);
 
-                if (!lfs) { //** No specific LFS GID is provided so use the first one provided
-                    tbx_stack_move_to_top(stack);
-                    lfs = tbx_stack_get_current_data(stack);
-                }
-                if (lfs) {
-                    a2g->lfs_gid = tbx_stk_string_get_integer(lfs);
-                }
+                a2g->lfs_gid = (got_lfs_gid == 0) ? gid_list[0] : lfs_gid;
 
-                a2g->n_gid = tbx_stack_count(stack);
+                a2g->n_gid = n;
                 tbx_type_malloc_clear(a2g->gid, gid_t, a2g->n_gid);
-                i = 0;
-                while ((value = tbx_stack_pop(stack)) != NULL) {
-                    a2g->gid[i] = tbx_stk_string_get_integer(value);
+                memcpy(a2g->gid, gid_list, n*sizeof(gid_t));
+                for (i=0; i<a2g->n_gid; i++) {
                     apr_hash_set(pa->gid2acct_hash, a2g->gid + i, sizeof(gid_t), a2g);
-                    i++;
                 }
                 tbx_stack_push(a2g_stack, a2g);
             } else {
-                log_printf(0, "ERROR: Missing fields! account=%s stack_count(gid)=%d\n", account, tbx_stack_count(stack));
-                tbx_stack_empty(stack, 0);
+                log_printf(0, "ERROR: Missing fields! account=%s n_gid=%d\n", account, n);
             }
         }
 
@@ -957,7 +1008,6 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         apr_hash_set(pa->a2gid_hash, pa->a2gid[i]->account, APR_HASH_KEY_STRING, pa->a2gid[i]);
     }
     tbx_stack_free(a2g_stack, 0);
-    tbx_stack_free(stack, 0);
 }
 
 //**************************************************************************
