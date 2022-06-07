@@ -652,20 +652,20 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
 
     log_printf(10, "gid_primary=%u lfs_account=%s n_account=%d\n", facl->gid_primary, acl->lfs_account, acl->n_account);
     if (acl->other_mode == 0) {
-        facl->mode[0] = S_IRWXU | S_IROTH;
+        facl->mode[0] = S_IRWXU;
         facl->mode[1] = S_IRUSR | S_IWUSR;
         facl->mode[2] = S_IRWXU;
-        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::rwx,o::r--,m::rwx");
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::rwx,o::---,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "u::rw-,o::---,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::rwx,o::---,m::rwx");
-    } else if (acl->other_mode & PACL_MODE_WRITE) {
+    } else if (acl->other_mode & PACL_MODE_WRITE) {   //** If you have write you also have read
         facl->mode[0] = S_IRWXU | S_IRWXO;
         facl->mode[1] = S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH;
         facl->mode[2] = S_IRWXU | S_IRWXO;
-        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::rwx,o::rwx,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "u::rw-,o::rw-,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::rwx,o::rwx,m::rwx");
-    } else {
+    } else {  //** Read only access
+        facl->mode[0] = S_IRWXU | S_IROTH | S_IXOTH;
         facl->mode[0] = S_IRWXU | S_IROTH | S_IXOTH;
         facl->mode[1] = S_IRUSR | S_IWUSR | S_IROTH;
         facl->mode[2] = S_IRWXU | S_IROTH | S_IXOTH;
