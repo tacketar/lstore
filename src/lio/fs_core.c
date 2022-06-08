@@ -66,6 +66,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/fsuid.h>
 #include <tbx/append_printf.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/assert_result.h>
@@ -151,12 +152,17 @@ struct lio_fs_dir_iter_t {
 
 lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid);
 
+#define UG_GLOBAL 0
+#define UG_UID    1
+#define UG_FSUID  2
+
+char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 
 struct lio_fs_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
-    int ug_default_use_global;
+    int ug_mode;
     int shutdown;
     int n_merge;
     int enable_security_attr_checks;
@@ -258,12 +264,21 @@ void lio_fs_destroy_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug)
 
 lio_os_authz_local_t *_fs_get_ug(lio_fs_t *fs, lio_os_authz_local_t *my_ug, lio_os_authz_local_t *dummy_ug)
 {
-    if (my_ug) return(my_ug);
+    gid_t fsuid;
 
-    if (fs->ug_default_use_global) {
+    if (my_ug) return(my_ug);
+    
+    switch (fs->ug_mode) {
+    case UG_GLOBAL:
         lio_fs_fill_os_authz_local(fs, dummy_ug, fs->ug.uid, fs->ug.gid[0]);
-    } else {
+        break;
+    case UG_UID:
         lio_fs_fill_os_authz_local(fs, dummy_ug, getuid(), getgid());
+        break;
+    case UG_FSUID:
+        fsuid = setfsuid(-1); setfsuid(fsuid);
+        lio_fs_fill_os_authz_local(fs, dummy_ug, fsuid, getgid());
+        break;
     }
     return(dummy_ug);
 }
@@ -2325,7 +2340,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", fs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
-    fprintf(fd, "ug_default_use_global = %d\n", fs->ug_default_use_global);
+    fprintf(fd, "ug_mode = %s\n", _ug_mode_string[fs->ug_mode]);
     fprintf(fd, "n_merge = %d\n", fs->n_merge);
     fprintf(fd, "copy_bufsize = %s\n", tbx_stk_pretty_print_double_with_scale(1024, fs->copy_bufsize, ppbuf));
 
@@ -2365,7 +2380,13 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
-    fs->ug_default_use_global = tbx_inip_get_integer(fd, fs->fs_section, "ug_default_use_global", 1);
+    atype = tbx_inip_get_string(fd, fs->fs_section, "ug_mode", _ug_mode_string[UG_GLOBAL]);
+    fs->ug_mode = UG_GLOBAL;
+    if (strcmp(atype, _ug_mode_string[UG_UID]) == 0) {
+        fs->ug_mode = UG_UID;
+    } else if (strcmp(atype, _ug_mode_string[UG_FSUID]) == 0) {
+        fs->ug_mode = UG_FSUID;
+    }
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
     fs->n_merge = tbx_inip_get_integer(fd, fs->fs_section, "n_merge", 0);
