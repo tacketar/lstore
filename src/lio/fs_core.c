@@ -156,6 +156,7 @@ struct lio_fs_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
+    int ug_default_use_global;
     int shutdown;
     int n_merge;
     int enable_security_attr_checks;
@@ -259,7 +260,11 @@ lio_os_authz_local_t *_fs_get_ug(lio_fs_t *fs, lio_os_authz_local_t *my_ug, lio_
 {
     if (my_ug) return(my_ug);
 
-    lio_fs_fill_os_authz_local(fs, dummy_ug, fs->ug.uid, fs->ug.gid[0]);
+    if (fs->ug_default_use_global) {
+        lio_fs_fill_os_authz_local(fs, dummy_ug, fs->ug.uid, fs->ug.gid[0]);
+    } else {
+        lio_fs_fill_os_authz_local(fs, dummy_ug, getuid(), getgid());
+    }
     return(dummy_ug);
 }
 
@@ -585,10 +590,12 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     int i;
 
     tbx_log_flush();
+log_printf(0, "START fname=%s\n", fname);
 
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) != 2) {
         return(NULL);
     }
+log_printf(0, "CACN_ACCESS=2 fname=%s\n", fname);
 
     tbx_type_malloc_clear(dit, lio_fs_dir_iter_t, 1);
 
@@ -2318,6 +2325,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", fs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
+    fprintf(fd, "ug_default_use_global = %d\n", fs->ug_default_use_global);
     fprintf(fd, "n_merge = %d\n", fs->n_merge);
     fprintf(fd, "copy_bufsize = %s\n", tbx_stk_pretty_print_double_with_scale(1024, fs->copy_bufsize, ppbuf));
 
@@ -2357,6 +2365,7 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
+    fs->ug_default_use_global = tbx_inip_get_integer(fd, fs->fs_section, "ug_default_use_global", 1);
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
     fs->n_merge = tbx_inip_get_integer(fd, fs->fs_section, "n_merge", 0);
