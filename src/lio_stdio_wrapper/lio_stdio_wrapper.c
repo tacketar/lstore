@@ -45,7 +45,6 @@
 #include <linux/limits.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-
 #include <lio_stdio_wrapper/lio_stdio_wrapper.h>
 
 #ifndef WRAPPER_PREFIX
@@ -115,6 +114,8 @@ apr_pool_t *mpool = NULL;
 lio_fs_t *fs = NULL;
 char cwd[PATH_MAX-1];
 int cwd_len = -1;
+
+char *ROOT_PATH = "/";    //** This is returned when hitting the LStore root path
 
 //** This is my name mangler
 #define STDIO_WRAP_NAME(a) a ## _stdio
@@ -239,6 +240,11 @@ const char *path_map(int dirfd, const char *path, int *index, int *len, char *bu
                 FPRINTF("path_map: MATCH-LINK path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
             } else {
                 *len = prefix_table[i].len;
+                if (mypath[*len] == '\0') {  //** Just accessing the LStore ROOT
+                    *len = 0;
+                    mypath = ROOT_PATH;
+                    FPRINTF("path_map: MATCH-ROOT path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
+                }
                 FPRINTF("path_map: MATCH path=%s prefix=%s i=%d\n", mypath, prefix_table[i].prefix, i);
             }
             return(mypath);
@@ -1889,7 +1895,8 @@ int WRAPPER_PREFIX(__fxstat64)(int __ver, int fd, struct stat64 *statbuf)
     if (CFD_IS_STD(fd, cfd)) return(__fxstat64_stdio(__ver, fd, statbuf));
 
     FPRINTF("fxstat64: slot=%d before lio call lfd=%p\n", fd, cfd->lfd);
-    err = lio_fs_stat(fs, NULL, lio_fd_path(cfd->lfd), (struct stat *)statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), (struct stat *)statbuf, NULL, 0);
+    
     FPRINTF("fxstat64: slot=%d err=%d\n", fd, err);
     if (err) {
         errno = -err;
@@ -1913,7 +1920,7 @@ int WRAPPER_PREFIX(__fxstat)(int __ver, int fd, struct stat *statbuf)
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) return(__fxstat_stdio(__ver, fd, statbuf));
 
-    err = lio_fs_stat(fs, NULL, lio_fd_path(cfd->lfd), statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), statbuf, NULL, 0);
     if (err) {
         errno = -err;
         err = -1;
@@ -2999,6 +3006,7 @@ static void lio_stdio_wrapper_destruct_fn() {
     int i;
     fd_core_t *cfd;
 
+    FPRINTF("lio_stdio_wrapper_destruct_fn: STARTING\n");
     //** Close anything still open
     for (i=0; i<n_fd_max; i++) {
         cfd = fd_table[i].cfd;
@@ -3014,6 +3022,8 @@ static void lio_stdio_wrapper_destruct_fn() {
         }
     }
 
+    FPRINTF("lio_stdio_wrapper_destruct_fn: AFTER close loop\n");
+
     apr_thread_mutex_destroy(lock);
     apr_pool_destroy(mpool);
 
@@ -3023,6 +3033,8 @@ static void lio_stdio_wrapper_destruct_fn() {
 
     //** And terminate
     lio_shutdown();
+    
+    FPRINTF("lio_stdio_wrapper_destruct_fn: END\n");
 }
 
 
