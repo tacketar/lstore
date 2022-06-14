@@ -298,7 +298,7 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
 {
     lio_creds_t *c;
     char fname[PATH_MAX];
-    char *home, *key_prefix;
+    char *home, *key_prefix, *fcreds;
     int do_fail, err;
 
     c = cred_default_create(NULL);
@@ -308,7 +308,14 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
 
     //** Load the PSK Key
     do_fail = 0;
-    key_prefix = getenv(LIO_ENV_KEY_PREFIX);
+    key_prefix = getenv(LIO_ENV_KEY_PREFIX);  //** Set up for searching the prefixes
+
+    //** 1st see if we have a specific file to use
+    fcreds = getenv(LIO_ENV_KEY_FILE);
+    if (fcreds) {
+        snprintf(fname, sizeof(fname)-1, "%s", fcreds); fname[sizeof(fname)-1] = '\0';
+        goto specific_file_try;
+    }
 again:
     if (key_prefix) {
         snprintf(fname, sizeof(fname)-1, "%s/accounts.psk", key_prefix); fname[sizeof(fname)-1] = '\0';
@@ -319,6 +326,7 @@ again:
         snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
     }
 
+specific_file_try:
     err = get_psk(an, c, fname, (char *)args[0], do_fail);
 
     if (err) goto again;  //** Try again if needed

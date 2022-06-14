@@ -33,6 +33,7 @@ limitations under the License.
 extern "C" {
 #endif
 
+#define LIO_ENV_KEY_FILE    "LIO_KEY_FILE"     // ** Environment variable specifying the file to use for encryption keys
 #define LIO_ENV_KEY_PREFIX  "LIO_KEY_PREFIX"   // ** Environment variable for overriding where to look for encryption keys
 
 // Typedefs

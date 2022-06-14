@@ -993,7 +993,9 @@ void lio_print_options(FILE *fd)
     fprintf(fd, "       -it N              - Print information messages of level N or greater. Thread ID header is used\n");
     fprintf(fd, "       -if N              - Print information messages of level N or greater. Full header is used\n");
     fprintf(fd, "       -ilog info_log_out - Where to send informational log output.\n");
-    fprintf(fd, "       --print-config     - Print the parsed config with hints applied but not substitutions.\n");
+    fprintf(fd, "       --fcreds creds_file      - Specific file for user credentials. Must be accesssible only by the user!\n");
+    fprintf(fd, "                                  Can also be set via the environment variable %s\n", LIO_ENV_KEY_FILE);
+    fprintf(fd, "       --print-config           - Print the parsed config with hints applied but not substitutions.\n");
     fprintf(fd, "       --print-config-with-subs - Print the parsed config with substitutions applied.\n");
     fprintf(fd, "       --print-running-config   - Print the running config.\n");
     fprintf(fd, "       --monitor_fname fname    - Set the monitoring log file\n");
@@ -1807,6 +1809,10 @@ int lio_init(int *argc, char ***argvp)
         } else if (strcmp(argv[i], "--monitor_state") == 0) { //** Override the monitor state
             i++;
             _monitoring_state = atoi(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "--fcreds") == 0) { //** File to use for getting creds
+            i++;
+            setenv(LIO_ENV_KEY_FILE, argv[i], 1);
             i++;
         } else {
             myargv[nargs] = argv[i];
