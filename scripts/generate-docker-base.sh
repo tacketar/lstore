@@ -175,9 +175,11 @@ RUN cd /tmp && \
     make CFLAGS="-fPIC -O3" -j16 && make install && rm /usr/local/lib/libzstd*so*
 
 #And finally RocksDB static lib.  This way all the custom built software doesn't have to propagated
+#The latest RocksDB uses the c++17 extension which isn't supported on RHEL7 so we use an older version of RocksDB
 RUN cd /tmp && \
     git clone https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
+    git checkout 6.29.fb && \
     EXTRA_CFLAGS="-fPIC" EXTRA_CXXFLAGS="-fPIC" EXTRA_LDFLAGS="-fPIC" PORTABLE=1 make -j16 static_lib && \
     PORTABLE=1 make install-static
 EOF
