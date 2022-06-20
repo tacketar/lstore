@@ -42,6 +42,7 @@ int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode,
 int pacl_can_access_gid_list(path_acl_context_t *pa, char *path, int n_gid, gid_t *gid_list, int mode, int *acl);
 void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl);

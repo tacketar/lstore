@@ -156,6 +156,9 @@ lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid);
 #define UG_UID    1
 #define UG_FSUID  2
 
+//** This is the 1-liner to relase the creds if not local
+#define _fs_release_ug(fs, ug_used, ug_local) if ((ug_used) == (ug_local)) osaz_ug_hint_release(fs->osaz, fs->lc->creds, ug_used)
+
 char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 
 struct lio_fs_t {
@@ -202,6 +205,13 @@ void fs_osaz_attr_filter_apply(lio_fs_t *fs, const char *key, int mode, char **v
     *value = v_out;
     *len = len_out;
     return;
+}
+
+//***********************************************************************
+
+void lio_fs_hint_release(lio_fs_t *fs, lio_os_authz_local_t *ug)
+{
+    osaz_ug_hint_release(fs->osaz, fs->lc->creds, ug);    
 }
 
 //***********************************************************************
@@ -276,12 +286,16 @@ lio_os_authz_local_t *_fs_get_ug(lio_fs_t *fs, lio_os_authz_local_t *my_ug, lio_
         lio_fs_fill_os_authz_local(fs, dummy_ug, getuid(), getgid());
         break;
     case UG_FSUID:
-        fsuid = setfsuid(-1); setfsuid(fsuid);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+        fsuid = setfsuid(-1); setfsuid(fsuid); 
+#pragma GCC diagnostic pop
         lio_fs_fill_os_authz_local(fs, dummy_ug, fsuid, getgid());
         break;
     }
     return(dummy_ug);
 }
+
 
 //***********************************************************************
 
@@ -311,7 +325,8 @@ int fs_osaz_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
 {
     char realpath[OS_PATH_MAX];
     char *parent_dir, *file;
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     //** The object shouldn't exist so make sure we can access the parent
     lio_os_path_split(path, &parent_dir, &file);
@@ -323,7 +338,10 @@ int fs_osaz_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
     }
     if (parent_dir) free(parent_dir);
 
-    return(osaz_object_create(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), realpath));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err = osaz_object_create(fs->osaz, fs->lc->creds, ug_used, realpath);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //***********************************************************************
@@ -331,11 +349,15 @@ int fs_osaz_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
 int fs_osaz_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path)
 {
     char realpath[OS_PATH_MAX];
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
-    return(osaz_object_remove(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), path));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err =osaz_object_remove(fs->osaz, fs->lc->creds, ug_used, path);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //***********************************************************************
@@ -343,11 +365,15 @@ int fs_osaz_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
 int fs_osaz_object_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path, int mode)
 {
     char realpath[OS_PATH_MAX];
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
-    return(osaz_object_access(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), path, mode));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err = osaz_object_access(fs->osaz, fs->lc->creds, ug_used, path, mode);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //***********************************************************************
@@ -355,11 +381,15 @@ int fs_osaz_object_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
 int fs_osaz_attr_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path, const char *key)
 {
     char realpath[OS_PATH_MAX];
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
-    return(osaz_attr_create(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), path, key));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err = osaz_attr_create(fs->osaz, fs->lc->creds, ug_used, path, key);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //***********************************************************************
@@ -367,11 +397,15 @@ int fs_osaz_attr_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 int fs_osaz_attr_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path, const char *key)
 {
     char realpath[OS_PATH_MAX];
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
-    return(osaz_attr_remove(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), path, key));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err = osaz_attr_remove(fs->osaz, fs->lc->creds, ug_used, path, key);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //***********************************************************************
@@ -379,12 +413,16 @@ int fs_osaz_attr_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 int fs_osaz_attr_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path, const char *key, int mode, osaz_attr_filter_t *filter)
 {
     char realpath[OS_PATH_MAX];
-    lio_os_authz_local_t dug;
+    lio_os_authz_local_t dug, *ug_used;
+    int err;
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
     *filter = NULL;
-    return(osaz_attr_access(fs->osaz, fs->lc->creds, _fs_get_ug(fs, ug, &dug), path, key, mode, filter));
+    ug_used = _fs_get_ug(fs, ug, &dug);
+    err = osaz_attr_access(fs->osaz, fs->lc->creds, ug_used, path, key, mode, filter);
+    _fs_release_ug(fs, ug_used, &dug);
+    return(err);
 }
 
 //*************************************************************************
@@ -398,12 +436,17 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     fs_open_file_t *fop;
     char *slink;
     char rpath[OS_PATH_MAX];
-    int ftype;
+    int ftype, i;
     ex_id_t ino;
 
     //** Do the normal parse
     slink = NULL;
     lio_parse_stat_vals(fname, stat, val, v_size, &slink, &ftype);
+
+    //** Free up the extra attributes used to seed the OS cache
+    for (i=7; i<fs->_inode_key_size; i++) {
+        if (val[i]) free(val[i]);
+    }
 
     //** Now update the fields based on the requested symlink behavior
     if (slink) {
@@ -2387,6 +2430,7 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     } else if (strcmp(atype, _ug_mode_string[UG_FSUID]) == 0) {
         fs->ug_mode = UG_FSUID;
     }
+    free(atype);
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
     fs->n_merge = tbx_inip_get_integer(fd, fs->fs_section, "n_merge", 0);

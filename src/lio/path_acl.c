@@ -99,6 +99,8 @@ typedef struct {
 typedef struct {    //** Structure used for hints
     uid_t uid;
     apr_time_t ts;
+    int inuse;
+    int to_release;
     pacl_seed_hint_t prev_search;
     int n_account;
     char *account[PA_MAX_ACCOUNT];
@@ -171,6 +173,7 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
 
 //**************************************************************************
 //  pacl_ug_hint_set - Creates a hints structure and stores it
+//  NOTE: Should be protected by a lock
 //**************************************************************************
 
 void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
@@ -193,13 +196,20 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
             log_printf(10, "HINT_SET: NEW uid=%d\n", ug->uid);
             tbx_type_malloc_clear(hint, pa_hint_t, 1);
         } else {
-            log_printf(10, "HINT_SET: REUSE uid=%d\n", ug->uid);
-            memset(hint, 0, sizeof(pa_hint_t));
+            if (hint->inuse) {
+                log_printf(10, "HINT_SET: INUSE uid=%d\n", ug->uid);
+                hint->to_release = 1;
+                tbx_type_malloc_clear(hint, pa_hint_t, 1);
+            } else {
+                log_printf(10, "HINT_SET: REUSE uid=%d\n", ug->uid);
+                memset(hint, 0, sizeof(pa_hint_t));
+            }
         }
     }
 
     ug->hint = hint;
     hint->ts = apr_time_now();
+    hint->inuse = 1;
     hint->uid = ug->uid;
     hint->prev_search.search_hint = -2;
     ug->hint_counter = hint->ts;
@@ -223,6 +233,7 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 //**************************************************************************
 //  pacl_ug_hint_get - Gets a hints structure and stores it in ther ug
 //    If no hint avail then 1 is returned otherwize 0 is returned on success
+//  NOTE: Should be protected by a lock
 //**************************************************************************
 
 int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug)
@@ -237,14 +248,19 @@ int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug)
         if (dt < pa->dt_hint_cache) {
             ug->hint_counter = hint->ts;
             ug->hint = hint;
+            hint->inuse++;
             ug->n_gid = hint->n_account; //** copying these allows us to make a best effort attempt to map ACLS if the hint is destroyed
             memcpy(ug->gid, hint->gid, sizeof(gid_t)*hint->n_account);
             log_printf(10, "HINT HIT! uid=%d\n", ug->uid);
             return(0);
         } else { //** Expired so destroy the hint and let the caller know
-            log_printf(01, "HINT EXPIRED! uid=%d\n", ug->uid);
+            log_printf(10, "HINT EXPIRED! uid=%d\n", ug->uid);
             apr_hash_set(pa->hints_hash, &(ug->uid), sizeof(uid_t), NULL);
-            free(hint);
+            if (hint->inuse) {
+                hint->to_release = 1;
+            } else {
+                free(hint);
+            }
         }
     }
 
@@ -278,6 +294,7 @@ void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 
 //**************************************************************************
 //  pacl_ug_hint_free - Frees the internal hints structure
+//  NOTE: Should be protected by a lock
 //**************************************************************************
 
 void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug)
@@ -286,6 +303,27 @@ void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 
     if (ug->hint) {
         if (ug->uid == PA_UID_UNUSED) free(ug->hint);
+    }
+    ug->hint = NULL;
+}
+
+//**************************************************************************
+//  pacl_ug_hint_release - Releases the internal hints structure
+//  NOTE: Should be protected by a lock
+//**************************************************************************
+
+void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug)
+{
+    pa_hint_t *hint;
+
+    log_printf(10, "HINT_RELEASE ug=%p\n", ug);
+
+    if (ug->hint) {
+        hint = ug->hint;
+        hint->inuse--;
+        if ((hint->to_release) && (hint->inuse == 0)) {
+            if (ug->uid == PA_UID_UNUSED) free(ug->hint);
+        }
     }
     ug->hint = NULL;
 }

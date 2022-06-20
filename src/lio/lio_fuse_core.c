@@ -143,6 +143,7 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
 
     flink = NULL;
     err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, stat, &flink, 1);
+    lio_fs_hint_release(lfs->fs, &ug);
 
     if (err == 0) {
         if (flink) {
@@ -202,6 +203,8 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
     dit->lfs = lfs;
     dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname);
+    lio_fs_hint_release(lfs->fs, &ug);
+
     if (dit->fsit == NULL) {
         free(dit);
         return(-EACCES);
@@ -296,8 +299,11 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev));
+    err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);    
 }
 
 //*************************************************************************
@@ -312,8 +318,11 @@ int lfs_chmod(const char *fname, mode_t mode)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode));
+    err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);    
 }
 
 //*************************************************************************
@@ -324,8 +333,11 @@ int lfs_mkdir(const char *fname, mode_t mode)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_mkdir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode));
+    err = lio_fs_mkdir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);        
 }
 
 //*****************************************************************
@@ -336,8 +348,11 @@ int lfs_unlink(const char *fname)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG));
+    err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);        
 }
 
 //*****************************************************************
@@ -348,8 +363,11 @@ int lfs_rmdir(const char *fname)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_DIR_FLAG));
+    err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_DIR_FLAG);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);    
 }
 
 //*****************************************************************
@@ -363,6 +381,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_os_authz_local_t ug;
 
     fd = lio_fs_open(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, lio_open_flags(fi->flags, 0));
+    lio_fs_hint_release(lfs->fs, &ug);
     fi->fh = (uint64_t)fd;
 
     return(0);
@@ -465,8 +484,11 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname));
+    err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*****************************************************************
@@ -484,8 +506,11 @@ int lfs_truncate(const char *fname, off_t new_size)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, new_size));
+    err = lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, new_size);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);    
 }
 
 //*****************************************************************
@@ -509,8 +534,11 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, tv));
+    err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, tv);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*****************************************************************
@@ -529,8 +557,11 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, list, size));
+    err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, list, size);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*****************************************************************
@@ -546,8 +577,11 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, buf, size));
+    err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, buf, size);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 #endif //HAVE_XATTR
 
@@ -563,8 +597,11 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_setxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, fval, size, flags));
+    err = lio_fs_setxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, fval, size, flags);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*****************************************************************
@@ -575,8 +612,11 @@ int lfs_removexattr(const char *fname, const char *name)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_removexattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name));
+    err = lio_fs_removexattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 #endif //HAVE_XATTR
 
@@ -588,8 +628,11 @@ int lfs_hardlink(const char *oldname, const char *newname)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_hardlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname));
+    err = lio_fs_hardlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*****************************************************************
@@ -604,6 +647,7 @@ int lfs_readlink(const char *fname, char *buf, size_t bsize)
     char flink[OS_PATH_MAX];
 
     err = lio_fs_readlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, buf, bsize);
+    lio_fs_hint_release(lfs->fs, &ug);    
     if (err < 0) return(err);
 
     if (buf[0] == '/') { //** Absolute path so need to prepend the mount path
@@ -626,6 +670,7 @@ int lfs_symlink(const char *link, const char *newname)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     const char *link2;
+    int err;
 
     log_printf(1, "link=%s newname=%s\n", link, newname);
     tbx_log_flush();
@@ -642,7 +687,9 @@ int lfs_symlink(const char *link, const char *newname)
         }
     }
 
-    return(lio_fs_symlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), link2, newname));
+    err = lio_fs_symlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), link2, newname);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*************************************************************************
@@ -653,8 +700,11 @@ int lfs_statvfs(const char *fname, struct statvfs *sfs)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
+    int err;
 
-    return(lio_fs_statvfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs));
+    err =  lio_fs_statvfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs);
+    lio_fs_hint_release(lfs->fs, &ug);
+    return(err);
 }
 
 //*************************************************************************

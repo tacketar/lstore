@@ -124,6 +124,7 @@ struct lio_os_authz_t {
     void (*ug_hint_set)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*ug_hint_init)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*ug_hint_free)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
+    void (*ug_hint_release)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*print_running_config)(lio_os_authz_t *osa, FILE *fd, int print_section_heading);
     void (*destroy)(lio_os_authz_t *osa);
 };
@@ -142,6 +143,7 @@ typedef lio_os_authz_t *(osaz_create_t)(lio_service_manager_t *ess, tbx_inip_fil
 #define osaz_ug_hint_set(osa, c, ug) (osa)->ug_hint_set(osa, c, ug)
 #define osaz_ug_hint_init(osa, c, ug) (osa)->ug_hint_init(osa, c, ug)
 #define osaz_ug_hint_free(osa, c, ug) (osa)->ug_hint_free(osa, c, ug)
+#define osaz_ug_hint_release(osa, c, ug) (osa)->ug_hint_release(osa, c, ug)
 #define osaz_print_running_config(osa, fd, print_section) (osa)->print_running_config(osa, fd, print_section)
 #define osaz_destroy(osa) (osa)->destroy(osa)
 

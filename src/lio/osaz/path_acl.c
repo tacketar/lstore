@@ -186,6 +186,19 @@ void osaz_pacl_ug_hint_free(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_lo
 }
 
 //*************************************************************************
+// osaz_pacl_ug_hint_release - Releases the hint
+//*************************************************************************
+
+void osaz_pacl_ug_hint_release(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    osaz_pacl_t *osaz = osa->priv;
+
+    apr_thread_mutex_lock(osaz->lock);
+    pacl_ug_hint_release(osaz->pa, ug);
+    apr_thread_mutex_unlock(osaz->lock);
+}
+
+//*************************************************************************
 // osaz_pacl_ug_hint_set - Sets a hint
 //*************************************************************************
 
@@ -457,6 +470,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     osaz->ug_hint_get = osaz_pacl_ug_hint_get;
     osaz->ug_hint_init = osaz_pacl_ug_hint_init;
     osaz->ug_hint_free = osaz_pacl_ug_hint_free;
+    osaz->ug_hint_release = osaz_pacl_ug_hint_release;
 
     opa->pa_file = tbx_inip_get_string(ifd, section, "file", "path_acl.cfg");
     opa->lfs_tmp_prefix = tbx_inip_get_string(ifd, section, "lfs_temp", NULL);

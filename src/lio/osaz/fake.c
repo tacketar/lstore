@@ -53,6 +53,13 @@ void osaz_fake_ug_hint_free(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_lo
 
 //*************************************************************************
 
+void osaz_fake_ug_hint_release(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
+{
+    return;
+}
+
+//*************************************************************************
+
 void osaz_fake_ug_hint_set(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug)
 {
     return;
@@ -153,6 +160,7 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
     osaz->ug_hint_get = osaz_fake_ug_hint_get;
     osaz->ug_hint_init = osaz_fake_ug_hint_init;
     osaz->ug_hint_free = osaz_fake_ug_hint_free;
+    osaz->ug_hint_release = osaz_fake_ug_hint_release;
 
     return(osaz);
 }
