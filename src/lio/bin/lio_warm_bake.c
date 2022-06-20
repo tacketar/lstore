@@ -471,6 +471,7 @@ kick_out:
         rcap_ptr = (rid_prep_key_t *)rocksdb_iter_key(it, &nbytes);
         if ((rcap_ptr->id % wp->wdb->n_partitions) != (unsigned int)n_part) break; //** Kick out on partition change
 
+        rcl = NULL;
         if ((rid_key == NULL) || (strcmp(rid_key, rcap_ptr->strings) != 0)) { //** RID change
             rcl = apr_hash_get(wp->rid_caps, rcap_ptr->strings, APR_HASH_KEY_STRING);  //** The start of the strings is the new RID key
             if (!rcl) {

@@ -213,6 +213,7 @@ void process_clog_move(warm_prep_db_t *wdb, clog_entry_t *ce, apr_hash_t *obj_ha
     log_printf(15, "ftype=%d fname=%s fname2=%s\n", ce->ftype, ce->fname, ce->fname2);
 
     dir = 0;
+    m = 0;
     if (ce->ftype & OS_OBJECT_DIR_FLAG) {
         dir = 1;
         prefix_len = strlen(ce->fname);
