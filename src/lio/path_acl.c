@@ -322,7 +322,7 @@ void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug)
         hint = ug->hint;
         hint->inuse--;
         if ((hint->to_release) && (hint->inuse == 0)) {
-            if (ug->uid == PA_UID_UNUSED) free(ug->hint);
+            free(ug->hint);
         }
     }
     ug->hint = NULL;
