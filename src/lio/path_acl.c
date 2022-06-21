@@ -199,7 +199,8 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
             if (hint->inuse) {
                 log_printf(10, "HINT_SET: INUSE uid=%d\n", ug->uid);
                 hint->to_release = 1;
-                tbx_type_malloc_clear(hint, pa_hint_t, 1);
+                apr_hash_set(pa->hints_hash, &(hint->uid), sizeof(uid_t), NULL); //** Clear it from the hash. The current holder will free it on release
+                tbx_type_malloc_clear(hint, pa_hint_t, 1);  //** Now make a new hint to use
             } else {
                 log_printf(10, "HINT_SET: REUSE uid=%d\n", ug->uid);
                 memset(hint, 0, sizeof(pa_hint_t));
