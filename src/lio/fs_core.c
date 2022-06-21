@@ -2452,7 +2452,9 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     apr_gethostname(hostname, sizeof(hostname), fs->mpool);
     fs->id = strdup(hostname);
 
+    //** Make the AuthZ hint.  We really only care about the uid/gids which is a byproduct of setting things up
     lio_fs_fill_os_authz_local(fs, &(fs->ug), uid, gid);
+    osaz_ug_hint_release(fs->osaz, fs->lc->creds, &(fs->ug)); //** Got ahead and free the hint since the ugi/gids are in the actual ug struct
 
     tbx_siginfo_handler_add(SIGUSR1, lio_fs_info_fn, fs);
 
@@ -2482,6 +2484,9 @@ void lio_fs_destroy(lio_fs_t *fs)
         //lio_fs_close(fs, fop->fd);
         log_printf(0, "ERROR: LFS_OPEN_FILE: fname=%s sid= " XIDT " ref=%d remove=%d\n", fop->fname, fop->sid, fop->ref_count, fop->remove_on_close);
     }
+
+    //** Release our global hint if used
+    osaz_ug_hint_release(fs->osaz, fs->lc->creds, &(fs->ug));
 
     //** Destroy the OSAZ
     osaz_destroy(fs->osaz);
