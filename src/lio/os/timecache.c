@@ -629,11 +629,16 @@ void ostc_attr_cacheprep_copy(ostc_cacheprep_t *cp, void **val, int *v_size)
 //  attributes
 //***********************************************************************
 
-ostc_base_object_info_t ostc_attr_cacheprep_info_process(ostc_cacheprep_t *cp)
+ostc_base_object_info_t ostc_attr_cacheprep_info_process(ostc_cacheprep_t *cp, int *err)
 {
     ostc_base_object_info_t base;
 
+    *err = OP_STATE_SUCCESS;
     memset(&base, 0, sizeof(base));
+    if ((cp->val[cp->ftype_index] == NULL) || (cp->val[cp->link_count_index] == NULL) || (cp->val[cp->inode_index] == NULL)) {
+        *err = OP_STATE_FAILURE;
+        return(base);
+    }
     sscanf((char *)cp->val[cp->ftype_index], "%d", &(base.ftype));
     sscanf((char *)cp->val[cp->link_count_index], "%d", &(base.link_count));
     sscanf((char *)cp->val[cp->inode_index], XIDT, &(base.inode));
@@ -1475,13 +1480,15 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
 
     //** Store them in the cache on success
     if (status.op_status == OP_STATE_SUCCESS) {
-        base = ostc_attr_cacheprep_info_process(&cp);
-        log_printf(1, "storing=%s ftype=%d end=%d len=%d v_size[0]=%d\n", fname, base.ftype, end, len, cp.v_size[0]);
-        ostc_cache_process_attrs(os, fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
-        ostc_attr_cacheprep_copy(&cp, (void **)val_array, v_size);
-        if (end < (len-1)) { //** Recurse and add the next layer
-            log_printf(1, "recursing object=%s\n", path);
-            err = ostc_cache_populate_prefix(os, creds, path, end);
+        base = ostc_attr_cacheprep_info_process(&cp, &err);
+        log_printf(1, "storing=%s ftype=%d end=%d len=%d v_size[0]=%d err=%d\n", fname, base.ftype, end, len, cp.v_size[0], err);
+        if (err == OP_STATE_SUCCESS) {
+            ostc_cache_process_attrs(os, fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
+            ostc_attr_cacheprep_copy(&cp, (void **)val_array, v_size);
+            if (end < (len-1)) { //** Recurse and add the next layer
+                log_printf(1, "recursing object=%s\n", path);
+                err = ostc_cache_populate_prefix(os, creds, path, end);
+            }
         }
     }
 
@@ -2292,6 +2299,7 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     gop_op_status_t status;
     ostc_cacheprep_t cp;
     ostc_base_object_info_t base;
+    int err;
 
     //** 1st see if we can satisfy everything from cache
     status = ostc_cache_fetch(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
@@ -2321,9 +2329,13 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
 
     //** Store them in the cache on success
     if (status.op_status == OP_STATE_SUCCESS) {
-        base = ostc_attr_cacheprep_info_process(&cp);
-        ostc_cache_process_attrs(ma->os, ma->fd->fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
-        ostc_attr_cacheprep_copy(&cp, ma->val, ma->v_size);
+        base = ostc_attr_cacheprep_info_process(&cp, &err);
+        if (err == OP_STATE_SUCCESS) {
+            ostc_cache_process_attrs(ma->os, ma->fd->fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
+            ostc_attr_cacheprep_copy(&cp, ma->val, ma->v_size);
+        } else {
+            status.op_status = OP_STATE_FAILURE;
+        }
     }
 
 failed:
@@ -2530,7 +2542,7 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     ostc_object_iter_t *it = (ostc_object_iter_t *)oit;
     ostc_priv_t *ostc = (ostc_priv_t *)it->os->priv;
     ostc_base_object_info_t base;
-    int ftype, i;
+    int ftype, i, err;
 
     log_printf(5, "START\n");
 
@@ -2551,9 +2563,12 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     if (it->iter_type == OSTC_ITER_ALIST) {
         //** Copy any results back
         ostc_attr_cacheprep_copy(&(it->cp), it->val, it->v_size);
-        base = ostc_attr_cacheprep_info_process(&(it->cp));
-        ostc_cache_process_attrs(it->os, *fname, &base, it->cp.key, it->cp.val, it->cp.v_size, it->n_keys);
-
+        base = ostc_attr_cacheprep_info_process(&(it->cp), &err);
+        if (err == OP_STATE_SUCCESS) {
+            ostc_cache_process_attrs(it->os, *fname, &base, it->cp.key, it->cp.val, it->cp.v_size, it->n_keys);
+        } else {
+            ftype = -1;
+        }
         //** We have to do a manual cleanup and can't call the CP destroy method
         for (i=it->cp.n_keys; i<it->cp.n_keys_total; i++) {
             if (it->cp.val[i] != NULL) {
