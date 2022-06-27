@@ -303,7 +303,7 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 
     err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);    
+    return(err);
 }
 
 //*************************************************************************
@@ -322,7 +322,7 @@ int lfs_chmod(const char *fname, mode_t mode)
 
     err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);    
+    return(err);
 }
 
 //*************************************************************************
@@ -337,7 +337,7 @@ int lfs_mkdir(const char *fname, mode_t mode)
 
     err = lio_fs_mkdir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);        
+    return(err);
 }
 
 //*****************************************************************
@@ -352,7 +352,7 @@ int lfs_unlink(const char *fname)
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);        
+    return(err);
 }
 
 //*****************************************************************
@@ -367,7 +367,7 @@ int lfs_rmdir(const char *fname)
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_DIR_FLAG);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);    
+    return(err);
 }
 
 //*****************************************************************
@@ -384,6 +384,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_fs_hint_release(lfs->fs, &ug);
     fi->fh = (uint64_t)fd;
 
+    if (!fd) return(-errno);  //On error lio_fs_open sets the error code in errno
     return(0);
 }
 

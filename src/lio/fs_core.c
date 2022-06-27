@@ -934,6 +934,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         if (!fs_osaz_object_create(fs, ug, fname)) {
             log_printf(0, "Invalid access for create: path=%s\n", fname);
             FS_MON_OBJ_DESTROY_MESSAGE("EACCESS: CREATE");
+            errno = EACCES;
             return(NULL);  //EACCESS
         }
     } else {
@@ -941,6 +942,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         if (!fs_osaz_object_access(fs, ug, fname, os_mode)) {
             log_printf(0, "Invalid access: path=%s\n", fname);
             FS_MON_OBJ_DESTROY_MESSAGE("EACCESS");
+            errno = EACCES;
             return(NULL);  //EACCESS
         }
     }
@@ -951,6 +953,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
         FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO: open failed");
+        errno = EREMOTEIO;
         return(NULL);  //EREMOTEIO
     }
 
@@ -969,7 +972,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     if (fs->n_merge > 0) lio_wq_enable(fd, fs->n_merge);
 
     FS_MON_OBJ_DESTROY();
-
+    errno = 0;
     return(fd);
 }
 
