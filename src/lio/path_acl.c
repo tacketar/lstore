@@ -73,9 +73,10 @@ typedef struct {    //** Individual path ACL
 } path_acl_t;
 
 struct path_acl_context_s {    //** Context for containing the Path ACL's
-    path_acl_t *pacl_default;   //** Default Path ACL
-    path_acl_t **path_acl;      //** List of Path ACLs
-    int        n_path_acl;      //** Number of entries
+    path_acl_t *pacl_default;  //** Default Path ACL
+    path_acl_t **path_acl;     //** List of Path ACLs
+    int        n_path_acl;     //** Number of entries
+    int        inuse_pending;  //** Tracks lingering usage before final destruction 
     apr_hash_t *gid2acct_hash; //** Mapping from GID->account
     apr_hash_t *a2gid_hash;    //** Mapping from account->GID
     apr_hash_t *hints_hash;    //** Hash for gid->account hints
@@ -101,6 +102,7 @@ typedef struct {    //** Structure used for hints
     apr_time_t ts;
     int inuse;
     int to_release;
+    path_acl_context_t *pa;               //** This is the parent PA in case of a lingering handle after destruction
     pacl_seed_hint_t prev_search;
     int n_account;
     char *account[PA_MAX_ACCOUNT];
@@ -316,13 +318,18 @@ void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 {
     pa_hint_t *hint;
-
     log_printf(10, "HINT_RELEASE ug=%p\n", ug);
 
     if (ug->hint) {
         hint = ug->hint;
         hint->inuse--;
         if ((hint->to_release) && (hint->inuse == 0)) {
+            if (hint->pa) {  //** The PA was destroyed so see if we are the last handle
+                hint->pa->inuse_pending--;
+                if (hint->pa->inuse_pending == 0) {
+                    pacl_destroy(hint->pa);
+                }
+            }
             free(ug->hint);
         }
     }
@@ -1142,6 +1149,20 @@ void pacl_destroy(path_acl_context_t *pa)
     apr_hash_index_t *hi;
     pa_hint_t *hint;
 
+    //** Free the hints and check if there are lingering hint handles.  If so defer the destruction.
+    for (hi=apr_hash_first(NULL, pa->hints_hash); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, NULL, &hlen, (void **)&hint);
+        if (hint->inuse == 0) {
+            free(hint);  //** The interior strings are just pointers to fields in a2g above
+        } else {  //** Still in use so we have to defer destruction
+            pa->inuse_pending++;
+            hint->to_release = 1;
+            hint->pa = pa;
+        }
+    }
+
+    if (pa->inuse_pending) return;  //** Kick out of we still have hints in use.
+
     log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
 
@@ -1160,12 +1181,6 @@ void pacl_destroy(path_acl_context_t *pa)
         free(a2g);
     }
     free(pa->a2gid);
-
-    //** Also have to free all the hints
-    for (hi=apr_hash_first(NULL, pa->hints_hash); hi != NULL; hi = apr_hash_next(hi)) {
-        apr_hash_this(hi, NULL, &hlen, (void **)&hint);
-        free(hint);  //** The interior strings are just pointers to fields in a2g above
-    }
 
     //** This also destroys the hash
     apr_pool_destroy(pa->mpool);
