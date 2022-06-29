@@ -544,19 +544,17 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
         return(-ENOENT);
     }
 
-    //** The whole remote fetch and merging with open files is locked to
-    //** keep quickly successive stat calls to not get stale information
-    fs_lock(fs);
     for (i=0; i<fs->_inode_key_size; i++) v_size[i] = -fs->lc->max_attr;
     err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size);
 
     if (err != OP_STATE_SUCCESS) {
-        fs_unlock(fs);
         FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
-    _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 0);
-    fs_unlock(fs);
+
+    //** The whole remote fetch and merging with open files is locked to
+    //** keep quickly successive stat calls to not get stale information
+    _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 1);
 
     FS_MON_OBJ_DESTROY();
 
