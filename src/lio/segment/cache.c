@@ -3526,6 +3526,7 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
     tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop: offset=" XOT " len=" XOT " size=" XOT, cop->iov_single.offset, cop->iov_single.len, segment_size(cop->seg));
     tbx_log_flush();
 
+    full_flush = 0;
     if ((cop->iov_single.offset == 0) && (cop->iov_single.len == -1)) { //** Got a full flush so see is another flush is in progress
         segment_lock(cop->seg);
         if (s->full_flush_in_progress) {
