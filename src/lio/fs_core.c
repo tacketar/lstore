@@ -2480,10 +2480,10 @@ void lio_fs_destroy(lio_fs_t *fs)
     //** Cleanup the open file hash
     for (hi=apr_hash_first(fs->mpool, fs->open_files); hi; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&fop);
+        log_printf(0, "ERROR: LFS_OPEN_FILE: fname=%s sid= " XIDT " ref=%d remove=%d\n", fop->fname, fop->sid, fop->ref_count, fop->remove_on_close);
+//        lio_fs_close(fs, fop->fd);
         free(fop->fname);
         free(fop);
-        //lio_fs_close(fs, fop->fd);
-        log_printf(0, "ERROR: LFS_OPEN_FILE: fname=%s sid= " XIDT " ref=%d remove=%d\n", fop->fname, fop->sid, fop->ref_count, fop->remove_on_close);
     }
 
     //** Release our global hint if used
