@@ -27,6 +27,8 @@ extern "C" {
 #endif
 
 #include <tbx/iniparse.h>
+#include <lio/core.h>
+#include <lio/visibility.h>
 
 #define PACL_MODE_READ  1
 #define PACL_MODE_WRITE 2
@@ -46,8 +48,9 @@ void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl);
-path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls);
-void pacl_destroy(path_acl_context_t *pa);
+LIO_API path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls);
+LIO_API void pacl_destroy(path_acl_context_t *pa);
+LIO_API int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int seed);
 
 #ifdef __cplusplus
 }

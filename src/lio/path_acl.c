@@ -41,7 +41,7 @@
 #include <lio/os.h>
 #include <os.h>
 
-#include "path_acl.h"
+#include <lio/path_acl.h>
 
 typedef struct {  //** FUSE compliant POSIX ACL
     gid_t gid_primary;  //** Primary GID to report for LFS
@@ -70,19 +70,24 @@ typedef struct {    //** Individual path ACL
     char *lfs_account;      //** Default account to report for FUSE
     int other_mode;         //** Access for other accounts. Defaults to NONE
     fuse_acl_t *lfs_acl;    //** Composite FUSE ACL
+    int nested_end;         //** Tracks nesting of ACL prefixes
+    int nested_primary;     //** Initial prefix of nested group
+    int rlut;               //** Reverse LUT
 } path_acl_t;
 
 struct path_acl_context_s {    //** Context for containing the Path ACL's
     path_acl_t *pacl_default;  //** Default Path ACL
     path_acl_t **path_acl;     //** List of Path ACLs
     int        n_path_acl;     //** Number of entries
-    int        inuse_pending;  //** Tracks lingering usage before final destruction 
+    int        inuse_pending;  //** Tracks lingering usage before final destruction
     apr_hash_t *gid2acct_hash; //** Mapping from GID->account
     apr_hash_t *a2gid_hash;    //** Mapping from account->GID
     apr_hash_t *hints_hash;    //** Hash for gid->account hints
     apr_pool_t *mpool;
     apr_time_t dt_hint_cache;  //** How long to keep the hint cache before expiring
     apr_time_t timestamp;      //** Used to determine if a hint is old
+    int n_lut;                 //** Number of unique non-overlapping prefixes
+    int *lut;                  //** Lookup table for unique prefixes
     account2gid_t **a2gid;
     int n_a2gid;
     char *fname_acl;           //** Used for making the LFS ACLs if enabled
@@ -337,52 +342,51 @@ void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 }
 
 //**************************************************************************
-// pacl_search - Does a binary search of the ACL prefixes and returns
+// pacl_search_base - Does a binary search of the ACL prefixes and returns
 //    the ACL or the default ACL if no match.
 //
-//    NOTE: In order for this to work the prefixes MUST be orthogonal/non-nested!
+//    NOTE: This routine will return a partial match so further checks may be required.
 //          The prefixes are sorted in ascending order using the full prefixes
 //          but here we only do a strncmp() based on the prefix and not the
 //          full path provided. Working on just the n_prefix characters
 //          simplifies the check
 //**************************************************************************
 
-path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, int *got_default, int *seed_hint)
+path_acl_t *pacl_search_base(path_acl_context_t *pa, const char *path, int *exact, int *got_default, int *seed_hint, int n)
 {
-    int low, mid, high, cmp, n;
+    int low, mid, high, cmp, mlut;
     path_acl_t **acl = pa->path_acl;
 
-    n = strlen(path);
+    // n = strlen(path); <-- passed in
 
     *got_default = 0;
     *exact = 0;
-    low = 0; high = pa->n_path_acl-1;
+    low = 0; high = pa->n_lut-1;
     if (seed_hint) { //** Got a hint so give it a shot
-log_printf(0, "HINT SEED=%d\n", *seed_hint);
-        mid = (*seed_hint>=0) ? *seed_hint : high/2;
+        mid = (*seed_hint>=0) ? acl[*seed_hint]->nested_primary : high/2;
+        mid = acl[mid]->rlut;
         goto fingers_crossed;
     }
     while (low <= high) {
-        mid = low + (high-low)/2;
+        mid = (high+low)/2;
 fingers_crossed:
-        cmp = strncmp(acl[mid]->prefix, path, acl[mid]->n_prefix);
+        mlut = pa->lut[mid];
+        cmp = strncmp(acl[mlut]->prefix, path, acl[mlut]->n_prefix);
 
         //** We have a match but we need to make sure it's a full
         //** match based on a directory boundary
         if (cmp == 0) {
-            if (n == acl[mid]->n_prefix) {  //** prefix and path are the same length so it's a real match
+            if (n == acl[mlut]->n_prefix) {  //** prefix and path are the same length so it's a real match
                 *exact = 1;
-                if (seed_hint) *seed_hint = mid;
-                return(acl[mid]);
-            } else if (n > acl[mid]->n_prefix) {  //** path is longer than the prefix
-                if (path[acl[mid]->n_prefix] == '/') {  //** The next charatcher in the path ia a '/' so a match
-                    if (seed_hint) *seed_hint = mid;
-                    return(acl[mid]);
+                if (seed_hint) *seed_hint = mlut;
+                return(acl[mlut]);
+            } else {  //** path is longer than the prefix
+                if (path[acl[mlut]->n_prefix] == '/') {  //** The next charatcher in the path ia a '/' so a match
+                    if (seed_hint) *seed_hint = mlut;
+                    return(acl[mlut]);
                 } else {    //**No match. Just a partial dir match, ie dirs with similar names
                     cmp = -1;
                 }
-            } else {    //** Definitely no match since the prefix is longer than the path
-                cmp = 1;
             }
         }
 
@@ -398,6 +402,65 @@ fingers_crossed:
     *got_default = 1;
     if (seed_hint) *seed_hint = -1;
     return(pa->pacl_default);
+}
+
+//**************************************************************************
+// pacl_search - Does a binary search of the ACL prefixes and returns
+//    the ACL or the default ACL if no match.
+//
+//**************************************************************************
+
+path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, int *got_default, int *seed_hint)
+{
+    int index, i, cmp, n;
+    path_acl_t *myacl, **acl;
+
+    n = strlen(path);
+    index = (seed_hint) ? ((*seed_hint > pa->n_path_acl) ? -1 : *seed_hint) : -1;
+    myacl = pacl_search_base(pa, path, exact, got_default, &index, n);
+
+    //** Kick out if an exact match or got the default
+    if ((*got_default == 1) || (*exact == 1)) {
+        if (seed_hint) *seed_hint = index;
+        return(myacl);
+    }
+
+    acl = pa->path_acl;
+
+    //** If the original hint maps to the same primary lets check it directly
+    if ((seed_hint) && (*seed_hint >= 0) && (*seed_hint < pa->n_path_acl)) {
+        if (acl[*seed_hint]->nested_primary == myacl->nested_primary) { //** See if the seed maps to the same acl returned from the base
+            cmp = strncmp(acl[*seed_hint]->prefix, path, acl[*seed_hint]->n_prefix);
+            if (cmp == 0) {   //** Got a potential match
+                if (n == acl[*seed_hint]->n_prefix) {  //** prefix and path are the same length so it's a real match
+                    *exact = 1;
+                    return(acl[*seed_hint]);
+                } else if (path[acl[*seed_hint]->n_prefix] == '/') {  //** The next charatcher in the path ia a '/' so a match and the path is longer than the prefix
+                    index = *seed_hint;
+                }
+            }
+        }
+    }
+
+
+    //** Got a partial match so scan for nested matches
+    for (i=index+1; i<=acl[index]->nested_end; i++) {
+        cmp = strncmp(acl[i]->prefix, path, acl[i]->n_prefix);
+        if (cmp == 0) {   //** Got a potential match
+            if (n == acl[i]->n_prefix) {  //** prefix and path are the same length so it's a real match
+                *exact = 1;
+                index = i;
+                break;
+            } else if (path[acl[i]->n_prefix] == '/') {  //** The next charatcher in the path ia a '/' so a match and the path is longer than the prefix
+                index = i;
+            }
+        } else if (cmp>0) { //** Moved past it so kick out
+            break;
+        }
+    }
+
+    if (*seed_hint) *seed_hint = index;
+    return(acl[index]);
 }
 
 //**************************************************************************
@@ -417,18 +480,17 @@ int _pacl_can_access_list(path_acl_context_t *pa, char *path, int n_account, cha
     if (ps) {
         old_seed = ps->search_hint;
         acl = pacl_search(pa, path, &exact, &got_default, &(ps->search_hint));
-log_printf(0, "HINT exact=%d seed -- start=%d end=%d mode=%d perms=%d\n", exact, old_seed, ps->search_hint, mode, ps->perms);
-
+        log_printf(10, "HINT exact=%d seed -- start=%d end=%d mode=%d perms=%d\n", exact, old_seed, ps->search_hint, mode, ps->perms);
         if (old_seed == ps->search_hint) { //** Same path ACL and accounts so use the prev hint perms
             check = mode & ps->perms;
             *perms = ps->perms;
             return((check == mode) ? 2 : exact);
         }
-log_printf(0, "HINT miss so doing full check\n");
+        log_printf(10, "HINT miss so doing full check\n");
     } else {
+        log_printf(10, "HINT ps=NULL\n");
         acl = pacl_search(pa, path, &exact, &got_default, NULL);
     }
-log_printf(0, "HINT ps=NULL\n");
 
     if (acl_mapped) *acl_mapped = acl;
     log_printf(10, "path=%s acl=%p exact=%d\n", path, acl, exact);
@@ -439,7 +501,7 @@ log_printf(0, "HINT ps=NULL\n");
     }
 
 
-log_printf(10, "path=%s prefix=%s acl->n_account=%d n_account=%d\n", path, acl->prefix, acl->n_account, n_account);
+    log_printf(10, "path=%s prefix=%s acl->n_account=%d n_account=%d\n", path, acl->prefix, acl->n_account, n_account);
     //** If we made it here there's an overlapping prefix
     for (j=0; j<n_account; j++) {
         account = account_list[j];
@@ -838,20 +900,49 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
 }
 
 //**************************************************************************
+// pacl_compare_nested_acls - Compares the 2 acls making sure the 2ndary is
+//    a subset of the primary
+//**************************************************************************
+
+int pacl_compare_nested_acls(path_acl_t *a, path_acl_t *b)
+{
+    int i, j, checked;
+
+    //** Check the "other_mode"
+    if (a->other_mode < b->other_mode) return(1);
+
+    //** Check the accounts. All the "b" accounts should exist in "a"
+    for (i=0; i<b->n_account; i++) {
+        checked = 0;
+        for (j=0; j<a->n_account; j++) {
+            if (strcmp(b->account[i].account, a->account[j].account) == 0) {
+                if (a->account[j].mode < b->account[i].mode) return(2);
+                checked = 1;
+                break;  //** Got a match so continue to the next one
+            }
+        }
+        if (checked == 0) return(3);  //** The account is missing in the parent
+    }
+
+    return(0);
+}
+
+
+//**************************************************************************
 // prefix_account_parse - Parse the INI file and populates the
 //     prefix/account associations.
 //     NOTE: The INI file if from the LIO context and persists for
 //           dureation of the program so no need to dup strings
 //**************************************************************************
 
-void prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
+int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 {
     path_acl_t *acl;
     tbx_inip_group_t *ig;
     tbx_inip_element_t *ele;
     char *key, *value, *prefix, *other_mode, *lfs;
     tbx_stack_t *stack, *acl_stack;
-    int i, def;
+    int i, j, def, match;
 
     stack = tbx_stack_new();
     acl_stack = tbx_stack_new();
@@ -921,12 +1012,50 @@ void prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     tbx_type_malloc_clear(pa->path_acl, path_acl_t *, pa->n_path_acl);
     for (i=0; i<pa->n_path_acl; i++) {
         pa->path_acl[i] = tbx_stack_pop(acl_stack);
+        pa->path_acl[i]->nested_primary = -1;
     }
     qsort_r(pa->path_acl, pa->n_path_acl, sizeof(path_acl_t *), pacl_sort_fn, NULL);
+
+    //** check for nested ACLs and annotate as needed
+    pa->n_lut = 0;
+    tbx_type_malloc_clear(pa->lut, int, pa->n_path_acl);
+    for (i=0; i<pa->n_path_acl; i++) {
+        match = -1;
+        if (pa->path_acl[i]->nested_primary == -1) pa->path_acl[i]->nested_primary = i;
+        pa->path_acl[i]->rlut = pa->n_lut;
+        for (j=i+1; j<pa->n_path_acl; j++) {
+            if (strncmp(pa->path_acl[i]->prefix, pa->path_acl[j]->prefix, pa->path_acl[i]->n_prefix) != 0) break;
+            if (pa->path_acl[j]->nested_primary == -1) pa->path_acl[j]->nested_primary = i;
+            if (pacl_compare_nested_acls(pa->path_acl[i], pa->path_acl[j]) != 0) {
+                log_printf(0, "ERROR: bad nested ACLs! prefix=%s prefix_nested=%s\n", pa->path_acl[i]->prefix, pa->path_acl[j]->prefix);
+                return(1);
+            }
+            match = j;
+        }
+
+        pa->path_acl[i]->nested_end = match;
+        if (match == -1) {
+            pa->lut[pa->n_lut] = pa->path_acl[i]->nested_primary;
+            pa->n_lut++;
+        }
+    }
+
+    if (tbx_log_level() > 0) {
+        for (i=0; i<pa->n_path_acl; i++) {
+            log_printf(1, "i=%d prefix=%s nested_end=%d nested_primary=%d rlut=%d\n", i, pa->path_acl[i]->prefix, pa->path_acl[i]->nested_end, pa->path_acl[i]->nested_primary, pa->path_acl[i]->rlut);
+        }
+
+        log_printf(1, "n_lut=%d\n", pa->n_lut);
+        for (i=0; i<pa->n_lut; i++) {
+            log_printf(1, "lut[%d]=%d\n", i, pa->lut[i]);
+        }
+    }
 
     //** Clean up
     tbx_stack_free(stack, 0);
     tbx_stack_free(acl_stack, 0);
+
+    return(0);
 }
 
 //**************************************************************************
@@ -936,11 +1065,11 @@ void prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 int _gid_found(int n, gid_t *gid_list, gid_t gid)
 {
     int i;
-    
+
     for (i=0; i<n; i++) {
         if (gid == gid_list[i]) return(1);
     }
-    
+
     return(0);
 }
 
@@ -954,7 +1083,7 @@ int _group2gid(const char *group, gid_t *gid)
 
     grp = getgrnam(group);
     if (!grp) return(-1);
-    
+
     *gid = grp->gr_gid;
     return(0);
 }
@@ -1022,7 +1151,7 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                         got_lfs_gid = 1;
                     }
                 }
-            
+
                 ele = tbx_inip_ele_next(ele);
             }
 
@@ -1097,7 +1226,10 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
     pa->dt_hint_cache = PA_HINT_TIMEOUT;
 
     //**Now populate it
-    prefix_account_parse(pa, fd);  //** Add the prefix/account associations
+    if (prefix_account_parse(pa, fd) != 0) { //** Add the prefix/account associations
+        pacl_destroy(pa);  //** Got an error so cleanup and kick out
+        return(NULL);
+    }
     gid2account_parse(pa, fd);     //** And the GID->Account mappings, if any exist
 
     fname[sizeof(fname)-1] = 0;
@@ -1165,6 +1297,7 @@ void pacl_destroy(path_acl_context_t *pa)
 
     log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
+    if (pa->lut) free(pa->lut);
 
     //** Tear down the Path ACL list strcture
     for (i=0; i<pa->n_path_acl; i++) {
@@ -1187,4 +1320,23 @@ void pacl_destroy(path_acl_context_t *pa)
 
     //** and container
     free(pa);
+}
+
+//**************************************************************************
+// pacl_path_probe - Dumps information about the prefix the path maps to
+//   Prints details to the given fd if provided and returns an index representing
+//   which internal prefix it maps to or -1 if the default is hit
+//**************************************************************************
+
+int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int seed)
+{
+    path_acl_t *acl;
+    int exact, got_default, index;
+
+    index = seed;
+    acl = pacl_search(pa, prefix, &exact, &got_default, &index);
+
+    fprintf(fd, "exact=%d got_default=%d index=%d\n", exact, got_default, index);
+    fprintf(fd, "prefix=%s\n", acl->prefix);
+    return(index);
 }

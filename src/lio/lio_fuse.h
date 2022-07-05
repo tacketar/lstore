@@ -27,12 +27,12 @@
 #include <lio/fs.h>
 #include <lio/lio_fuse.h>
 #include <lio/visibility.h>
+#include <lio/path_acl.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/list.h>
 
 #include "ex3.h"
 #include "lio.h"
-#include "path_acl.h"
 
 #ifdef __cplusplus
 extern "C" {

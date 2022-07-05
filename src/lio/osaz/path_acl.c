@@ -32,7 +32,7 @@
 #include "lio.h"
 #include "ex3/system.h"
 #include "service_manager.h"
-#include "../path_acl.h"  //** This is the generic routines
+#include <lio/path_acl.h>  //** This is the generic routines
 #include "path_acl.h"  //** This is me
 
 typedef struct {
@@ -361,6 +361,7 @@ void _pacl_load(lio_os_authz_t *az)
     char *obj_name = NULL;
     tbx_inip_file_t *ifd;
     lio_creds_t *creds;
+    path_acl_context_t *pa;
     int n;
 
     log_printf(20, "Loading config. pa_file=%s lio_gc=%p\n", osaz->pa_file, lio_gc);
@@ -375,8 +376,14 @@ void _pacl_load(lio_os_authz_t *az)
     if (ifd) {
         log_printf(5, "RELOADING data\n");
         tbx_monitor_thread_message(MON_MY_THREAD, "Reloading");
-        if (osaz->pa) pacl_destroy(osaz->pa);
-        osaz->pa = pacl_create(ifd, osaz->lfs_tmp_prefix);
+        pa = pacl_create(ifd, osaz->lfs_tmp_prefix);
+        if (pa) {
+            if (osaz->pa) pacl_destroy(osaz->pa);
+            osaz->pa = pa;
+        } else {
+            log_printf(5, "ERROR: Failed to reload data\n");
+            tbx_monitor_thread_message(MON_MY_THREAD, "ERROR: Failed to reload PACL data pa_file=%s", osaz->pa_file);
+        }
         tbx_inip_destroy(ifd);
     } else {
         tbx_monitor_thread_message(MON_MY_THREAD, "No changes");

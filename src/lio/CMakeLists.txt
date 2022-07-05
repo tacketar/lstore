@@ -165,6 +165,7 @@ set(LSTORE_PROJECT_INCLUDES
         lio/lio_fuse.h
         lio/notify.h
         lio/os.h
+        lio/path_acl.h
         lio/rs.h
         lio/segment.h
         lio/service_manager.h
@@ -211,6 +212,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_warm_bake
 		mk_linear
 		os_fsck
+		pacl_check
 		warmer_query
 		zadler32
 )
