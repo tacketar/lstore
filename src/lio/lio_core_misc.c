@@ -50,12 +50,47 @@
 //***********************************************************************
 
 //***********************************************************************
+// lio_get_shortcut - Looks up the shortcut from the standard file locations:
+//      ~/.lio/known_hosts
+//      /etc/lio/known_hosts
+//***********************************************************************
+
+char *lio_get_shortcut(char *label)
+{
+    char fname[4096];
+    char *home, *shortcut;
+    tbx_inip_file_t *ifd;
+
+    //** 1st check the user local known_hosts
+    home = getenv("HOME");
+    if (home == NULL) goto next;
+    snprintf(fname, sizeof(fname), "%s/.lio/known_hosts", home);
+    ifd = tbx_inip_file_read(fname, 1);
+    if (ifd == NULL) goto next;
+    shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
+    tbx_inip_destroy(ifd);
+    if (shortcut) return(shortcut);
+
+next:
+    //** No luck so look in the global location
+    snprintf(fname, sizeof(fname), "%s", "/etc/lio/known_hosts");
+    ifd = tbx_inip_file_read(fname, 1);
+    if (ifd == NULL) return(NULL);
+    shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
+    tbx_inip_destroy(ifd);
+
+    return(shortcut);
+}
+
+
+//***********************************************************************
 //  lio_parse_path - Parses a path of the form:
 //
 //          [lstore://][user@][MQ_NAME|]HOST:[port:]cfg:section:[/fname]
 //          [lstore://]user@[MQ_NAME|]HOST:[port:]cfg:[/fname]
 //          [lstore://]user@[MQ_NAME|]HOST[:port][:/fname]
 //          [lstore://]@:/fname
+//          [lstore://][user]@@shortcut[:/fname]
 //
 //  startpath is required.  All other parameters are optional.  If NULL the
 //     parameter is not returned.  If the parameter already has a value
@@ -69,11 +104,17 @@
 //    -1 if the path can't be parsed.  Usually :@ or some perm
 //***********************************************************************
 
-int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path)
+int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path)
 {
-    int i, j, k, found, found2, n, ptype, uri;
-    char *dummy;
+    int i, j, k, found, found2, n, ptype, uri, m, s;
+    char *dummy, *shortcut;
+    char label[2048];
+    char *startpath;
 
+    startpath = basepath;
+    shortcut = NULL;
+
+try_again:
     n = strlen(startpath);
 
     if (strncasecmp(startpath, "file://", 7) == 0) { //** Straight file
@@ -101,8 +142,33 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
             ptype = 1;
 
             if ((i>k) && (user)) {  //** Got a valid user
-                if (*user) free(*user);
-                *user = strndup(startpath+k, i-k);
+                if (*user == NULL) {
+                    if (!shortcut) {  //** Only copy over the user if it's empty if handling a shortcut
+                        free(*user);
+                        *user = strndup(startpath+k, i-k);
+                    }
+                }
+            }
+            if (startpath[found] == '@') { //** See if we got a shortcut
+                found++;
+                label[0] = '\0';
+                for (j=found; j<n; j++) {
+                    if (startpath[j] == ':') break;
+                }
+                if (startpath[j] != ':') j++;
+                memcpy(label, startpath + found, j-found);
+                label[j-found] = '\0';
+                shortcut = lio_get_shortcut(label);
+                if (shortcut) {
+                    m = n - j;
+                    s = m + strlen(shortcut)+2;
+                    tbx_type_malloc(dummy, char, s);
+                    snprintf(dummy, s, "%s:%s", shortcut, startpath + j);
+                    if (shortcut) free(shortcut);
+                    if (startpath != basepath) free(startpath);
+                    startpath = dummy;
+                    goto try_again;
+                }
             }
             break;
         } else if ((startpath[i] == '|') || (startpath[i] == ':')) { //** Got an MQ name
@@ -114,16 +180,13 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
         }
     }
 
-    //log_printf(0, "   @ check remaining=%s\n", startpath+i);
-
     //** See if we hit a stray '@' if so flag an error
     for (j=i+1; j<n; j++) {
         if (startpath[j] == '@') {
-            //log_printf(0, "    return A\n");
-            return(-1);
+            ptype = -1;
+            goto kick_out;
         }
     }
-    //log_printf(0, "   found=%d\n", found);
 
     if ((found == -1) && (uri == 0)) {
         if (startpath[k] == '/') {  //** Didn't find anything else to to parse
@@ -131,8 +194,7 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
                 if (*path) free(*path);
                 *path = strdup(startpath + k);
             }
-            //log_printf(0, "    return B\n");
-            return(ptype);
+            goto kick_out;
         } else { //** Just have a host
             ptype = 1;
         }
@@ -156,8 +218,6 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
         }
     }
 
-    //log_printf(0, "   after mq remaining=%s\n", startpath+k);
-    //log_printf(0, "   found=%d found2=%d k=%d\n", found, found2, k);
     if (found == -1) {  //**No path.  Just a host
         if (k < n) {
             if (host) {
@@ -165,7 +225,7 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
                 *host = strdup(startpath+k);
             }
         }
-        return(ptype);
+        goto kick_out;
     } else {
         if (k<n) {
             if ((i>k) && (host)) {
@@ -174,12 +234,10 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
             }
             k = i+1;  //** Move the starting forward to skip the MQ name
         } else if (found2) { //** We have an MQ name without a host so flag an error
-            //log_printf(0, "    return C\n");
-            return(-1);
+            ptype = -1;
+            goto kick_out;
         }
     }
-
-    //log_printf(0, "   after host remaining=%s\n", startpath+k);
 
     if (startpath[k] == '/') goto handle_path;
 
@@ -206,11 +264,9 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
         found2 = atoi(startpath+k);
         if (found2 > 0) {
            if (port) *port = found2;
-           return(ptype);
+           goto kick_out;
         }
     }
-
-    //log_printf(0, "   after port remaining=%s\n", startpath+k);
 
     if (startpath[k] == '/') goto handle_path;
 
@@ -228,8 +284,6 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
         }
     }
 
-    //log_printf(0, "   after cfg remaining=%s\n", startpath+k);
-
     if (startpath[k] == '/') goto handle_path;
 
     if (!found) { //** At the end and we don't have a path so it's a cfg
@@ -237,7 +291,7 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
             if (*cfg) free(*cfg);
             *cfg = strndup(startpath + k, i-k);
         }
-        return(ptype);
+        goto kick_out;
     }
 
     //** check if we have a section
@@ -260,6 +314,8 @@ handle_path:
         *path = strdup(startpath + k);
     }
 
+kick_out:
+    if (startpath != basepath) free(startpath);
     return(ptype);
 }
 
