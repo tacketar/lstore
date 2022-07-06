@@ -1437,7 +1437,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
     dit->stat_symlink = stat_symlink;
 
     for (i=0; i<_lio_stat_key_size; i++) {
-        dit->v_size[i] = -lio_gc->max_attr;
+        dit->v_size[i] = -lc->max_attr;
         dit->val[i] = NULL;
     }
 
