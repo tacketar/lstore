@@ -37,6 +37,8 @@ limitations under the License.
 extern "C" {
 #endif
 
+#define LIO_MQ_NAME_DEFAULT "LIO"    // ** Default MQ name for addresses
+
 // Typedefs
 typedef struct lio_cp_file_t lio_cp_file_t;
 typedef struct lio_cp_path_t lio_cp_path_t;

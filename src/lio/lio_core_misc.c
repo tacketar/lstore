@@ -339,7 +339,7 @@ tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, con
     tbx_inip_file_t *ifd = NULL;
 
     if (strncmp("lstore://", config_name, 9) == 0) {
-        if (rc_client_get_config(mqc, creds, (char *)config_name, &cfg, obj_name, ts) == 0) {
+        if (rc_client_get_config(mqc, creds, (char *)config_name, NULL, &cfg, obj_name, NULL, ts) == 0) {
             if (cfg) {
                 ifd = tbx_inip_string_read(cfg, 1);
                 if (ifd) tbx_inip_string_auto_destroy(ifd);

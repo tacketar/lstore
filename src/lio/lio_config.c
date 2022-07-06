@@ -688,7 +688,7 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
 
 lio_path_tuple_t lio_path_resolve_base(char *lpath)
 {
-    char *userid,*pp_section, *fname, *pp_mq, *pp_host, *pp_cfg, *config, *obj_name;
+    char *userid, *pp_section, *fname, *pp_mq, *pp_host, *pp_cfg, *config, *obj_name;
     void *cred_args[2];
     lio_path_tuple_t tuple, *tuple2;
     tbx_inip_file_t *ifd;
@@ -721,7 +721,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
         strncpy(uri, lio_gc->obj_name, sizeof(uri)-1);
         uri[sizeof(uri)-1] = '\0';
     } else {
-        if (!pp_mq) pp_mq = strdup("RC");
+        if (!pp_mq) pp_mq = strdup(LIO_MQ_NAME_DEFAULT);
         if (pp_port == 0) pp_port = 6711;
         if (!pp_section) pp_section = strdup("lio");
 
@@ -765,7 +765,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
             }
             tuple.lc->ifd = tbx_inip_dup(tuple.lc->ifd);  //** Dup the ifd
         } else { //** Look up using the remote config query
-            if (rc_client_get_config(NULL, NULL, uri, &config, &obj_name, &ts) != 0) {
+            if (rc_client_get_config(NULL, NULL, uri, NULL,  &config, &obj_name, NULL, &ts) != 0) {
                 memset(&tuple, 0, sizeof(tuple));
                 if (fname != NULL) free(fname);
                 goto finished;
@@ -1904,10 +1904,10 @@ no_args:
         i = 9 + 2 + 1 + 6 + 1 + 6 + 6 + 1 + sizeof(section_name) + 20;
         tbx_type_malloc(obj_name, char, i);
         dummy = NULL;
-        snprintf(obj_name, i, "lstore://%s|%s:%d:%s:%s", "RC", dummy, 6711, "LOCAL", section_name);
+        snprintf(obj_name, i, "lstore://%s|%s:%d:%s:%s", LIO_MQ_NAME_DEFAULT, dummy, 6711, "LOCAL", section_name);
     } else {            //** Try and load a remote config
         ts = 0;
-        if (rc_client_get_config(NULL, NULL, cfg_name, &config, &obj_name, &ts) == 0) {
+        if (rc_client_get_config(NULL, NULL, cfg_name, NULL, &config, &obj_name, &userid, &ts) == 0) {
             ifd = tbx_inip_string_read(config, 0);
             free(config);
         } else {
