@@ -238,6 +238,7 @@ struct lio_config_t {
     ex_off_t stream_buffer_max_size;
     ex_off_t jerase_max_parity_on_stack;
     ex_off_t small_files_in_metadata_max_size;
+    ex_off_t uuid;
     int calc_adler32;
     int monitor_enable;
     int timeout;

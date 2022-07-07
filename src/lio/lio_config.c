@@ -1216,6 +1216,16 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->stream_buffer_max_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_max_size", lio_default_options.stream_buffer_max_size);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
 
+    //** Get the mount's UUID. Most of the time this isn't set specifically in the section but instead stored as a parameter
+    stype = tbx_inip_get_string(lio->ifd, section, "uuid", "${uuid}");
+    if (stype[0] == '$') { //** Didn't get  one
+        lio->uuid = -1;
+    } else {
+        lio->uuid = atoll(stype);
+        if (lio->uuid == 0) lio->uuid = -1;
+    }
+    free(stype);
+
     //** Set up the monitoring
     lio->monitor_fname = (_monitoring_fname) ? strdup(_monitoring_fname) : tbx_inip_get_string(lio->ifd, section, "monitor_fname", lio_default_options.monitor_fname);
     lio->monitor_enable = (_monitoring_state == 1) ? 1 : tbx_inip_get_integer(lio->ifd, section, "monitor_enable", lio_default_options.monitor_enable);
