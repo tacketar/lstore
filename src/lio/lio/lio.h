@@ -50,6 +50,9 @@ typedef struct lio_unified_object_iter_t lio_unified_object_iter_t;
 struct stat;
 
 // Functions
+LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name);
+LIO_API void lio_destroy(lio_config_t *lio);
+
 LIO_API gop_op_generic_t *lio_abort_regex_object_set_multiple_attrs_gop(lio_config_t *lc, gop_op_generic_t *gop);
 LIO_API gop_op_generic_t *lio_symlink_object_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path, char *id);
 LIO_API gop_op_generic_t *lio_read_gop(lio_fd_t *fd, char *buf, ex_off_t size, ex_off_t off, lio_segment_rw_hints_t *rw_hints);

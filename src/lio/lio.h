@@ -162,8 +162,6 @@ int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, in
 LIO_API int lio_parse_path_test();
 lio_fn_t *lio_core_create();
 void lio_core_destroy(lio_config_t *lio);
-lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name);
-void lio_destroy(lio_config_t *lio);
 const char *lio_client_version();
 
 void lio_wq_shutdown();
