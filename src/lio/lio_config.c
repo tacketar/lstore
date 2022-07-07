@@ -31,6 +31,7 @@
 #include <gop/mq_stream.h>
 #include <gop/mq.h>
 #include <gop/tp.h>
+#include <lio/lio.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdio.h>

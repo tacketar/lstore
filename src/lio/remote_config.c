@@ -20,6 +20,7 @@
 #include <gop/mq_helpers.h>
 #include <gop/mq_stream.h>
 #include <gop/opque.h>
+#include <lio/lio.h>
 #include <lio.h>
 #include <stdlib.h>
 #include <strings.h>
