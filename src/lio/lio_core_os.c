@@ -470,6 +470,7 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
     //** Remove the OS entry first.  This way if it fails we'll just kick out and the data is still good.
     err = gop_sync_exec(os_remove_object(op->lc->os, op->creds, op->src_path));
     if (err != OP_STATE_SUCCESS) {
+        if ((op->ex == NULL) && (ex_data != NULL)) free(ex_data);  //** Fee the exnode we just fetched if needed
         log_printf(0, "ERROR: removing file: %s err=%d\n", op->src_path, err);
         status = gop_failure_status;
         return(status);
