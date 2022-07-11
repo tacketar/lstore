@@ -211,7 +211,7 @@ void fs_osaz_attr_filter_apply(lio_fs_t *fs, const char *key, int mode, char **v
 
 void lio_fs_hint_release(lio_fs_t *fs, lio_os_authz_local_t *ug)
 {
-    osaz_ug_hint_release(fs->osaz, fs->lc->creds, ug);    
+    osaz_ug_hint_release(fs->osaz, fs->lc->creds, ug);
 }
 
 //***********************************************************************
@@ -277,7 +277,7 @@ lio_os_authz_local_t *_fs_get_ug(lio_fs_t *fs, lio_os_authz_local_t *my_ug, lio_
     gid_t fsuid;
 
     if (my_ug) return(my_ug);
-    
+
     switch (fs->ug_mode) {
     case UG_GLOBAL:
         lio_fs_fill_os_authz_local(fs, dummy_ug, fs->ug.uid, fs->ug.gid[0]);
@@ -496,6 +496,19 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (get_lock == 1) fs_unlock(fs);
 
     return(ftype);
+}
+
+//*************************************************************************
+// lio_fs_same_namespace - checks 2 fs structs and returns if they are use
+//     the same LStore namespace.  Returns 1 if they are and 0 if they differ
+//*************************************************************************
+
+int lio_fs_same_namespace(lio_fs_t *fs1, lio_fs_t *fs2)
+{
+    int same;
+
+    same = (fs1->lc->uuid == fs2->lc->uuid) ? 1 : 0;
+    return(same);
 }
 
 //*************************************************************************

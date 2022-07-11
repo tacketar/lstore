@@ -44,6 +44,7 @@ LIO_API void lio_fs_hint_release(lio_fs_t *fs, lio_os_authz_local_t *ug);
 LIO_API lio_os_authz_local_t *lio_fs_new_os_authz_local(lio_fs_t *fs, uid_t uid, gid_t gid);
 LIO_API void lio_fs_destroy_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug);
 LIO_API void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t uid, gid_t gid);
+LIO_API int lio_fs_same_namespace(lio_fs_t *fs1, lio_fs_t *fs2);
 LIO_API int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink);
 LIO_API lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname);
 LIO_API int lio_fs_realpath(lio_fs_t *fs, const char *path, char *realpath);
