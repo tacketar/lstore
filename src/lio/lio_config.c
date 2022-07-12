@@ -1319,6 +1319,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         on = gop_mq_ongoing_create(lio->mqc, NULL, 5, ONGOING_CLIENT);
         _lc_object_put(ESS_ONGOING_CLIENT, on);  //** Add it to the table
     } else {
+        add_service(lio->ess, ESS_RUNNING, ESS_MQ, lio->mqc);  //** It's used by other services
         on = _lc_object_get(ESS_ONGOING_CLIENT);
     }
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT, on);
