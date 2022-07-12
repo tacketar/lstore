@@ -459,7 +459,7 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, in
         }
     }
 
-    if (*seed_hint) *seed_hint = index;
+    if (seed_hint) *seed_hint = index;
     return(acl[index]);
 }
 
