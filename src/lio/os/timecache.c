@@ -463,7 +463,7 @@ int _ostc_cleanup(lio_object_service_fn_t *os, ostcdb_object_t *obj, apr_time_t 
     }
 
     log_printf(5, "fname=%s akept=%d okept=%d o+a=%d\n", obj->fname, akept, okept, akept+okept);
-    tbx_monitor_thread_message(MON_MY_THREAD, "_ostc_cleanup: fname=%s akept=%d okept=%d o+a=%d\n", obj->fname, akept, okept, akept+okept);
+    tbx_monitor_thread_message(MON_MY_THREAD, "_ostc_cleanup: fname=%s akept=%d okept=%d o+a=%d", obj->fname, akept, okept, akept+okept);
 
     return(akept + okept);
 }
@@ -910,9 +910,9 @@ void _ostc_cache_purge_realpath(lio_object_service_fn_t *os, ostcdb_object_t *pa
         }
      }
 
-    if (obj->realpath) {
-        free(obj->realpath);
-        obj->realpath = NULL;
+    if (parent->realpath) {
+        free(parent->realpath);
+        parent->realpath = NULL;
     }
 }
 
@@ -2727,7 +2727,7 @@ gop_op_status_t ostc_open_object_fn(void *arg, int tid)
     }
 
     //** Force an immediate file open
-    log_printf(5, "forced open of file. fname=%s\n", op->path);
+    log_printf(5, "forced open of file. fname=%s gid=%d\n", op->path, gop_id(op->gop));
     status = gop_sync_exec_status(op->gop);
     op->gop = NULL;
 
