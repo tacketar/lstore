@@ -24,7 +24,8 @@
 //*************************************************************************
 //*************************************************************************
 
-int main(int argc, char **argv)
+//** Old C7 gcc 4.8.5 compiler optimizes arg processing loop and generates a potential signed overflow
+int __attribute__((optimize("O0"))) main(int argc, char **argv)
 {
     int i, ll, start_option, seed;
     tbx_inip_file_t *ifd;
