@@ -569,7 +569,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     //** keep quickly successive stat calls to not get stale information
     _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 1);
 
-    FS_MON_OBJ_DESTROY();
+    FS_MON_OBJ_DESTROY_MESSAGE("size=" XOT, stat->st_size);
 
     return(0);
 }
@@ -781,6 +781,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     }
 
     if (fs_osaz_object_create(fs, ug, fname) != 1) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
         return(-EACCES);
     }
 
@@ -801,7 +802,10 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     if (exec_mode) {
         status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
-        err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+        if (status.op_status != OP_STATE_SUCCESS) {
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCES-EXEC");
+            return(-EACCES);
+        }
     }
 
     FS_MON_OBJ_DESTROY();
@@ -902,8 +906,11 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     fs_unlock(fs);
 
     err = fs_actual_remove(fs, ug, fname, ftype);
-
-    FS_MON_OBJ_DESTROY();
+    if (err) {
+        FS_MON_OBJ_DESTROY_MESSAGE("error=%d", err);
+    } else {
+        FS_MON_OBJ_DESTROY();
+    }
     return(err);
 }
 
@@ -923,7 +930,7 @@ int lio_fs_unlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname)
 
 int lio_fs_rmdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname)
 {
-    return(lio_fs_object_remove(fs, ug, fname, OS_OBJECT_FILE_FLAG));
+    return(lio_fs_object_remove(fs, ug, fname, OS_OBJECT_DIR_FLAG));
 }
 
 //*****************************************************************
@@ -2071,15 +2078,24 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     val = NULL;
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
         //** Make sure we can access it
-        if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) return(-EACCES);
+        if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
+            FS_MON_OBJ_DESTROY_MESSAGE("ENCCES");
+            return(-EACCES);
+        }
         lio_fs_get_tape_attr(fs, ug, fname, &val, &v_size);
         fs_osaz_attr_filter_apply(fs, name, LIO_READ_MODE, &val, &v_size, filter);
     } else {
         //** Short circuit the Linux Security ACLs we don't support
-        if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) return(-ENOATTR);
+        if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) {
+            FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
+            return(-ENOATTR);
+        }
 
         //** Make sure we can access it
-        if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) return(-EACCES);
+        if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+            return(-EACCES);
+        }
         err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
@@ -2146,13 +2162,19 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     v_size = size;
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
         //** Make sure we can access it
-        if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) return(-EACCES);
+        if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+            return(-EACCES);
+        }
         lio_fs_set_tape_attr(fs, ug, fname, fval, v_size);
         return(0);
     } else {
         //** Make sure we can access it
         if (strcmp(name, "system.exnode") == 0) {
-           if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) return(-EACCES);
+           if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
+               FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+               return(-EACCES);
+           }
         }
         err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
