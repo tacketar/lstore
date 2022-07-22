@@ -138,12 +138,55 @@ typedef struct {
     char *owner;
 } lio_fsck_check_t;
 
+lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t ino);
 int ex_id_compare_fn(void *arg, tbx_sl_key_t *a, tbx_sl_key_t *b);
 tbx_sl_compare_t ex_id_compare = {.fn=ex_id_compare_fn, .arg=NULL };
 
 //***********************************************************************
 // Core LFS functionality
 //***********************************************************************
+
+//***********************************************************************
+// lio_get_open_file_size - Returns the size of the file if it is currrently open and -1 otherwise
+//***********************************************************************
+
+ex_off_t lio_get_open_file_size(lio_config_t *lc, ex_id_t ino, int do_lock)
+{
+    lio_file_handle_t *fh;
+    ex_off_t n = -1;
+
+    if (do_lock) { lio_lock(lc); }
+    fh = _lio_get_file_handle(lc, ino);
+    if (fh) n = lio_size_fh(fh);
+    if (do_lock) { lio_unlock(lc); }
+
+    return(n);
+}
+
+//***********************************************************************
+// lio_store_stat_size - Stores the stat file size info in the struct
+//***********************************************************************
+
+void lio_store_stat_size(struct stat *stat, ex_off_t nbytes)
+{
+    stat->st_size = nbytes;
+    stat->st_blocks = nbytes/512;
+    if (stat->st_blocks == 0) stat->st_blocks = 1;
+}
+
+//***********************************************************************
+// lio_update_stat_open_file_size - Updates the stat size fields for open files
+//***********************************************************************
+
+void lio_update_stat_open_file_size(lio_config_t *lc, ex_id_t ino, struct stat *stat, int do_lock)
+{
+    ex_off_t nbytes;
+
+    nbytes = lio_get_open_file_size(lc, ino, do_lock);
+    if (nbytes < 0) return;
+
+    lio_store_stat_size(stat, nbytes);
+}
 
 //************************************************************************
 //  ex_id_compare_fn  - ID comparison function
@@ -1340,11 +1383,9 @@ void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size
     len = 0;
     if (val[3] != NULL) sscanf(val[3], XOT, &len);
 
-    stat->st_size = len;
+    stat->st_size = (stat->st_mode & S_IFDIR) ? 1 : len;
+    lio_store_stat_size(stat, stat->st_size);
     stat->st_blksize = 4096;
-    stat->st_blocks = stat->st_size / stat->st_blksize;
-    if (stat->st_blocks <= 0) stat->st_blocks = 1;
-    if (stat->st_size < 1024) stat->st_blksize = 1024;
 
     //** N-links
     n = 0;
@@ -1389,8 +1430,11 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
             ino = 0;
             if (lio_get_symlink_inode(lc, creds, fname, rpath, 1, &ino) == 0) {
                 stat->st_ino = ino;
+                lio_update_stat_open_file_size(lc, ino, stat, 1);
             }
        }
+    } else {
+       lio_update_stat_open_file_size(lc, stat->st_ino, stat, 1);
     }
 
     if (readlink) {
@@ -1530,9 +1574,13 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
             ino = 0;
             if (lio_get_symlink_inode(dit->lc, dit->creds, fname, rpath, 1, &ino) == 0) {
                 stat->st_ino = ino;
+                lio_update_stat_open_file_size(dit->lc, ino, stat, 1);
             }
        }
+    } else {
+        lio_update_stat_open_file_size(dit->lc, ino, stat, 1);
     }
+
     if (readlink) {
         *readlink = flink;
     } else if (flink) {

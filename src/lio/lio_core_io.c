@@ -112,7 +112,7 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
     tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     while (fh != NULL) {
         d = segment_size(fh->seg);
-        fprintf(fd, " seg=" XIDT " fname=%s  size=%s  cnt=%d\n", fh->vid, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count);
+        fprintf(fd, " ino=" XIDT " fname=%s  size=%s  cnt=%d\n", fh->ino, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count);
         tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     }
     lio_unlock(lc);
@@ -463,9 +463,9 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
 //  ****NOTE: assumes that lio_lock(lfs) has been called ****
 //***********************************************************************
 
-lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid)
+lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t ino)
 {
-    return(tbx_list_search(lc->open_index, (tbx_list_key_t *)&vid));
+    return(tbx_list_search(lc->open_index, (tbx_list_key_t *)&ino));
 
 }
 
@@ -476,7 +476,7 @@ lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid)
 
 void _lio_add_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 {
-    tbx_list_insert(lc->open_index, (tbx_list_key_t *)&(fh->vid), (tbx_list_data_t *)fh);
+    tbx_list_insert(lc->open_index, (tbx_list_key_t *)&(fh->ino), (tbx_list_data_t *)fh);
 }
 
 
@@ -487,7 +487,7 @@ void _lio_add_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 
 void _lio_remove_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 {
-    tbx_list_remove(lc->open_index, (tbx_list_key_t *)&(fh->vid), (tbx_list_data_t *)fh);
+    tbx_list_remove(lc->open_index, (tbx_list_key_t *)&(fh->ino), (tbx_list_data_t *)fh);
 }
 
 //*************************************************************************
@@ -885,7 +885,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     lio_file_handle_t *fh;
     lio_fd_t *fd;
     char *exnode, *data;
-    ex_id_t ino, vid;
+    ex_id_t ino;
     ex_off_t data_size;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
@@ -962,8 +962,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     //** Load the exnode and get the default view ID
     exp = lio_exnode_exchange_text_parse(exnode);
-    vid = exnode_exchange_get_default_view_id(exp);
-    if (vid == 0) {  //** Make sure the vid is valid.
+    if (exnode_exchange_get_default_view_id(exp) == 0) {  //** Make sure the vid is valid.
         log_printf(1, "ERROR loading exnode! fname=%s\n", op->path);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         free(fd);
@@ -976,7 +975,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     }
 
     lio_lock(lc);
-    fh = _lio_get_file_handle(lc, vid);
+    fh = _lio_get_file_handle(lc, ino);
     log_printf(2, "fname=%s fh=%p\n", op->path, fh);
 
     if (fh != NULL) { //** Already open so just increment the ref count and return a new fd
@@ -993,7 +992,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     //** New file to open
     tbx_type_malloc_clear(fh, lio_file_handle_t, 1);
-    fh->vid = vid;
+    fh->ino = ino;
     fh->ref_count++;
     fh->lc = lc;
     fh->fname = strdup(fd->path);
@@ -1135,7 +1134,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     int n, modified;
     double dt;
 
-    log_printf(1, "fname=%s modified=" AIT " count=%d\n", fd->path, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count);
+    log_printf(1, "fname=%s ino=" XIDT " modified=" AIT " count=%d\n", fd->path, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count);
     tbx_log_flush();
 
     status = gop_success_status;

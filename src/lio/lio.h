@@ -85,7 +85,7 @@ struct lio_file_handle_t {  //** Shared file handle
     char *data;          //** This holds small file data which gets stored as metadata
     ex_off_t data_size;  //** And if this is the corresponding size in data
     ex_off_t max_data_allocated;  //** This is how much is allocated already
-    ex_id_t vid;
+    ex_id_t ino;
     int in_flight;
     int adjust_tier_pending;
     int ref_count;

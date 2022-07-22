@@ -150,8 +150,6 @@ struct lio_fs_dir_iter_t {
     int state;
 };
 
-lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid);
-
 #define UG_GLOBAL 0
 #define UG_UID    1
 #define UG_FSUID  2
@@ -432,7 +430,6 @@ int fs_osaz_attr_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 
 int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val, int *v_size, char **symlink, int stat_symlink, int get_lock)
 {
-    lio_file_handle_t *fh;
     fs_open_file_t *fop;
     char *slink;
     char rpath[OS_PATH_MAX];
@@ -485,13 +482,7 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
     if (fop != NULL) {  //** The file is open so need to override the size
         ino = fop->sid;
-        fh = _lio_get_file_handle(fs->lc, ino);
-        if (fh) {
-            stat->st_size = lio_size_fh(fh);
-            stat->st_blksize = 4096;
-            stat->st_blocks = stat->st_size / stat->st_blksize;
-            if (stat->st_blocks <= 0) stat->st_blocks = 1;
-        }
+        lio_update_stat_open_file_size(fs->lc, ino, stat, 1);
     }
     if (get_lock == 1) fs_unlock(fs);
 
@@ -2044,7 +2035,6 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     mode_t mode;
 
     v_size= size;
-
     FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
 
     if (fs->enable_osaz_acl_mappings) {
@@ -2052,8 +2042,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
             ftype = lio_fs_exists(fs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
-                return(-ENOATTR);
+                FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
+                return(-ENODATA);
             }
             err = osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode);
             FS_MON_OBJ_DESTROY();
@@ -2063,14 +2053,14 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     //** See if this are always empty attrs
     if (fs->enable_security_attr_checks == 0) {
-        if (strncmp("system.posix_acl_", name, 17) == 0) {
+        if (strncmp("system.posix_", name, 17) == 0) {
             if ((strcmp("access", name + 17) == 0) || (strcmp("default", name + 17) == 0)) {
-                FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
-                return(-ENOATTR);
+                FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
+                return(-ENODATA);
             }
        } else if (strcmp("security.selinux", name) == 0) {
-          FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
-          return(-ENOATTR);
+          FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
+          return(-ENODATA);
        }
     }
 
@@ -2079,7 +2069,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
         //** Make sure we can access it
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
-            FS_MON_OBJ_DESTROY_MESSAGE("ENCCES");
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
             return(-EACCES);
         }
         lio_fs_get_tape_attr(fs, ug, fname, &val, &v_size);
@@ -2087,8 +2077,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     } else {
         //** Short circuit the Linux Security ACLs we don't support
         if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) {
-            FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
-            return(-ENOATTR);
+            FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
+            return(-ENODATA);
         }
 
         //** Make sure we can access it
@@ -2098,8 +2088,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         }
         err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (err != OP_STATE_SUCCESS) {
-            FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
-            return(-ENOATTR);
+            FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
+            return(-ENODATA);
         }
         fs_osaz_attr_filter_apply(fs, name, OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
     }
@@ -2107,7 +2097,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     err = 0;
     if (v_size < 0) {
         v_size = 0;  //** No attribute
-        err = -ENOATTR;
+        err = -ENODATA;
     }
 
     if (size == 0) {
