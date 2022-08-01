@@ -42,6 +42,8 @@
     ASSERT_EXISTS(ftruncate);
 
     //** These are the normal interfaces
+    ASSERT_EXISTS(__xmknod);
+    ASSERT_EXISTS(__xmknodat);
     ASSERT_EXISTS(fopen);
     ASSERT_EXISTS(open);
     ASSERT_EXISTS(openat);
