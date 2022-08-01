@@ -118,6 +118,8 @@ LIO_API gop_op_generic_t *lio_realpath_gop(lio_config_t *lc, lio_creds_t *creds,
 LIO_API gop_op_status_t lio_file_copy_op(void *arg, int id);
 LIO_API int lio_fopen_flags(const char *sflags);
 LIO_API int lio_open_flags(int flags, mode_t mode);
+LIO_API int lio_mode2os_flags(const mode_t mode);
+LIO_API mode_t lio_os2mode_flags(const int osflags);
 LIO_API gop_op_generic_t *lio_fsck_gop(lio_config_t *lc, lio_creds_t *creds, char *fname, int ftype, int owner_mode, char *owner, int exnode_mode);
 LIO_API ex_off_t lio_fsck_visited_count(lio_config_t *lc, lio_fsck_iter_t *oit);
 LIO_API void lio_get_error_counts(lio_config_t *lc, lio_segment_t *seg, lio_segment_errors_t *serr);

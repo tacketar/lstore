@@ -293,6 +293,13 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
 
     log_printf(15, "START op->ex=%p !!!!!!!!!\n fname=%s\n",  op->ex, op->src_path);
 
+    //** Sanity check the type is supported
+    if (op->type & OS_OBJECT_UNSUPPORTED_FLAG) {
+        log_printf(15, "ERROR Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
+        status = gop_failure_status;
+        goto fail_bad;
+    }
+
     //** Make the base object
     err = gop_sync_exec(os_create_object(op->lc->os, op->creds, op->src_path, op->type, op->id));
     if (err != OP_STATE_SUCCESS) {
@@ -1293,13 +1300,14 @@ mode_t ftype_lio2posix(int ftype)
 {
     mode_t mode;
 
+    mode = lio_os2mode_flags(ftype);
+
     if (ftype & OS_OBJECT_SYMLINK_FLAG) {
-        mode = S_IFLNK | 0777;
+        mode |= 0777;
     } else if (ftype & OS_OBJECT_DIR_FLAG) {
-        mode = S_IFDIR | 0755;
+        mode |= 0755;
     } else {
-//     mode = S_IFREG | 0444;
-        mode = S_IFREG | 0666;  //** Make it so that everything has RW access
+        mode |= 0666;  //** Make it so that everything has RW access. It'll get overwritten by the ACLs if enabled
     }
 
     return(mode);

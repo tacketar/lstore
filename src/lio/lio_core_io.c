@@ -121,6 +121,44 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
 }
 
 //***********************************************************************
+// lio_mode2os_flags - Converts a POSIX mode to an LStore OS object flags
+//***********************************************************************
+
+int lio_mode2os_flags(const mode_t mode)
+{
+    int flags = 0;
+
+    if (S_ISSOCK(mode)) flags |= OS_OBJECT_SOCKET_FLAG;
+    if (S_ISLNK(mode)) flags |= OS_OBJECT_SYMLINK_FLAG;
+    if (S_ISREG(mode)) flags |= OS_OBJECT_FILE_FLAG;
+    if (S_ISBLK(mode)) flags |= OS_OBJECT_BLOCK_FLAG;
+    if (S_ISDIR(mode)) flags |= OS_OBJECT_DIR_FLAG;
+    if (S_ISCHR(mode)) flags |= OS_OBJECT_CHAR_FLAG;
+    if (S_ISFIFO(mode)) flags |= OS_OBJECT_FIFO_FLAG;
+
+    return(flags);
+}
+
+//***********************************************************************
+// lio_o2modes_flags - Converts an LStore OS object flag to a POSIX mode
+//***********************************************************************
+
+mode_t lio_os2mode_flags(const int osflags)
+{
+   mode_t mode = 0;
+
+    if (osflags & OS_OBJECT_SOCKET_FLAG) mode |= S_IFSOCK;
+    if (osflags & OS_OBJECT_SYMLINK_FLAG) mode |= S_IFLNK;
+    if (osflags & OS_OBJECT_FILE_FLAG) mode |= S_IFREG;
+    if (osflags & OS_OBJECT_BLOCK_FLAG) mode |= S_IFBLK;
+    if (osflags & OS_OBJECT_DIR_FLAG) mode |= S_IFDIR;
+    if (osflags & OS_OBJECT_CHAR_FLAG) mode |= S_IFCHR;
+    if (osflags & OS_OBJECT_FIFO_FLAG) mode |= S_IFIFO;
+
+    return(mode);
+}
+
+//***********************************************************************
 // lio_fopen_flags - Handles fopen type string flags and converts them
 //   to an integer which can be passed to lio_open calls.
 //   On error -1 is returned
