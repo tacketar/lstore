@@ -43,6 +43,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/types.h>
+#include <dirent.h>
 #include <tbx/append_printf.h>
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
@@ -81,6 +83,74 @@
     #define LFS_READDIR() int lfs_readdir(const char *dname, void *buf, fuse_fill_dir_t filler, off_t off, struct fuse_file_info *fi)
 #endif
 
+//** These sre for using a shadow file system for sanity checking LFS results
+//#define LFS_SHADOW
+#ifdef LFS_SHADOW
+    typedef struct {
+        lio_fd_t *fd;
+        int sfd;
+    } shadow_fd_t;
+
+    typedef struct {
+        char *dentry;
+        struct stat sbuf;
+        int matched;
+    } shadow_dentry_t;
+
+    typedef struct {
+        DIR *dir;
+        tbx_stack_t *stack;
+        char *fname;
+    } shadow_dir_t;
+
+    #define SHADOW_MIRROR_PREFIX "/accre/new_lserver/alan/minio"
+    #define SHADOW_MIRROR_PREFIX_LEN strlen(SHADOW_MIRROR_PREFIX)
+    #define SHADOW_MOUNT_PREFIX "/tmp/shadow"
+    #define SHADOW_MANGLE_FNAME(sfname, fname, is_shadow) \
+        char sfname[OS_PATH_MAX]; \
+        int is_shadow = 0; \
+        if (strncmp(SHADOW_MIRROR_PREFIX, fname, SHADOW_MIRROR_PREFIX_LEN) == 0) { \
+            is_shadow = 1; \
+            snprintf(sfname, OS_PATH_MAX, SHADOW_MOUNT_PREFIX "%s", fname); \
+        } \
+        log_printf(0, "SHADOW: is_shadow=%d fname=%s sfname=%s\n", is_shadow, fname, sfname)
+    #define SHADOW_GET_FD(handle) ((shadow_fd_t *)(handle))->fd
+    #define SHADOW_CREATE_FD(handle) tbx_type_malloc_clear(handle, shadow_fd_t, 1)
+    #define SHADOW_CODE(code) code
+    #define SHADOW_ERROR(...) log_printf(0, "SHADOW_ERROR: " __VA_ARGS__)
+    #define  SHADOW_GENERIC_COMPARE(fname, lerr, shadow_cmd) \
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow); \
+        int serr = shadow_cmd;              \
+        if (is_shadow) { \
+            if ((lerr != 0) && (serr == -1)) {   \
+                if (-lerr != errno) { SHADOW_ERROR("fname=%s lerr=%d serrno=%d\n", fname, lerr, errno); } \
+            } else if ((lerr != 0) || (serr != 0)) { \
+                SHADOW_ERROR("fname=%s MISMATCH lerr=%d serr=%d serrno=%d\n", fname, lerr, serr, errno); \
+            } \
+        }
+    #define  SHADOW_GENERIC_COMPARE_DUAL(fname1, fname2, lerr, shadow_cmd) \
+        SHADOW_MANGLE_FNAME(sfname1, fname1, is_shadow1); \
+        SHADOW_MANGLE_FNAME(sfname2, fname2, is_shadow2); \
+        int is_shadow12 = is_shadow1 + is_shadow2; \
+        int serr; \
+        if (is_shadow12 == 0) { \
+            serr = shadow_cmd;              \
+            if ((lerr != 0) && (serr == -1)) {   \
+                if (-lerr != errno) { SHADOW_ERROR("fname1=%s fname2=%s lerr=%d serrno=%d\n", fname1, fname2, lerr, errno); } \
+            } else if ((lerr != 0) || (serr != 0)) { \
+                SHADOW_ERROR("fname1=%s fname2=%s MISMATCH lerr=%d serr=%d serrno=%d\n", fname1, fname2, lerr, serr, errno); \
+            } \
+        } else if (is_shadow12 == 1) { \
+                SHADOW_ERROR("WARNING(is_shadow12=1 SKIPPING) fname1=%s fname2=%s\n", fname1, fname2); \
+        }
+#else
+    #define SHADOW_GET_FD(handle) (lio_fd_t *)handle
+    #define SHADOW_CREATE_FD(handle)
+    #define SHADOW_ERROR(...)
+    #define SHADOW_CODE(code)
+    #define SHADOW_GENERIC_COMPARE(fname, lerr, shadow_cmd)
+    #define SHADOW_GENERIC_COMPARE_DUAL(fname1, fname2, lerr, shadow_cmd)
+#endif
 
 typedef struct {
     char *dentry;
@@ -99,10 +169,183 @@ typedef struct {
     lio_fs_dir_iter_t *fsit;
     tbx_stack_t *stack;
     int state;
+    SHADOW_CODE(shadow_dir_t *sdir;)
 } lfs_dir_iter_t;
 
 lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid);
 
+
+//***********************************************************************
+//  Shadow Helper routines
+//***********************************************************************
+
+SHADOW_CODE(
+    //***********************************************************************
+
+    void shadow_stat_compare(const char *fname, int serrno, int serr, struct stat *shadow_stat, int err, struct stat *sbuf)
+    {
+        //** Check if an error occurred and if so compare them
+        if ((serr<0) && (err<0)) {
+            if (-serrno != err) { SHADOW_ERROR("fname=%s lerr=%d serr=%d errno=%d\n", fname, err, serr, errno); }
+            return;
+        }
+
+        //** No error so compare the structs
+        if ((shadow_stat->st_mode & S_IFMT) != (sbuf->st_mode & S_IFMT)) { SHADOW_ERROR("fname=%s st_mode: shadow=%o lio=%o\n", fname, (shadow_stat->st_mode & S_IFMT), (sbuf->st_mode & S_IFMT)); }
+        if (shadow_stat->st_mode & S_IFREG) { //** It's a normal file so compare the sizes
+            if (shadow_stat->st_size != sbuf->st_size) { SHADOW_ERROR("fname=%s st_size: shadow=%lu lio=%lu\n", fname, shadow_stat->st_size, sbuf->st_size); }
+        }
+    }
+
+    //***********************************************************************
+
+    void shadow_closedir(lfs_dir_iter_t *ldir)
+    {
+        shadow_dir_t *sdir = ldir->sdir;
+        shadow_dentry_t *dentry;
+
+        if (!sdir) return;
+
+        closedir(sdir->dir);
+        tbx_stack_move_to_top(sdir->stack);
+        while ((dentry = tbx_stack_pop(sdir->stack)) != NULL) {
+            if (dentry->matched != 1) { SHADOW_ERROR("prefix_fname=%s dentry=%s MISSING from LIO\n", sdir->fname, dentry->dentry); }
+            if (dentry->dentry) free(dentry->dentry);
+            free(dentry);
+        }
+        tbx_stack_free(sdir->stack, 1);
+
+        free(sdir->fname);
+        free(sdir);
+    }
+
+    //***********************************************************************
+
+    void shadow_opendir(const char *fname, lfs_dir_iter_t *ldir)
+    {
+        shadow_dir_t *sdir;
+        DIR *d;
+        struct dirent *de;
+        shadow_dentry_t *dentry;
+        char dename[OS_PATH_MAX];
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+
+        if (is_shadow == 0) return;
+
+        //** Try and open the directory and sanity check they both got the same initial result
+        d = opendir(sfname);
+        if (ldir->fsit == NULL) {
+            if (d) {
+                SHADOW_ERROR("fname=%s ldir=NULL and sdir!=NULL\n", fname);
+                closedir(d);
+            }
+            return;
+        } else if (d == NULL) {
+            SHADOW_ERROR("fname=%s ldir!=NULL and sdir=NULL\n", fname);
+            return;
+        }
+
+        //** If we made it here then both LIO and shadow can open the directory so we need to slurp in all the entries
+        //** since the order returned is random for comparison via lfs_readdir() calls
+        tbx_type_malloc_clear(sdir, shadow_dir_t, 1);
+        ldir->sdir = sdir;
+        sdir->dir = d;
+        sdir->stack = tbx_stack_new();
+        sdir->fname = strdup(fname);
+
+        while ((de = readdir(d)) != NULL) {
+            tbx_type_malloc_clear(dentry, shadow_dentry_t, 1);
+            dentry->dentry = strdup(de->d_name);
+            snprintf(dename, OS_PATH_MAX, "%s/%s", sfname, de->d_name);
+            stat(dename, &(dentry->sbuf));
+            tbx_stack_push(sdir->stack, dentry);
+        }
+    }
+
+    //***********************************************************************
+
+    void shadow_readdir(lfs_dir_iter_t *ldir, lfs_dir_entry_t *lde)
+    {
+        shadow_dir_t *sdir = ldir->sdir;
+        shadow_dentry_t *sde;
+        char dename[OS_PATH_MAX];
+
+        if (!sdir) return;
+
+        tbx_stack_move_to_top(sdir->stack);
+        while ((sde = tbx_stack_get_current_data(sdir->stack)) != NULL) {
+            if (strcmp(sde->dentry, lde->dentry) == 0) { //** Got a match
+                sde->matched = 1;
+                snprintf(dename, OS_PATH_MAX, "%s/%s(READDIR)", sdir->fname, sde->dentry);
+                shadow_stat_compare(dename, 0, 0, &(sde->sbuf), 0, &(lde->stat));
+                return;
+            }
+            tbx_stack_move_down(sdir->stack);
+        }
+
+        //** If we made it here the dentry was missing
+        SHADOW_ERROR("MISSING dentry from shadow! fname=%s/%s\n", sdir->fname, lde->dentry);
+    }
+
+    //***********************************************************************
+
+    void shadow_listxattr(const char *fname, char *list, size_t size, int err)
+    {
+
+        char slist[2*size];
+        char *sattr;
+        int nl;
+        int pos;
+        int len;
+        int ssize;
+        int i;
+        char *lattr[2048];  //** A hack buf this is for testing only
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+
+        if (is_shadow == 0) return;
+
+        //** Do the shadow call
+        ssize = listxattr(sfname, slist, 2*size);
+
+        //** Check for errors
+        if ((ssize == -1) && (err < 0)) {
+            if (errno != -err) { SHADOW_ERROR("fname=%s MISMATCH errno lerr=%d ssize=%d serrno=%d\n", fname, err, ssize, errno); }
+        } else if ((ssize == -1) || (err<0)) {
+            SHADOW_ERROR("fname=%s MISMATCH lerr=%d ssize=%d serrno=%d\n", fname, err, ssize, errno);
+        }
+
+        //** Both have results so need to do a comparision
+        //** Scan the LIO list and determine the offsets
+        nl = 0;
+        for (pos = 0; pos<(int)size; pos++) {
+            lattr[nl] = list + pos;
+            nl++;
+            len = strlen(list + pos);
+            pos += len + 1;
+        }
+
+        //** Do the same for the shadow but do a lio check.  Yes it's O(n) but it's a test.
+        for (pos = 0; pos<ssize; pos++) {
+            sattr = slist + pos;
+            len = strlen(sattr);
+            pos += len + 1;
+
+            for (i=0; i<nl; i++) {
+                if ((lattr[i]) && (strcmp(lattr[i], sattr) == 0)) {
+                    lattr[i] = NULL;
+                    goto match;
+                }
+            }
+            SHADOW_ERROR("fname=%s MISSING sattr=%s\n", fname, sattr);
+    match: continue;
+        }
+
+        //** Now see if any were missing from LIO
+        for (i=0; i<nl; i++) {
+            if (lattr[i]) { SHADOW_ERROR("fname=%s MISSING lattr=%s\n", fname, lattr[i]); }
+        }
+    }
+)
 
 //***********************************************************************
 
@@ -111,6 +354,7 @@ lio_os_authz_local_t *_get_fuse_ug(lio_fuse_t *lfs, lio_os_authz_local_t *ug, st
     lio_fs_fill_os_authz_local(lfs->fs, ug, fc->uid, fc->gid);
     return(ug);
 }
+
 
 //*************************************************************************
 // lfs_get_context - Returns the LFS context.  If none is available it aborts
@@ -134,7 +378,7 @@ lio_fuse_t *lfs_get_context()
 // lfs_stat - Does a stat on the file/dir
 //*************************************************************************
 
-int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
+int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
@@ -142,18 +386,29 @@ int lfs_stat(const char *fname, struct stat *stat, struct fuse_file_info *fi)
     char *flink;
 
     flink = NULL;
-    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, stat, &flink, 1);
+    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sbuf, &flink, 1);
     lio_fs_hint_release(lfs->fs, &ug);
 
     if (err == 0) {
         if (flink) {
-            stat->st_size += lfs->mount_point_len;
+            sbuf->st_size += lfs->mount_point_len;
             free(flink);
         }
     }
 
+    SHADOW_CODE(
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+        if (is_shadow) {
+            struct stat shadow_stat;
+            int serr = stat(sfname, &shadow_stat);
+            shadow_stat_compare(fname, errno, serr, &shadow_stat, err, sbuf);
+        }
+    )
+
     return(err);
 }
+
+//*************************************************************************
 
 int lfs_stat2(const char *fname, struct stat *stat)
 {
@@ -170,6 +425,8 @@ int lfs_closedir(const char *fname, struct fuse_file_info *fi)
     lfs_dir_entry_t *de;
 
     if (dit == NULL) return(-EBADF);
+
+    SHADOW_CODE(shadow_closedir(dit);)
 
     if (dit->stack) {
         //** Cyle through releasing all the entries
@@ -204,6 +461,8 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     dit->lfs = lfs;
     dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_CODE(shadow_opendir(fname, dit);)
 
     if (dit->fsit == NULL) {
         free(dit);
@@ -258,6 +517,7 @@ LFS_READDIR()
                 return(0);
             }
 
+            SHADOW_CODE(shadow_readdir(dit, de);)
             off++;
             tbx_stack_move_down(dit->stack);
             de = tbx_stack_get_current_data(dit->stack);
@@ -285,6 +545,7 @@ LFS_READDIR()
             return(0);
         }
 
+        SHADOW_CODE(shadow_readdir(dit, de);)
         off++;
     }
 
@@ -303,6 +564,8 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
 
     err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, mknod(sfname, mode, rdev));
     return(err);
 }
 
@@ -322,6 +585,9 @@ int lfs_chmod(const char *fname, mode_t mode)
 
     err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, chmod(sfname, mode));
+
     return(err);
 }
 
@@ -337,6 +603,9 @@ int lfs_mkdir(const char *fname, mode_t mode)
 
     err = lio_fs_mkdir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, mkdir(sfname, mode));
+
     return(err);
 }
 
@@ -352,6 +621,9 @@ int lfs_unlink(const char *fname)
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, unlink(sfname));
+
     return(err);
 }
 
@@ -367,6 +639,9 @@ int lfs_rmdir(const char *fname)
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_DIR_FLAG);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, rmdir(sfname));
+
     return(err);
 }
 
@@ -384,6 +659,29 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_fs_hint_release(lfs->fs, &ug);
     fi->fh = (uint64_t)fd;
 
+    SHADOW_CODE(
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+        shadow_fd_t *sfd;
+        int lerr = errno;
+        tbx_type_malloc_clear(sfd, shadow_fd_t, 1);
+        sfd->sfd = -1;
+
+        if (is_shadow) {
+            sfd->sfd = open(sfname, fi->flags);
+            sfd->fd = fd;
+            fi->fh = (uint64_t)sfd;
+
+            if ((fd == NULL) && (sfd->sfd == -1)) { //** Both failed so check the errno
+                if (lerr != errno) {
+                    SHADOW_ERROR("fname=%s flags=%d lfd=%p sfd=%d lerr=%d serr=%d\n", fname, fi->flags, fd, sfd->sfd, lerr, errno);
+                }
+            } else if (!(fd && sfd->fd)) { //** 1 failed but not both
+               SHADOW_ERROR("fname=%s flags=%d lfd=%p sfd=%d lerr=%d serr=%d\n", fname, fi->flags, fd, sfd->sfd, lerr, errno);
+            }
+            errno = lerr;
+        }
+    )
+
     if (!fd) return(-errno);  //On error lio_fs_open sets the error code in errno
     return(0);
 }
@@ -395,9 +693,25 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
 int lfs_release(const char *fname, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
+    int err;
 
-    return(lio_fs_close(lfs->fs, fd));
+    err = lio_fs_close(lfs->fs, fd);
+
+    SHADOW_CODE(
+        shadow_fd_t *sfd = (shadow_fd_t *)fi->fh;
+        int serr = close(sfd->sfd);
+        if (sfd->sfd) {
+            if ((serr == -1) && (err != 0)) {
+                SHADOW_ERROR("fname=%s lfd=%p sfd=%d lerr=%d serr=%d\n", fname, fd, sfd->sfd, err, errno);
+            } else if (!((serr == 0) && (err == 0))) {
+                SHADOW_ERROR("fnam=%s lfd=%p sfd=%d lerr=%d serr=%d\n", fname, fd, sfd->sfd, err, errno);
+            }
+        }
+        free(sfd);
+    )
+
+    return(err);
 }
 
 //*****************************************************************
@@ -408,9 +722,27 @@ int lfs_release(const char *fname, struct fuse_file_info *fi)
 int lfs_read(const char *fname, char *buf, size_t size, off_t off, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
+    int err;
 
-    return(lio_fs_pread(lfs->fs, fd, buf, size, off));
+    SHADOW_CODE( //** We do the read 1st so the user gets the data from LStore
+        int serrno;
+        int serr;
+        shadow_fd_t *sfd = (shadow_fd_t *)fi->fh;
+        if (sfd->sfd >= 0) {
+            serr = pread(sfd->sfd, buf, size, off);
+            serrno = errno;
+        }
+    )
+    err = lio_fs_pread(lfs->fs, fd, buf, size, off);
+
+    SHADOW_CODE(
+        if ((sfd->sfd >= 0) && (serr != err)) {
+            SHADOW_ERROR("fname=%s lfd=%p sfd=%d off=" XOT " size=" ST " lerr=%d serr=%d serrno=%d\n", fname, fd, sfd->sfd, off, size, err, serr, serrno);
+        }
+    )
+
+    return(err);
 }
 
 //*****************************************************************
@@ -420,9 +752,22 @@ int lfs_read(const char *fname, char *buf, size_t size, off_t off, struct fuse_f
 int lfs_write(const char *fname, const char *buf, size_t size, off_t off, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
+    int err;
 
-    return(lio_fs_pwrite(lfs->fs, fd, buf, size, off));
+    err = lio_fs_pwrite(lfs->fs, fd, buf, size, off);
+
+    SHADOW_CODE(
+        shadow_fd_t *sfd = (shadow_fd_t *)fi->fh;
+        if (sfd->sfd >= 0) {
+            int serr = pwrite(sfd->sfd, buf, size, off);
+            if (serr != err) {
+                SHADOW_ERROR("fname=%s lfd=%p sfd=%d off=" XOT " size=" ST " lerr=%d serr=%d serrno=%d\n", fname, fd, sfd->sfd, off, size, err, serr, errno);
+            }
+        }
+    )
+
+    return(err);
 }
 
 //*****************************************************************
@@ -432,7 +777,7 @@ int lfs_write(const char *fname, const char *buf, size_t size, off_t off, struct
 int lfs_flush(const char *fname, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);   //** There is no flush for a open() call just for fopen() calls
 
     return(lio_fs_flush(lfs->fs, fd));
 }
@@ -442,27 +787,33 @@ int lfs_flush(const char *fname, struct fuse_file_info *fi)
 // lfs_copy_file_range - Copies data between files
 //*****************************************************************
 
+//** SHADOW_UNSUPPORTED
 ssize_t lfs_copy_file_range(const char *path_in,  struct fuse_file_info *fi_in,  off_t offset_in,
                             const char *path_out, struct fuse_file_info *fi_out, off_t offset_out, size_t size, int flags)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd_in, *fd_out;
+    int err;
 
     log_printf(1, "START copy_file_range src=%s dest=%s\n", path_in, path_out);
 
-    fd_in = (lio_fd_t *)fi_in->fh;
+    SHADOW_ERROR("WARNING: UNSUPPORTED call! fin=%s fout=%s\n", path_in, path_out);
+
+    fd_in = SHADOW_GET_FD(fi_in->fh);
     if (fd_in == NULL) {
         log_printf(0, "ERROR: Got a null LFS fd_in handle\n");
         return(-EBADF);
     }
 
-    fd_out = (lio_fd_t *)fi_out->fh;
+    fd_out = SHADOW_GET_FD(fi_out->fh);
     if (fd_out == NULL) {
         log_printf(0, "ERROR: Got a null LFS fd_out handle\n");
         return(-EBADF);
     }
 
-    return(lio_fs_copy_file_range(lfs->fs, fd_in, offset_in, fd_out, offset_out, size));
+    err = lio_fs_copy_file_range(lfs->fs, fd_in, offset_in, fd_out, offset_out, size);
+
+    return(err);
 }
 
 //*****************************************************************
@@ -472,9 +823,13 @@ ssize_t lfs_copy_file_range(const char *path_in,  struct fuse_file_info *fi_in, 
 int lfs_fsync(const char *fname, int datasync, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
+    int err;
 
-    return(lio_fs_flush(lfs->fs, fd));
+    err = lio_fs_flush(lfs->fs, fd);
+    SHADOW_GENERIC_COMPARE(fname, err, fsync(((shadow_fd_t *)fi->fh)->sfd));
+
+    return(err);
 }
 
 //*************************************************************************
@@ -489,6 +844,9 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
 
     err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE_DUAL(oldname, newname, err, rename(sfname1, sfname2));
+
     return(err);
 }
 
@@ -511,7 +869,10 @@ int lfs_truncate(const char *fname, off_t new_size)
 
     err = lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, new_size);
     lio_fs_hint_release(lfs->fs, &ug);
-    return(err);    
+
+    SHADOW_GENERIC_COMPARE(fname, err, truncate(sfname, new_size));
+
+    return(err);
 }
 
 //*****************************************************************
@@ -522,8 +883,13 @@ int lfs_ftruncate(const char *fname, off_t new_size, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    int err;
 
-    return(lio_fs_ftruncate(lfs->fs, fd, new_size));
+    err = lio_fs_ftruncate(lfs->fs, fd, new_size);
+
+    SHADOW_GENERIC_COMPARE(fname, err, ftruncate(((shadow_fd_t *)fi->fh)->sfd, new_size));
+
+    return(err);
 }
 
 
@@ -531,14 +897,18 @@ int lfs_ftruncate(const char *fname, off_t new_size, struct fuse_file_info *fi)
 // lfs_utimens - Sets the access and mod times in ns
 //*****************************************************************
 
+//** SHADOW_UNSUPPORTED
 int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
 
+    SHADOW_ERROR("WARNING: UNSUPPORTED call! fname=%s\n", fname);
+
     err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, tv);
     lio_fs_hint_release(lfs->fs, &ug);
+
     return(err);
 }
 
@@ -562,6 +932,8 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
 
     err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, list, size);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_CODE(shadow_listxattr(fname, list, size, err);)
     return(err);
 }
 
@@ -582,6 +954,24 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
 
     err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, buf, size);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_CODE(
+        char sbuf[size+1];
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+        if (is_shadow) {
+            int serr = getxattr(sfname, name, sbuf, size+1);
+            if ((serr == -1) && (err < 0)) {
+                if (errno != -err) { SHADOW_ERROR("fname=%s attr=%s lerr=%d serr=%d\n", fname, name, err, errno); }
+            } else if ((serr == -1) || (err < 0)) {
+                SHADOW_ERROR("fname=%s mismatch attr=%s lerr=%d serr=%d serrno=%d\n", fname, name, err, serr, errno);
+            } else if (serr != err) {
+                SHADOW_ERROR("fname=%s size mismatch attr=%s lsize=%d ssize=%d\n", fname, name, err, serr);
+            } else if (serr > 0) {
+                if (memcmp(buf, sbuf, serr) != 0) { SHADOW_ERROR("fname=%s value mismatch attr=%s lval=%s sval=%s\n", fname, name, buf, sbuf); }
+            }
+        }
+    )
+
     return(err);
 }
 #endif //HAVE_XATTR
@@ -589,6 +979,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
 //*****************************************************************
 // lfs_setxattr - Sets a extended attribute
 //*****************************************************************
+
 #if defined(HAVE_XATTR)
 #  if ! defined(__APPLE__)
 int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t size, int flags)
@@ -602,6 +993,9 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
 
     err = lio_fs_setxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, fval, size, flags);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, setxattr(sfname, name, fval, size, flags));
+
     return(err);
 }
 
@@ -617,6 +1011,9 @@ int lfs_removexattr(const char *fname, const char *name)
 
     err = lio_fs_removexattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, removexattr(sfname, name));
+
     return(err);
 }
 #endif //HAVE_XATTR
@@ -633,6 +1030,9 @@ int lfs_hardlink(const char *oldname, const char *newname)
 
     err = lio_fs_hardlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_GENERIC_COMPARE_DUAL(oldname, newname, err, link(sfname1, sfname2));
+
     return(err);
 }
 
@@ -648,7 +1048,31 @@ int lfs_readlink(const char *fname, char *buf, size_t bsize)
     char flink[OS_PATH_MAX];
 
     err = lio_fs_readlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, buf, bsize);
-    lio_fs_hint_release(lfs->fs, &ug);    
+    lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_CODE(
+        SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
+        char sbuf[OS_PATH_MAX];
+        int serr;
+
+        if (is_shadow) {
+            serr = readlink(sfname, sbuf, OS_PATH_MAX);
+            if ((serr == -1) && (err < 0)) {
+                if (errno != -err) { SHADOW_ERROR("fname=%s lerr=%d serr=%d\n", fname, err, errno); }
+            } else if ((serr == -1) || (err < 0)) {
+                SHADOW_ERROR("fname=%s mismatch lerr=%d serr=%d\n", fname, err, errno);
+            } else if (serr != err) {
+                SHADOW_ERROR("fname=%s size mismatch lsize=%d ssize=%d\n", fname, err, serr);
+            } else if (serr > 0) {
+                if ((buf[0] == '/') && (sbuf[0] == '/')) { //** Absolute paths
+                    if (strcmp(buf, sbuf + strlen(SHADOW_MOUNT_PREFIX)) != 0) { SHADOW_ERROR("fname=%s link mismatch llink=%s slink=%s\n", fname, buf, sbuf); }
+                } else if (strcmp(buf, sbuf) != 0) {
+                    SHADOW_ERROR("fname=%s link mismatch llink=%s slink=%s\n", fname, buf, sbuf);
+                }
+            }
+        }
+    )
+
     if (err < 0) return(err);
 
     if (buf[0] == '/') { //** Absolute path so need to prepend the mount path
@@ -690,6 +1114,24 @@ int lfs_symlink(const char *link, const char *newname)
 
     err = lio_fs_symlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), link2, newname);
     lio_fs_hint_release(lfs->fs, &ug);
+
+    SHADOW_CODE(
+        SHADOW_MANGLE_FNAME(snewname, newname, is_shadow);
+        char slink[OS_PATH_MAX];
+        int serr;
+
+        if (is_shadow) {
+            if (link[0] == '/') { //** Got an abs symlink
+                snprintf(slink, OS_PATH_MAX, SHADOW_MOUNT_PREFIX "/%s", link2);
+                serr = symlink(slink, snewname);
+            } else {
+                serr = symlink(link2, snewname);
+            }
+
+            if (!((serr == 0) && (err == 0))) { SHADOW_ERROR("link=%s newname=%s lerr=%d serr=%d\n", link, newname, err, errno); }
+        }
+    )
+
     return(err);
 }
 
@@ -697,11 +1139,14 @@ int lfs_symlink(const char *link, const char *newname)
 // lfs_statfs - Returns the files system size
 //*************************************************************************
 
+//** SHADOW_UNSUPPORTED
 int lfs_statvfs(const char *fname, struct statvfs *sfs)
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+
+    SHADOW_ERROR("WARNING: UNSUPPORTED call! fname=%s\n", fname);
 
     err =  lio_fs_statvfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs);
     lio_fs_hint_release(lfs->fs, &ug);
@@ -828,13 +1273,6 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
     char hostname[1024];
     apr_gethostname(hostname, sizeof(hostname), lfs->mpool);
     lfs->id = strdup(hostname);
-
-//struct statvfs sfs;
-//lio_os_authz_local_t ug;
-//int i;
-//lio_fs_fill_os_authz_local(lfs->fs, &ug, 0, 0);
-//i = lio_fs_statvfs(lfs->fs, &ug, "/", &sfs);
-//log_printf(0, "lio_fs_statvfs=%d\n", i);
 
     // TODO: find a cleaner way to get fops here
     //lfs->fops = ctx->fuse->fuse_fs->op;
