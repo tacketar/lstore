@@ -73,6 +73,9 @@ LIO_API int lio_write_ex(lio_fd_t *fd, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_
 LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink);
 LIO_API int lio_wq_enable(lio_fd_t *fd, int max_in_flight);
 
+LIO_API void lio_store_stat_size(struct stat *stat, ex_off_t nbytes);
+LIO_API void lio_update_stat_open_file_size(lio_config_t *lc, ex_id_t ino, struct stat *stat, int do_lock);
+LIO_API ex_off_t lio_get_open_file_size(lio_config_t *lc, ex_id_t ino, int do_lock);
 LIO_API void lio_get_timestamp(char *val, int *timestamp, char **id);
 LIO_API ex_off_t lio_seek(lio_fd_t *fd, ex_off_t offset, int whence);
 LIO_API ex_off_t lio_tell(lio_fd_t *fd);
