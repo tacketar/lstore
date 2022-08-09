@@ -168,6 +168,8 @@ struct lio_fs_t {
     int n_merge;
     int enable_security_attr_checks;
     int _inode_key_size;
+    int enable_fifo;
+    int enable_socket;
     ex_off_t copy_bufsize;
     tbx_atomic_int_t read_cmds_inflight;
     tbx_atomic_int_t read_bytes_inflight;
@@ -286,7 +288,7 @@ lio_os_authz_local_t *_fs_get_ug(lio_fs_t *fs, lio_os_authz_local_t *my_ug, lio_
     case UG_FSUID:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
-        fsuid = setfsuid(-1); setfsuid(fsuid); 
+        fsuid = setfsuid(-1); setfsuid(fsuid);
 #pragma GCC diagnostic pop
         lio_fs_fill_os_authz_local(fs, dummy_ug, fsuid, getgid());
         break;
@@ -755,13 +757,17 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
 // lio_fs_object_create
 //*************************************************************************
 
-int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int ftype)
+int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode)
 {
     char fullname[OS_PATH_MAX];
     int err, n, exec_mode;
     gop_op_status_t status;
+    int os_mode = lio_mode2os_flags(mode);
 
-    FS_MON_OBJ_CREATE("FS_OBJECT_CREATE: fname=%s mode=%d ftype=%d", fname, mode, ftype);
+    FS_MON_OBJ_CREATE("FS_OBJECT_CREATE: fname=%s mode=%d", fname, mode);
+
+    if ((os_mode & OS_OBJECT_FIFO_FLAG) && (fs->enable_fifo == 0)) { FS_MON_OBJ_DESTROY_MESSAGE("EOPNOTSUPP: FIFO"); return(-EOPNOTSUPP); }
+    if ((os_mode & OS_OBJECT_SOCKET_FLAG) && (fs->enable_socket == 0)) { FS_MON_OBJ_DESTROY_MESSAGE("EOPNOTSUPP: SOCKET"); return(-EOPNOTSUPP); }
 
     //** Make sure it doesn't exists
     n = lio_fs_exists(fs, fname);
@@ -778,7 +784,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     //** If we made it here it's a new file or dir
     //** Create the new object
-    err = gop_sync_exec(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, ftype, NULL, fs->id));
+    err = gop_sync_exec(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fullname);
         if (strlen(fullname) > 3900) {  //** Probably a path length issue
@@ -810,7 +816,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
 int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev)
 {
-    return(lio_fs_object_create(fs, ug, fname, mode, OS_OBJECT_FILE_FLAG));
+    return(lio_fs_object_create(fs, ug, fname, mode));
 }
 
 //*************************************************************************
@@ -846,7 +852,8 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
 
 int lio_fs_mkdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode)
 {
-    return(lio_fs_object_create(fs, ug, fname, mode, OS_OBJECT_DIR_FLAG));
+    mode |= S_IFDIR;
+    return(lio_fs_object_create(fs, ug, fname, mode));
 }
 
 //*****************************************************************
@@ -2409,6 +2416,8 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", fs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
+    fprintf(fd, "enable_fifo = %d\n", fs->enable_fifo);
+    fprintf(fd, "enable_socket = %d\n", fs->enable_socket);
     fprintf(fd, "ug_mode = %s\n", _ug_mode_string[fs->ug_mode]);
     fprintf(fd, "n_merge = %d\n", fs->n_merge);
     fprintf(fd, "copy_bufsize = %s\n", tbx_stk_pretty_print_double_with_scale(1024, fs->copy_bufsize, ppbuf));
@@ -2449,6 +2458,8 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
+    fs->enable_fifo = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fifo", 0);
+    fs->enable_socket = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_socket", 0);
     atype = tbx_inip_get_string(fd, fs->fs_section, "ug_mode", _ug_mode_string[UG_GLOBAL]);
     fs->ug_mode = UG_GLOBAL;
     if (strcmp(atype, _ug_mode_string[UG_UID]) == 0) {

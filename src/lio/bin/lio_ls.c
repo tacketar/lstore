@@ -86,6 +86,10 @@ void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
         }
     } else if ((lse->ftype & OS_OBJECT_DIR_FLAG) > 0) {
         snprintf(perms, sizeof(perms), "d---------");
+    } else if ((lse->ftype & OS_OBJECT_SOCKET_FLAG) > 0) {
+        snprintf(perms, sizeof(perms), "s---------");
+    } else if ((lse->ftype & OS_OBJECT_FIFO_FLAG) > 0) {
+        snprintf(perms, sizeof(perms), "p---------");
     } else {
         snprintf(perms, sizeof(perms), "---%s------", exec);
     }

@@ -54,7 +54,7 @@ LIO_API int lio_fs_fadvise(lio_fs_t *fs, lio_fd_t *fd, off_t offset, off_t len, 
 LIO_API int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink, int stat_symlink);
 LIO_API int lio_fs_closedir(lio_fs_dir_iter_t *dit);
 LIO_API int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path);
-LIO_API int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int ftype);
+LIO_API int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode);
 LIO_API int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev);
 LIO_API int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode);
 LIO_API int lio_fs_mkdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode);

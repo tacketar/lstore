@@ -619,6 +619,9 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
 {
     path_acl_t *acl;
     int exact, slot, got_default;
+    mode_t filebits;
+
+    filebits = *mode & S_IFMT;
 
     acl = pacl_search(pa, path, &exact, &got_default, NULL);
     log_printf(10, "path=%s exact=%d acl=%p\n", path, exact, acl);
@@ -638,18 +641,13 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
             *acl_size = acl->lfs_acl->size[slot];
             *mode = acl->lfs_acl->mode[slot];
             *gid = acl->lfs_acl->gid_primary;
+
             //** Still need to map the file type over
-            if (lio_ftype & OS_OBJECT_SYMLINK_FLAG) {
-                *mode |= S_IFLNK;
-            } else if (lio_ftype & OS_OBJECT_DIR_FLAG) {
-                *mode |= S_IFDIR;
-            } else {
-                *mode |= S_IFREG;
-                if (lio_ftype & OS_OBJECT_EXEC_FLAG) { //** Executable
-                    if (*mode & S_IRUSR) *mode |= S_IXUSR;
-                    if (*mode & S_IRGRP) *mode |= S_IXGRP;
-                    if (*mode & S_IROTH) *mode |= S_IXOTH;
-                }
+            *mode |= filebits;
+            if ((lio_ftype & OS_OBJECT_FILE_FLAG) && (lio_ftype & OS_OBJECT_EXEC_FLAG)) { //** Executable
+                if (*mode & S_IRUSR) *mode |= S_IXUSR;
+                if (*mode & S_IRGRP) *mode |= S_IXGRP;
+                if (*mode & S_IROTH) *mode |= S_IXOTH;
             }
             return(0);
         }

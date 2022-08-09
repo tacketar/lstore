@@ -105,6 +105,7 @@ lio_config_t lio_default_options = {
     .os_section = "os_remote_client",
     .authn_section = "authn",
     .cache_section = "cache_amp",
+    .special_file_prefix = "/tmp/lfs_special.",
     .creds_user = NULL
 //    .creds_user = "guest"
 };
@@ -1132,6 +1133,7 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->tpc_cache_section);
 
+    if (lio->special_file_prefix) free(lio->special_file_prefix);
     if (lio->monitor_fname) {
         tbx_monitor_destroy();
         free(lio->monitor_fname);
@@ -1216,6 +1218,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->readahead_trigger = tbx_inip_get_integer(lio->ifd, section, "readahead_trigger", lio_default_options.readahead_trigger);
     lio->stream_buffer_max_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_max_size", lio_default_options.stream_buffer_max_size);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
+    lio->special_file_prefix = tbx_inip_get_string(lio->ifd, section, "special_file_prefix", lio_default_options.special_file_prefix);
 
     //** Get the mount's UUID. Most of the time this isn't set specifically in the section but instead stored as a parameter
     stype = tbx_inip_get_string(lio->ifd, section, "uuid", "${uuid}");
@@ -1561,6 +1564,7 @@ void lio_print_object_type_options(FILE *fd, int obj_type_default)
     fprintf(fd, "    -t  object_types   - Types of objects to list or traverse. Bitwise OR of:\n");
     fprintf(fd, "                             1=Files, 2=Directories, 4=symlink, 8=hardlink,\n");
     fprintf(fd, "                             16=broken link, 32=executable, 64=virtual attribute, 128=Follow symlinks\n");
+    fprintf(fd, "                             256=socket, 512=fifo\n");
     fprintf(fd, "                             Default is %d.\n", obj_type_default);
 }
 

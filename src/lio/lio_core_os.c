@@ -470,8 +470,9 @@ gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
 gop_op_status_t lio_remove_object_fn(void *arg, int id)
 {
     lio_mk_mv_rm_t *op = (lio_mk_mv_rm_t *)arg;
-    char *ex_data, *val[2];
+    char *ex_data, *val[2], *inode;
     char *hkeys[] = { "os.link_count", "system.exnode" };
+    char sfname[OS_PATH_MAX];
     lio_exnode_exchange_t *exp;
     lio_exnode_t *ex;
     int err, v_size, ex_remove, vs[2], n;
@@ -517,6 +518,18 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         lio_getattr(op->lc, op->creds, op->src_path, op->id, "system.exnode", (void **)&ex_data, &v_size);
     }
 
+    //** See if it's a special file and if so remove the local entry if it exists
+    if ((ex_remove == 1) && (op->type & (OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG))) {
+        inode = NULL;
+        v_size = -100;
+        lio_getattr(op->lc, op->creds, op->src_path, op->id, "system.inode", (void **)&inode, &v_size);
+        if (inode) {
+            snprintf(sfname, OS_PATH_MAX, "%s%s", op->lc->special_file_prefix, inode);
+            remove(sfname);
+            free(inode);
+        }
+    }
+
     //** Remove the OS entry first.  This way if it fails we'll just kick out and the data is still good.
     err = gop_sync_exec(os_remove_object(op->lc->os, op->creds, op->src_path));
     if (err != OP_STATE_SUCCESS) {
@@ -525,6 +538,7 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         status = gop_failure_status;
         return(status);
     }
+
 
     //** Load the exnode and remove it if needed.
     //** Only done for normal files.  No links or dirs

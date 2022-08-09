@@ -190,6 +190,9 @@ enum lio_fsck_error_flags_t {
 #define LIO_APPEND_MODE   16
 #define LIO_EXCL_MODE     32
 #define LIO_EXEC_MODE     64
+#define LIO_FILE_MODE    128
+#define LIO_SOCKET_MODE  256
+#define LIO_FIFO_MODE    512
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
 typedef enum lio_copy_hint_t lio_copy_hint_t;
@@ -242,6 +245,7 @@ struct lio_config_t {
     char *exe_name;
     char *rc_section;
     char *notify_section;
+    char *special_file_prefix;
     lio_blacklist_t *blacklist;
     ex_off_t readahead;
     ex_off_t readahead_trigger;

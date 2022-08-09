@@ -56,9 +56,9 @@ enum lio_object_type_t {
     OS_OBJECT_VIRTUAL        =  6,  // ** A virtual attribute
     OS_OBJECT_FOLLOW_SYMLINK =  7,  // ** Follow symbolic links. Default is to skip them
     OS_OBJECT_SOCKET         =  8,  // ** Unix socket
-    OS_OBJECT_BLOCK          =  9,  // ** Block device -- UNSUPPORTED
-    OS_OBJECT_CHAR           = 10,  // ** Character device -- UNSUPPORTED
-    OS_OBJECT_FIFO           = 11,  // ** FIFO device -- UNSUPPORTED
+    OS_OBJECT_FIFO           =  9,  // ** FIFO device
+    OS_OBJECT_BLOCK          = 10,  // ** Block device -- UNSUPPORTED
+    OS_OBJECT_CHAR           = 11,  // ** Character device -- UNSUPPORTED
 };
 
 typedef enum lio_object_type_flag_t lio_object_type_flag_t;
@@ -75,8 +75,9 @@ enum lio_object_type_flag_t {
     OS_OBJECT_BLOCK_FLAG          = (1 << OS_OBJECT_BLOCK),
     OS_OBJECT_CHAR_FLAG           = (1 << OS_OBJECT_CHAR),
     OS_OBJECT_FIFO_FLAG           = (1 << OS_OBJECT_FIFO),
-    OS_OBJECT_ANY_FLAG            = (0x17F),                      //  ** All the supported types excluding FOLLOW_SYMLINK
-    OS_OBJECT_UNSUPPORTED_FLAG    =(OS_OBJECT_BLOCK_FLAG|OS_OBJECT_CHAR_FLAG|OS_OBJECT_FIFO_FLAG)  // ** All the unsupported object types
+    OS_OBJECT_ANY_FLAG            = (0x37F),                      //  ** All the supported types excluding FOLLOW_SYMLINK
+    OS_OBJECT_ANYFILE_FLAG        = (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG),  // ** All the "file" type objects
+    OS_OBJECT_UNSUPPORTED_FLAG    = (OS_OBJECT_BLOCK_FLAG|OS_OBJECT_CHAR_FLAG)  // ** All the unsupported object types
 };
 
 typedef void (*lio_os_print_running_config_fn_t)(lio_object_service_fn_t *rs, FILE *fd, int print_section_heading);

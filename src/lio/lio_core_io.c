@@ -190,6 +190,7 @@ int lio_fopen_flags(const char *sflags)
         mode = LIO_RW_MODE | LIO_CREATE_MODE | LIO_APPEND_MODE;
     }
 
+    mode |= LIO_FILE_MODE;
     return(mode);
 }
 
@@ -203,18 +204,33 @@ int lio_open_flags(int flags, mode_t mode)
 {
     int lflags;
 
-    lflags = LIO_READ_MODE;  //** O_RDONLY == 0 so this is always set
+    lflags = 0;
 
     if (flags & O_APPEND)  lflags |= LIO_APPEND_MODE;
     if (flags & O_EXCL)    lflags |= LIO_EXCL_MODE;
     if (flags & O_TRUNC)   lflags |= LIO_TRUNCATE_MODE;
-    if (flags & O_WRONLY)  lflags |= LIO_WRITE_MODE;
-    if (flags & O_RDWR)    lflags |= LIO_RW_MODE;
+
+    //** The R/W flags are a little tricky since they aren't bit fields
+    if (flags & O_RDWR) {           //** O_RDWR = 2
+        lflags |= LIO_RW_MODE;
+    } else if (flags & O_WRONLY) {  //** O_WRONLY = 1
+        lflags |= LIO_WRITE_MODE;
+    } else {                        //** O_RDONLY = 0
+        lflags = LIO_READ_MODE;
+    }
 
     if (flags & O_CREAT) {
         lflags |= LIO_CREATE_MODE;
 
         if ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) lflags |= LIO_EXEC_MODE;
+    }
+
+    if (S_ISSOCK(mode)) {
+        lflags |= LIO_SOCKET_MODE;
+    } else if (S_ISFIFO(mode)) {
+        lflags |= LIO_FIFO_MODE;
+    } else {
+        lflags |= LIO_FILE_MODE;
     }
 
     return(lflags);
@@ -915,6 +931,42 @@ int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight)
 }
 
 //*************************************************************************
+//  special_open - Just used for FIFO SOCKET files and only via native or LD_PRELOAD.
+//     FUSE directly handles it bypassing the framework
+//*************************************************************************
+
+int special_open(lio_fd_t *fd, int flags, int is_special, ex_id_t ino)
+{
+    mode_t mode;
+    int myflags;
+    char sfname[OS_PATH_MAX];
+    dev_t dev = 0;
+
+    snprintf(sfname, OS_PATH_MAX-1, "%s" XIDT, fd->lc->special_file_prefix, ino);
+    if ((flags & LIO_RW_MODE) == LIO_RW_MODE) {
+        myflags = O_RDWR;
+    } else if (flags & LIO_WRITE_MODE) {
+        myflags = O_WRONLY;
+    } else {
+        myflags = O_RDONLY;
+    }
+
+    fd->sfd = tbx_io_open(sfname, myflags);
+    if (fd->sfd != -1) return(0);
+
+    //** The special file inode doesn't exist so got to make it
+    mode = (is_special & OS_OBJECT_FIFO_FLAG) ? S_IFIFO : S_IFSOCK;
+    mode |= S_IRUSR|S_IWUSR;
+    if (tbx_io_mknod(sfname, mode, dev) == -1) return(-1);
+
+    //** If we made it here then we should have a proper special file
+    fd->sfd = tbx_io_open(sfname, myflags);
+    if (fd->sfd == -1) return(-2);
+
+    return(0);
+}
+
+//*************************************************************************
 
 gop_op_status_t lio_myopen_fn(void *arg, int id)
 {
@@ -927,7 +979,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     ex_off_t data_size;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
-    int dtype, err, exec_flag;
+    int dtype, err, exec_flag, is_special;
     lio_segment_errors_t serr;
 
     status = gop_success_status;
@@ -939,7 +991,14 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     if ((op->mode & (LIO_WRITE_MODE|LIO_CREATE_MODE)) != 0) {  //** Writing and they want to create it if it doesn't exist
         if (dtype == 0) { //** Need to create it
-            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, OS_OBJECT_FILE_FLAG|exec_flag, NULL, NULL));
+            if (op->mode & LIO_FIFO_MODE) {
+                dtype = OS_OBJECT_FIFO_FLAG;
+            } else if (op->mode & LIO_SOCKET_MODE) {
+                dtype = OS_OBJECT_SOCKET_FLAG;
+            } else {
+                dtype = OS_OBJECT_FILE_FLAG;
+            }
+            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, NULL));
             if (err != OP_STATE_SUCCESS) {
                 info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
                 log_printf(1, "ERROR creating file(%s)!\n", op->path);
@@ -982,6 +1041,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fd->path = op->path;
     fd->mode = op->mode;
     fd->creds = op->creds;
+    fd->sfd = -1;
     fd->lc = lc;
     fd->read_gop = lio_read_ex_gop_aio;
     fd->write_gop = lio_write_ex_gop_aio;
@@ -996,6 +1056,24 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         if (data) free(data);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         return(status);
+    }
+
+    //** Handle special files
+    if (dtype & (OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {
+        is_special = (dtype & OS_OBJECT_FIFO_FLAG) ? OS_OBJECT_FIFO_FLAG : OS_OBJECT_SOCKET_FLAG;
+        if (special_open(fd, op->mode, is_special, ino) != 0) {
+            log_printf(0, "ERROR: Failed opening the special file! fname=%s is_special=%d\n", fd->path, is_special);
+            free(fd);
+            *op->fd = NULL;
+            free(op->path);
+            if (data) free(data);
+            _op_set_status(status, OP_STATE_FAILURE, -EIO);
+            notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
+            return(status);
+        }
+
+    } else {
+        is_special = 0;
     }
 
     //** Load the exnode and get the default view ID
@@ -1033,10 +1111,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fh->ino = ino;
     fh->ref_count++;
     fh->lc = lc;
+    fh->is_special = is_special;
     fh->fname = strdup(fd->path);
     fh->data = data;
     fh->data_size = data_size;
     fh->max_data_allocated = data_size;
+    fd->fh = fh;
     assert_result(apr_pool_create(&(fh->mpool), NULL), APR_SUCCESS);   //** These are used for data tiering
     apr_thread_mutex_create(&(fh->lock), APR_THREAD_MUTEX_DEFAULT, fh->mpool);
     apr_thread_cond_create(&(fh->cond), fh->mpool);
@@ -1064,7 +1144,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     tbx_monitor_obj_reference(&(fh->mo), &(fh->seg->header.mo));
     tbx_monitor_obj_reference_chain(&(fh->mo));
 
-    if (lc->stream_buffer_max_size > 0) {  //** See if we are enabling a stream buffeer
+    if ((lc->stream_buffer_max_size > 0) && (fh->is_special == 0)) {  //** See if we are enabling a stream buffeer
         int n = sizeof(stream_buf_t) + lc->stream_buffer_max_size;
         fh->stream = malloc(n);
         memset(fh->stream, 0, n);
@@ -1081,7 +1161,6 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     _lio_add_file_handle(lc, fh);
     lio_unlock(lc);  //** Now we can release the lock
 
-    fd->fh = fh;
     *op->fd = fd;
 
     if ((op->mode & LIO_WRITE_MODE) > 0) {  //** For write mode we check for a few more flags
@@ -1180,6 +1259,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     //** Get the handles
     fh = fd->fh;
 
+    if (fd->sfd != -1) close(fd->sfd);  //** Go ahead close the special file handle is used
+
     //** We don't decrement the ref count immediately to avoid another thread from thinking they are the only user
     lio_lock(lc);
     tbx_monitor_obj_message(&(fh->mo), "CLOSE: fname=%s ref_count=%d", fd->path, fh->ref_count);
@@ -1193,7 +1274,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     final_size = lio_size_fh(fh);
 
     //** Flush and truncate everything which could take some time
-    modified = tbx_atomic_get(fh->modified);
+    modified = (fd->fh->is_special == 0) ? tbx_atomic_get(fh->modified) : 0;
     if (modified != 0) {
         log_printf(1, "FLUSH/TRUNCATE fname=%s final_size=" XOT " modified=%d\n", fd->path, final_size, modified);
         now = apr_time_now();
@@ -1447,10 +1528,16 @@ int _lio_read_gop(lio_rw_op_t *op, lio_fd_t *fd, char *buf, ex_off_t size, off_t
     ex_off_t ssize, pend, rsize, rend, dr, off, readahead;
 
     //** If using WQ routines then disable readahead
-    readahead = (fd->fh->wq_ctx) ? 0 : fd->fh->lc->readahead;
+    readahead = ((fd->fh->wq_ctx) || (fd->fh->is_special)) ? 0 : fd->fh->lc->readahead;
 
     //** Determine the offset
-    off = (user_off < 0) ? fd->curr_offset : user_off;
+    if (fd->fh->is_special) {
+        off = 0;
+        rsize = size;
+        goto finished;  //** No fancy buffering for FIFO or SOCKET objects
+    } else {
+        off = (user_off < 0) ? fd->curr_offset : user_off;
+    }
 
     //** Do the read op
     ssize = lio_size(fd);
@@ -2700,6 +2787,9 @@ gop_op_status_t lio_flush_fn(void *arg, int id)
 
     status = gop_success_status;  //** Default status
 
+    //** Special files are handled separately
+    if (fd->fh->is_special) { return(status); }
+
     apr_thread_mutex_lock(fh->lock);
     if (fh->data_size > -1) { //** Data is stored as an attribute.
         if (tbx_atomic_get(fh->modified)) { //** Changed so flush it to the LServer
@@ -2757,6 +2847,7 @@ gop_op_status_t lio_truncate_fn(void *arg, int id)
     lio_file_handle_t *fh = op->slfd->fh;
 
     status = gop_success_status;  //** Default status
+    if (fh->is_special) return(status);
 
     //** Go ahead and adjust the tier based on the new size. Then we'll do the truncate.
     apr_thread_mutex_lock(fh->lock);

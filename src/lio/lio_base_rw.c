@@ -32,6 +32,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
+#include <tbx/io.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
 #include <tbx/que.h>
@@ -210,6 +211,31 @@ failure:
 }
 
 //*************************************************************************
+//  special_read - Just used for FIFO SOCKET files and only via native or LD_PRELOAD.
+//     FUSE directly handles it bypassing the framework
+//*************************************************************************
+
+ex_off_t special_read(lio_rw_op_t *op)
+{
+    ssize_t n;
+    tbx_tbuf_var_t tbv;
+
+    if (op->n_iov > 1) {
+        log_printf(0, "ERROR: n_iov>1!!! n_iov=%d\n", op->n_iov);
+        return(-1);
+    }
+
+    tbx_tbuf_var_init(&tbv);
+
+    tbv.nbytes = op->iov[0].len;
+    tbx_tbuf_next(op->buffer, op->boff, &tbv);
+    if (tbv.n_iov > IOV_MAX) tbv.n_iov = IOV_MAX;  //** Make sure we don't have to many entries
+    n = tbx_io_readv(op->fd->sfd, tbv.buffer, tbv.n_iov);
+
+    return(n);
+}
+
+//*************************************************************************
 
 gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
 {
@@ -256,7 +282,18 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     now = apr_time_now();
 
     //** Do the read op
-    if ((err = lio_tier_check_and_handle(op, 0, &in_flight)) != OP_STATE_SUCCESS) {
+    if (fd->fh->is_special) {
+        ret_size = special_read(op);
+        t1 = 0;
+        if (ret_size < 0) {
+            ret_size = 0;
+            status.op_status = OP_STATE_FAILURE;
+        } else {
+            status.op_status = OP_STATE_SUCCESS;
+        }
+        size = ret_size;
+        goto done;
+    } else if ((err = lio_tier_check_and_handle(op, 0, &in_flight)) != OP_STATE_SUCCESS) {
         if (fd->fh->stream) {
             if ((err = stream_read(op)) != OP_STATE_SUCCESS) {
                 err = gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, buffer, op->boff, lc->timeout));
@@ -285,6 +322,7 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
         t1 = iov[0].offset + t2;  //** This is if we are doing a readahead
         ret_size = t2;
     }
+done:
     segment_lock(fd->fh->seg);
     fd->curr_offset = t1;
     fd->tally_ops[0]++;
@@ -302,6 +340,31 @@ error:  //** Only make it here on an error
     _lio_dec_in_flight_and_unlock(fd, in_flight);
     //segment_unlock(fd->fh->seg);
     return(status);
+}
+
+//*************************************************************************
+//  special_write - Just used for FIFO SOCKET files and only via native or LD_PRELOAD.
+//     FUSE directly handles it bypassing the framework
+//*************************************************************************
+
+ex_off_t special_write(lio_rw_op_t *op)
+{
+    ssize_t n;
+    tbx_tbuf_var_t tbv;
+
+    if (op->n_iov > 1) {
+        log_printf(0, "ERROR: n_iov>1!!! n_iov=%d\n", op->n_iov);
+        return(-1);
+    }
+
+    tbx_tbuf_var_init(&tbv);
+
+    tbv.nbytes = op->iov[0].len;
+    tbx_tbuf_next(op->buffer, op->boff, &tbv);
+    if (tbv.n_iov > IOV_MAX) tbv.n_iov = IOV_MAX;  //** Make sure we don't have to many entries
+    n = tbx_io_writev(op->fd->sfd, tbv.buffer, tbv.n_iov);
+
+    return(n);
 }
 
 //*************************************************************************
@@ -342,10 +405,19 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
 
     now = apr_time_now();
 
-    tbx_atomic_set(fd->fh->modified, 1);  //** Flag it as modified
+    if (fd->fh->is_special == 0) tbx_atomic_set(fd->fh->modified, 1);  //** Flag it as modified
 
     //** Do the write op
-    if ((err = lio_tier_check_and_handle(op, 1, &in_flight)) != OP_STATE_SUCCESS) {
+    if (fd->fh->is_special) {
+        size = special_write(op);
+        if (size < 0) {
+            size = 0;
+            err = OP_STATE_FAILURE;
+        } else {
+            err = OP_STATE_SUCCESS;
+        }
+        goto done;
+    } else if ((err = lio_tier_check_and_handle(op, 1, &in_flight)) != OP_STATE_SUCCESS) {
         if (fd->fh->stream) {
             if ((err = stream_write(op)) != OP_STATE_SUCCESS) {
                 err = gop_sync_exec(segment_write(fd->fh->seg, lc->da, op->rw_hints, op->n_iov, iov, op->buffer, op->boff, lc->timeout));
@@ -396,6 +468,7 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     size = iov[0].len;
     for (i=1; i< op->n_iov; i++) size += iov[i].len;
 
+done:
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR with write! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
@@ -410,7 +483,7 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
 
     //** Update the file position to the last write
     segment_lock(fd->fh->seg);
-    fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
+    if (fd->fh->is_special == 0) fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
     fd->tally_ops[1]++;
     fd->tally_bytes[1] += size;
      _lio_dec_in_flight_and_unlock(fd, in_flight);

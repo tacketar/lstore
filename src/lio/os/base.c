@@ -31,6 +31,7 @@
 #include <string.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <lio/lio.h>
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
@@ -502,12 +503,10 @@ int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat
         }
 
         if (err == 0) {
+            ftype |= lio_mode2os_flags(stat_object->st_mode);
             if (S_ISREG(stat_object->st_mode)) {
-                ftype |= OS_OBJECT_FILE_FLAG;
                 if (stat_object->st_nlink > 1) ftype |= OS_OBJECT_HARDLINK_FLAG;
                 if (S_IXUSR & stat_object->st_mode) ftype |= OS_OBJECT_EXEC_FLAG;
-            } else if (S_ISDIR(stat_object->st_mode)) {
-                ftype |= OS_OBJECT_DIR_FLAG;
             }
         } else {
             ftype |= OS_OBJECT_FILE_FLAG|OS_OBJECT_BROKEN_LINK_FLAG;  //** Broken link so flag it as a file anyhow

@@ -90,6 +90,7 @@ struct lio_file_handle_t {  //** Shared file handle
     int adjust_tier_pending;
     int ref_count;
     int remove_on_close;
+    int is_special;
     ex_off_t readahead_end;
     tbx_atomic_int_t modified;
     tbx_list_t *write_table;
@@ -124,6 +125,7 @@ struct lio_fd_t {  //** Individual file descriptor
     lio_rw_ex_gop_t *read_gop;
     lio_rw_ex_gop_t *write_gop;
     int mode;         //** R/W mode
+    int sfd;          //** Special FD for FIFO or SOCKET objects
     ex_id_t  id;
     ex_off_t curr_offset;
     ex_off_t tally_ops[2];

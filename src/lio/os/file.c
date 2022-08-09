@@ -1450,7 +1450,7 @@ char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int
     char *attr_dir = NULL;
     int n;
 
-    if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) != 0) {
+    if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) != 0) {
         strncpy(fname, path, OS_PATH_MAX);
         fname[OS_PATH_MAX-1] = '\0';
         lio_os_path_split(fname, &dir, &base);
@@ -1709,7 +1709,7 @@ log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->e
                             }
 
                             //** See if we have a match: either it's a file or a symlink to a file or dir we don't recurse into
-                            if ((i & OS_OBJECT_FILE_FLAG) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0)) || (can_access == 1)) {
+                            if ((i & (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0)) || (can_access == 1)) {
                                 if ((i & it->object_types) > 0) {
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
                                     if (rmatch == 0) { //** IF a match return
@@ -1948,7 +1948,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
     log_printf(15, "ftype=%d path=%s\n", ftype, path);
 
     //** It's a file or the proxy is missing so assume it's a file and remoe the FA directoory
-    if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_HARDLINK_FLAG)) || (ftype == 0)) {
+    if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_HARDLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) || (ftype == 0)) {
         log_printf(15, "file or link removal\n");
         if (ftype & OS_OBJECT_HARDLINK_FLAG) {  //** If this is the last hardlink we need to remove the hardlink inode as well
             memset(&s, 0, sizeof(s));
@@ -2026,7 +2026,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
 
     inode[0] = '0'; inode[1] = '\0'; inode_len = sizeof(inode);
     ftype = lio_os_local_filetype(fname);
-    if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) {  //** Regular file so rm the attributes dir and the object
+    if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {  //** Regular file so rm the attributes dir and the object
         log_printf(15, "Simple file removal: fname=%s\n", op->src_path);
         osf_get_inode(op->os, op->creds, op->src_path, ftype, inode, &inode_len);
         status = (osf_object_remove(op->os, fname) == 0) ? gop_success_status : gop_failure_status;
@@ -2415,6 +2415,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     FILE *fd;
     int err;
+    dev_t dev = 0;
     char *dir, *base;
     char fname[OS_PATH_MAX];
     char fattr[OS_PATH_MAX];
@@ -2425,19 +2426,31 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
-    log_printf(15, "base=%s src=%s fname=%s\n", osf->file_path, op->src_path, fname);
+    log_printf(15, "base=%s src=%s fname=%s mode=%x\n", osf->file_path, op->src_path, fname, op->type);
 
     lock = osf_retrieve_lock(op->os, op->src_path, NULL);
     osf_obj_lock(lock);
 
-    if (op->type & OS_OBJECT_FILE_FLAG) {
-        fd = tbx_io_fopen(fname, "w");
-        if (fd == NULL) {
-            osf_obj_unlock(lock);
-            return(gop_failure_status);
+    if (op->type & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
+        if (op->type & (OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
+            if (op->type & OS_OBJECT_SOCKET_FLAG) {
+                err = tbx_io_mknod(fname, S_IFSOCK|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, dev);  //** For FIFOs we just set the flag that it's a FIFO. It's up to the higher level routines to make it work
+            } else {
+                err = tbx_io_mknod(fname, S_IFIFO|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, dev);  //** For sockets we just set the flag that it's a socket. It's up to the higher level routines to make it work
+            }
+            if (err == -1) {
+                osf_obj_unlock(lock);
+                return(gop_failure_status);
+            }
+            tbx_io_close(err);
+        } else {
+            fd = tbx_io_fopen(fname, "w");
+            if (fd == NULL) {
+                osf_obj_unlock(lock);
+                return(gop_failure_status);
+            }
+            tbx_io_fclose(fd);
         }
-
-        tbx_io_fclose(fd);
 
         if (op->type & OS_OBJECT_EXEC_FLAG) { //** See if we need to set the executable bit
             osf_object_exec_modify(op->os, fname, op->type);
