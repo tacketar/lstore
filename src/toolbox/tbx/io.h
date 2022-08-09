@@ -57,8 +57,10 @@ TBX_API void tbx_io_init(void *handle, int do_overwrite_fn);  //** This sets up 
 #define tbx_io_fstatat(dirfd, pathname, sbuf, flags) TBX_IO_WRAP_NAME(__fxstatat)(_STAT_VER, dirfd, pathname, sbuf, flags)
 #define tbx_io_lstat(path, sbuf) TBX_IO_WRAP_NAME(__lxstat)(_STAT_VER, path, sbuf)
 #define tbx_posix_fadvise(fd, offset, len, advice) TBX_IO_WRAP_NAME(fadvise64)(fd, offset, len, advice)
-#define tbx_io_mknod(fname, mode, dev) TBX_IO_WRAP_NAME(__xmknod)(_MKNOD_VER, fname, mode, dev)
-#define tbx_io_mknodat(dirfd, fname, mode, dev) TBX_IO_WRAP_NAME(__xmknodat)(_MKNOD_VER, dirfd, fname, mode, dev)
+
+//** NOTE that the mknod routines require an actual dev_t object to be passed in
+#define tbx_io_mknod(fname, mode, dev) TBX_IO_WRAP_NAME(__xmknod)(_MKNOD_VER, fname, mode, &(dev))
+#define tbx_io_mknodat(dirfd, fname, mode, dev) TBX_IO_WRAP_NAME(__xmknodat)(_MKNOD_VER, dirfd, fname, mode, &(dev))
 
 #ifdef __cplusplus
 }

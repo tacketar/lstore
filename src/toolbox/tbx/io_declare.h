@@ -42,8 +42,8 @@ TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(truncate64))(const char *path, off_t
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(ftruncate64))(int fd, off_t length) TBX_IO_DECLARE_END
 
 //These are normal version of those above
-TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xmknod))(int __ver, const char *pathname, mode_t mode, dev_t dev) TBX_IO_DECLARE_END
-TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xmknodat))(int __ver, int dirfd, const char *pathname, mode_t mode, dev_t dev) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xmknod))(int __ver, const char *pathname, mode_t mode, dev_t *dev) TBX_IO_DECLARE_END
+TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(__xmknodat))(int __ver, int dirfd, const char *pathname, mode_t mode, dev_t *dev) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN FILE *(*TBX_IO_WRAP_NAME(fopen))(const char *pathname, const char *mode) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(open))(const char *pathname, int flags, ...) TBX_IO_DECLARE_END
 TBX_IO_DECLARE_BEGIN int (*TBX_IO_WRAP_NAME(openat))(int dirfd, const char *pathname, int flags, ...) TBX_IO_DECLARE_END
