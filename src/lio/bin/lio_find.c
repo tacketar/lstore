@@ -39,7 +39,7 @@ int main(int argc, char **argv)
     os_object_iter_t *it = NULL;
 
     int recurse_depth = 10000;
-    int obj_types = OS_OBJECT_FILE_FLAG;
+    int obj_types = OS_OBJECT_ANYFILE_FLAG;
     return_code = 0;
 
     if (argc < 2) {
