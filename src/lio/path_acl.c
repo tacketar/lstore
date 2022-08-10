@@ -700,7 +700,7 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size)
     //** Convert from a string to an ACL
     acl = acl_from_text(acl_text);
     if (acl == (acl_t)NULL) {
-        log_printf(0, "acl_from_text ERROR: acl_text=%s\n", acl_text);
+        log_printf(0, "acl_from_text ERROR: acl_text=%s errno=%d\n", acl_text, errno);
         return(1);
     }
 
