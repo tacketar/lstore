@@ -391,7 +391,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
 
     if (err == 0) {
         if (flink) {
-            sbuf->st_size += lfs->mount_point_len;
+            if (flink[0] == '/') { sbuf->st_size += lfs->mount_point_len; }
             free(flink);
         }
     }
