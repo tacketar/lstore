@@ -145,15 +145,25 @@ int lio_mode2os_flags(const mode_t mode)
 
 mode_t lio_os2mode_flags(const int osflags)
 {
-   mode_t mode = 0;
+    mode_t mode = 0;
 
-    if (osflags & OS_OBJECT_SOCKET_FLAG) mode |= S_IFSOCK;
-    if (osflags & OS_OBJECT_SYMLINK_FLAG) mode |= S_IFLNK;
-    if (osflags & OS_OBJECT_FILE_FLAG) mode |= S_IFREG;
-    if (osflags & OS_OBJECT_BLOCK_FLAG) mode |= S_IFBLK;
-    if (osflags & OS_OBJECT_DIR_FLAG) mode |= S_IFDIR;
-    if (osflags & OS_OBJECT_CHAR_FLAG) mode |= S_IFCHR;
-    if (osflags & OS_OBJECT_FIFO_FLAG) mode |= S_IFIFO;
+    //** Since LStore types can have multiple values, is SYMLINK and DIR flags
+    //** we need to explicitly check for a symlink first when converting to a mode_t
+    if (osflags & OS_OBJECT_SYMLINK_FLAG) {
+        mode |= S_IFLNK;
+    } else if (osflags & OS_OBJECT_FILE_FLAG) {
+        mode |= S_IFREG;
+    } else if (osflags & OS_OBJECT_DIR_FLAG) {
+        mode |= S_IFDIR;
+    } else if (osflags & OS_OBJECT_FIFO_FLAG) {
+        mode |= S_IFIFO;
+    } else if (osflags & OS_OBJECT_SOCKET_FLAG) {
+        mode |= S_IFSOCK;
+    } else if (osflags & OS_OBJECT_BLOCK_FLAG) {
+        mode |= S_IFBLK;
+    } else if (osflags & OS_OBJECT_CHAR_FLAG) {
+        mode |= S_IFCHR;
+    }
 
     return(mode);
 }
