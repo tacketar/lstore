@@ -451,6 +451,7 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (slink) {
         if (stat_symlink == 1) {
             stat->st_size = strlen(slink);
+            osaz_posix_acl(fs->osaz, fs->lc->creds, fname, OS_OBJECT_FILE_FLAG, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
         } else { //** Get the symlink target values
             ino = 0;
             if (lio_get_symlink_inode(fs->lc, fs->lc->creds, fname, rpath, 1, &ino) == 0) {
