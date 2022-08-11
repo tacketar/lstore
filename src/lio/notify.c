@@ -141,10 +141,14 @@ failed:
 void notify_print_running_config(notify_t *nlog, FILE *fd, int print_section_heading)
 {
     if (print_section_heading) fprintf(fd, "[%s]\n", nlog->section);
-    fprintf(fd, "fname = %s\n", nlog->fname_from_config);
-    fprintf(fd, "pid_append = %d\n", nlog->pid_append);
-    fprintf(fd, "exec_append = %d\n", nlog->exec_append);
-    fprintf(fd, "# Working prefix: %s\n", nlog->fname);
+    if (nlog->fname) {
+        fprintf(fd, "fname = %s\n", nlog->fname_from_config);
+        fprintf(fd, "pid_append = %d\n", nlog->pid_append);
+        fprintf(fd, "exec_append = %d\n", nlog->exec_append);
+        fprintf(fd, "# Working prefix: %s\n", nlog->fname);
+    } else {
+        fprintf(fd, "fname =   #Notification is disabled\n");
+    }
     fprintf(fd, "\n");
 
     return;
@@ -176,28 +180,30 @@ notify_t *notify_create(tbx_inip_file_t *ifd, const char *text, char *section)
 
     //** This acts as teh base location for the notification log
     nlog->fname_from_config = tbx_inip_get_string(ifd, section, "fname", "/lio/log/notify");
-    nlog->fname = strdup(nlog->fname_from_config);
+    if (strlen(nlog->fname_from_config) > 0) {
+        nlog->fname = strdup(nlog->fname_from_config);
 
-    //** See if we add the executable to the name
-    nlog->exec_append = tbx_inip_get_integer(ifd, section, "exec_append", 0);
-    if (nlog->exec_append) {
-        n = strlen(nlog->fname) + 1 + strlen(__progname) + 1 + 1;
-        tbx_type_malloc_clear(fname, char, n);
-        pid = getpid();
-        snprintf(fname, n-1, "%s.%s", nlog->fname, __progname);
-        free(nlog->fname);
-        nlog->fname = fname;
-    }
+        //** See if we add the executable to the name
+        nlog->exec_append = tbx_inip_get_integer(ifd, section, "exec_append", 0);
+        if (nlog->exec_append) {
+            n = strlen(nlog->fname) + 1 + strlen(__progname) + 1 + 1;
+            tbx_type_malloc_clear(fname, char, n);
+            pid = getpid();
+            snprintf(fname, n-1, "%s.%s", nlog->fname, __progname);
+            free(nlog->fname);
+            nlog->fname = fname;
+        }
 
-    //** And possibly the PID
-    nlog->pid_append = tbx_inip_get_integer(ifd, section, "pid_append", 0);
-    if (nlog->pid_append) {
-        n = strlen(nlog->fname) + 1 + 20;
-        tbx_type_malloc_clear(fname, char, n);
-        pid = getpid();
-        snprintf(fname, n-1, "%s." LU, nlog->fname, pid);
-        free(nlog->fname);
-        nlog->fname = fname;
+        //** And possibly the PID
+        nlog->pid_append = tbx_inip_get_integer(ifd, section, "pid_append", 0);
+        if (nlog->pid_append) {
+            n = strlen(nlog->fname) + 1 + 20;
+            tbx_type_malloc_clear(fname, char, n);
+            pid = getpid();
+            snprintf(fname, n-1, "%s." LU, nlog->fname, pid);
+            free(nlog->fname);
+            nlog->fname = fname;
+        }
     }
 
     assert_result(apr_pool_create(&(nlog->mpool), NULL), APR_SUCCESS);
