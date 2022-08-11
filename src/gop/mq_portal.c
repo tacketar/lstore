@@ -493,7 +493,7 @@ void *mqt_exec(apr_thread_t *th, void *arg)
     gop_mq_msg_next(task->msg);     //** MQ command
     f = gop_mq_msg_next(task->msg);     //** Skip the ID
     gop_mq_get_frame(f, &key, &n);
-    log_printf(1, "execing sid=%s\n", gop_mq_id2str(key, n, b64, sizeof(b64)));
+    log_printf(3, "execing sid=%s\n", gop_mq_id2str(key, n, b64, sizeof(b64)));
     f = gop_mq_msg_next(task->msg); //** and get the user command
     gop_mq_get_frame(f, &key, &n);
 
@@ -1219,7 +1219,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
     if (*npoll == 1) return(0);
 
     if (ntask == 0) {
-        log_printf(0, "Nothing to do\n");
+        log_printf(2, "Nothing to do\n");
         return(0);
     }
 
@@ -1301,8 +1301,8 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         if (tracking == 0) {     //** Exec the callback if not tracked
             mq_task_complete(c, task, OP_STATE_SUCCESS);
         } else {                 //** Track the task
-            log_printf(1, "TRACKING id_size=%d sid=%s\n", size, gop_mq_id2str(data, size, b64, sizeof(b64)));
-            if (task->gop != NULL) log_printf(1, "TRACKING gid=%d\n", gop_id(task->gop));
+            log_printf(3, "TRACKING id_size=%d sid=%s\n", size, gop_mq_id2str(data, size, b64, sizeof(b64)));
+            if (task->gop != NULL) log_printf(3, "TRACKING gid=%d\n", gop_id(task->gop));
             //** Insert it in the monitoring table
             tbx_type_malloc_clear(tn, gop_mq_task_monitor_t, 1);
             tn->task = task;
@@ -1339,7 +1339,7 @@ int mq_conn_make(gop_mq_conn_t *c)
     //** c->sock = gop_mq_socket_new(c->pc->ctx, MQ_TRACE_ROUTER);
     //** Hardcoded MQ_TRACE_ROUTER socket type
     c->sock = gop_mq_socket_new(c->pc->ctx, c->pc->socket_type);
-    log_printf(0, "host = %s, connect_mode = %d\n", c->pc->host, c->pc->connect_mode);
+    log_printf(2, "host = %s, connect_mode = %d\n", c->pc->host, c->pc->connect_mode);
     if (c->pc->connect_mode == MQ_CMODE_CLIENT) {
         err = gop_mq_connect(c->sock, c->pc->host);
     } else {
@@ -1471,7 +1471,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     short_running_max = (c->pc->connect_mode == MQ_CMODE_CLIENT) ? -20 : c->pc->bind_short_running_max;
     submit_max = 100;
 
-    log_printf(1, "START(2): uuid=%s oops=%d submit_max=%d short_running_max=%d\n", c->mq_uuid, oops, submit_max, short_running_max);
+    log_printf(2, "START(2): uuid=%s oops=%d submit_max=%d short_running_max=%d\n", c->mq_uuid, oops, submit_max, short_running_max);
 
 
     //** Notify the parent about the connections status via c->cefd
@@ -1509,7 +1509,6 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         k = gop_mq_poll(pfd, npoll, heartbeat_ms);
         log_printf(5, "pfd[EFD]=%d pdf[CONN]=%d npoll=%d n=%d errno=%d\n", pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, errno);
 
-        //k=1; //FIXME
         if (k > 0) {  //** Got an event so process it
             nproc = submit_max;
             if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) finished += mqc_process_task(c, &npoll, &nproc);

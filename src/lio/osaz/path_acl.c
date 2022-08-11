@@ -264,16 +264,9 @@ int osaz_pacl_can_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local
 
     pacl_mode = os2pacl_mode(mode);
 
-log_printf(0, "HINT fname=%s ug=%p\n", path, ug);
     apr_thread_mutex_lock(osaz->lock);
     if (ug) {
-//FIXME        if (geteuid() == ug->uid) {
-//log_printf(0, "HINT geteuid == ug->uid == %d\n", ug->uid);
-//FIXME            can_access = 2;
-//FIXME        } else {
-//QWERT            can_access = pacl_can_access_gid_list(osaz->pa, (char *)path, ug->n_gid, ug->gid, pacl_mode, acl);
-            can_access = pacl_can_access_hint(osaz->pa, (char *)path, pacl_mode, ug, acl);
-//FIXME        }
+        can_access = pacl_can_access_hint(osaz->pa, (char *)path, pacl_mode, ug, acl);
         log_printf(10, "fname=%s n_gid=%d gid[0]=%d uid=%d pacl_mode=%d mode=%d can_access=%d\n", path, ug->n_gid, ug->gid[0], ug->uid, pacl_mode, mode, can_access);
     } else {
         can_access = pacl_can_access(osaz->pa, (char *)path, (char *)an_cred_get_id(c, NULL), pacl_mode, acl);
