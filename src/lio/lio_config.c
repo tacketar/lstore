@@ -206,6 +206,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "remote_config = %s\n", lio->rc_section);
     fprintf(fd, "cache = %s\n", lio->cache_section);
     fprintf(fd, "user = %s\n", lio->creds_user);
+    fprintf(fd, "notify = %s\n", lio->notify_section);
     fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
     fprintf(fd, "monitor_enable = %d  #touch %s-enable to start logging or touch %s-disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
     fprintf(fd, "\n");
@@ -217,6 +218,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     ds_print_running_config(lio->ds, fd, 1);
     rs_print_running_config(lio->rs, fd, 1);
     authn_print_running_config(lio->authn, fd, 1);
+    notify_print_running_config(lio->notify, fd, 1);
 
     memory_usage_dump(fd);
 }
