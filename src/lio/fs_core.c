@@ -97,6 +97,8 @@
 #include <attr/xattr.h>
 #endif
 
+lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t ino);
+
 //#define fs_lock(fs)  log_printf(0, "fs_lock\n"); tbx_log_flush(); apr_thread_mutex_lock((fs)->lock)
 //#define fs_unlock(fs) log_printf(0, "fs_unlock\n");  tbx_log_flush(); apr_thread_mutex_unlock((fs)->lock)
 #define fs_lock(fs)    apr_thread_mutex_lock((fs)->lock)
@@ -163,6 +165,7 @@ struct lio_fs_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
+    int xattr_error_for_hard_errors;
     int ug_mode;
     int shutdown;
     int n_merge;
@@ -2036,13 +2039,18 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
 int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, const char *name, char *buf, size_t size)
 {
     osaz_attr_filter_t filter;
-    char *val;
-    int v_size, err, ftype;
+    fs_open_file_t *fop;
+    lio_file_handle_t *fh;
+    char *val[2];
+    char *attrs[2];
+    int v_size[2], err, ftype, na;
+    ex_id_t ino;
     uid_t uid;
     gid_t gid;
     mode_t mode;
+    gop_op_status_t status;
 
-    v_size= size;
+    v_size[0] = size;
     FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
 
     if (fs->enable_osaz_acl_mappings) {
@@ -2072,16 +2080,18 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
        }
     }
 
-    v_size = (size == 0) ? -fs->lc->max_attr : -(int)size;
-    val = NULL;
+    na = 1;
+    v_size[0] = (size == 0) ? -fs->lc->max_attr : -(int)size;
+    attrs[0] = (char *)name;
+    val[0] = NULL;
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
         //** Make sure we can access it
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
             FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
             return(-EACCES);
         }
-        lio_fs_get_tape_attr(fs, ug, fname, &val, &v_size);
-        fs_osaz_attr_filter_apply(fs, name, LIO_READ_MODE, &val, &v_size, filter);
+        lio_fs_get_tape_attr(fs, ug, fname, &val[0], &v_size[0]);
+        fs_osaz_attr_filter_apply(fs, name, LIO_READ_MODE, &val[0], &v_size[0], filter);
     } else {
         //** Short circuit the Linux Security ACLs we don't support
         if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) {
@@ -2094,33 +2104,70 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
             FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
             return(-EACCES);
         }
-        err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
+
+        //** See if we throw other errors for files  with unrecoverable blocks
+        if (fs->xattr_error_for_hard_errors) {
+            //** 1st check if the file is already open. If so snag the hard_errors from there
+            fs_lock(fs);
+            fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
+            if (fop != NULL) {  //** The file is open so check here 1st
+                ino = fop->sid;
+                fs_unlock(fs);
+
+                lio_lock(fs->lc);
+                fh = _lio_get_file_handle(fs->lc, ino);
+                if (fh) {
+                    status = gop_sync_exec_status(segment_inspect(fh->seg, fs->lc->da, lio_ifd, INSPECT_HARD_ERRORS, 0, NULL, 1));
+                    if (status.error_code > 0) { //** Got a hard error so kick out
+                        lio_unlock(fs->lc);
+                        FS_MON_OBJ_DESTROY_MESSAGE("EHARD=%d", fs->xattr_error_for_hard_errors);
+                        return(-fs->xattr_error_for_hard_errors);
+                    }
+                }
+                lio_unlock(fs->lc);
+            }
+            fs_unlock(fs);
+
+            //** No errors from a possibly open file so check the attribute
+            na = 2;
+            attrs[1] = "system.hard_errors";
+            val[1] = NULL;
+            v_size[1] = -fs->lc->max_attr;
+        }
+
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, NULL, attrs, (void **)val, v_size, na);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
             return(-ENODATA);
         }
-        fs_osaz_attr_filter_apply(fs, name, OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
+        if ((na>1) && (v_size[1] > 0)) { //** We have hard errors so throw an error
+            free(val[1]);
+            if (v_size[0] > 0) free(val[0]);
+            FS_MON_OBJ_DESTROY_MESSAGE("EHARD=%d", fs->xattr_error_for_hard_errors);
+            return(-fs->xattr_error_for_hard_errors);
+        }
+        fs_osaz_attr_filter_apply(fs, name, OS_MODE_READ_IMMEDIATE, &val[0], &v_size[0], filter);
     }
 
     err = 0;
-    if (v_size < 0) {
-        v_size = 0;  //** No attribute
+    if (v_size[0] < 0) {
+        v_size[0] = 0;  //** No attribute
         err = -ENODATA;
     }
 
     if (size == 0) {
-        log_printf(1, "SIZE bpos=%d buf=%.*s\n", v_size, v_size, val);
-    } else if ((int)size >= v_size) {
-        log_printf(1, "FULL bpos=%d buf=%.*s\n",v_size, v_size, val);
-        memcpy(buf, val, v_size);
+        log_printf(1, "SIZE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
+    } else if ((int)size >= v_size[0]) {
+        log_printf(1, "FULL bpos=%d buf=%.*s\n",v_size[0], v_size[0], val[0]);
+        memcpy(buf, val[0], v_size[0]);
     } else {
-        log_printf(1, "ERANGE bpos=%d buf=%.*s\n", v_size, v_size, val);
+        log_printf(1, "ERANGE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
     }
 
     FS_MON_OBJ_DESTROY();
 
-    if (val != NULL) free(val);
-    return((v_size == 0) ? err : v_size);
+    if (val[0] != NULL) free(val[0]);
+    return((v_size[0] == 0) ? err : v_size[0]);
 }
 
 //*****************************************************************
@@ -2419,6 +2466,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
     fprintf(fd, "enable_fifo = %d\n", fs->enable_fifo);
     fprintf(fd, "enable_socket = %d\n", fs->enable_socket);
+    fprintf(fd, "xattr_error_for_hard_errors = %d\n", fs->xattr_error_for_hard_errors);
     fprintf(fd, "ug_mode = %s\n", _ug_mode_string[fs->ug_mode]);
     fprintf(fd, "n_merge = %d\n", fs->n_merge);
     fprintf(fd, "copy_bufsize = %s\n", tbx_stk_pretty_print_double_with_scale(1024, fs->copy_bufsize, ppbuf));
@@ -2461,6 +2509,7 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
     fs->enable_fifo = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fifo", 0);
     fs->enable_socket = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_socket", 0);
+    fs->xattr_error_for_hard_errors = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "xattr_error_for_hard_errors", 0);
     atype = tbx_inip_get_string(fd, fs->fs_section, "ug_mode", _ug_mode_string[UG_GLOBAL]);
     fs->ug_mode = UG_GLOBAL;
     if (strcmp(atype, _ug_mode_string[UG_UID]) == 0) {
