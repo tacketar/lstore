@@ -184,41 +184,50 @@ void _slun_perform_remap(lio_segment_t *seg)
 int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, apr_time_t *dt, int n_devices, int force_repair, int timeout)
 {
     int i, n_size, n_missing;
+    int retry[n_devices];
     data_probe_t *probe[n_devices];
     gop_opque_t *q;
-    gop_op_generic_t *gop;
-    ex_off_t psize, seg_size;
+    gop_op_generic_t *gop, *gop2;
+    ex_off_t psize, seg_size, csize;
     apr_time_t start_time;
     q = gop_opque_new();
 
+    memset(retry, 0, sizeof(int)*n_devices);
     start_time = apr_time_now();
     for (i=0; i<n_devices; i++) {
         probe[i] = ds_probe_create(b->block[i].data->ds);
-
         gop = ds_probe(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), probe[i], timeout);
         gop_set_myid(gop, i);
-
         gop_opque_add(q, gop);
     }
 
-    // ** Collect the timing information for hte probe if requested
-    if (dt != NULL) {
-        for (i=0; i<n_devices; i++) {
-            gop = opque_waitany(q);
-            dt[gop_get_myid(gop)] = apr_time_now() - start_time;
-            gop_free(gop, OP_DESTROY);
+    // ** Collect the timing information for the probe if requested
+    while ((gop = opque_waitany(q)) != NULL) {
+        i = gop_get_myid(gop);
+        if (dt!= NULL) dt[gop_get_myid(gop)] = apr_time_now() - start_time;
+        if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {  //** See if we retry
+            log_printf(10, "seg=" XIDT " PROBE Failed retry=%d i=%d rcap=%s\n", segment_id(seg), retry[i],
+                   i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ));
+            if (retry[i] <= 2) {  //** Try again up to 2 more times.
+                sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
+                retry[i]++;
+                gop2 = ds_probe(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), probe[i], timeout);
+                gop_set_myid(gop2, i);
+                gop_opque_add(q, gop2);
+            }
         }
-    } else {
-        opque_waitall(q);
+        gop_free(gop, OP_DESTROY);
     }
     gop_opque_free(q, OP_DESTROY);
 
+    memset(retry, 0, sizeof(int)*n_devices);
     q = gop_opque_new();
     n_missing = 0;
     n_size = 0;
     for (i=0; i<n_devices; i++) {
         //** Verify the max_size >= cap_offset+len
         ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_MAX_SIZE, &psize, sizeof(psize));
+        ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_CURR_SIZE, &csize, sizeof(csize));
         seg_size = b->block[i].cap_offset + b->block_len;
         log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d rcap=%s  size=" XOT " should be block_len=" XOT "\n", segment_id(seg),
                    b->seg_offset, i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), psize, b->block_len);
@@ -233,6 +242,9 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
                 block_status[i] = 2;
                 n_size++;
             }
+        } else if (csize != b->block[i].data->size) {   //** Used size isn't right so trigger it to be padded
+            block_status[i] = 2;
+            n_size++;
         }
     }
 
@@ -241,11 +253,18 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
             i = gop_get_myid(gop);
             if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {
                 b->block[i].data->max_size = b->block_len;  //** We don't clear the block_status[i].  Any errors are trapped in the slun_row_pad_fix() call
-
                 n_size--;
             } else {
-                block_status[i] = -2;  //** Failed on the truncate so flag it
-                log_printf(5, "truncate failed for i=%d\n", i);
+                if (retry[i] <= 2) {  //** Try again up to 2 more times.
+                    sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
+                    retry[i]++;
+                    gop2 = ds_truncate(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), seg_size, timeout);
+                    gop_set_myid(gop2, i);
+                    gop_opque_add(q, gop2);
+                } else {
+                    block_status[i] = -2;  //** Failed on the truncate so flag it
+                    log_printf(5, "truncate failed for i=%d\n", i);
+                }
             }
             gop_free(gop, OP_DESTROY);
         }
@@ -265,8 +284,9 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
 int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, int n_devices, int timeout)
 {
     int i, err;
+    int retry[n_devices];
     ex_off_t bstart;
-    gop_op_generic_t *gop;
+    gop_op_generic_t *gop, *gop2;
     gop_opque_t *q;
     tbx_tbuf_t tbuf;
     char c;
@@ -276,6 +296,7 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
     c = 0;
     tbx_tbuf_single(&tbuf, 1, &c);
     err = 0;
+    memset(retry, 0, sizeof(int)*n_devices);
     for (i=0; i < n_devices; i++) {
         log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d block_status=%d\n", segment_id(seg), b->seg_offset, i, block_status[i]);
         if (block_status[i] == 2) {
@@ -301,7 +322,15 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
             b->block[i].data->size = b->block[i].data->max_size;
             err--;
         } else {
-            block_status[i] = 3;
+            if (retry[i] <= 2) {  //** Try again up to 2 more times.
+                sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
+                retry[i]++;
+                gop2 = ds_write(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_WRITE), bstart, &tbuf, 0, 1, timeout);
+                gop_set_myid(gop2, i);
+                gop_opque_add(q, gop2);
+            } else {
+                block_status[i] = 3;
+            }
         }
         log_printf(5, "gop complete. block_status[%d]=%d\n", i, block_status[i]);
         gop_free(gop, OP_DESTROY);
