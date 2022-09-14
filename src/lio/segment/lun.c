@@ -258,6 +258,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
                 if (retry[i] <= 2) {  //** Try again up to 2 more times.
                     sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                     retry[i]++;
+                    seg_size = b->block[i].cap_offset + b->block_len;
                     gop2 = ds_truncate(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), seg_size, timeout);
                     gop_set_myid(gop2, i);
                     gop_opque_add(q, gop2);
@@ -324,6 +325,7 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
             if (retry[i] <= 2) {  //** Try again up to 2 more times.
                 sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                 retry[i]++;
+                bstart = b->block[i].cap_offset + b->block[i].data->max_size - 1;
                 gop2 = ds_write(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_WRITE), bstart, &tbuf, 0, 1, timeout);
                 gop_set_myid(gop2, i);
                 gop_opque_add(q, gop2);
