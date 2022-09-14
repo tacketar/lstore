@@ -1193,7 +1193,7 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
 
     //** Wait for block creation to complete
     gop_waitall(gop);
-    if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {  //** Error so clean up and return
+    if (!gop_completed_successfully(gop)) {  //** Error so clean up and return
         log_printf(0, " ERROR: failed creating blocks! sid=" XIDT "\n", segment_id(slc->dseg));
         for (i=0; i<n_blocks; i++) {
             data_block_destroy(block[i]->data);

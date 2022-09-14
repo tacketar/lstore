@@ -1762,7 +1762,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
         if (((j+parity_used) > parity_len) || (i==sw->n_iov)) {  //** Filled the buffer so wait for the current tasks to complete
             while ((gop = opque_waitany(q)) != NULL) {
                 j = gop_get_myid(gop);
-                if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+                if (!gop_completed_successfully(gop)) {
                     op_status = gop_get_status(gop);
                     if (op_status.error_code > s->n_parity_devs) {
                         log_printf(5, "seg=" XIDT " ERROR with write off=" XOT " len= "XOT " n_parity=%d n_failed=%d\n",

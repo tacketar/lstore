@@ -133,7 +133,7 @@ int main(int argc, char **argv)
         gop_opque_add(q, gop);
         if (gop_opque_tasks_left(q) >= np) {
             gop = opque_waitany(q);
-            if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+            if (!gop_completed_successfully(gop)) {
                 log_printf(0, "trace_replay: Errow with command index=%d\n", gop_id(gop));
             }
             gop_free(gop, OP_DESTROY);

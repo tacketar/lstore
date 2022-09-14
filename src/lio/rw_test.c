@@ -1070,7 +1070,7 @@ void *rw_test_thread(apr_thread_t *th, void *arg)
             slot = gop_get_private(gop);
             status = gop_get_status(gop);
 
-            if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+            if (!gop_completed_successfully(gop)) {
                 fail++;
                 log_printf(0, "[ti=%d] FINISHED ERROR gid=%d status=%d mode=%d global=%d off=" XOT " len=" XOT "\n", t->index, gop_id(gop), status.op_status, slot->type, slot->global_index, slot->iov.offset, slot->iov.len);
             } else {
@@ -1102,7 +1102,7 @@ void *rw_test_thread(apr_thread_t *th, void *arg)
         slot = gop_get_private(gop);
         status = gop_get_status(gop);
 
-        if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+        if (!gop_completed_successfully(gop)) {
             fail++;
             log_printf(0, "[ti=%d] FINISHED ERROR gid=%d status=%d mode=%d global=%d off=" XOT " len=" XOT "\n", t->index, gop_id(gop), status.op_status, slot->type, slot->global_index, slot->iov.offset, slot->iov.len);
         } else {

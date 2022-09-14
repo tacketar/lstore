@@ -223,7 +223,7 @@ gop_op_status_t lio_exnode_clone_gop_func(void *arg, int gid)
         gop = opque_waitany(q);
         segptr = gop_get_private(gop);
 
-        if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+        if (!gop_completed_successfully(gop)) {
             nfailed++;
             tbx_obj_put(&segptr[1]->obj);
         } else {

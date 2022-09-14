@@ -1073,7 +1073,7 @@ int cache_rw_pages(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, lio_pag
         tbx_log_flush();
 
         cio = gop_get_private(gop);
-        if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {
+        if (!gop_completed_successfully(gop)) {
             log_printf(15, "cache_rw_pages: myid=%d gid=%d completed with errors!\n", myid, gop_id(gop));
             tbx_log_flush();
 

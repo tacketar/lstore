@@ -1119,7 +1119,7 @@ int segment_placement_fix(lio_resource_service_fn_t *rs, data_attr_t *da, segmen
             if (j >= 0) {  //** Skip any remove ops
                 i = missing[j];
                 log_printf(15, "missing[%d]=%d status=%d\n", j,i, gop_completed_successfully(gop));
-                if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {  //** Update the block
+                if (gop_completed_successfully(gop)) {  //** Update the block
                     dbs = block[i].data;
                     dbd = db[j];
 

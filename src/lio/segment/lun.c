@@ -205,7 +205,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
     while ((gop = opque_waitany(q)) != NULL) {
         i = gop_get_myid(gop);
         if (dt!= NULL) dt[gop_get_myid(gop)] = apr_time_now() - start_time;
-        if (gop_completed_successfully(gop) != OP_STATE_SUCCESS) {  //** See if we retry
+        if (!gop_completed_successfully(gop)) {  //** See if we retry
             log_printf(10, "seg=" XIDT " PROBE Failed retry=%d i=%d rcap=%s\n", segment_id(seg), retry[i],
                    i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ));
             if (retry[i] <= 2) {  //** Try again up to 2 more times.
@@ -251,7 +251,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
     if (n_size > 0) {
         while ((gop = opque_waitany(q)) != NULL) {
             i = gop_get_myid(gop);
-            if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {
+            if (gop_completed_successfully(gop)) {
                 b->block[i].data->max_size = b->block_len;  //** We don't clear the block_status[i].  Any errors are trapped in the slun_row_pad_fix() call
                 n_size--;
             } else {
@@ -303,7 +303,6 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
             bstart = b->block[i].cap_offset + b->block[i].data->max_size - 1;
             log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d rcap=%s  padding byte=" XOT "\n", segment_id(seg),
                        b->seg_offset, i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), bstart);
-
             gop = ds_write(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_WRITE), bstart, &tbuf, 0, 1, timeout);
             gop_set_myid(gop, i);
             gop_opque_add(q, gop);
@@ -317,7 +316,7 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
 
     while ((gop = opque_waitany(q)) != NULL) {
         i = gop_get_myid(gop);
-        if (gop_completed_successfully(gop) == OP_STATE_SUCCESS) {
+        if (gop_completed_successfully(gop)) {
             block_status[i] = 0;
             b->block[i].data->size = b->block[i].data->max_size;
             err--;
@@ -457,7 +456,7 @@ int slun_row_replace_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, i
         err = 0;
         for (j=0; j<m; j++) {
             i = missing[j];
-            log_printf(15, "missing[%d]=%d req.op_status=%d\n", j, missing[j], (req_list[j].gop) ? gop_completed_successfully(req_list[j].gop) : -123);
+            log_printf(15, "missing[%d]=%d success=%d\n", j, missing[j], (req_list[j].gop) ? gop_completed_successfully(req_list[j].gop) : -123);
             db = db_working[i];
             if (ds_get_cap(db->ds, db->cap, DS_CAP_READ) != NULL) {
                 block_status[i] = 2;  //** Mark the block for padding
@@ -1482,7 +1481,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             j = slot * s->n_devices;
             for (i=0; i < s->n_devices; i++) {
                 if (rwb_table[j+i].crwb.n_ex > 0) {
-                    if (gop_completed_successfully(rwb_table[j+i].gop) != OP_STATE_SUCCESS) {  //** Error
+                    if (!gop_completed_successfully(rwb_table[j+i].gop)) {  //** Error
                         nerr++;  //** Increment the error count
                         if (rw_mode == 0) {
                             tbx_tbuf_memset(&(rwb_table[j+i].buffer), 0, 0, rwb_table[j+i].len); //** Blank the data on READs

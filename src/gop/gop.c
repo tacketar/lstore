@@ -117,23 +117,13 @@ void gop_set_success_state(gop_op_generic_t *g, gop_op_status_t state)
 }
 
 //*************************************************************
-// _gop_completed_successfully - Returns if the task/que completed
-//    successfully
+// _gop_op_status- Returns if the task/que op_status
 //    INTERNAL command does no locking!!!!
 //*************************************************************
 
-int _gop_completed_successfully(gop_op_generic_t *g)
+int _gop_op_status(gop_op_generic_t *g)
 {
-    int status;
-
-    if (gop_get_type(g) == Q_TYPE_QUE) {
-        status = tbx_stack_count(g->q->failed);
-        status = (status == 0) ? g->base.status.op_status : OP_STATE_FAILURE;
-    } else {
-        status = g->base.status.op_status;
-    }
-
-    return(status);
+    return(g->base.status.op_status);
 }
 
 //*************************************************************
@@ -143,13 +133,13 @@ int _gop_completed_successfully(gop_op_generic_t *g)
 
 int gop_completed_successfully(gop_op_generic_t *g)
 {
-    int status;
+    int success;
 
     lock_gop(g);
-    status = _gop_completed_successfully(g);
+    success = (g->base.status.op_status == OP_STATE_SUCCESS) ? 1 : 0;
     unlock_gop(g);
 
-    return(status);
+    return(success);
 }
 
 //*************************************************************
@@ -479,7 +469,7 @@ int gop_waitall(gop_op_generic_t *g)
             unlock_gop(g);  //** Don't need this for a direct exec
             log_printf(15, "sync_exec -- waiting for gid=%d to complete\n", gop_id(g));
             gop_op_sync_exec(g);
-            status = _gop_completed_successfully(g);
+            status = _gop_op_status(g);
             log_printf(15, "sync_exec -- gid=%d completed with err=%d\n", gop_id(g), status);
             return(status);
         } else {  //** Got to submit it the normal way
@@ -491,7 +481,7 @@ int gop_waitall(gop_op_generic_t *g)
         }
     }
 
-    status = _gop_completed_successfully(g);
+    status = _gop_op_status(g);
 
     log_printf(15, "END gid=%d type=%d\n", gop_id(g), gop_get_type(g));
     unlock_gop(g);
@@ -556,14 +546,14 @@ int gop_timed_waitall(gop_op_generic_t *g, int dt)
             loop++;
         }
 
-        status = (g->q->nleft > 0) ? OP_STATE_RETRY : _gop_completed_successfully(g);
+        status = (g->q->nleft > 0) ? OP_STATE_RETRY : _gop_op_status(g);
     } else {
         while ((g->base.state == 0) && (loop == 0)) {
             apr_thread_cond_timedwait(g->base.ctl->cond, g->base.ctl->lock, adt); //** Sleep until something completes
             loop++;
         }
 
-        status = (g->base.state == 0) ? OP_STATE_RETRY : _gop_completed_successfully(g);
+        status = (g->base.state == 0) ? OP_STATE_RETRY : _gop_op_status(g);
     }
 
     unlock_gop(g);
@@ -664,7 +654,7 @@ int gop_sync_exec(gop_op_generic_t *gop)
         if (gop_op_sync_exec_enabled(gop)) {  //** Yup we can!
             log_printf(15, "sync_exec -- waiting for gid=%d to complete\n", gop_id(gop));
             gop_op_sync_exec(gop);
-            err = _gop_completed_successfully(gop);
+            err = _gop_op_status(gop);
             log_printf(15, "sync_exec -- gid=%d completed with err=%d\n", gop_id(gop), err);
             gop_free(gop, OP_DESTROY);
             return(err);
