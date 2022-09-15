@@ -2000,7 +2000,7 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
         }
     }
 
-    //** Read the initial block
+    //** Read the initial block to determine where the data goes metadata vs depot
     got = (op->len != -1) ? op->len + op->offset : op->offset;
     if (got > lfh->lc->small_files_in_metadata_max_size) {  //** Goes in the segment
         lio_adjust_data_tier(op->dlfd, lfh->lc->small_files_in_metadata_max_size+1, 0);
@@ -2009,9 +2009,13 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     }
 
     //** Let's read the initial block
-    len = (op->len == -1) ? lfh->lc->small_files_in_metadata_max_size-op->offset : op->len-op->offset;
-    got = tbx_dio_read(ffd, buffer, len, -1);
+    if (op->len == -1) {
+        len = (lfh->lc->small_files_in_metadata_max_size > 0) ? lfh->lc->small_files_in_metadata_max_size-op->offset : op->bufsize;
+    } else {
+        len = op->len-op->offset;
+    }
 
+    got = tbx_dio_read(ffd, buffer, len, -1);
     if ((got != len) || (max_eof == got)) { //** Hit the EOF so we can figure out how big things are
         off = got + op->offset;
         if (off <= lfh->lc->small_files_in_metadata_max_size) { //** Fits in the metadata
