@@ -3267,7 +3267,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
             status = cache_write_pages_get(seg, cop->rw_hints, mode, curr->lo, curr->hi, &hi_got, page, iov, &n_pages, cop->buf, curr->boff, &(cache_missed[curr->iov_index]), cop->iov[curr->iov_index].len);
         } else {
             log_printf(0, "ERROR invalid rw_mode!!!!!! rw_mode=%d\n", cop->rw_mode);
-            err = gop_error_status;
+            _op_set_status(err, OP_STATE_ERROR, -2000);
         }
 
         if (hi_got > curr->hi) hi_got = curr->hi;  //** Returned value is based on page size so may need to truncate

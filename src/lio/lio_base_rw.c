@@ -644,6 +644,7 @@ gop_op_generic_t *wq_op_new(wq_context_t *ctx, lio_rw_op_t *rw_op, int rw_mode)
     wq_op_t *op;
     gop_op_generic_t *gop;
     tbx_tbuf_var_t tv;
+    gop_op_status_t default_status = {OP_STATE_ERROR, -3000};
 
     tbx_type_malloc_clear(op, wq_op_t, 1);
     op->ctx = ctx;
@@ -668,7 +669,7 @@ gop_op_generic_t *wq_op_new(wq_context_t *ctx, lio_rw_op_t *rw_op, int rw_mode)
     gop->base.free = _wqp_op_free;
     gop->free_ptr = op;
     gop->base.pc = ctx->pc;
-    gop->base.status = gop_error_status;
+    gop->base.status = default_status;
     return(gop);
 }
 

@@ -230,6 +230,7 @@ apr_time_t gop_get_end_time(gop_op_generic_t *gop, int *state)
 void ibp_op_init(ibp_context_t *ic, ibp_op_t *op)
 {
     gop_op_generic_t *gop;
+    gop_op_status_t default_status = {OP_STATE_ERROR, -1000};
 
     //** Clear it
     tbx_type_memclear(op, ibp_op_t, 1);
@@ -246,7 +247,7 @@ void ibp_op_init(ibp_context_t *ic, ibp_op_t *op)
     gop->base.free = _ibp_op_free;
     gop->free_ptr = op;
     gop->base.pc = ic->pc;
-    gop->base.status = gop_error_status;
+    gop->base.status = default_status;
 }
 
 ibp_op_t *new_ibp_op(ibp_context_t *ic)

@@ -1347,10 +1347,12 @@ gop_op_status_t depot_inq_recv(gop_op_generic_t *gop, tbx_ns_t *ns)
         nbytes = atoi(tbx_stk_string_token(NULL, " ", &bstate, &fin));
 
         if (nbytes <= 0) {
-            return(ibp_error_status);
+            _op_set_status(err, OP_STATE_ERROR, -1001);
+            return(err);
         }
         if ((int)sizeof(buffer) < nbytes) {
-            return(ibp_error_status);
+            _op_set_status(err, OP_STATE_ERROR, -1002);
+            return(err);
         }
 
         //** Read the next line.  I ignore the size....
