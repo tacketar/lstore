@@ -574,6 +574,7 @@ void single_gop_mark_completed(gop_op_generic_t *gop, gop_op_status_t status)
 
     log_printf(15, "gop_mark_completed: START gid=%d status=%d\n", gop_id(gop), status.op_status);
 
+    tbx_monitor_obj_message(&(gop->base.mo), "status.op_status=%d status.error_code=%d", status.op_status, status.error_code);
     tbx_monitor_obj_destroy(&(gop->base.mo));
 
     lock_gop(gop);
