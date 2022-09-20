@@ -881,13 +881,17 @@ char *_mon_obj_label_get(mon_process_t *mp, _parse_obj_t *obj)
 
         //** See if we have a reference
         if (entry->ref.id != 0) {
-            rentry = apr_hash_get(mp->labels.obj_hash[entry->ref.type], &(entry->ref.id), sizeof(entry->ref.id));
-            if (rentry) {
-                if (!entry->buffer) {
-                    tbx_type_malloc_clear(entry->buffer, char, 1024);
+            if (mp->labels.obj_hash[entry->ref.type]) {
+                rentry = apr_hash_get(mp->labels.obj_hash[entry->ref.type], &(entry->ref.id), sizeof(entry->ref.id));
+                if (rentry) {
+                    if (!entry->buffer) {
+                        tbx_type_malloc_clear(entry->buffer, char, 1024);
+                    }
+                    snprintf(entry->buffer, 1024, "%s  ref: %s=" I64T " ref_label=%s", entry->label, mp->type_label[entry->ref.type], entry->ref.id, rentry->label);
+                    return(entry->buffer);
                 }
-                snprintf(entry->buffer, 1024, "%s  ref: %s=" I64T " ref_label=%s", entry->label, mp->type_label[entry->ref.type], entry->ref.id, rentry->label);
-                return(entry->buffer);
+            } else {
+                fprintf(stderr, "ERROR: missing type hash! type=%d label=%s\n", entry->ref.type, entry->label);
             }
         }
         return(entry->label);
