@@ -112,7 +112,7 @@ extern gop_op_status_t ibp_error_status;
 ibp_op_t *new_ibp_op(ibp_context_t *ic);
 
 void init_ibp_base_op(ibp_op_t *op, char *logstr, int timeout, int workload, char *hostport, int cmp_size, int primary_cmd, int sub_cmd);
-void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset, tbx_tbuf_t *buffer, ibp_off_t boff, ibp_off_t len, int timeout);
+void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset, tbx_tbuf_t *buffer, ibp_off_t boff, ibp_off_t len, int timeout, int n_vec_dummy);
 void set_ibp_truncate_gop(ibp_op_t *op, ibp_cap_t *cap, ibp_off_t size, int timeout);
 void free_ibp_op(ibp_op_t *iop);
 void finalize_ibp_op(ibp_op_t *iop);

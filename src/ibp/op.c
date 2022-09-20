@@ -361,7 +361,7 @@ gop_op_generic_t *ibp_vec_read_gop(ibp_context_t *ic, ibp_cap_t *cap, int n_vec,
 
     gop_op_generic_t *gop = ibp_get_gop(op);
 
-    set_ibp_rw_gop(op, IBP_READ, cap, 0, buffer, boff, len, timeout);
+    set_ibp_rw_gop(op, IBP_VEC_READ, cap, vec[0].offset, buffer, boff, len, timeout, n_vec);
     op->ops.rw_op.n_ops = 1;
     op->ops.rw_op.n_tbx_iovec_total = n_vec;
     op->ops.rw_op.buf_single.n_iovec = n_vec;
@@ -384,7 +384,7 @@ gop_op_generic_t *ibp_vec_write_gop(ibp_context_t *ic, ibp_cap_t *cap, int n_iov
     if (op == NULL) return(NULL);
     gop_op_generic_t *gop = ibp_get_gop(op);
 
-    set_ibp_rw_gop(op, IBP_WRITE, cap, 0, buffer, bpos, len, timeout);
+    set_ibp_rw_gop(op, IBP_VEC_WRITE, cap, iovec[0].offset, buffer, bpos, len, timeout, n_iovec);
     op->ops.rw_op.n_ops = 1;
     op->ops.rw_op.n_tbx_iovec_total = n_iovec;
     op->ops.rw_op.buf_single.n_iovec = n_iovec;
@@ -404,10 +404,10 @@ gop_op_generic_t *ibp_append_gop(ibp_context_t *ic, ibp_cap_t *cap, tbx_tbuf_t *
     return(gop);
 }
 
-void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset, tbx_tbuf_t *buffer, ibp_off_t bpos, ibp_off_t len, int timeout)
+void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset, tbx_tbuf_t *buffer, ibp_off_t bpos, ibp_off_t len, int timeout, int n_vec_dummy)
 {
     char hoststr[MAX_HOST_SIZE];
-    int port;
+    int port, rw_mode;
     char host[MAX_HOST_SIZE];
     char rid[MAX_HOST_SIZE];
     ibp_op_rw_t *cmd;
@@ -423,10 +423,36 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     set_hostport(hoststr, sizeof(hoststr), host, port, &(op->ic->cc[rw_type]));
     op->dop.cmd.hostport = strdup(hoststr);
 
-    if (rw_type == IBP_READ) {
-        tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ: host=%s len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, len, rid, cmd->typekey);
-    } else {
-        tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE: host=%s len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, len, rid, cmd->typekey);
+    rw_mode = IBP_WRITE;
+    switch (rw_type) {
+        case IBP_READ:
+            rw_mode = IBP_READ;
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ: host=%s off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_WRITE:
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE: host=%s off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_VEC_READ:
+            rw_mode = IBP_READ;
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ_VEC: host=%s n_vec=%d off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, n_vec_dummy, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_VEC_WRITE:
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE_VEC: host=%s n_vec=%d off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, n_vec_dummy, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_LOAD_CHKSUM:
+            rw_mode = IBP_READ;
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ_CHKSUM: host=%s off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_WRITE_CHKSUM:
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE_CHKSUM: host=%s off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_VEC_READ_CHKSUM:
+            rw_mode = IBP_READ;
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_READ_VEC_CHKSUM: host=%s n_vec=%d off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, n_vec_dummy, offset, len, rid, cmd->typekey);
+            break;
+        case IBP_VEC_WRITE_CHKSUM:
+            tbx_monitor_obj_label_irate(gop_mo(gop), len, "IBP_WRITE_VEC_CHKSUM: host=%s n_vec=%d off=" I64T " len=" I64T " rid=%s typekey=%s", op->dop.cmd.hostport, n_vec_dummy, offset, len, rid, cmd->typekey);
+            break;
     }
 
     cmd->cap = cap;
@@ -437,7 +463,7 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     cmd->rwbuf = &(cmd->bs_ptr);
     cmd->n_ops = 1;
     cmd->n_tbx_iovec_total = 1;
-    cmd->rw_mode = rw_type;
+    cmd->rw_mode = rw_mode;
 
     rwbuf->iovec = &(rwbuf->iovec_single);
 
@@ -448,7 +474,7 @@ void set_ibp_rw_gop(ibp_op_t *op, int rw_type, ibp_cap_t *cap, ibp_off_t offset,
     rwbuf->boff = bpos;
     rwbuf->size = len;
 
-    if (rw_type == IBP_WRITE) {
+    if (rw_mode == IBP_WRITE) {
         gop->op->cmd.send_command = write_command;
         gop->op->cmd.send_phase = write_send;
         gop->op->cmd.recv_phase = write_recv;
@@ -470,7 +496,7 @@ gop_op_generic_t *ibp_rw_gop(ibp_context_t *ic, int rw_type, ibp_cap_t *cap, ibp
     ibp_op_t *op = new_ibp_op(ic);
     if (op == NULL) return(NULL);
 
-    set_ibp_rw_gop(op, rw_type, cap, offset, buffer, bpos, len, timeout);
+    set_ibp_rw_gop(op, rw_type, cap, offset, buffer, bpos, len, timeout, 0);
 
     return(ibp_get_gop(op));
 }
