@@ -67,6 +67,8 @@
 
 #define JE_MAGIC_SIZE 4
 
+#define JE_MAX_RETRY 5
+
 // Forward declaration
 const lio_segment_vtable_t lio_jeraseseg_vtable;
 
@@ -1626,7 +1628,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
     gop_opque_free(q, OP_DESTROY);
 
     //** See if we need to retry without blacklisting enabled
-    if ((hard_error > 0) && (s->blacklist) && (loop == 0)) {
+    if ((hard_error > 0) && (s->blacklist) && (loop < JE_MAX_RETRY)) {
         log_printf(5, "sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
@@ -1891,7 +1893,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     gop_opque_free(q, OP_DESTROY);
 
     //** See if we need to retry because of a hard error or an almost hard_error (soft_error=2)
-    if (((soft_error == 2) || (hard_error > 0)) && (loop == 0)) {
+    if (((soft_error > 1) || (hard_error > 0)) && (loop < JE_MAX_RETRY)) {
         log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
