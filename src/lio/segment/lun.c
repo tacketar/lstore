@@ -147,6 +147,8 @@ typedef struct {
     int retries;
 } lun_rw_row_t;
 
+#define MAX_RETRY 5
+
 //***********************************************************************
 // _slun_perform_remap - Does a cap remap
 //   **NOTE: Assumes the segment is locked
@@ -208,7 +210,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
         if (!gop_completed_successfully(gop)) {  //** See if we retry
             log_printf(10, "seg=" XIDT " PROBE Failed retry=%d i=%d rcap=%s\n", segment_id(seg), retry[i],
                    i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ));
-            if (retry[i] <= 2) {  //** Try again up to 2 more times.
+            if (retry[i] <= MAX_RETRY) {  //** Try againW
                 sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                 retry[i]++;
                 gop2 = ds_probe(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), probe[i], timeout);
@@ -255,7 +257,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
                 b->block[i].data->max_size = b->block_len;  //** We don't clear the block_status[i].  Any errors are trapped in the slun_row_pad_fix() call
                 n_size--;
             } else {
-                if (retry[i] <= 2) {  //** Try again up to 2 more times.
+                if (retry[i] <= MAX_RETRY) {  //** Try again
                     sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                     retry[i]++;
                     seg_size = b->block[i].cap_offset + b->block_len;
@@ -322,7 +324,7 @@ int slun_row_pad_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *
             b->block[i].data->size = b->block[i].data->max_size;
             err--;
         } else {
-            if (retry[i] <= 2) {  //** Try again up to 2 more times.
+            if (retry[i] <= MAX_RETRY) {  //** Try again up to 2 more times.
                 sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                 retry[i]++;
                 bstart = b->block[i].cap_offset + b->block[i].data->max_size - 1;
@@ -1436,7 +1438,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
             }
 
             //** See if we should retry a failed op
-            if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries == 0)) {
+            if ((dt_status.error_code != -1234) && (dt_status.op_status != OP_STATE_SUCCESS) && (rwb_table[j].retries <= MAX_RETRY)) {
                 log_printf(1, "RETRY sid=" XIDT " gop=%d task=%d dev=%d\n", segment_id(seg), gop_get_id(gop), j, dev);
 
                 rwb_table[j].crwb.prev_bufoff = -1;  //** Reset the state
