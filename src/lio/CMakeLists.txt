@@ -207,6 +207,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_signature
 		lio_touch
 		lio_warm
+		lio_warm_v1
 		lio_warm_prep_walk
 		lio_warm_prep_delta
 		lio_warm_bake
