@@ -591,7 +591,7 @@ int os_create_remove_tests(char *prefix)
     }
 
     // ** Do a regex scan for foodir/linkdir with recursion
-    snprintf(foo_path, PATH_LEN, "%s/foodir/linkdir", prefix);
+    snprintf(foo_path, PATH_LEN, "%s/foodir/linkdir/*", prefix);
     err = path_scan_and_check(foo_path, &(match_path[4]), 1, 1000, OS_OBJECT_FILE_FLAG);
     if (err != 0) {
         nfailed++;
@@ -1750,7 +1750,7 @@ int os_attribute_tests(char *prefix)
     mkey[1] = "os.attr_type.user.bar2";
     mval[1] = "1";
     mkey[2] = "os.attr_type.os.create";
-    mval[2] = "32";
+    mval[2] = "64";
     m_size[0] = m_size[1] = m_size[2] = -1000;
     mrval[0] = mrval[1] = mrval[2] = NULL;
     err = gop_sync_exec(os_get_multiple_attrs(os, creds, bar_fd, mkey, (void **)mrval, m_size, 3));

@@ -3011,8 +3011,8 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        log_printf(15, " fsrc=%s (lock=%d) fdest=%s (lock=%d)   n=%d key_src[0]=%s key_dest[0]=%s\n", op->fd_src->object_name, slot_src, op->fd_dest->object_name, slot_dest, op->n, op->key_src[i], op->key_dest[i]);
-        if ((osaz_attr_access(osf->osaz, op->creds, NULL, op->fd_src->realpath, op->key_src[i], OS_MODE_READ_IMMEDIATE, &filter) == 1) &&
+        log_printf(15, " fsrc=%s (lock=%d) fdest=%s (lock=%d)   n=%d i=%d key_src=%s key_dest=%s\n", op->fd_src->object_name, slot_src, op->fd_dest->object_name, slot_dest, op->n, i, op->key_src[i], op->key_dest[i]);
+        if ((osaz_attr_access(osf->osaz, op->creds, NULL, op->fd_src->realpath, op->key_src[i], OS_MODE_READ_IMMEDIATE, &filter) != 0) &&
                 (osaz_attr_create(osf->osaz, op->creds, NULL, op->fd_src->realpath, op->key_dest[i]) == 1)) {
 
             v_size = -osf->max_copy;
