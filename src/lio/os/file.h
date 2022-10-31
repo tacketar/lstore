@@ -57,6 +57,14 @@ int osf_store_val(void *src, int src_size, void **dest, int *v_size);
 #define OSF_LOCK_CHKSUM CHKSUM_MD5
 #define OSF_LOCK_CHKSUM_SIZE MD5_DIGEST_LENGTH
 
+typedef struct {  //** Internal structure to handle file locking
+    apr_pool_t *mpool;
+    apr_thread_mutex_t *fobj_lock;
+    tbx_pc_t *fobj_pc;
+    tbx_list_t *fobj_table;
+    tbx_pc_t *task_pc;
+} fobject_lock_t;
+
 struct lio_osfile_priv_t {
     int base_path_len;
     int file_path_len;
@@ -77,12 +85,9 @@ struct lio_osfile_priv_t {
     lio_os_authz_t *osaz;
     lio_authn_t *authn;
     apr_pool_t *mpool;
-    tbx_list_t *fobj_table;
     apr_hash_t *vattr_hash;
     tbx_list_t *vattr_prefix;
-    apr_thread_mutex_t *fobj_lock;
-    tbx_pc_t *fobj_pc;
-    tbx_pc_t *task_pc;
+    fobject_lock_t *os_lock;
     lio_os_virtual_attr_t lock_va;
     lio_os_virtual_attr_t realpath_va;
     lio_os_virtual_attr_t link_va;
