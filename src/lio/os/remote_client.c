@@ -2233,7 +2233,7 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, max_wait);
     gop_set_private(gop, arg);
 
     tbx_monitor_obj_label(gop_mo(gop), "OS:OPEN path=%s", path);
