@@ -53,6 +53,8 @@
 #define OSTC_LOCK(ostc); log_printf(5, "LOCK\n"); apr_thread_mutex_lock(ostc->lock)
 #define OSTC_UNLOCK(ostc) log_printf(5, "UNLOCK\n"); apr_thread_mutex_unlock(ostc->lock)
 
+#define OSTC_NOCACHE_MATCH(key) (strcmp((key), "os.lock") == 0) || ((strncmp((key), "system.exnode", 13) == 0) && ( (*((key)+13) == '\0') || (strcmp((key)+13, ".data") == 0) ) )
+
 #define OSTC_ITER_ALIST  0
 #define OSTC_ITER_AREGEX 1
 
@@ -169,6 +171,8 @@ typedef struct {
 typedef struct {
     char *section;
     char *os_child_section;
+    char *nocache_string;
+    regex_t nocache_regex;
     lio_object_service_fn_t *os_child;//** child OS which does the heavy lifting
     apr_thread_mutex_t *lock;
     apr_thread_mutex_t *delayed_lock;
@@ -1127,7 +1131,8 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
     }
     for (i=0; i<n; i++) {
         key = key_list[i];
-        if (strcmp(key, "os.lock") == 0) continue;  //** These we don't cache
+        if (OSTC_NOCACHE_MATCH(key)) continue;  //** These we don't cache
+        if (ostc->nocache_string && (regexec(&(ostc->nocache_regex), key, 0, NULL, 0) == 0)) continue;  //** These we don't cache
         if (strcmp(key, "os.realpath") == 0) {
             if (v_size[i] > 0) {
                 if (sobj->realpath) free(sobj->realpath);
@@ -2896,6 +2901,7 @@ void ostc_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_
     fprintf(fd, "os_child = %s\n", ostc->os_child_section);
     fprintf(fd, "entry_timeout = %ld #seconds\n", apr_time_sec(ostc->entry_timeout));
     fprintf(fd, "cleanup_interval = %ld #seconds\n", apr_time_sec(ostc->cleanup_interval));
+    if (ostc->nocache_string) fprintf(fd, "nocache_attr = %s\n", ostc->nocache_string);
     fprintf(fd, "\n");
 
     os_print_running_config(ostc->os_child, fd, 1);
@@ -2935,6 +2941,10 @@ void ostc_destroy(lio_object_service_fn_t *os)
     apr_thread_cond_destroy(ostc->cond);
     apr_pool_destroy(ostc->mpool);   //** This also destroys the hardlink hash
 
+    if (ostc->nocache_string) {
+        regfree(&(ostc->nocache_regex));
+        free(ostc->nocache_string);
+    }
     free(ostc->section);
     free(ostc->os_child_section);
     free(ostc);
@@ -2994,6 +3004,17 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
         abort();
     }
     ostc->os_child_section = str;
+
+    //** See if there are any attributes to not cache
+    ostc->nocache_string = tbx_inip_get_string(fd, section, "nocache_attrs", ostc_default_options.nocache_string);
+    if (ostc->nocache_string) {
+        if (lio_os_globregex_parse(&(ostc->nocache_regex), ostc->nocache_string) != 0) {
+            log_printf(0, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->nocache_string);
+            fprintf(stderr, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->nocache_string);
+            fflush(stderr);
+            abort();
+        }
+    }
 
     ostc->entry_timeout = apr_time_from_sec(tbx_inip_get_integer(fd, section, "entry_timeout", ostc_default_options.entry_timeout));
     ostc->cleanup_interval = apr_time_from_sec(tbx_inip_get_integer(fd, section, "cleanup_interval",ostc_default_options.cleanup_interval));

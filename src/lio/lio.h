@@ -89,6 +89,8 @@ struct lio_file_handle_t {  //** Shared file handle
     int in_flight;
     int adjust_tier_pending;
     int ref_count;
+    int ref_write;
+    int ref_read;
     int remove_on_close;
     int is_special;
     ex_off_t readahead_end;
@@ -124,7 +126,9 @@ struct lio_fd_t {  //** Individual file descriptor
     char *path;
     lio_rw_ex_gop_t *read_gop;
     lio_rw_ex_gop_t *write_gop;
-    int mode;         //** R/W mode
+    os_fd_t *ofd;     //** Only used for locking
+    int mode;         //** Full LIO mode
+    int rw_mode;      //** This just let's me know if it's a special file(0) or it's for R/W
     int sfd;          //** Special FD for FIFO or SOCKET objects
     ex_id_t  id;
     ex_off_t curr_offset;

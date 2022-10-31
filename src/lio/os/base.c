@@ -52,7 +52,7 @@ tbx_atomic_int_t _path_parse_counter = 0;
 // lio_os_glob2regex - Converts a string in shell glob notation to regex
 //***********************************************************************
 
-char *lio_os_glob2regex(char *glob)
+char *lio_os_glob2regex(const char *glob)
 {
     char *reg;
     int i, j, n, n_regex;
@@ -127,6 +127,40 @@ char *lio_os_glob2regex(char *glob)
     j += 2;
 
     return(realloc(reg, j));
+}
+
+//***********************************************************************
+// lio_os_globregex_parse - Parses a glob or regex and returns a compiled regex for use
+//   The format of the string is :
+//          glob:<glob expression>
+//          regex:<regex expression>
+//***********************************************************************
+
+int lio_os_globregex_parse(regex_t *regex, const char *text)
+{
+    const char *rx;
+    char *g;
+    int err;
+
+    g = NULL;
+    if (strncmp(text, "glob:", 5) == 0) {
+        g = lio_os_glob2regex(text + 5);
+        rx = g;
+    } else if (strncmp(text, "regex:", 6) == 0) {
+        rx = text + 6;
+    } else {
+        log_printf(0, "ERROR: Missing expression type: %s\n", text);
+        return(-1);
+    }
+
+    err = regcomp(regex, rx, REG_NOSUB|REG_EXTENDED);
+    if (err) {
+        log_printf(0, "ERROR: regcomp error=%d regex=%s\n", err,  rx);
+    }
+
+    if (g) free(g);
+
+    return(err);
 }
 
 //***********************************************************************

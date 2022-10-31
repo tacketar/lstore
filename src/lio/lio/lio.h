@@ -85,6 +85,7 @@ LIO_API int lio_cache_pages_drop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi);
 LIO_API gop_op_generic_t *lio_truncate_gop(lio_fd_t *fd, ex_off_t new_size);
 LIO_API gop_op_generic_t *lio_flush_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi);
 LIO_API const char *lio_fd_path(lio_fd_t *fd);
+LIO_API int lio_open_file_check(lio_config_t *lc, const char *fname, int *readers, int *writers);
 
 LIO_API gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout);
 
@@ -193,6 +194,7 @@ enum lio_fsck_error_flags_t {
 #define LIO_FILE_MODE    128
 #define LIO_SOCKET_MODE  256
 #define LIO_FIFO_MODE    512
+#define LIO_LOCK_MODE   1024
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
 typedef enum lio_copy_hint_t lio_copy_hint_t;

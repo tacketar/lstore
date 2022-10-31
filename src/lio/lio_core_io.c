@@ -112,7 +112,7 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
     tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     while (fh != NULL) {
         d = segment_size(fh->seg);
-        fprintf(fd, " ino=" XIDT " fname=%s  size=%s  cnt=%d\n", fh->ino, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count);
+        fprintf(fd, " ino=" XIDT " fname=%s  size=%s  cnt=%d r_cnt=%d w_cnt=%d\n", fh->ino, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count, fh->ref_read, fh->ref_write);
         tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     }
     lio_unlock(lc);
@@ -555,6 +555,35 @@ void _lio_remove_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 }
 
 //*************************************************************************
+// lio_open_file_check - Checks if the file is open and if so returns the reader and writer counts
+//  Returns 1 if found and 0 otherwise
+//*************************************************************************
+
+int lio_open_file_check(lio_config_t *lc, const char *fname, int *readers, int *writers)
+{
+    lio_file_handle_t *fh;
+    tbx_list_iter_t it;
+    ex_id_t *fid;
+
+    lio_lock(lc);
+    it = tbx_list_iter_search(lc->open_index, NULL, 0);
+    tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
+    while (fh != NULL) {
+        if (strcmp(fh->fname, fname) == 0) {
+            *readers = fh->ref_read;
+            *writers = fh->ref_write;
+            lio_unlock(lc);
+            return(1);
+        }
+        tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
+    }
+    lio_unlock(lc);
+
+    return(0);
+}
+
+
+//*************************************************************************
 // lio_open_gop - Attempt to open the object for R/W
 //*************************************************************************
 
@@ -989,7 +1018,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     ex_off_t data_size;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
-    int dtype, err, exec_flag, is_special;
+    int dtype, err, exec_flag, is_special, rw_mode, do_lock;
     lio_segment_errors_t serr;
 
     status = gop_success_status;
@@ -998,13 +1027,18 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     dtype = lio_exists(lc, op->creds, op->path);
 
     exec_flag = (LIO_EXEC_MODE & op->mode) ? OS_OBJECT_EXEC_FLAG : 0;  //** Peel off the exec flag for use on new files only
+    do_lock = LIO_LOCK_MODE & op->mode;
+    rw_mode = LIO_READ_MODE;
 
     if ((op->mode & (LIO_WRITE_MODE|LIO_CREATE_MODE)) != 0) {  //** Writing and they want to create it if it doesn't exist
+        rw_mode = LIO_WRITE_MODE;
         if (dtype == 0) { //** Need to create it
             if (op->mode & LIO_FIFO_MODE) {
                 dtype = OS_OBJECT_FIFO_FLAG;
+                rw_mode = 0;
             } else if (op->mode & LIO_SOCKET_MODE) {
                 dtype = OS_OBJECT_SOCKET_FLAG;
+                rw_mode = 0;
             } else {
                 dtype = OS_OBJECT_FILE_FLAG;
             }
@@ -1045,6 +1079,11 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         return(status);
     }
 
+    if (dtype & (OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {
+        rw_mode = 0;
+        do_lock = 0;  //** Specifal files we don't lock
+    }
+
     //** Make the space for the FD
     tbx_type_malloc_clear(fd, lio_fd_t, 1);
     tbx_random_get_bytes(&(fd->id), sizeof(fd->id));
@@ -1055,6 +1094,19 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fd->lc = lc;
     fd->read_gop = lio_read_ex_gop_aio;
     fd->write_gop = lio_write_ex_gop_aio;
+
+    //** Locking is enabled grab the file lock
+    if (do_lock) {
+        err = gop_sync_exec(os_open_object(lc->os, fd->creds, fd->path, ((rw_mode == LIO_READ_MODE) ? OS_MODE_READ_BLOCKING : OS_MODE_WRITE_BLOCKING), op->id, &(fd->ofd), op->max_wait));
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(15, "ERROR opening os object fname=%s\n", fd->path);
+            free(fd);
+            *op->fd = NULL;
+            free(op->path);
+            _op_set_status(status, OP_STATE_FAILURE, -EIO);
+            return(status);
+        }
+    }
 
     exnode = NULL;
     if (lio_load_file_handle_attrs(lc, op->creds, op->path, &ino, &exnode, &data, &data_size) != 0) {
@@ -1086,6 +1138,8 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         is_special = 0;
     }
 
+    fd->rw_mode = rw_mode;  //** Now we know the R/W or special file mode
+
     //** Load the exnode and get the default view ID
     exp = lio_exnode_exchange_text_parse(exnode);
     if (exnode_exchange_get_default_view_id(exp) == 0) {  //** Make sure the vid is valid.
@@ -1107,6 +1161,11 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     if (fh != NULL) { //** Already open so just increment the ref count and return a new fd
         fh->ref_count++;
         fd->fh = fh;
+        if (rw_mode == LIO_READ_MODE) {
+            fh->ref_read++;
+        } else if (rw_mode == LIO_WRITE_MODE) {
+            fh->ref_write++;
+        }
         lio_unlock(lc);
         *op->fd = fd;
         if (data) free(data);
@@ -1120,6 +1179,11 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     tbx_type_malloc_clear(fh, lio_file_handle_t, 1);
     fh->ino = ino;
     fh->ref_count++;
+    if (rw_mode == LIO_READ_MODE) {
+        fh->ref_read++;
+    } else if (rw_mode == LIO_WRITE_MODE) {
+        fh->ref_write++;
+    }
     fh->lc = lc;
     fh->is_special = is_special;
     fh->fname = strdup(fd->path);
@@ -1274,6 +1338,13 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     //** We don't decrement the ref count immediately to avoid another thread from thinking they are the only user
     lio_lock(lc);
     tbx_monitor_obj_message(&(fh->mo), "CLOSE: fname=%s ref_count=%d", fd->path, fh->ref_count);
+
+    if (fd->rw_mode == LIO_READ_MODE) {
+        fh->ref_read--;
+    } else if (fd->rw_mode == LIO_WRITE_MODE) {
+        fh->ref_write--;
+    }
+
     if (fh->ref_count > 1) {  //** Somebody else has it open as well
         fh->ref_count--;  //** Remove ourselves
         lio_unlock(lc);
@@ -1346,7 +1417,6 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
         if (fh->write_table != NULL) lio_store_and_release_adler32(lc, fd->creds, fh->write_table, fd->path);
         if (fh->remove_on_close == 1) status = gop_sync_exec_status(lio_remove_gop(lc, fd->creds, fd->path, NULL, lio_exists(lc, fd->creds, fd->path)));
-
         if (fh->fname) free(fh->fname);
         if (fh->data) free(fh->data);
         if (fh->stream) free(fh->stream);
@@ -1423,6 +1493,7 @@ finished:
          fd->path, fd->id, fd->tally_ops[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
          fd->tally_ops[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1]);
 
+    if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
     if (fd->path != NULL) free(fd->path);
     free(fd);
 

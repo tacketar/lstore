@@ -87,6 +87,7 @@
 #include "cache.h"
 #include "ex3.h"
 #include "ex3/types.h"
+#include "ex3/system.h"
 #include "lio.h"
 #include "os.h"
 #include "rs.h"
@@ -165,6 +166,9 @@ struct lio_fs_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
+    int enable_fuse_hacks;
+    int enable_rw_locks;
+    int rw_locks_max_wait;
     int xattr_error_for_hard_errors;
     int ug_mode;
     int shutdown;
@@ -173,6 +177,8 @@ struct lio_fs_t {
     int _inode_key_size;
     int enable_fifo;
     int enable_socket;
+    int os_read_mode;
+    int os_write_mode;
     ex_off_t copy_bufsize;
     tbx_atomic_int_t read_cmds_inflight;
     tbx_atomic_int_t read_bytes_inflight;
@@ -187,6 +193,8 @@ struct lio_fs_t {
     lio_os_authz_t *osaz;
     char *authz_section;
     char *fs_section;
+    char *rw_lock_attr_string;
+    regex_t rw_lock_attr_regex;
     lio_os_authz_local_t ug;
 };
 
@@ -967,8 +975,10 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         }
     }
 
+    if (fs->enable_rw_locks) lflags |= LIO_LOCK_MODE;
+
     //** Ok we can access the file if we made it here
-    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, NULL, &fd, 60));
+    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->rw_locks_max_wait));
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
@@ -2040,6 +2050,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 {
     osaz_attr_filter_t filter;
     fs_open_file_t *fop;
+    os_fd_t *ofd;
     lio_file_handle_t *fh;
     char *val[2];
     char *attrs[2];
@@ -2049,6 +2060,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     gid_t gid;
     mode_t mode;
     gop_op_status_t status;
+    int n_readers, n_writers;
 
     v_size[0] = size;
     FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
@@ -2135,11 +2147,30 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
             v_size[1] = -fs->lc->max_attr;
         }
 
+        //** If needed get a read lock
+        ofd = NULL;
+        if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+            if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
+                if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
+                    goto already_have_a_lock;
+                }
+            }
+            err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_READ_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+            if (err != OP_STATE_SUCCESS) {
+                log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
+                FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
+                return(-ENOLCK);
+            }
+        }
+
+already_have_a_lock:
         err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, NULL, attrs, (void **)val, v_size, na);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
             return(-ENODATA);
         }
+        if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
+
         if ((na>1) && (v_size[1] > 0)) { //** We have hard errors so throw an error
             free(val[1]);
             if (v_size[0] > 0) free(val[0]);
@@ -2178,26 +2209,49 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 {
     osaz_attr_filter_t filter;
     char *val;
+    os_fd_t *ofd;
     int v_size, err;
+    int n_readers, n_writers;
 
     v_size= size;
 
     if (strcmp("system.posix_acl_access", name) == 0) return(0);  //** We don't allow setting that now
     if (strcmp("system.exnode", name) == 0) return(0);  //** We don't allow setting the exnode from FUSE
+    if (strcmp("system.exnode.data", name) == 0) return(0);  //** We don't allow setting the exnode data from FUSE either
 
     FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
 
+    //** If needed get a read lock
+    ofd = NULL;
+    if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+        if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
+            if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
+                goto already_have_a_lock;
+            }
+        }
+
+        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_WRITE_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
+            FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
+            return(-ENOLCK);
+        }
+    }
+
+already_have_a_lock:
     if (flags != 0) { //** Got an XATTR_CREATE/XATTR_REPLACE
         v_size = 0;
         val = NULL;
         err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
         if (flags == XATTR_CREATE) {
             if (err == OP_STATE_SUCCESS) {
+                if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
                 FS_MON_OBJ_DESTROY_MESSAGE("EEXIST");
                 return(-EEXIST);
             }
         } else if (flags == XATTR_REPLACE) {
             if (err != OP_STATE_SUCCESS) {
+                if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
                 FS_MON_OBJ_DESTROY_MESSAGE("ENOATTR");
                 return(-ENOATTR);
             }
@@ -2208,6 +2262,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
         //** Make sure we can access it
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
+            if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
             return(-EACCES);
         }
@@ -2215,18 +2270,21 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         return(0);
     } else {
         //** Make sure we can access it
-        if (strcmp(name, "system.exnode") == 0) {
-           if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
-               FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
-               return(-EACCES);
-           }
+        if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
+            if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
+            FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+            return(-EACCES);
         }
+
         err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
+            if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
             return(-ENOENT);
         }
     }
+
+    if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
 
     FS_MON_OBJ_DESTROY();
 
@@ -2240,18 +2298,23 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, const char *name)
 {
     int v_size, err;
+    int n_readers, n_writers;
+    os_fd_t *ofd;
 
     FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
+
+    //** We don't allow setting these attributes from the FS
+    if ((strcmp("system.posix_acl_access", name) == 0) ||
+        (strcmp("system.exnode", name) == 0) ||
+        (strcmp("system.exnode.data", name) == 0)) {
+        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
+        return(-EACCES);
+    }
+
 
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {
         FS_MON_OBJ_DESTROY();
         return(0);
-    }
-
-    //** Not allowed to remove the exnode
-    if (strcmp(name, "system.exnode") == 0) {
-        FS_MON_OBJ_DESTROY_MESSAGE("EACCES");
-        return(-EACCES);
     }
 
     //** Make sure we can access it
@@ -2260,12 +2323,33 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
         return(-EACCES);
     }
 
+    //** If needed get a read lock
+    ofd = NULL;
+    if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+        if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
+            if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
+                goto already_have_a_lock;
+            }
+        }
+
+        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_WRITE_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
+            FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
+            return(-ENOLCK);
+        }
+    }
+
+already_have_a_lock:
     v_size = -1;
     err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, NULL, v_size);
     if (err != OP_STATE_SUCCESS) {
+        if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
         FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
     }
+
+    if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
 
     FS_MON_OBJ_DESTROY();
 
@@ -2464,6 +2548,10 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", fs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
+    fprintf(fd, "enable_fuse_hacks = %d\n", fs->enable_fuse_hacks);
+    fprintf(fd, "enable_rw_locks = %d\n", fs->enable_rw_locks);
+    if (fs->enable_rw_locks) fprintf(fd, "rw_locks_max_wait = %d\n", fs->rw_locks_max_wait);
+    if (fs->rw_lock_attr_string) fprintf(fd, "rw_lock_attrs = %s\n", fs->rw_lock_attr_string);
     fprintf(fd, "enable_fifo = %d\n", fs->enable_fifo);
     fprintf(fd, "enable_socket = %d\n", fs->enable_socket);
     fprintf(fd, "xattr_error_for_hard_errors = %d\n", fs->xattr_error_for_hard_errors);
@@ -2520,6 +2608,28 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     free(atype);
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
+    fs->enable_fuse_hacks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fuse_hacks", 0);
+    fs->enable_rw_locks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_rw_locks", 0);
+    fs->os_read_mode = OS_MODE_READ_IMMEDIATE;
+    fs->os_write_mode = OS_MODE_WRITE_IMMEDIATE;
+    fs->rw_locks_max_wait = 60;     //** Default is to wait 60s if not using locks. It should be immediate in this case
+    if (fs->enable_rw_locks) {
+        fs->rw_locks_max_wait = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "rw_locks_max_wait", 600);
+        fs->os_read_mode = OS_MODE_READ_BLOCKING;
+        fs->os_write_mode = OS_MODE_WRITE_BLOCKING;
+    }
+
+    //** See if there are any attributes to not cache (and optionally protect with RW locks if enabled
+    fs->rw_lock_attr_string = tbx_inip_get_string(fd, fs->fs_section, "rw_lock_attrs", NULL);
+    if (fs->rw_lock_attr_string) {
+        if (lio_os_globregex_parse(&(fs->rw_lock_attr_regex), fs->rw_lock_attr_string) != 0) {
+            log_printf(0, "ERROR: Failed parsing rw_lock_attr glob/regex! string=%s\n", fs->rw_lock_attr_string);
+            fprintf(stderr, "ERROR: Failed parsing rw_lock_attr glob/regex! string=%s\n", fs->rw_lock_attr_string);
+            fflush(stderr);
+            abort();
+        }
+    }
+
     fs->n_merge = tbx_inip_get_integer(fd, fs->fs_section, "n_merge", 0);
     fs->copy_bufsize = tbx_inip_get_integer(fd, fs->fs_section, "copy_bufsize", 10*1024*1024);
 
@@ -2535,9 +2645,7 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     free(atype);
 
     //** Get the default host ID for opens
-    char hostname[1024];
-    apr_gethostname(hostname, sizeof(hostname), fs->mpool);
-    fs->id = strdup(hostname);
+    fs->id = lio_lookup_service(fs->lc->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);
 
     //** Make the AuthZ hint.  We really only care about the uid/gids which is a byproduct of setting things up
     lio_fs_fill_os_authz_local(fs, &(fs->ug), uid, gid);
@@ -2581,7 +2689,11 @@ void lio_fs_destroy(lio_fs_t *fs)
     //** Clean up everything else
     if (fs->authz_section) free(fs->authz_section);
     if (fs->fs_section) free(fs->fs_section);
-    if (fs->id) free (fs->id);
+    if (fs->rw_lock_attr_string) {
+        regfree(&(fs->rw_lock_attr_regex));
+        free(fs->rw_lock_attr_string);
+    }
+
     apr_thread_mutex_destroy(fs->lock);
     apr_pool_destroy(fs->mpool);
 
