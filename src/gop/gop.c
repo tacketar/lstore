@@ -89,7 +89,7 @@ char *gop_generate_host_id(char *my_name, char *exe_name, int heartbeat, int ran
     }
 
     //** Form the identifier
-    snprintf(buffer, sizeof(buffer), "%d:%s:%s:%u", heartbeat, hostname, exe, n);
+    snprintf(buffer, sizeof(buffer), "%d:%s:%s-%d:%u", heartbeat, hostname, exe, getpid(), n);
 
     return(strdup(buffer));
 }
