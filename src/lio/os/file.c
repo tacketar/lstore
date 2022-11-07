@@ -91,9 +91,9 @@ typedef struct {
     char *id;
     int ftype;
     int mode;
+    int user_mode;
     uint64_t uuid;
 } osfile_fd_t;
-
 
 typedef struct {
     lio_object_service_fn_t *os;
@@ -108,6 +108,13 @@ typedef struct {
     uint64_t uuid;
     int max_wait;
 } osfile_open_op_t;
+
+typedef struct {
+    lio_object_service_fn_t *os;
+    int mode;
+    osfile_fd_t *fd;
+    int max_wait;
+} osfile_lock_user_op_t;
 
 typedef struct {
     lio_object_service_fn_t *os;
@@ -651,7 +658,7 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
     handle->abort = 1;
     handle->rw_mode = rw_mode;
 
-    log_printf(15, "SLEEPING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p max_wait=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle, max_wait);
+    log_printf(15, "SLEEPING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU " max_wait=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle->fd->uuid, max_wait);
 
     tbx_stack_move_to_bottom(fol->stack);
     tbx_stack_insert_below(fol->stack, handle);
@@ -672,6 +679,9 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 
     dummy = apr_time_sec(dt);
     log_printf(15, "AWAKE id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p abort=%d uuid=" LU " dt=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle, aborted, fd->uuid, dummy);
+
+    //** I should be on the top of the stack
+    tbx_stack_pop(fol->stack); //**QWERT
 
     //** I'm popped off the stack so just free my handle and update the counter
     tbx_pch_release(flock->task_pc, &task_pch);
@@ -696,8 +706,7 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
         handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
 
         if ((rw_mode == OS_MODE_READ_BLOCKING) && (handle->rw_mode == OS_MODE_READ_BLOCKING)) {
-            tbx_stack_pop(fol->stack);  //** Clear it from the stack. It's already stored in handle above
-            log_printf(15, "WAKEUP ALARM id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle);
+            log_printf(15, "WAKEUP ALARM id=%s uuid=" LU "fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU " handle->mode=%d\n", fd->id, fd->uuid, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle->fd->uuid, handle->rw_mode);
 
             handle->abort = 0;
             apr_thread_cond_signal(handle->cond);   //** They will wake up when fobj_lock is released in the calling routine
@@ -711,14 +720,20 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 // full_object_lock -  Locks the object across all systems
 //***********************************************************************
 
-int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode, int max_wait)
+int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int max_wait)
 {
     tbx_pch_t obj_pch;
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
-    int err;
+    int err, rw_mode, do_wait;
 
-    if (rw_mode == OS_MODE_READ_IMMEDIATE) return(0);
+    rw_mode = rw_lock; do_wait = 1;
+    if (rw_lock & OS_MODE_NONBLOCKING) {
+        rw_mode = rw_lock - OS_MODE_NONBLOCKING;
+        do_wait = 0;
+    }
+
+    if (rw_mode & OS_MODE_READ_IMMEDIATE) return(0);
 
     apr_thread_mutex_lock(flock->fobj_lock);
 
@@ -732,34 +747,34 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode, int ma
         log_printf(15, "fname=%s new lock!\n", fd->object_name);
     }
 
-    log_printf(15, "START id=%s fname=%s mymode=%d read_count=%d write_count=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count);
+    log_printf(15, "START id=%s uuid=" LU " fname=%s mymode=%d do_wait=%d read_count=%d write_count=%d\n", fd->id, fd->uuid, fd->object_name, rw_mode, do_wait, fol->read_count, fol->write_count);
 
     err = 0;
-    if (rw_mode == OS_MODE_READ_BLOCKING) { //** I'm reading
+    if (rw_mode & OS_MODE_READ_BLOCKING) { //** I'm reading
         if (fol->write_count == 0) { //** No one currently writing
             //** Check and make sure the person waiting isn't a writer
             if (tbx_stack_count(fol->stack) != 0) {
                 tbx_stack_move_to_top(fol->stack);
                 handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
-                if (handle->rw_mode == OS_MODE_WRITE_BLOCKING) {  //** They want to write so sleep until my turn
-                    err = fobj_wait(flock, fol, fd, rw_mode, max_wait);  //** The fobj_lock is released/acquired inside
+                if (handle->rw_mode & OS_MODE_WRITE_BLOCKING) {  //** They want to write so sleep until my turn
+                    err = (do_wait) ? fobj_wait(flock, fol, fd, rw_mode, max_wait) : 1;  //** The fobj_lock is released/acquired inside
                 }
             }
         } else {
-            err = fobj_wait(flock, fol, fd, rw_mode, max_wait);  //** The fobj_lock is released/acquired inside
+            err = (do_wait) ? fobj_wait(flock, fol, fd, rw_mode, max_wait) : 1;  //** The fobj_lock is released/acquired inside
         }
 
         if (err == 0) fol->read_count++;
     } else {   //** I'm writing
         if ((fol->write_count != 0) || (fol->read_count != 0) || (tbx_stack_count(fol->stack) != 0)) {  //** Make sure no one else is doing anything
-            err = fobj_wait(flock, fol, fd, rw_mode, max_wait);  //** The fobj_lock is released/acquired inside
+            err = (do_wait) ? fobj_wait(flock, fol, fd, rw_mode, max_wait) : 1;  //** The fobj_lock is released/acquired inside
         }
         if (err == 0) fol->write_count++;
     }
 
     if (err == 0) fobj_add_active(fol, fd);
 
-    log_printf(15, "END id=%s fname=%s mymode=%d read_count=%d write_count=%d\n", fd->id, fd->object_name, fd->mode, fol->read_count, fol->write_count);
+    log_printf(15, "END id=%s uuid=" LU " fname=%s mymode=%d read_count=%d write_count=%d\n", fd->id, fd->uuid, fd->object_name, fd->mode, fol->read_count, fol->write_count);
 
     apr_thread_mutex_unlock(flock->fobj_lock);
 
@@ -767,7 +782,7 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode, int ma
 }
 
 //***********************************************************************
-// full_object_unlock -  Releases the global lock
+// full_object_unlock - Unlocks an object
 //***********************************************************************
 
 void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
@@ -776,12 +791,13 @@ void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
     fobj_lock_task_t *handle;
     int err;
 
-    if (fd->mode == OS_MODE_READ_IMMEDIATE) return;
-
     apr_thread_mutex_lock(flock->fobj_lock);
 
     fol = tbx_list_search(flock->fobj_table, fd->object_name);
-    if (fol == NULL) return;
+    if (fol == NULL) {  //**Exit if it wasn't found
+        apr_thread_mutex_unlock(flock->fobj_lock);
+        return;
+    }
 
     err = fobj_remove_active(fol, fd);
 
@@ -791,13 +807,13 @@ void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
     }
 
     //** Update the counts
-    if (rw_mode == OS_MODE_READ_BLOCKING) {
+    if (rw_mode & OS_MODE_READ_BLOCKING) {
         fol->read_count--;
     } else {
         fol->write_count--;
     }
 
-    log_printf(15, "fname=%s mymode=%d read_count=%d write_count=%d\n", fd->object_name, fd->mode, fol->read_count, fol->write_count);
+    log_printf(15, "fname=%s mymode=%d read_count=%d write_count=%d fd->id=%s fd->uuid=" LU "\n", fd->object_name, fd->mode, fol->read_count, fol->write_count, fd->id, fd->uuid);
 
     if ((tbx_stack_count(fol->stack) == 0) && (fol->read_count == 0) && (fol->write_count == 0)) {  //** No one else is waiting so remove the entry
         tbx_list_remove(flock->fobj_table, fd->object_name, NULL);
@@ -806,10 +822,46 @@ void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
         tbx_stack_move_to_top(fol->stack);
         handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
 
-        if (((handle->rw_mode == OS_MODE_READ_BLOCKING) && (fol->write_count == 0)) ||
-                ((handle->rw_mode == OS_MODE_WRITE_BLOCKING) && (fol->write_count == 0) && (fol->read_count == 0))) {
-            tbx_stack_pop(fol->stack);  //** Clear it from the stack. It's already stored in handle above
-            log_printf(15, "WAKEUP ALARM fname=%s mymode=%d read_count=%d write_count=%d handle=%p\n", fd->object_name, rw_mode, fol->read_count, fol->write_count, handle);
+        if (((handle->rw_mode & OS_MODE_READ_BLOCKING) && (fol->write_count == 0)) ||
+                ((handle->rw_mode & OS_MODE_WRITE_BLOCKING) && (fol->write_count == 0) && (fol->read_count == 0))) {
+            log_printf(15, "WAKEUP ALARM fname=%s mymode=%d read_count=%d write_count=%d handle->mode=%d handle->fd->id=%s handle->fd->uuid=" LU "\n", fd->object_name, rw_mode, fol->read_count, fol->write_count, handle->rw_mode, handle->fd->id, handle->fd->uuid);
+            handle->abort = 0;
+            apr_thread_cond_broadcast(handle->cond);   //** They will wake up when fobj_lock is released in the calling routine
+        }
+    }
+
+    apr_thread_mutex_unlock(flock->fobj_lock);
+}
+
+//***********************************************************************
+// full_object_downgrade_lock - Downgrades the lock from a WRITE to READ lock
+//***********************************************************************
+
+void full_object_downgrade_lock(fobject_lock_t *flock, osfile_fd_t *fd)
+{
+    fobj_lock_t *fol;
+    fobj_lock_task_t *handle;
+
+    apr_thread_mutex_lock(flock->fobj_lock);
+
+    fol = tbx_list_search(flock->fobj_table, fd->object_name);
+    if (fol == NULL) {  //**Exit if it wasn't found
+        apr_thread_mutex_unlock(flock->fobj_lock);
+        return;
+    }
+
+    //** Adjust the counts
+    fol->write_count--;
+    fol->read_count++;
+
+    log_printf(15, "fname=%s mymode=%d read_count=%d write_count=%d\n", fd->object_name, fd->mode, fol->read_count, fol->write_count);
+
+    if (tbx_stack_count(fol->stack) > 0) { //** Wake up the next person if also a reader
+        tbx_stack_move_to_top(fol->stack);
+        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
+
+        if (handle->rw_mode & OS_MODE_READ_BLOCKING) {
+            log_printf(15, "WAKEUP ALARM fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU "\n", fd->object_name, fd->mode, fol->read_count, fol->write_count, handle->fd->uuid);
             handle->abort = 0;
             apr_thread_cond_broadcast(handle->cond);   //** They will wake up when fobj_lock is released in the calling routine
         }
@@ -1064,6 +1116,52 @@ int va_type_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 }
 
 //***********************************************************************
+// _lock_get_attr - Returns the lock attribute value
+//***********************************************************************
+
+void _lock_get_attr(fobj_lock_t *fol, char *buf, int *used, int bufsize, int is_lock_user)
+{
+    fobj_lock_task_t *handle;
+    osfile_fd_t *pfd;
+    int mode;
+
+    //** Print the active info
+    if (fol->read_count > 0) {
+        tbx_append_printf(buf, used, bufsize, "active_mode=READ\n");
+        tbx_append_printf(buf, used, bufsize, "active_count=%d\n", fol->read_count);
+    } else {
+        tbx_append_printf(buf, used, bufsize, "active_mode=WRITE\n");
+        tbx_append_printf(buf, used, bufsize, "active_count=%d\n", fol->write_count);
+    }
+
+    tbx_stack_move_to_top(fol->active_stack);
+    while ((pfd = (osfile_fd_t *)tbx_stack_get_current_data(fol->active_stack)) != NULL) {
+        mode = (is_lock_user) ? pfd->user_mode : pfd->mode;
+        if (mode & OS_MODE_READ_BLOCKING) {
+            tbx_append_printf(buf, used, bufsize, "active_id=%s:" LU ":READ\n", pfd->id, pfd->uuid);
+        } else if (mode & OS_MODE_WRITE_BLOCKING) {
+            tbx_append_printf(buf, used, bufsize, "active_id=%s:" LU ":WRITE\n", pfd->id, pfd->uuid);
+        } else {
+            tbx_append_printf(buf, used, bufsize, "active_id=%s:" LU ":UNKNOWN(%d)\n", pfd->id, pfd->uuid, mode);
+        }
+        tbx_stack_move_down(fol->active_stack);
+    }
+
+    tbx_append_printf(buf, used, bufsize, "\n");
+    tbx_append_printf(buf, used, bufsize, "pending_count=%d\n", tbx_stack_count(fol->stack));
+    tbx_stack_move_to_top(fol->stack);
+    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
+        if (handle->rw_mode & OS_MODE_READ_BLOCKING) {
+            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":READ\n", handle->fd->id, handle->fd->uuid);
+        } else {
+            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":WRITE\n", handle->fd->id, handle->fd->uuid);
+        }
+        tbx_stack_move_down(fol->stack);
+    }
+
+}
+
+//***********************************************************************
 // va_lock_get_attr - Returns the file lock information
 //***********************************************************************
 
@@ -1071,9 +1169,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
-    osfile_fd_t *pfd;
     fobj_lock_t *fol;
-    fobj_lock_task_t *handle;
     int used;
     int bufsize = 10*1024;
     char result[bufsize];
@@ -1105,37 +1201,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
     used = 0;
     tbx_append_printf(buf, &used, bufsize, "[os.lock]\n");
 
-    //** Print the active info
-    if (fol->read_count > 0) {
-        tbx_append_printf(buf, &used, bufsize, "active_mode=READ\n");
-        tbx_append_printf(buf, &used, bufsize, "active_count=%d\n", fol->read_count);
-    } else {
-        tbx_append_printf(buf, &used, bufsize, "active_mode=WRITE\n");
-        tbx_append_printf(buf, &used, bufsize, "active_count=%d\n", fol->write_count);
-    }
-
-    tbx_stack_move_to_top(fol->active_stack);
-    while ((pfd = (osfile_fd_t *)tbx_stack_get_current_data(fol->active_stack)) != NULL) {
-        if (pfd->mode == OS_MODE_READ_BLOCKING) {
-            tbx_append_printf(buf, &used, bufsize, "active_id=%s:" LU ":READ\n", pfd->id, pfd->uuid);
-        } else {
-            tbx_append_printf(buf, &used, bufsize, "active_id=%s:" LU ":WRITE\n", pfd->id, pfd->uuid);
-        }
-        tbx_stack_move_down(fol->active_stack);
-    }
-
-
-    tbx_append_printf(buf, &used, bufsize, "\n");
-    tbx_append_printf(buf, &used, bufsize, "pending_count=%d\n", tbx_stack_count(fol->stack));
-    tbx_stack_move_to_top(fol->stack);
-    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
-        if (handle->fd->mode == OS_MODE_READ_BLOCKING) {
-            tbx_append_printf(buf, &used, bufsize, "pending_id=%s:" LU ":READ\n", handle->fd->id, handle->fd->uuid);
-        } else {
-            tbx_append_printf(buf, &used, bufsize, "pending_id=%s:" LU ":WRITE\n", handle->fd->id, handle->fd->uuid);
-        }
-        tbx_stack_move_down(fol->stack);
-    }
+    _lock_get_attr(fol, buf, &used, bufsize, 0);
 
     apr_thread_mutex_unlock(osf->os_lock->fobj_lock);
 
@@ -1145,6 +1211,55 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
     return(0);
 }
 
+//***********************************************************************
+// va_lock_user_get_attr - Returns the file os.lock.user information
+//***********************************************************************
+
+int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
+{
+    osfile_fd_t *fd = (osfile_fd_t *)ofd;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    fobj_lock_t *fol;
+    int used;
+    int bufsize = 10*1024;
+    char result[bufsize];
+    char *buf;
+
+    *atype = OS_OBJECT_VIRTUAL_FLAG;
+
+    log_printf(15, "fname=%s\n", fd->object_name);
+
+    apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
+
+    fol = tbx_list_search(osf->os_lock_user->fobj_table, fd->object_name);
+    log_printf(15, "fol=%p\n", fol);
+
+    if (fol == NULL) {
+        *val = NULL;
+        *v_size = 0;
+        apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+        return(0);
+    }
+
+    //** Figure out the buffer
+    buf = result;
+    if (*v_size > 0) {
+        buf = (char *)(*val);
+        bufsize = *v_size;
+    }
+
+    used = 0;
+    tbx_append_printf(buf, &used, bufsize, "[os.lock.user]\n");
+
+    _lock_get_attr(fol, buf, &used, bufsize, 1);
+
+    apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+
+    if (*v_size < 0) *val = strdup(buf);
+    *v_size = strlen(buf);
+
+    return(0);
+}
 
 //***********************************************************************
 // va_attr_type_get_attr - Returns the attribute type information
@@ -4262,7 +4377,7 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
     if (op->cfd == NULL) return(gop_success_status);
 
     full_object_unlock(osf->os_lock, op->cfd, op->cfd->mode);
-
+    if (op->cfd->user_mode != 0) full_object_unlock(osf->os_lock_user, op->cfd, op->cfd->user_mode);
     free(op->cfd->object_name);
     free(op->cfd->attr_dir);
     free(op->cfd->id);
@@ -4286,6 +4401,125 @@ gop_op_generic_t *osfile_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     op->cfd = (osfile_fd_t *)ofd;
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_close_object_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
+// osfile_lock_user_object_fn - Applies a user lock on the object
+//***********************************************************************
+
+gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
+{
+    osfile_lock_user_op_t *op = (osfile_lock_user_op_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    int err;
+    gop_op_status_t status;
+
+    if (op->fd->user_mode != 0) { //** Already have a lock so see how we change it
+        if (op->mode & OS_MODE_UNLOCK) { //** Got an unlock operation
+           full_object_unlock(osf->os_lock_user, op->fd, op->fd->user_mode);
+           op->fd->user_mode = op->mode;
+           return(gop_success_status);
+        } else if (op->fd->user_mode & OS_MODE_READ_BLOCKING) {
+           if (op->mode & OS_MODE_WRITE_BLOCKING) {
+               full_object_unlock(osf->os_lock_user, op->fd, op->fd->user_mode);
+               op->fd->user_mode = 0;
+               err = full_object_lock(osf->os_lock_user, op->fd, op->mode, op->max_wait);
+               op->fd->user_mode = op->mode;
+               goto finished;
+           }
+           return(gop_success_status);
+        } else if (op->fd->user_mode & OS_MODE_WRITE_BLOCKING) {
+            if (op->mode & OS_MODE_READ_BLOCKING) {
+                full_object_downgrade_lock(osf->os_lock_user, op->fd);
+                op->fd->user_mode = op->mode;
+            }
+            return(gop_success_status);
+        }
+    } else if (op->mode & OS_MODE_UNLOCK) {  //** No previous lock held so just ignore it
+        return(gop_success_status);
+    }
+
+    err = full_object_lock(osf->os_lock_user, op->fd, op->mode, op->max_wait);
+    op->fd->user_mode = op->mode;
+
+finished:
+    if (err != 0) {  //** Either a timeout or abort occured
+        status = gop_failure_status;
+    } else {
+        status = gop_success_status;
+    }
+
+    return(status);
+}
+
+//***********************************************************************
+//  osfile_lock_user_object - Makes the user lock op
+//***********************************************************************
+
+gop_op_generic_t *osfile_lock_user_object(lio_object_service_fn_t *os, os_fd_t *ofd, int rw_mode, int max_wait)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_lock_user_op_t *op;
+
+    tbx_type_malloc_clear(op, osfile_lock_user_op_t, 1);
+
+    op->os = os;
+    op->fd = (osfile_fd_t *)ofd;
+    op->max_wait = max_wait;
+    op->mode = rw_mode;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_lock_user_object_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
+// osfile_abort_lock_user_object_fn - Performs the actual uer lock abort operation
+//***********************************************************************
+
+gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
+{
+    osfile_lock_user_op_t *op = (osfile_lock_user_op_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    gop_op_status_t status;
+    fobj_lock_t *fol;
+    fobj_lock_task_t *handle;
+
+    if (op->mode & OS_MODE_READ_IMMEDIATE) return(gop_success_status);
+
+    apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
+
+    fol = tbx_list_search(osf->os_lock_user->fobj_table, op->fd->object_name);
+    if (fol == NULL) return(gop_failure_status);
+
+    //** Find the task in the pending list and remove it
+    status = gop_failure_status;
+    tbx_stack_move_to_top(fol->stack);
+    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
+        if (handle->fd->uuid == op->fd->uuid) {
+            tbx_stack_delete_current(fol->stack, 1, 0);
+            status = gop_success_status;
+            handle->abort = 1;
+            apr_thread_cond_signal(handle->cond);   //** They will wake up when fobj_lock is released
+            break;
+        }
+        tbx_stack_move_down(fol->stack);
+    }
+
+    apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+
+    return(status);
+}
+
+
+//***********************************************************************
+//  osfile_abort_lock_user_object - Aborts an ongoing user lock operation
+//***********************************************************************
+
+gop_op_generic_t *osfile_abort_lock_user_object(lio_object_service_fn_t *os, gop_op_generic_t *gop)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    gop_thread_pool_op_t *tpop = gop_get_tp(gop);
+
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_abort_lock_user_object_fn, tpop->arg, NULL, 1));
 }
 
 //***********************************************************************
@@ -4615,6 +4849,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
     free(osf->internal_lock);
 
     fobj_lock_destroy(osf->os_lock);
+    fobj_lock_destroy(osf->os_lock_user);
     tbx_list_destroy(osf->vattr_prefix);
 
     osaz_destroy(osf->osaz);
@@ -4700,6 +4935,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     }
 
     osf->os_lock = fobj_lock_create();
+    osf->os_lock_user = fobj_lock_create();
 
     osf->base_path_len = strlen(osf->base_path);
 
@@ -4717,6 +4953,12 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osf->lock_va.get = va_lock_get_attr;
     osf->lock_va.set = va_null_set_attr;
     osf->lock_va.get_link = va_null_get_link_attr;
+
+    osf->lock_user_va.attribute = "os.lock.user";
+    osf->lock_user_va.priv = os;
+    osf->lock_user_va.get = va_lock_user_get_attr;
+    osf->lock_user_va.set = va_null_set_attr;
+    osf->lock_user_va.get_link = va_null_get_link_attr;
 
     osf->realpath_va.attribute = "os.realpath";
     osf->realpath_va.priv = os;
@@ -4749,6 +4991,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osf->create_va.get_link = va_null_get_link_attr;
 
     apr_hash_set(osf->vattr_hash, osf->lock_va.attribute, APR_HASH_KEY_STRING, &(osf->lock_va));
+    apr_hash_set(osf->vattr_hash, osf->lock_user_va.attribute, APR_HASH_KEY_STRING, &(osf->lock_user_va));
     apr_hash_set(osf->vattr_hash, osf->realpath_va.attribute, APR_HASH_KEY_STRING, &(osf->realpath_va));
     apr_hash_set(osf->vattr_hash, osf->link_va.attribute, APR_HASH_KEY_STRING, &(osf->link_va));
     apr_hash_set(osf->vattr_hash, osf->link_count_va.attribute, APR_HASH_KEY_STRING, &(osf->link_count_va));
@@ -4805,6 +5048,8 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     os->open_object = osfile_open_object;
     os->close_object = osfile_close_object;
     os->abort_open_object = osfile_abort_open_object;
+    os->lock_user_object = osfile_lock_user_object;
+    os->abort_lock_user_object = osfile_abort_lock_user_object;
     os->get_attr = osfile_get_attr;
     os->set_attr = osfile_set_attr;
     os->symlink_attr = osfile_symlink_attr;

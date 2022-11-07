@@ -126,6 +126,11 @@ typedef struct {
 } osrc_open_t;
 
 typedef struct {
+    char handle[1024];
+    lio_object_service_fn_t *os;
+} osrc_lock_user_t;
+
+typedef struct {
     lio_object_service_fn_t *os;
     os_fd_t *fd;
     os_fd_t *fd_dest;
@@ -2333,6 +2338,71 @@ gop_op_generic_t *osrc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
 }
 
 //***********************************************************************
+//  osrc_lock_user_object - Applies a user lock to the object
+//***********************************************************************
+
+gop_op_generic_t *osrc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *ofd, int rw_mode, int max_wait)
+{
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
+    osrc_object_fd_t *fd = (osrc_object_fd_t *)ofd;
+    osrc_lock_user_t *arg;
+    gop_op_generic_t *gop;
+    mq_msg_t *msg;
+    unsigned char buffer[1024];
+    unsigned char *sent;
+    int hlen;
+    int n;
+
+    tbx_type_malloc(arg, osrc_lock_user_t, 1);
+    arg->os = os;
+    hlen = snprintf(arg->handle, 1024, "%s:%d", osrc->host_id, tbx_atomic_global_counter());
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
+    gop_mq_msg_append_mem(msg, OSR_LOCK_USER_OBJECT_KEY, OSR_LOCK_USER_OBJECT_SIZE, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, arg->handle, hlen+1, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, fd->data, fd->size, MQF_MSG_KEEP_DATA);
+
+    //** Add the mode and wait time
+    n = tbx_zigzag_encode(rw_mode, buffer);
+    n += tbx_zigzag_encode(max_wait, &(buffer[n]));
+    tbx_type_malloc(sent, unsigned char, n);
+    memcpy(sent, buffer, n);
+    gop_mq_msg_append_frame(msg, gop_mq_frame_new(sent, n, MQF_MSG_AUTO_FREE));
+
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, osrc->timeout);
+    gop_set_private(gop, arg);
+
+    return(gop);
+}
+
+//***********************************************************************
+//  osrc_abort_lock_user_object - Aborts user lock operation
+//***********************************************************************
+
+gop_op_generic_t *osrc_abort_lock_user_object(lio_object_service_fn_t *os, gop_op_generic_t *gop)
+{
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
+    osrc_lock_user_t *arg = (osrc_lock_user_t *)gop_get_private(gop);
+    mq_msg_t *msg;
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
+    gop_mq_msg_append_mem(msg, OSR_ABORT_LOCK_USER_OBJECT_KEY, OSR_ABORT_LOCK_USER_OBJECT_SIZE, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, arg->handle, strlen(arg->handle)+1, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+
+    return(gop);
+}
+
+//***********************************************************************
 //  osrc_fsck_object - Allocates space for the object check
 //***********************************************************************
 
@@ -2343,8 +2413,6 @@ gop_op_generic_t *osrc_fsck_object(lio_object_service_fn_t *os, lio_creds_t *cre
     unsigned char buf[32];
     mq_msg_t *msg;
     gop_op_generic_t *gop;
-
-    log_printf(5, "START\n");
 
     //** Form the message
     msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
@@ -2656,6 +2724,10 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     os->open_object = osrc_open_object;
     os->close_object = osrc_close_object;
     os->abort_open_object = osrc_abort_open_object;
+
+    os->lock_user_object = osrc_lock_user_object;
+    os->abort_lock_user_object = osrc_abort_lock_user_object;
+
     os->get_attr = osrc_get_attr;
     os->set_attr = osrc_set_attr;
     os->symlink_attr = osrc_symlink_attr;

@@ -944,6 +944,57 @@ int lio_fs_rmdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname)
 }
 
 //*****************************************************************
+// lio_fs_flock - Locks an open file
+//*****************************************************************
+
+int lio_fs_flock(lio_fs_t *fs, lio_fd_t *fd, int lock_type)
+{
+    int rw_lock, err, i;
+    gop_op_status_t status;
+    char *type[] = {"READ", "WRITE", "UNLOCK", "READ_NB", "WRITE_NB", "UNLOCK_NB" };
+
+    if (lock_type & LOCK_SH) {
+        rw_lock = OS_MODE_READ_BLOCKING;
+        i = 0;
+    } else if (lock_type & LOCK_EX) {
+        rw_lock = OS_MODE_WRITE_BLOCKING;
+        i = 1;
+    } else if (lock_type & LOCK_UN) {
+        rw_lock = OS_MODE_UNLOCK;
+        i = 2;
+    } else {
+        FS_MON_OBJ_CREATE("FS_FLOCK: fname=%s Invalid type:%d", fd->path, lock_type);
+        FS_MON_OBJ_DESTROY();
+        log_printf(0, "ERROR: Invalid lock type:%d fname=%s\n", lock_type, fd->path);
+        errno = EINVAL;  //** We don't handle non-blocking requests
+        return(-1);
+    }
+
+    if (lock_type & LOCK_NB) {
+        rw_lock += OS_MODE_NONBLOCKING;
+        i += 3;
+    }
+
+    FS_MON_OBJ_CREATE("FS_FLOCK: fname=%s type:%s", fd->path, type[i]);
+
+    status = gop_sync_exec_status(lio_flock_gop(fd, rw_lock, fs->id, fs->rw_locks_max_wait));
+    err = 0;
+    if (status.op_status == OP_STATE_FAILURE) {
+        if (lock_type & LOCK_NB) {
+            FS_MON_OBJ_DESTROY_MESSAGE("EWOULDBLOCK");
+            err = -EWOULDBLOCK;
+        } else {
+            FS_MON_OBJ_DESTROY_MESSAGE("EINTR");
+            err = -EINTR;
+        }
+    } else {
+       FS_MON_OBJ_DESTROY();
+    }
+
+    return(err);
+}
+
+//*****************************************************************
 // lio_fs_open - Opens a file for I/O
 //*****************************************************************
 

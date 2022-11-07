@@ -584,6 +584,90 @@ int lio_open_file_check(lio_config_t *lc, const char *fname, int *readers, int *
 
 
 //*************************************************************************
+// LIO user locking routines
+//*************************************************************************
+
+typedef struct {
+    lio_fd_t *fd;
+    int rw_lock;
+    int timeout;
+    char *id;
+    gop_op_generic_t *lock_gop;
+} fd_lock_op_t;
+
+//*************************************************************************
+// lio_flock_fn - Does the actual locking.
+//*************************************************************************
+
+gop_op_status_t lio_flock_fn(void *arg, int id)
+{
+    fd_lock_op_t *op = (fd_lock_op_t *)arg;
+    lio_fd_t *fd = op->fd;
+    os_fd_t *ofd;
+    gop_op_status_t status;
+    int err;
+
+    if (fd->ofd == NULL) { //** Need to open an OS FD for the lock
+        err = gop_sync_exec(os_open_object(fd->lc->os, fd->creds, fd->path, OS_MODE_READ_IMMEDIATE, op->id, &ofd, op->timeout));
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(15, "ERROR opening os object fname=%s\n", fd->path);
+            _op_set_status(status, OP_STATE_FAILURE, -EIO);
+            return(status);
+        }
+
+        lio_lock(fd->lc);  //** Do the check again with the lock to protect against race condition
+        if (fd->ofd) {
+            gop_sync_exec(os_close_object(fd->lc->os, ofd));
+        } else {
+            fd->ofd = ofd;
+        }
+        lio_unlock(fd->lc);
+    }
+
+    //** Ok we have a valid OS FD now so try and do the lock
+    op->lock_gop = os_lock_user_object(fd->lc->os, fd->ofd, op->rw_lock, op->timeout);
+    status = gop_sync_exec_status(op->lock_gop);
+
+    return(status);
+}
+
+//*************************************************************************
+// lio_flock_gop - Applies a user R/W lock on an object
+//*************************************************************************
+
+gop_op_generic_t *lio_flock_gop(lio_fd_t *fd, int rw_lock, char *id, int timeout)
+{
+    fd_lock_op_t *op;
+    gop_op_generic_t *gop;
+
+    tbx_type_malloc_clear(op, fd_lock_op_t, 1);
+
+    op->fd = fd;
+    op->id = id;
+    op->rw_lock = rw_lock;
+    op->timeout = timeout;
+
+    gop = gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flock_fn, (void *)op, free, 1);
+    gop_set_private(gop, op);  //** This is used to handle the abort operation
+
+    return(gop);
+}
+
+//*************************************************************************
+// lio_flock_abort_gop - Aborts an ongoing FD lock operation
+//*************************************************************************
+
+gop_op_generic_t *lio_flock_abort_gop(lio_fd_t *fd, gop_op_generic_t *gop)
+{
+    fd_lock_op_t *op = gop_get_private(gop);
+
+    if (op->lock_gop == NULL) return(gop_dummy(gop_failure_status));  //** Not executing yet
+
+    return(os_abort_lock_user_object(op->fd->lc->os, op->lock_gop));
+}
+
+
+//*************************************************************************
 // lio_open_gop - Attempt to open the object for R/W
 //*************************************************************************
 

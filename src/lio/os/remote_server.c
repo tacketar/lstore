@@ -1171,9 +1171,13 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
 
+tbx_log_flush();
+log_printf(0, "before handle_remove\n"); tbx_log_flush();
+
     //** Do the host lookup
     if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key)) != NULL) {
-        log_printf(6, "Found handle\n");
+        log_printf(6, "Found handle: handle=%p\n", handle);
+tbx_log_flush();
 
         gop = os_close_object(osrs->os_child, handle);
         gop_waitall(gop);
@@ -1183,6 +1187,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
         log_printf(6, "ERROR missing host=%s\n", id);
         status = gop_failure_status;
     }
+log_printf(0, "after handle if handle=%p\n", handle); tbx_log_flush();
 
     gop_mq_frame_destroy(fhid);
     gop_mq_frame_destroy(fuid);
@@ -1224,6 +1229,168 @@ void osrs_abort_open_object_cb(void *arg, gop_mq_task_t *task)
 
     //** Perform the abort
     status = osrs_perform_abort_handle(os, id, fsize);
+
+    gop_mq_frame_destroy(fuid);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+}
+
+//***********************************************************************
+// osrs_lock_user_object_cb - Processes a user lock object request
+//***********************************************************************
+
+void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    gop_mq_frame_t *fid, *fuid, *fhid, *fdata, *fabort;
+    osrs_abort_handle_t ah;
+    gop_op_generic_t *gop;
+    char *id, *fhandle;
+    unsigned char *data;
+    os_fd_t *fd;
+    int fsize, hsize, idsize;
+    int i, bpos;
+    int64_t  rw_mode, timeout;
+    intptr_t key;
+    mq_msg_t *msg, *response;
+    gop_op_status_t status;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command.
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID for responses
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fuid = mq_msg_pop(msg);  //** Host/user ID
+    gop_mq_get_frame(fuid, (void **)&id, &idsize);
+
+    fabort = mq_msg_pop(msg);  //** Abort handle
+    gop_mq_get_frame(fabort, (void **)&(ah.handle), &hsize);
+    ah.handle_len = hsize;
+
+    fhid = mq_msg_pop(msg);  //** Host handle
+    gop_mq_get_frame(fhid, (void **)&fhandle, &hsize);
+    FATAL_UNLESS(hsize == sizeof(intptr_t));
+
+    key = *(intptr_t *)fhandle;
+    log_printf(5, "PTR key=%" PRIdPTR "\n", key);
+
+    //** Do the host lookup
+    if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key)) == NULL) {
+        log_printf(6, "ERROR missing host=%s\n", id);
+        status = gop_failure_status;
+    } else {
+        log_printf(6, "Found handle\n");
+
+        fdata = mq_msg_pop(msg);  //** Get the mode and wait time
+        gop_mq_get_frame(fdata, (void **)&data, &fsize);
+
+        //** Parse the mode and wait time
+        bpos = 0;
+        rw_mode = 0;
+        i = tbx_zigzag_decode(&(data[bpos]), fsize, &rw_mode);
+
+        if ((i<0) || (rw_mode<=0)) goto fail_fd;
+        bpos += i;
+        fsize -= i;
+
+        timeout = 0;
+        i = tbx_zigzag_decode(&(data[bpos]), fsize, &timeout);
+        if (i<0) goto fail_fd;
+        if (timeout < 0) timeout = 10;
+        bpos += i;
+        fsize -= i;
+
+        gop = os_lock_user_object(osrs->os_child, fd, rw_mode, timeout);
+        ah.gop = gop;
+        osrs_add_abort_handle(os, &ah);
+        status = gop_sync_exec_status(gop);
+        osrs_remove_abort_handle(os, &ah);
+        gop_mq_ongoing_release(osrs->ongoing, id, idsize, key);
+
+fail_fd:
+        gop_mq_frame_destroy(fdata);
+    }
+
+    gop_mq_frame_destroy(fhid);
+    gop_mq_frame_destroy(fuid);
+    gop_mq_frame_destroy(fabort);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+}
+
+
+//***********************************************************************
+// osrs_perform_abort_lock_user_handle - Performs the actual abort
+//***********************************************************************
+
+gop_op_status_t osrs_perform_abort_lock_user_handle(lio_object_service_fn_t *os, char *handle, int handle_len)
+{
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    osrs_abort_handle_t *ah;
+    gop_op_generic_t *gop;
+    gop_op_status_t status;
+
+    status = gop_failure_status;
+
+    apr_thread_mutex_lock(osrs->abort_lock);
+    ah = apr_hash_get(osrs->abort, handle, handle_len);
+
+    if (ah != NULL) {
+        gop = os_abort_lock_user_object(osrs->os_child, ah->gop);
+        gop_waitall(gop);
+        status = gop_get_status(gop);
+        gop_free(gop, OP_DESTROY);
+    }
+    apr_thread_mutex_unlock(osrs->abort_lock);
+
+    return(status);
+}
+
+//***********************************************************************
+// osrs_abort_lock_user_object_cb - Aborts a pending user lock object call
+//***********************************************************************
+
+void osrs_abort_lock_user_object_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    gop_mq_frame_t *fid, *fuid;
+    char *id;
+    int fsize;
+    mq_msg_t *msg, *response;
+    gop_op_status_t status;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID for responses
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fuid = mq_msg_pop(msg);  //** Host/user ID
+    gop_mq_get_frame(fuid, (void **)&id, &fsize);
+
+    //** Perform the abort
+    status = osrs_perform_abort_lock_user_handle(os, id, fsize);
 
     gop_mq_frame_destroy(fuid);
 
@@ -3261,6 +3428,8 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     gop_mq_command_set(ctable, OSR_OPEN_OBJECT_KEY, OSR_OPEN_OBJECT_SIZE, os, osrs_open_object_cb);
     gop_mq_command_set(ctable, OSR_CLOSE_OBJECT_KEY, OSR_CLOSE_OBJECT_SIZE, os, osrs_close_object_cb);
     gop_mq_command_set(ctable, OSR_ABORT_OPEN_OBJECT_KEY, OSR_ABORT_OPEN_OBJECT_SIZE, os, osrs_abort_open_object_cb);
+    gop_mq_command_set(ctable, OSR_LOCK_USER_OBJECT_KEY, OSR_LOCK_USER_OBJECT_SIZE, os, osrs_lock_user_object_cb);
+    gop_mq_command_set(ctable, OSR_ABORT_LOCK_USER_OBJECT_KEY, OSR_ABORT_LOCK_USER_OBJECT_SIZE, os, osrs_abort_lock_user_object_cb);
     gop_mq_command_set(ctable, OSR_REGEX_SET_MULT_ATTR_KEY, OSR_REGEX_SET_MULT_ATTR_SIZE, os, osrs_regex_set_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_ABORT_REGEX_SET_MULT_ATTR_KEY, OSR_ABORT_REGEX_SET_MULT_ATTR_SIZE, os, osrs_abort_regex_set_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_GET_MULTIPLE_ATTR_KEY, OSR_GET_MULTIPLE_ATTR_SIZE, os, osrs_get_mult_attr_cb);

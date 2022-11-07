@@ -62,6 +62,10 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 #define OSR_OPEN_OBJECT_SIZE       14
 #define OSR_ABORT_OPEN_OBJECT_KEY  "os_abort_open_object"
 #define OSR_ABORT_OPEN_OBJECT_SIZE 20
+#define OSR_LOCK_USER_OBJECT_KEY        "os_lock_user_object"
+#define OSR_LOCK_USER_OBJECT_SIZE       19
+#define OSR_ABORT_LOCK_USER_OBJECT_KEY  "os_abort_lock_user_object"
+#define OSR_ABORT_LOCK_USER_OBJECT_SIZE 25
 #define OSR_CLOSE_OBJECT_KEY       "os_close_object"
 #define OSR_CLOSE_OBJECT_SIZE      15
 #define OSR_REGEX_SET_MULT_ATTR_KEY  "os_regex_set_mult_object"

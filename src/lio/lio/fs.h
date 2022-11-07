@@ -61,6 +61,7 @@ LIO_API int lio_fs_mkdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 LIO_API int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int ftype);
 LIO_API int lio_fs_unlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname);
 LIO_API int lio_fs_rmdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname);
+LIO_API int lio_fs_flock(lio_fs_t *fs, lio_fd_t *fd, int lock_type);
 LIO_API lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int lflags);
 LIO_API int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd);
 LIO_API off_t lio_fs_seek(lio_fs_t *fs, lio_fd_t *fd, off_t offset, int whence);

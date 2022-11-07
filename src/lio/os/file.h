@@ -88,7 +88,9 @@ struct lio_osfile_priv_t {
     apr_hash_t *vattr_hash;
     tbx_list_t *vattr_prefix;
     fobject_lock_t *os_lock;
+    fobject_lock_t *os_lock_user;
     lio_os_virtual_attr_t lock_va;
+    lio_os_virtual_attr_t lock_user_va;
     lio_os_virtual_attr_t realpath_va;
     lio_os_virtual_attr_t link_va;
     lio_os_virtual_attr_t link_count_va;

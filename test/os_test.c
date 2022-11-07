@@ -84,6 +84,9 @@ int main(int argc, char **argv)
     nfailed = os_locking_tests(tuple.path);
     if (nfailed > 0) goto oops;
 
+    nfailed = os_user_locking_tests(tuple.path);
+    if (nfailed > 0) goto oops;
+
 oops:
     log_printf(0, "--------------------------------------------------------------------\n");
     log_printf(0, "Tasks failed: %d\n", nfailed);

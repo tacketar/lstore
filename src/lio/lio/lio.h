@@ -87,6 +87,9 @@ LIO_API gop_op_generic_t *lio_flush_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi);
 LIO_API const char *lio_fd_path(lio_fd_t *fd);
 LIO_API int lio_open_file_check(lio_config_t *lc, const char *fname, int *readers, int *writers);
 
+LIO_API gop_op_generic_t *lio_flock_gop(lio_fd_t *fd, int rw_lock, char *id, int timeout);
+LIO_API gop_op_generic_t *lio_flock_abort_gop(lio_fd_t *fd, gop_op_generic_t *gop);
+
 LIO_API gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout);
 
 LIO_API gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n);

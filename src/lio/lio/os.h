@@ -106,6 +106,8 @@ typedef void (*lio_os_destroy_object_iter_fn_t)(os_object_iter_t *it);
 typedef gop_op_generic_t *(*lio_os_open_object_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int mode, char *id, os_fd_t **fd, int max_wait);
 typedef gop_op_generic_t *(*lio_os_close_object_fn_t)(lio_object_service_fn_t *os, os_fd_t *fd);
 typedef gop_op_generic_t *(*lio_os_abort_open_object_fn_t)(lio_object_service_fn_t *os, gop_op_generic_t *gop);
+typedef gop_op_generic_t *(*lio_os_lock_user_object_fn_t)(lio_object_service_fn_t *os, os_fd_t *fd, int rw_mode, int max_wait);
+typedef gop_op_generic_t *(*lio_os_abort_lock_user_object_fn_t)(lio_object_service_fn_t *os, gop_op_generic_t *gop);
 typedef gop_op_generic_t *(*lio_os_symlink_attr_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char *src_path, char *key_src, os_fd_t *fd_dest, char *key_dest);
 typedef gop_op_generic_t *(*lio_os_symlink_multiple_attrs_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, char **src_path, char **key_src, os_fd_t *fd_dest, char **key_dest, int n);
 typedef gop_op_generic_t *(*lio_os_get_attr_fn_t)(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void **val, int *v_size);
@@ -155,6 +157,7 @@ LIO_API void lio_os_regex_table_destroy(lio_os_regex_table_t *table);
 LIO_API int os_create_remove_tests(char *prefix);
 LIO_API int os_attribute_tests(char *prefix);
 LIO_API int os_locking_tests(char *prefix);
+LIO_API int os_user_locking_tests(char *prefix);
 
 // Preprocessor constants
 #define OS_PATH_MAX  32768    // ** Max path length
@@ -175,6 +178,8 @@ LIO_API int os_locking_tests(char *prefix);
 #define OS_MODE_WRITE_IMMEDIATE 2
 #define OS_MODE_READ_BLOCKING   4
 #define OS_MODE_WRITE_BLOCKING  8
+#define OS_MODE_UNLOCK         16
+#define OS_MODE_NONBLOCKING    32
 
 // Preprocessor macros
 #define os_close_object(os, fd) (os)->close_object(os, fd)
@@ -185,6 +190,8 @@ LIO_API int os_locking_tests(char *prefix);
 #define os_open_object(os, c, path, mode, id, fd, max_wait) (os)->open_object(os, c, path, mode, id, fd, max_wait)
 #define os_symlink_multiple_attrs(os, c, src_path, key_src, fd_dest, key_dest, n) (os)->symlink_multiple_attrs(os, c, src_path, key_src, fd_dest, key_dest, n)
 #define os_object_exec_modify(os, c, path, exec_state) (os)->exec_modify(os, c, path, exec_state)
+#define os_lock_user_object(os, fd, rw_mode, max_wait) (os)->lock_user_object(os, fd, rw_mode, max_wait)
+#define os_abort_lock_user_object(os, gop) (os)->abort_lock_user_object(os, gop)
 
 // Exported types. To be obscured
 struct lio_object_service_fn_t {
@@ -216,6 +223,8 @@ struct lio_object_service_fn_t {
     lio_os_open_object_fn_t open_object;
     lio_os_close_object_fn_t close_object;
     lio_os_abort_open_object_fn_t abort_open_object;
+    lio_os_lock_user_object_fn_t lock_user_object;
+    lio_os_abort_lock_user_object_fn_t abort_lock_user_object;
     lio_os_symlink_attr_fn_t symlink_attr;
     lio_os_symlink_multiple_attrs_fn_t symlink_multiple_attrs;
     lio_os_get_attr_fn_t get_attr;

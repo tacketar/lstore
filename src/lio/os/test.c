@@ -1866,7 +1866,7 @@ int os_attribute_tests(char *prefix)
 // check_lock_state - Validates the lock state
 // **********************************************************************************
 
-int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pending, int n_pending)
+int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pending, int n_pending, char *lock_attr)
 {
     lio_object_service_fn_t *os = lio_gc->os;
     lio_creds_t  *creds = lio_gc->creds;
@@ -1877,7 +1877,7 @@ int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pendin
     tbx_inip_element_t *ele;
 
     v_size = -10000;
-    key = "os.lock";
+    key = lock_attr;
     val=NULL;
     log_printf(5, "BEFORE get_attr lock\n");
     apr_time_t dt = apr_time_now();
@@ -1893,7 +1893,7 @@ int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pendin
     err = 0;
 
     ifd = tbx_inip_string_read(lval, 1);
-    grp = tbx_inip_group_find(ifd, "os.lock");
+    grp = tbx_inip_group_find(ifd, lock_attr);
 
     ele = tbx_inip_ele_first(grp);
     ai = pi = 0;
@@ -1974,6 +1974,7 @@ int os_locking_tests(char *prefix)
     apr_time_t start, dt;
     int sec;
     int nfailed = 0;
+    char *lock_attr = "os.lock";
 
     q = gop_opque_new();
     opque_start_execution(q);
@@ -2080,7 +2081,7 @@ int os_locking_tests(char *prefix)
     task[7] = "r3";
     task[8] = "r4";
     task[9] = "w2";
-    err = check_lock_state(foo_fd, &(task[0]), 3, &(task[3]), 7);
+    err = check_lock_state(foo_fd, &(task[0]), 3, &(task[3]), 7, lock_attr);
     if (err != 0) {
         nfailed++;
         log_printf(0, "ERROR: checking state\n");
@@ -2126,7 +2127,7 @@ int os_locking_tests(char *prefix)
     log_printf(0, "after write[0] closing dt=%d\n", sec);
 
     //** Verify state. This should leave you with w0 active and w1,a0,a1,r3,r4,w2
-    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 6);
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 6, lock_attr);
 
     dt = apr_time_now() - start;
     sec = apr_time_sec(dt);
@@ -2156,7 +2157,7 @@ int os_locking_tests(char *prefix)
 
     //** Verify the state. active=w0  pending=w1,a1,r3,r4,w2
     for (i=5; i<9; i++) task[i] = task[i+1];  //** Drop a0 fro mthe list
-    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 5);
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 5, lock_attr);
 
     dt = apr_time_now() - start;
     sec = apr_time_sec(dt);
@@ -2185,7 +2186,7 @@ int os_locking_tests(char *prefix)
 
     //** Verify the state. active=w0  pending=w1,r3,r4,w2
     for (i=5; i<8; i++) task[i] = task[i+1];  //** Drop a0 fro mthe list
-    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 4);
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 4, lock_attr);
     if (err != 0) {
         nfailed++;
         log_printf(0, "ERROR: checking state\n");
@@ -2211,7 +2212,7 @@ int os_locking_tests(char *prefix)
     gop_waitany(gop_write[1]);
 
     //** Verify state: active=w1, pending=r3,r4,w2
-    err = check_lock_state(foo_fd, &(task[4]), 1, &(task[5]), 3);
+    err = check_lock_state(foo_fd, &(task[4]), 1, &(task[5]), 3, lock_attr);
     if (err != 0) {
         nfailed++;
         log_printf(0, "ERROR: checking state\n");
@@ -2238,7 +2239,7 @@ int os_locking_tests(char *prefix)
     gop_waitany(gop_read[4]);
 
     //** Verify state: active=r3,r4 pending=w2
-    err = check_lock_state(foo_fd, &(task[5]), 2, &(task[7]), 1);
+    err = check_lock_state(foo_fd, &(task[5]), 2, &(task[7]), 1, lock_attr);
     if (err != 0) {
         nfailed++;
         log_printf(0, "ERROR: checking state\n");
@@ -2267,7 +2268,7 @@ int os_locking_tests(char *prefix)
     gop_waitany(gop_write[2]);
 
     //** Verify state active=w2  pending=
-    err = check_lock_state(foo_fd, &(task[7]), 1, NULL, 0);
+    err = check_lock_state(foo_fd, &(task[7]), 1, NULL, 0, lock_attr);
     if (err != 0) {
         nfailed++;
         log_printf(0, "ERROR: checking state\n");
@@ -2284,6 +2285,391 @@ int os_locking_tests(char *prefix)
 
     log_printf(0, "Performing lock test cleanup\n");
     tbx_log_flush();
+
+    //** Close the inital foo_fd
+    err = gop_sync_exec(os_close_object(os, foo_fd));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Closing file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    //** rm foo
+    err = gop_sync_exec(os_remove_object(os, creds, foo_path));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: opening file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    // ** And verify it's gone
+    err = gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "me", &foo_fd, wait_time));
+    if (err != OP_STATE_FAILURE) {
+        nfailed++;
+        log_printf(0, "ERROR: Oops! Can open the recently deleted file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    gop_opque_free(q, OP_DESTROY);
+
+    log_printf(0, "PASSED!\n");
+    return(nfailed);
+}
+
+//--------------------------------
+
+// **********************************************************************************
+//  os_user_locking_tests - Tests object user locking routines
+// **********************************************************************************
+
+int os_user_locking_tests(char *prefix)
+{
+    lio_object_service_fn_t *os = lio_gc->os;
+    lio_creds_t  *creds = lio_gc->creds;
+    char foo_path[PATH_LEN];
+    os_fd_t *foo_fd;
+    int err, i;
+    os_fd_t *fd_read[5], *fd_write[3], *fd_abort[2];
+    char *task[10];
+    gop_opque_t *q;
+    gop_op_generic_t *gop, *gop_read[5], *gop_write[3], *gop_abort[2];
+    apr_time_t start, dt;
+    int sec;
+    int nfailed = 0;
+    char *lock_attr = "os.lock.user";
+
+    q = gop_opque_new();
+    opque_start_execution(q);
+
+    //** Create the file foo
+    snprintf(foo_path, PATH_LEN, "%s/foo", prefix);
+    err = gop_sync_exec(os_create_object(os, creds, foo_path, OS_OBJECT_FILE_FLAG, "me"));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: creating file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    // ** Verify foo exists
+    err = gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "me", &foo_fd, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: opening file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    start = apr_time_now();
+
+    //** Spawn 3 lock(foo, READ)=r{0,1,2} tasks
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "r0", &fd_read[0], wait_time)) == OP_STATE_SUCCESS);
+log_printf(0, "ULOCK: fd_read[0]=%p\n", fd_read[0]); tbx_log_flush();
+    gop = os_lock_user_object(os, fd_read[0], OS_MODE_READ_BLOCKING, wait_time);
+log_printf(0, "ULOCK: fd_read[0]=%p after lock_user gop\n", fd_read[0]); tbx_log_flush();
+    gop_read[0] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "r1", &fd_read[1], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_read[1], OS_MODE_READ_BLOCKING, wait_time);
+    gop_read[1] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "r2", &fd_read[2], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_read[2], OS_MODE_READ_BLOCKING, wait_time);
+    gop_read[2] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+
+    //** Spawn 2 lock(foo, WRITE)=w{0,1} tasks
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "w0", &fd_write[0], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_write[0], OS_MODE_WRITE_BLOCKING, wait_time);
+    gop_write[0] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "w1", &fd_write[1], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_write[1], OS_MODE_WRITE_BLOCKING, wait_time);
+    gop_write[1] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    //** Spawn 2 lock(foo, WRITE)=a{0,1} tasks.  These will be aborted opens
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "a0", &fd_abort[0], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_abort[0], OS_MODE_WRITE_BLOCKING, 4); //** This time is short to auto timeout
+    gop_abort[0] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "a1", &fd_abort[1], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_abort[1], OS_MODE_WRITE_BLOCKING, 4); //** This time is short to auto timeout
+    gop_abort[1] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+
+    //** Spawn 2 lock(foo, READ)=r{3,4} task
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "r3", &fd_read[3], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_read[3], OS_MODE_READ_BLOCKING, wait_time);
+    gop_read[3] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "r4", &fd_read[4], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_read[4], OS_MODE_READ_BLOCKING, wait_time);
+    gop_read[4] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    //** Spawn 1 lock(foo, WRITE)=w2 task
+    assert(gop_sync_exec(os_open_object(os, creds, foo_path, OS_MODE_READ_IMMEDIATE, "w2", &fd_write[2], wait_time)) == OP_STATE_SUCCESS);
+    gop = os_lock_user_object(os, fd_write[2], OS_MODE_WRITE_BLOCKING, wait_time);
+    gop_write[2] = gop;
+    gop_opque_add(q, gop);
+    lock_pause();
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "STATE:  active=r0,r1,r2  pending=w0,w1,a0,a1,r3,r4,w2 dt=%d\n", sec);
+    tbx_log_flush();
+
+
+    //** Wait for the inital read locks to complete
+    gop_waitany(gop_read[0]);
+    gop_waitany(gop_read[1]);
+    gop_waitany(gop_read[2]);
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After open(read) completes dt=%d\n", sec);
+
+    //** Verify the above state: active r0,r1,r2 pending w0,w1,r3,r4,w2
+    task[0] = "r0";
+    task[1] = "r1";
+    task[2] = "r2";
+    task[3] = "w0";
+    task[4] = "w1";
+    task[5] = "a0";
+    task[6] = "a1";
+    task[7] = "r3";
+    task[8] = "r4";
+    task[9] = "w2";
+    err = check_lock_state(foo_fd, &(task[0]), 3, &(task[3]), 7, lock_attr);
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After check_lock 1 dt=%d\n", sec);
+
+    //** Release the 3 read locks(r0,r1,r2).
+    err = gop_sync_exec(os_lock_user_object(os, fd_read[0], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+    err = gop_sync_exec(os_lock_user_object(os, fd_read[1], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+    err = gop_sync_exec(os_lock_user_object(os, fd_read[2], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    log_printf(0, "STATE: active=w0  pending=w1,a0,a1,r3,r4,w2\n");
+    tbx_log_flush();
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "after read closing dt=%d\n", sec);
+
+    //** Wait for the next write lock to complete
+    gop_waitany(gop_write[0]);
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "after write[0] lock dt=%d\n", sec);
+
+    //** Verify state. This should leave you with w0 active and w1,a0,a1,r3,r4,w2
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 6, lock_attr);
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After check_lock 2 dt=%d\n", sec);
+
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+
+    log_printf(0, "STATE: ABORT_TIMEOUT(a0)  active=w0  pending=w1,a1,r3,r4,w2\n");
+    tbx_log_flush();
+
+    //** Let's do the aborts now
+    err = gop_waitall(gop_abort[0]);  //** This should timeout on it's own
+    if (err == OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Open succeded for a0 when it should have timed out file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After abort[0] dt=%d\n", sec);
+
+    //** Verify the state. active=w0  pending=w1,a1,r3,r4,w2
+    for (i=5; i<9; i++) task[i] = task[i+1];  //** Drop a0 fro mthe list
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 5, lock_attr);
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After check_lock 3 dt=%d\n", sec);
+
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    log_printf(0, "STATE: ABORT_CMD(a1)  active=w0  pending=w1,r3,r4,w2\n");
+    tbx_log_flush();
+
+    //** Issue an abort for a1
+    err = gop_sync_exec(os_abort_lock_user_object(os, gop_abort[1]));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Aborting a1 file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After abort[1] dt=%d\n", sec);
+
+    //** Verify the state. active=w0  pending=w1,r3,r4,w2
+    for (i=5; i<8; i++) task[i] = task[i+1];  //** Drop a0 fro mthe list
+    err = check_lock_state(foo_fd, &(task[3]), 1, &(task[4]), 4, lock_attr);
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    //** Unlock w0.
+    err = gop_sync_exec(os_lock_user_object(os, fd_write[0], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After close w0 dt=%d\n", sec);
+
+    log_printf(0, "STATE: active=w1  pending=r3,r4,w2\n");
+    tbx_log_flush();
+
+    //** Wait for the opens to complete
+    gop_waitany(gop_write[1]);
+
+    //** Verify state: active=w1, pending=r3,r4,w2
+    err = check_lock_state(foo_fd, &(task[4]), 1, &(task[5]), 3, lock_attr);
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    //** Unlock w1
+    err = gop_sync_exec(os_lock_user_object(os, fd_write[1], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    dt = apr_time_now() - start;
+    sec = apr_time_sec(dt);
+    log_printf(0, "After close w1 dt=%d\n", sec);
+
+    log_printf(0, "STATE: active=r3,r4  pending=w2\n");
+    tbx_log_flush();
+
+    //** Wait for the opens to complete
+    gop_waitany(gop_read[3]);
+    gop_waitany(gop_read[4]);
+
+    //** Verify state: active=r3,r4 pending=w2
+    err = check_lock_state(foo_fd, &(task[5]), 2, &(task[7]), 1, lock_attr);
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    //** Unlock r3, r4
+    err = gop_sync_exec(os_lock_user_object(os, fd_read[3], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+    err = gop_sync_exec(os_lock_user_object(os, fd_read[4], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    log_printf(0, "STATE: active=w2  pending=\n");
+    tbx_log_flush();
+
+    //** Wait for the opens to complete
+    gop_waitany(gop_write[2]);
+
+    //** Verify state active=w2  pending=
+    err = check_lock_state(foo_fd, &(task[7]), 1, NULL, 0, lock_attr);
+    if (err != 0) {
+        nfailed++;
+        log_printf(0, "ERROR: checking state\n");
+        return(nfailed);
+    }
+
+    //** Unlock w2;
+    err = gop_sync_exec(os_lock_user_object(os, fd_write[2], OS_MODE_UNLOCK, wait_time));
+    if (err != OP_STATE_SUCCESS) {
+        nfailed++;
+        log_printf(0, "ERROR: Unlocking file: %s err=%d\n", foo_path, err);
+        return(nfailed);
+    }
+
+    log_printf(0, "Performing lock test cleanup\n");
+    tbx_log_flush();
+
+    //** Close all the open fd
+    assert(gop_sync_exec(os_close_object(os, fd_read[0])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_read[1])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_read[2])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_read[3])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_read[4])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_write[0])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_write[1])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_write[2])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_abort[0])) == OP_STATE_SUCCESS);
+    assert(gop_sync_exec(os_close_object(os, fd_abort[1])) == OP_STATE_SUCCESS);
 
     //** Close the inital foo_fd
     err = gop_sync_exec(os_close_object(os, foo_fd));

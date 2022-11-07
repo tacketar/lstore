@@ -53,7 +53,7 @@
 #define OSTC_LOCK(ostc); log_printf(5, "LOCK\n"); apr_thread_mutex_lock(ostc->lock)
 #define OSTC_UNLOCK(ostc) log_printf(5, "UNLOCK\n"); apr_thread_mutex_unlock(ostc->lock)
 
-#define OSTC_NOCACHE_MATCH(key) (strcmp((key), "os.lock") == 0) || ((strncmp((key), "system.exnode", 13) == 0) && ( (*((key)+13) == '\0') || (strcmp((key)+13, ".data") == 0) ) )
+#define OSTC_NOCACHE_MATCH(key) ((strncmp((key), "os.lock", 7) == 0) && ( (*((key)+7) == '\0') || (strcmp((key)+7, ".user") == 0) ) ) || ((strncmp((key), "system.exnode", 13) == 0) && ( (*((key)+13) == '\0') || (strcmp((key)+13, ".data") == 0) ) )
 
 #define OSTC_ITER_ALIST  0
 #define OSTC_ITER_AREGEX 1
@@ -2843,6 +2843,53 @@ gop_op_generic_t *ostc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
 }
 
 //***********************************************************************
+//  ostc_lock_user_object - Applies a user lock to the object
+//***********************************************************************
+
+gop_op_status_t ostc_lock_user_object_fn(void *arg, int tid)
+{
+    ostc_open_op_t *op = (ostc_open_op_t *)arg;
+    ostc_priv_t *ostc = (ostc_priv_t *)op->os->priv;
+    gop_op_status_t status;
+    ostc_fd_t *fd = (ostc_fd_t *)op->close_fd;
+
+    if (fd->fd_child == NULL) {
+        status = ostc_delayed_open_object(op->os, fd);
+        if (status.op_status == OP_STATE_FAILURE) return(status);
+    }
+
+    return(gop_sync_exec_status(os_lock_user_object(ostc->os_child, fd->fd_child, op->mode, op->max_wait)));
+
+}
+
+//***********************************************************************
+
+gop_op_generic_t *ostc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *ofd, int rw_mode, int max_wait)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    ostc_open_op_t *op;
+
+    //** This is a bit ofa struct reuse hack
+    tbx_type_malloc_clear(op, ostc_open_op_t, 1);
+    op->os = os;
+    op->close_fd = ofd;
+    op->mode = rw_mode;
+    op->max_wait = max_wait;
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_lock_user_object_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
+//  ostc_abort_lock_user_object - Aborts user lock operation
+//***********************************************************************
+
+gop_op_generic_t *ostc_abort_lock_user_object(lio_object_service_fn_t *os, gop_op_generic_t *gop)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+
+    return(os_abort_lock_user_object(ostc->os_child, gop));
+}
+
+//***********************************************************************
 //  ostc_fsck_object - Allocates space for the object check
 //***********************************************************************
 
@@ -3053,6 +3100,8 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     os->open_object = ostc_open_object;
     os->close_object = ostc_close_object;
     os->abort_open_object = ostc_abort_open_object;
+    os->lock_user_object = ostc_lock_user_object;
+    os->abort_lock_user_object = ostc_abort_lock_user_object;
     os->get_attr = ostc_get_attr;
     os->set_attr = ostc_set_attr;
     os->symlink_attr = ostc_symlink_attr;
