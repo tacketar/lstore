@@ -54,6 +54,7 @@
     ASSERT_EXISTS(readdir);
 
     //** Everything else has a single interface
+    ASSERT_EXISTS(flock);
     ASSERT_EXISTS(chdir);
     ASSERT_EXISTS(fchdir);
     ASSERT_EXISTS(chmod);

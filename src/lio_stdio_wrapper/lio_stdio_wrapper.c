@@ -2742,6 +2742,12 @@ ssize_t WRAPPER_PREFIX(llistxattr)(const char *path, char *list, size_t size)
 FD_TEMPLATE(flistxattr, ssize_t, (int fd, char *list, size_t size), flistxattr_stdio(fd, list, size), lio_fs_listxattr(cfd->fs, NULL, lio_fd_path(cfd->lfd), list, size))
 
 //***********************************************************************
+// flock wrapper
+//***********************************************************************
+
+FD_TEMPLATE(flock, int, (int fd, int operation), flock_stdio(fd, operation), lio_fs_flock(cfd->fs, cfd->lfd, operation))
+
+//***********************************************************************
 // fcntl wrappers
 //***********************************************************************
 
