@@ -118,6 +118,7 @@ typedef struct {
 typedef struct {
     apr_pool_t *mpool;
     apr_thread_mutex_t *lock;
+    char *fname;
     FILE *fd;
 } mon_ctx_t;
 
@@ -153,7 +154,9 @@ int tbx_monitor_create(const char *fname)
     }
 
     apr_thread_mutex_lock(ctx->lock);
-    ctx->fd = tbx_io_fopen(fname, "w");
+    if (ctx->fname) free(ctx->fname);
+    ctx->fname = strdup(fname);
+    if (monitor_state == 1) ctx->fd = tbx_io_fopen(ctx->fname, "a");
     apr_thread_mutex_unlock(ctx->lock);
 
     return((ctx->fd ? 0 : 1));
@@ -170,6 +173,7 @@ void tbx_monitor_destroy()
         tbx_io_fclose(ctx->fd);
         ctx->fd = NULL;
     }
+    if (ctx->fname) free(ctx->fname);
     monitor_state = 0;
     apr_thread_mutex_unlock(ctx->lock);
 }
@@ -192,8 +196,17 @@ void tbx_monitor_set_state(int n)
     if (!ctx) return;
 
     apr_thread_mutex_lock(ctx->lock);
-    monitor_state = n;
-    if (n == 0) fflush(ctx->fd);
+    if (monitor_state == n) goto done;
+    if (n == 0) {  //** Stopping monitoring
+        fflush(ctx->fd);
+        fclose(ctx->fd);
+        ctx->fd = NULL;
+    } else {  //**Starting monitoring again
+        ctx->fd = tbx_io_fopen(ctx->fname, "a");  //** We are appending
+    }
+    monitor_state = (ctx->fd) ? 1 : 0;
+
+done:
     apr_thread_mutex_unlock(ctx->lock);
 }
 
@@ -218,8 +231,10 @@ void monitor_write(mon_full_record_t *r, int cmd)
     r->record.header.tid = tbx_atomic_thread_id;
 
     apr_thread_mutex_lock(ctx->lock);
-    r->record.header.dt = apr_time_now();
-    tbx_io_fwrite(r, r->size + sizeof(uint16_t), 1, ctx->fd);
+    if (monitor_state == 1) {
+        r->record.header.dt = apr_time_now();
+        tbx_io_fwrite(r, r->size + sizeof(uint16_t), 1, ctx->fd);
+    }
     apr_thread_mutex_unlock(ctx->lock);
 }
 
