@@ -44,6 +44,7 @@ struct lio_fuse_t;
 
 struct lio_fuse_t {
     int enable_osaz_acl_mappings;
+    int enable_flock;
     int shutdown;
     int mount_point_len;
     lio_config_t *lc;

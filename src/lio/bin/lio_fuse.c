@@ -24,13 +24,14 @@
 #include <lio/lio.h>
 #include <lio/lio_fuse.h>
 
-//*************************************************************************
-//*************************************************************************
+// *************************************************************************
+// *************************************************************************
 
 void print_usage(void)
 {
     printf("\n"
-           "lio_fuse mount_point [FUSE_OPTIONS] [--lio LIO_COMMON_OPTIONS]\n");
+           "lio_fuse mount_point [FUSE_OPTIONS] [--lio LIO_COMMON_OPTIONS] [--disable-flock]\n"
+           "    --disable-flock           Disable LSTore integrated flock() functionality\n");
     lio_print_options(stdout);
     printf("    FUSE_OPTIONS:\n"
            "       -h   --help            print this help\n"
@@ -68,10 +69,10 @@ int main(int argc, char **argv)
     lio_args.mount_point = argv[1];
 
     for (idx=1; idx<argc; idx++) {
+        if(strcmp(argv[idx], "--disable-flock") == 0) lfs_fops.flock = NULL;  // ** Have to disable that before fuse_main since it gets copied before lfs_init() is calledl
         if(strcmp(argv[idx], "--lio") == 0) {
             fuse_argc = idx;
-            lio_args.mount_point = argv[fuse_argc-1];  //** The last FUSE argument is the mount point
-
+            lio_args.mount_point = argv[fuse_argc-1];  // ** The last FUSE argument is the mount point
             lio_args.lio_argc = argc - idx;
             lio_args.lio_argv = &argv[idx];
             lio_args.lio_argv[0] = argv[0]; //replace "--lio" with the executable name because the parser may reasonably expect the zeroth argument to be the program name

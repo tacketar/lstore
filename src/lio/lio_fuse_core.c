@@ -646,6 +646,20 @@ int lfs_rmdir(const char *fname)
 }
 
 //*****************************************************************
+// lfs_flock - Performas a lock operation on the file
+//*****************************************************************
+
+int lfs_flock(const char *fname, struct fuse_file_info *fi, int lock_type)
+{
+    lio_fuse_t *lfs = lfs_get_context();
+    lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
+    int err;
+
+    err = lio_fs_flock(lfs->fs, fd, lock_type);
+    return(err);
+}
+
+//*****************************************************************
 // lfs_open - Opens a file for I/O
 //*****************************************************************
 
@@ -1166,6 +1180,11 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "[%s]\n", lfs->lfs_section);
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
+    if (lfs->enable_flock) {
+        fprintf(fd, "# flock() is ENABLED\n");
+    } else {
+        fprintf(fd, "# flock() is DISABLED\n");
+    }
     fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
 #ifdef HAS_FUSE3
     fprintf(fd, "max_read = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_read, ppbuf));
@@ -1245,6 +1264,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     lfs->fs = lio_fs_create(lfs->lc->ifd, section, lfs->lc, getuid(), getgid());
 log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
+    lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;
 
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
@@ -1356,6 +1376,7 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .mkdir = lfs_mkdir,
     .unlink = lfs_unlink,
     .rmdir = lfs_rmdir,
+    .flock = lfs_flock,
     .open = lfs_open,
     .release = lfs_release,
     .read = lfs_read,
