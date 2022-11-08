@@ -1976,6 +1976,10 @@ int os_locking_tests(char *prefix)
     int nfailed = 0;
     char *lock_attr = "os.lock";
 
+    memset(fd_read, 0, sizeof(fd_read));
+    memset(fd_write, 0, sizeof(fd_read));
+    memset(fd_abort, 0, sizeof(fd_read));
+
     q = gop_opque_new();
     opque_start_execution(q);
 
