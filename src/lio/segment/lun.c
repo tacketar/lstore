@@ -1756,7 +1756,7 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
     ex_off_t sstripe, estripe;
     int used;
     int block_status[s->n_devices], block_copy[s->n_devices];
-    int nattempted, nmigrated, err, i;
+    int nattempted, nmigrated, err, i, k;
     int soft_error_fail;
 
     gop_op_status_t status = gop_success_status;
@@ -1788,14 +1788,18 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
         }
 
         for (i=0; i < s->n_devices; i++) block_status[i] = 0;
-        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, si->args->query, si->args, si->timeout);
+        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, si->args->query, si->args, si->timeout);  //** Doesn't modify block at all
         used = 0;
         tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_placement_check:", segment_id(si->seg));
         for (i=0; i < s->n_devices; i++) tbx_append_printf(info, &used, bufsize, " %d", block_status[i]);
         info_printf(si->fd, 1, "%s\n", info);
         if ((err > 0) || (si->args->rid_changes != NULL)) {
             memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
-            i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, s->rsq, si->timeout, &(s->db_cleanup));
+            i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, s->rsq, si->timeout, &(s->db_cleanup));   //** Does modify the block so copy changes back
+            for (k=0; k<s->n_devices; k++) {
+                b->block[k].data = block[k].data;
+                b->block[k].cap_offset = block[k].cap_offset;
+            }
             nmigrated +=  err - i;
             nattempted += err;
 
@@ -1818,12 +1822,6 @@ gop_op_status_t seglun_migrate_func(void *arg, int id)
             info_printf(si->fd, 1, "%s\n", info);
         } else {
             nattempted = nattempted + err;
-        }
-
-        //** Copy the updated block back
-        for (i=0; i<s->n_devices; i++) {
-            b->block[i].data = block[i].data;
-            b->block[i].cap_offset = block[i].cap_offset;
         }
     }
 
@@ -1857,7 +1855,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     ex_off_t sstripe, estripe;
     int used, soft_error_fail, force_reconstruct, nforce;
     int block_status[s->n_devices], block_copy[s->n_devices], block_tmp[s->n_devices];
-    int i, j, err, option, force_repair, max_lost, total_lost, total_repaired, total_migrate, nmigrated, nlost, nrepaired, drow;
+    int i, j, k, err, option, force_repair, max_lost, total_lost, total_repaired, total_migrate, nmigrated, nlost, nrepaired, drow;
     segment_block_inspect_t block[s->n_devices];
     lio_inspect_args_t args;
     lio_inspect_args_t args_blank;
@@ -1916,7 +1914,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
             info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
         }
 
-        nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout);
+        nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout);  //** Doesn't modify the block structure
         used = 0;
         tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_size_check:", segment_id(si->seg));
         for (i=0; i < s->n_devices; i++) {
@@ -1945,7 +1943,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         nrepaired = 0;
         if ((force_repair > 0) && (nlost > 0)) {
             info_printf(si->fd, 1, XIDT ":     Attempting to pad the row\n", segment_id(si->seg));
-            err = slun_row_pad_fix(si->seg, si->da, b, block_status, s->n_devices, si->timeout);
+            err = slun_row_pad_fix(si->seg, si->da, b, block_status, s->n_devices, si->timeout);  //** Just modifies the block[i].data so Ok changes in block[i].data are reflected b->block[i].data
 
             used = 0;
             tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_pad_fix:", segment_id(si->seg));
@@ -1963,10 +1961,13 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
             do {
                 memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
 
-                err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);
+                err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout); //** This changes b->block[i].data so have to update the block accordingly
 
                 for (i=0; i < s->n_devices; i++) {
-                    if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced with rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
+                    if ((block_copy[i] != 0) && (block_status[i] == 0)) {
+                        block[i].data = b->block[i].data;
+                        info_printf(si->fd, 2, XIDT ":     dev=%i replaced with rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, b->block[i].data->cap, DS_CAP_READ));
+                    }
                 }
 
                 used = 0;
@@ -1988,7 +1989,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         if (err != 0) goto fail;
 
         log_printf(0, "BEFORE_PLACEMENT_CHECK\n");
-        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, query, &args, si->timeout);
+        err = segment_placement_check(s->rs, si->da, block, block_status, s->n_devices, soft_error_fail, query, &args, si->timeout);  //** Doesn't modify block at all
         for (i=0; i < s->n_devices; i++) tbx_append_printf(info, &used, bufsize, " %d", block_status[i]);
 
         total_migrate += err;
@@ -2000,7 +2001,11 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         if ((err > 0) && ((option == INSPECT_QUICK_REPAIR) || (option == INSPECT_SCAN_REPAIR) || (option == INSPECT_FULL_REPAIR))) {
             if (force_reconstruct == 0) {
                 memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
-                i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, &args, si->timeout, &(s->db_cleanup));
+                i = segment_placement_fix(s->rs, si->da, block, block_status, s->n_devices, &args, si->timeout, &(s->db_cleanup));  //** Does modify the blocks so need to copy them back.
+                for (k=0; k<s->n_devices; k++) {
+                    b->block[k].data = block[k].data;
+                    b->block[k].cap_offset = block[k].cap_offset;
+                }
                 nmigrated += err - i;
                 memcpy(block_tmp, block_status, sizeof(int)*s->n_devices);
 
@@ -2020,7 +2025,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
 
                 //** Opportunistic shuffle failed so check for placement collisions
                 if (j > 0) {
-                    err = segment_placement_check(s->rs, si->da, block, block_tmp, s->n_devices, soft_error_fail, query, &args_blank, si->timeout);
+                    err = segment_placement_check(s->rs, si->da, block, block_tmp, s->n_devices, soft_error_fail, query, &args_blank, si->timeout);  //** Doesn't modify the block
                     if (err > 0) {
                         log_printf(1, "ERROR: opportunistic overlap.  err=%d\n", err);
                         info_printf(si->fd, 1, XIDT ": ERROR: opportunistic overlap.  err=%d\n", segment_id(si->seg), err);
@@ -2039,9 +2044,10 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
                 if (max_lost < err) max_lost = err;
                 do {
                     memcpy(block_copy, block_status, sizeof(int)*s->n_devices);
-                    err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);
+                    err = slun_row_replace_fix(si->seg, si->da, b, block_status, s->n_devices, &args, si->timeout);  //** changes b->block so copy the changes back to the block[i]
 
                     for (i=0; i < s->n_devices; i++) {
+                        block[i].data = b->block[i].data;
                         if ((block_copy[i] != 0) && (block_status[i] == 0)) info_printf(si->fd, 2, XIDT ":     dev=%i replaced rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
                     }
                     used = 0;
@@ -2060,12 +2066,6 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         }
 
 fail:
-        //** Copy the updated block back
-        for (i=0; i<s->n_devices; i++) {
-            b->block[i].data = block[i].data;
-            b->block[i].cap_offset = block[i].cap_offset;
-        }
-
         total_lost += nlost;
         total_repaired += nrepaired;
     }
