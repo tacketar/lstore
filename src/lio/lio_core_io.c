@@ -112,7 +112,9 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
     tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     while (fh != NULL) {
         d = segment_size(fh->seg);
-        fprintf(fd, " ino=" XIDT " fname=%s  size=%s  cnt=%d r_cnt=%d w_cnt=%d\n", fh->ino, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count, fh->ref_read, fh->ref_write);
+        if (*fid == fh->ino) {
+            fprintf(fd, " ino=" XIDT " sid=" XIDT " fname=%s  size=%s  cnt=%d r_cnt=%d w_cnt=%d\n", fh->ino, fh->sid, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count, fh->ref_read, fh->ref_write);
+        }
         tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     }
     lio_unlock(lc);
@@ -527,9 +529,9 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
 //  ****NOTE: assumes that lio_lock(lfs) has been called ****
 //***********************************************************************
 
-lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t ino)
+lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t sid_ino)
 {
-    return(tbx_list_search(lc->open_index, (tbx_list_key_t *)&ino));
+    return(tbx_list_search(lc->open_index, (tbx_list_key_t *)&sid_ino));
 
 }
 
@@ -540,6 +542,7 @@ lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t ino)
 
 void _lio_add_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 {
+    tbx_list_insert(lc->open_index, (tbx_list_key_t *)&(fh->sid), (tbx_list_data_t *)fh);
     tbx_list_insert(lc->open_index, (tbx_list_key_t *)&(fh->ino), (tbx_list_data_t *)fh);
 }
 
@@ -551,6 +554,7 @@ void _lio_add_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 
 void _lio_remove_file_handle(lio_config_t *lc, lio_file_handle_t *fh)
 {
+    tbx_list_remove(lc->open_index, (tbx_list_key_t *)&(fh->sid), (tbx_list_data_t *)fh);
     tbx_list_remove(lc->open_index, (tbx_list_key_t *)&(fh->ino), (tbx_list_data_t *)fh);
 }
 
@@ -1297,7 +1301,9 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         goto cleanup;
     }
 
-    tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, segment_id(fh->seg));
+    fh->sid = segment_id(fh->seg);
+
+    tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, fh->sid);
     tbx_monitor_obj_create(&(fh->mo), "OPEN: fname=%s mode=%d", op->path, op->mode);
     tbx_monitor_obj_reference(&(fh->mo), &(fh->seg->header.mo));
     tbx_monitor_obj_reference_chain(&(fh->mo));

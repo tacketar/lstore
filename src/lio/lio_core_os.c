@@ -150,13 +150,13 @@ tbx_sl_compare_t ex_id_compare = {.fn=ex_id_compare_fn, .arg=NULL };
 // lio_get_open_file_size - Returns the size of the file if it is currrently open and -1 otherwise
 //***********************************************************************
 
-ex_off_t lio_get_open_file_size(lio_config_t *lc, ex_id_t ino, int do_lock)
+ex_off_t lio_get_open_file_size(lio_config_t *lc, ex_id_t sid_ino, int do_lock)
 {
     lio_file_handle_t *fh;
     ex_off_t n = -1;
 
     if (do_lock) { lio_lock(lc); }
-    fh = _lio_get_file_handle(lc, ino);
+    fh = _lio_get_file_handle(lc, sid_ino);
     if (fh) n = lio_size_fh(fh);
     if (do_lock) { lio_unlock(lc); }
 
@@ -178,11 +178,11 @@ void lio_store_stat_size(struct stat *stat, ex_off_t nbytes)
 // lio_update_stat_open_file_size - Updates the stat size fields for open files
 //***********************************************************************
 
-void lio_update_stat_open_file_size(lio_config_t *lc, ex_id_t ino, struct stat *stat, int do_lock)
+void lio_update_stat_open_file_size(lio_config_t *lc, ex_id_t sid_ino, struct stat *stat, int do_lock)
 {
     ex_off_t nbytes;
 
-    nbytes = lio_get_open_file_size(lc, ino, do_lock);
+    nbytes = lio_get_open_file_size(lc, sid_ino, do_lock);
     if (nbytes < 0) return;
 
     lio_store_stat_size(stat, nbytes);

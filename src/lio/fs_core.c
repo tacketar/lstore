@@ -495,8 +495,7 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (get_lock == 1) fs_lock(fs);
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
     if (fop != NULL) {  //** The file is open so need to override the size
-        ino = fop->sid;
-        lio_update_stat_open_file_size(fs->lc, ino, stat, 1);
+        lio_update_stat_open_file_size(fs->lc, fop->sid, stat, 1);
     }
     if (get_lock == 1) fs_unlock(fs);
 
