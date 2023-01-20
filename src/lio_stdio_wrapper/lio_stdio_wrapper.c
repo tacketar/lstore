@@ -714,7 +714,11 @@ int WRAPPER_PREFIX(renameat2)(int olddirfd, const char *oldpath, int newdirfd, c
                 ftype = lio_fs_exists(fs_new, fnew);
                 if (ftype == 0) { //** Dest doesn't exist so create it
                     sbuf.st_mode = 0;
+#ifdef _STAT_VER
                     __xstat_stdio(_STAT_VER, fold, &sbuf);
+#else
+                    __xstat_stdio(0, fold, &sbuf);
+#endif
                     err = lio_fs_object_create(fs_new, NULL, fnew, sbuf.st_mode);
                 } else {  //** Destination already exists
                     if ((ftype & OS_OBJECT_DIR_FLAG) == 0) {
