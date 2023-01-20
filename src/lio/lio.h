@@ -86,6 +86,7 @@ struct lio_file_handle_t {  //** Shared file handle
     ex_off_t data_size;  //** And if this is the corresponding size in data
     ex_off_t max_data_allocated;  //** This is how much is allocated already
     ex_id_t ino;
+    ex_id_t sid;
     int in_flight;
     int adjust_tier_pending;
     int ref_count;
@@ -130,6 +131,7 @@ struct lio_fd_t {  //** Individual file descriptor
     int mode;         //** Full LIO mode
     int rw_mode;      //** This just let's me know if it's a special file(0) or it's for R/W
     int sfd;          //** Special FD for FIFO or SOCKET objects
+    int ftype;        //** File type
     ex_id_t  id;
     ex_off_t curr_offset;
     ex_off_t tally_ops[2];
