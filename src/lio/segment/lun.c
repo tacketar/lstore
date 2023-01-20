@@ -976,10 +976,10 @@ void lun_row_decompose(lio_segment_t *seg, lun_rw_row_t *rw_buf, seglun_row_t *b
                 rw_buf[i].c_ex = k;
                 if (rw_buf[i].crwb.n_ex == 0) {
                     tbx_type_malloc(rw_buf[i].crwb.ex_iov, ex_tbx_iovec_t, k);
-                    if (s->crypt_enabled) tbx_type_malloc(rw_buf[i].crwb.lun_offset, ex_off_t, k);
+                    if (s->crypt_enabled) { tbx_type_malloc(rw_buf[i].crwb.lun_offset, ex_off_t, k); }
                 } else {
                     tbx_type_realloc(rw_buf[i].crwb.ex_iov, ex_tbx_iovec_t, k);
-                    if (s->crypt_enabled) tbx_type_realloc(rw_buf[i].crwb.lun_offset, ex_off_t, k);
+                    if (s->crypt_enabled) { tbx_type_realloc(rw_buf[i].crwb.lun_offset, ex_off_t, k); }
                 }
             }
             k = 0;  //** Flag used to see if we grew an existing op
@@ -1393,7 +1393,6 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                               gop_dummy(blacklist_status);
                     }
                 }
-
                 rwb_table[j+i].gop = gop;
                 rwb_table[j+i].block = &(b->block[i]);
                 gop_opque_add(q, rwb_table[j+i].gop);
