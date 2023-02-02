@@ -1007,10 +1007,15 @@ void _mon_printf(FILE *fd, apr_time_t dt, int32_t tid, const char *fmt, ...)
 
     //** Print the header
     if (texp.tm_year == 69) {  //** Looks like we are using a relative time
-        fprintf(fd, "HELLO [dt=%dh%02dm%02ds%06du tid=%d] ", texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
-    } else {   //** Full time format
+        //** Calculate the time offsets
+        texp.tm_hour  = apr_time_sec(dt) / 3600;
+        texp.tm_min = (apr_time_sec(dt) / 60) % 60;
+        texp.tm_sec = apr_time_sec(dt) % 60;
+        texp.tm_usec = dt % apr_time_from_sec(1);
+        fprintf(fd, "[dt=%dh%02dm%02ds%06du tid=%d] ", texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
+    } else {   //** Full time format. tm_mon=0..11 so inc for normal format
         texp.tm_year += 1900;
-        fprintf(fd, "[t=%04dy%02dm%02dd:%dh%02dm%02ds%06du tid=%d] ", texp.tm_year, texp.tm_mon, texp.tm_mday, texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
+        fprintf(fd, "[t=%04dy%02dm%02dd:%dh%02dm%02ds%06du tid=%d] ", texp.tm_year, texp.tm_mon+1, texp.tm_mday, texp.tm_hour, texp.tm_min, texp.tm_sec, texp.tm_usec, tid);
     }
 
     //** And the rest of the line
