@@ -1150,7 +1150,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
             log_printf(5, "TARGET obj=%s key=%s\n", aobj->fname, attr->key);
 
             //** Make the attr on the target link
-            if (attr->val) free(attr->val);
+            if (attr->val) { free(attr->val); attr->val = NULL; }
             if (v_size[i] > 0) {
                 tbx_type_malloc(attr->val, void, v_size[i]+1);
                 memcpy(attr->val, val[i], v_size[i]);
