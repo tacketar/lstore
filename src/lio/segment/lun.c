@@ -1615,7 +1615,7 @@ gop_op_status_t seglun_rw_func(void *arg, int id)
     log_printf(15, "oldused=" XOT " maxpos=" XOT "\n", s->used_size, maxpos);
 
 
-    if (tbx_log_level() > 0) {  //** Add some logging
+    if (tbx_log_level() > 1) {  //** Add some logging
         dt = (double) now / APR_USEC_PER_SEC;
 
         label = (sw->rw_mode == 1) ? "LUN_WRITE" : "LUN_READ";
@@ -1623,7 +1623,7 @@ gop_op_status_t seglun_rw_func(void *arg, int id)
             t1 = sw->iov[i].offset;
             t2 = t1 + sw->iov[i].len - 1;
             t3 = sw->iov[i].len;
-            log_printf(1, "%s:END " XOT " : " XOT " " XOT " " XOT " %lf\n", label, t2, t1, t2, t3, dt);
+            log_printf(2, "%s:END " XOT " : " XOT " " XOT " " XOT " %lf\n", label, t2, t1, t2, t3, dt);
         }
     }
     if ((sw->rw_mode == 1) && (s->used_size <= maxpos)) s->used_size = maxpos+1;

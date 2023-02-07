@@ -1324,17 +1324,17 @@ gop_op_status_t segjerase_read_func(void *arg, int id)
         }
 
         if (parity_len > s->max_parity) {
-            log_printf(1, "seg=" XIDT " Parity to small.  Growing to parity_len=" XOT " s->max_parity=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity);
+            log_printf(2, "seg=" XIDT " Parity to small.  Growing to parity_len=" XOT " s->max_parity=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity);
         }
     }
 
     //** See if we can store the parity on the stack
     char parity_ptr[(parity_len > s->max_parity_on_stack) ? 1 : parity_len];
     if (parity_len > s->max_parity_on_stack) {
-        log_printf(1, "seg=" XIDT " PARITY location: MALLOC... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
+        log_printf(2, "seg=" XIDT " PARITY location: MALLOC... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         tbx_type_malloc(parity, char, parity_len);
     } else {
-        log_printf(1, "seg=" XIDT " PARITY location: STACK... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
+        log_printf(2, "seg=" XIDT " PARITY location: STACK... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         parity = parity_ptr;
     }
 
@@ -2102,6 +2102,7 @@ int segjerase_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize
 {
     segjerase_priv_t *s = (segjerase_priv_t *)seg->priv;
 
+log_printf(0, "jerase: sid=" XIDT " size=" XOT "\n", segment_id(seg), segment_size(seg));
     tbx_append_printf(buffer, used, bufsize, "jerase(\n");
     tbx_append_printf(buffer, used, bufsize, "    method=%s\n", JE_method[s->method]);
     tbx_append_printf(buffer, used, bufsize, "    n_data_devs=%d\n", s->n_data_devs);
