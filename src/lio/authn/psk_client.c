@@ -226,8 +226,8 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
         return(1);
     }
     if ((st.st_mode & (S_IRWXO|S_IRWXG|S_IXUSR)) > 0) {
-        log_printf(0, "ERROR: PSK file has pad perms! Should only have user RW perms.  fname:%s\n", psk_name);
-        fprintf(stderr, "ERROR: PSK file has pad perms! Should only have user RW perms.  fname:%s\n", psk_name);
+        log_printf(0, "ERROR: PSK file has bad perms! Should only have user RW perms.  fname:%s\n", psk_name);
+        fprintf(stderr, "ERROR: PSK file has bad perms! Should only have user RW perms.  fname:%s\n", psk_name);
         if (do_fail) exit(1);
         return(1);
     }
