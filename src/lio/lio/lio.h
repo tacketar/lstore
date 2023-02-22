@@ -130,7 +130,6 @@ LIO_API void lio_get_error_counts(lio_config_t *lc, lio_segment_t *seg, lio_segm
 LIO_API int lio_getattr(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char *key, void **val, int *v_size);
 LIO_API gop_op_generic_t *lio_getattr_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char *key, void **val, int *v_size);
 LIO_API gop_op_generic_t *lio_hardlink_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path, char *id);
-LIO_API int lio_init(int *argc, char ***argvp);
 LIO_API gop_op_generic_t *lio_link_gop(lio_config_t *lc, lio_creds_t *creds, int symlink, char *src_path, char *dest_path, char *id);
 LIO_API gop_op_generic_t *lio_move_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path);
 LIO_API int lio_multiple_setattr_op(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n);
@@ -155,7 +154,6 @@ LIO_API gop_op_generic_t *lio_remove_regex_gop(lio_config_t *lc, lio_creds_t *cr
 LIO_API int lio_setattr(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char *key, void *val, int v_size);
 LIO_API gop_op_generic_t *lio_setattr_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char *key, void *val, int v_size);
 LIO_API gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path);
-LIO_API int lio_shutdown();
 LIO_API gop_op_generic_t *lio_truncate_op(lio_fd_t *fd, ex_off_t new_size);
 LIO_API int lio_unified_next_object(lio_unified_object_iter_t *it, char **fname, int *prefix_len);
 LIO_API lio_unified_object_iter_t *lio_unified_object_iter_create(lio_path_tuple_t tuple, lio_os_regex_table_t *path_regex, lio_os_regex_table_t *obj_regex, int obj_types, int rd);

@@ -33,6 +33,7 @@
 #include <gop/mq.h>
 #include <grp.h>
 #include <lio/segment.h>
+#include <lio/core.h>
 #include <lio/fs.h>
 #include <pwd.h>
 #include <stdint.h>

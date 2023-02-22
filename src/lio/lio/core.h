@@ -23,6 +23,8 @@ limitations under the License.
 #ifndef ACCRE_LIO_CORE_H_INCLUDED
 #define ACCRE_LIO_CORE_H_INCLUDED
 
+#include <lio/visibility.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,6 +33,9 @@ typedef struct lio_config_t lio_config_t;
 typedef struct lio_fd_t lio_fd_t;
 typedef struct lio_stat_iter_t lio_stat_iter_t;
 typedef struct lio_os_authz_local_t lio_os_authz_local_t;
+
+LIO_API int lio_init(int *argc, char ***argvp);
+LIO_API int lio_shutdown();
 
 #ifdef __cplusplus
 }
