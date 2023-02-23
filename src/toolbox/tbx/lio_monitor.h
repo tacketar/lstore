@@ -21,6 +21,10 @@
 #include <tbx/visibility.h>
 #include <tbx/monitor.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //** Just define all the type indices for monitoring for the various toolbox, gop, IBP, IBP server, and LIO tools
 
 #define MON_INDEX_NSSEND  1

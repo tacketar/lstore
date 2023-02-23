@@ -22,9 +22,17 @@
 #include <tbx/visibility.h>
 #include <apr_time.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 TBX_API int tbx_pipe_open(int pipefd[2]);
 TBX_API void tbx_pipe_close(int pipefd[2]);
 TBX_API int tbx_pipe_get(int pipefd[2], void *object, int object_size, apr_time_t dt);
 TBX_API int tbx_pipe_put(int pipefd[2], void *object, int object_size, apr_time_t dt);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

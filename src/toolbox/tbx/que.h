@@ -22,6 +22,10 @@
 #include <tbx/visibility.h>
 #include <apr_time.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TBX_QUE_BLOCK 123456789  //** Only return when the get/put completes
 
 #define TBX_QUE_TIMEOUT  -1
@@ -39,5 +43,9 @@ TBX_API int tbx_que_get(tbx_que_t *q, void *object, apr_time_t dt);
 TBX_API int tbx_que_bulk_get(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt);
 TBX_API int tbx_que_put(tbx_que_t *q, void *object, apr_time_t dt);
 TBX_API int tbx_que_bulk_put(tbx_que_t *q, int n_objects, void *objects, apr_time_t dt);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

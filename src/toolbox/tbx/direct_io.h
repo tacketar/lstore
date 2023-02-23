@@ -23,9 +23,17 @@
 #include <apr_time.h>
 #include <unistd.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 TBX_API int tbx_dio_init(FILE *fd);
 TBX_API void tbx_dio_finish(FILE *fd, int flags);
 TBX_API ssize_t tbx_dio_read(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset);
 TBX_API ssize_t tbx_dio_write(FILE *fd, char *buf, ssize_t nbytes, ssize_t offset);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
