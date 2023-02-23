@@ -156,11 +156,13 @@ set(LSTORE_PROJECT_INCLUDES
         lio/authn.h
         lio/blacklist.h
         lio/cache.h
+        lio/core.h
         lio/data_block.h
         lio/ds.h
         lio/erasure_tools.h
         lio/ex3.h
         lio/ex3_fwd.h
+        lio/fs.h
         lio/lio.h
         lio/lio_fuse.h
         lio/notify.h
