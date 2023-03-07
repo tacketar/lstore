@@ -84,6 +84,17 @@ typedef struct {
 } osf_dir_t;
 
 typedef struct {
+    tbx_stack_t *active_stack;
+    tbx_stack_t *pending_stack;
+    int read_count;
+    int write_count;
+    tbx_pch_t pch;
+} fobj_lock_t;
+
+#define FOL_OS   0
+#define FOL_USER 1
+
+typedef struct {
     char realpath[OS_PATH_MAX];
     lio_object_service_fn_t *os;
     char *object_name;
@@ -92,8 +103,18 @@ typedef struct {
     int ftype;
     int mode;
     int user_mode;
+    fobj_lock_t *fol[2];
+    int ilock_rp;     //** Realpath slot
+    int ilock_obj;    //** User specified path slot
     uint64_t uuid;
 } osfile_fd_t;
+
+typedef struct {
+    apr_thread_cond_t *cond;
+    osfile_fd_t *fd;
+    int rw_mode;
+    int abort;
+} fobj_lock_task_t;
 
 typedef struct {
     lio_object_service_fn_t *os;
@@ -251,21 +272,6 @@ typedef struct {
 } osfile_copy_attr_t;
 
 typedef struct {
-    tbx_stack_t *stack;
-    tbx_stack_t *active_stack;
-    int read_count;
-    int write_count;
-    tbx_pch_t pch;
-} fobj_lock_t;
-
-typedef struct {
-    apr_thread_cond_t *cond;
-    osfile_fd_t *fd;
-    int rw_mode;
-    int abort;
-} fobj_lock_task_t;
-
-typedef struct {
     lio_object_service_fn_t *os;
     lio_creds_t *creds;
     char *path;
@@ -280,7 +286,7 @@ typedef struct {
 #define osf_obj_unlock(lock)  apr_thread_mutex_unlock(lock)
 
 char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_prefix);
-apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, char *path, int *table_slot);
+apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot);
 int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void *val, int v_size, int *atype, int append_val);
 int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath);
 gop_op_generic_t *osfile_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void *val, int v_size);
@@ -513,20 +519,20 @@ void fobj_add_active(fobj_lock_t *fol, osfile_fd_t *fd)
 int fobj_remove_active(fobj_lock_t *fol, osfile_fd_t *myfd)
 {
     osfile_fd_t *fd;
-    int success = 1;
+    int err = 1;
 
     tbx_stack_move_to_top(fol->active_stack);
     while ((fd = (osfile_fd_t *)tbx_stack_get_current_data(fol->active_stack)) != NULL) {
         if (fd == myfd) {  //** Found a match
             tbx_stack_delete_current(fol->active_stack, 0, 0);
-            success = 0;
+            err = 0;
             break;
         }
 
         tbx_stack_move_down(fol->active_stack);
     }
 
-    return(success);
+    return(err);
 }
 
 //*************************************************************
@@ -571,15 +577,14 @@ void fobj_lock_task_free(void *arg, int size, void *data)
 
 void *fobj_lock_new(void *arg, int size)
 {
-//  apr_pool_t *mpool = (apr_pool_t *)arg;
     fobj_lock_t *shelf;
     int i;
 
     tbx_type_malloc_clear(shelf, fobj_lock_t, size);
 
     for (i=0; i<size; i++) {
-        shelf[i].stack = tbx_stack_new();
         shelf[i].active_stack = tbx_stack_new();
+        shelf[i].pending_stack = tbx_stack_new();
         shelf[i].read_count = 0;
         shelf[i].write_count = 0;
     }
@@ -597,8 +602,8 @@ void fobj_lock_free(void *arg, int size, void *data)
     int i;
 
     for (i=0; i<size; i++) {
-        tbx_stack_free(shelf[i].stack, 0);
         tbx_stack_free(shelf[i].active_stack, 0);
+        tbx_stack_free(shelf[i].pending_stack, 0);
     }
 
     free(shelf);
@@ -647,9 +652,10 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 {
     tbx_pch_t task_pch;
     fobj_lock_task_t *handle;
-    int aborted, loop, dummy;
+    int aborted, dummy;
     apr_time_t timeout = apr_time_make(max_wait, 0);
     apr_time_t dt, start_time;
+    tbx_stack_ele_t *ele;
 
     //** Get my slot
     task_pch = tbx_pch_reserve(flock->task_pc);
@@ -660,50 +666,43 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 
     log_printf(15, "SLEEPING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU " max_wait=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle->fd->uuid, max_wait);
 
-    tbx_stack_move_to_bottom(fol->stack);
-    tbx_stack_insert_below(fol->stack, handle);
+    tbx_stack_move_to_bottom(fol->pending_stack);
+    tbx_stack_insert_below(fol->pending_stack, handle);
+    ele = tbx_stack_get_current_ptr(fol->pending_stack);
 
     //** Sleep until it's my turn.  Remember fobj_lock is already set upon entry
     start_time = apr_time_now();
-    do {
-        loop = 1;
-        apr_thread_cond_timedwait(handle->cond, flock->fobj_lock, timeout);
-        aborted = handle->abort;
+    apr_thread_cond_timedwait(handle->cond, flock->fobj_lock, timeout);
+    aborted = handle->abort;
 
-        dt = apr_time_now() - start_time;
+    dt = apr_time_now() - start_time;
 
-        dummy = apr_time_sec(dt);
-        log_printf(15, "CHECKING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p abort=%d uuid=" LU " dt=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle, aborted, fd->uuid, dummy);
+    dummy = apr_time_sec(dt);
+    log_printf(15, "CHECKING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p abort=%d uuid=" LU " dt=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle, aborted, fd->uuid, dummy);
 
-    } while (loop == 0);
+    tbx_stack_move_to_top(fol->pending_stack);
+    if (tbx_stack_get_current_ptr(fol->pending_stack) != ele) { //** I should be on top of the stack
+        aborted = 1;
+    }
 
     dummy = apr_time_sec(dt);
     log_printf(15, "AWAKE id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p abort=%d uuid=" LU " dt=%d\n", fd->id, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle, aborted, fd->uuid, dummy);
 
-    //** I should be on the top of the stack
-    tbx_stack_pop(fol->stack); //**QWERT
+    //** Remove myself
+    tbx_stack_move_to_ptr(fol->pending_stack, ele);
+    tbx_stack_delete_current(fol->pending_stack, 0, 0);
 
-    //** I'm popped off the stack so just free my handle and update the counter
+    //** I'm off the stack so just free my handle and update the counter
     tbx_pch_release(flock->task_pc, &task_pch);
 
-    if (aborted == 1) { //** Open was aborted so remove myself from the pending and kick out
-        tbx_stack_move_to_top(fol->stack);
-        while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
-            if (handle->fd->uuid == fd->uuid) {
-                log_printf(15, "id=%s fname=%s uuid=" LU " ABORTED\n", fd->id, fd->object_name, fd->uuid);
-                tbx_stack_delete_current(fol->stack, 1, 0);
-                break;
-            }
-            tbx_stack_move_down(fol->stack);
-        }
-
+    if (aborted == 1) { //** Open was aborted. I've already removed mysewlf from the que so just return
         return(1);
     }
 
     //** Check if the next person should be woke up as well
-    if (tbx_stack_count(fol->stack) != 0) {
-        tbx_stack_move_to_top(fol->stack);
-        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
+    if (tbx_stack_count(fol->pending_stack) != 0) {
+        tbx_stack_move_to_top(fol->pending_stack);
+        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack);
 
         if ((rw_mode == OS_MODE_READ_BLOCKING) && (handle->rw_mode == OS_MODE_READ_BLOCKING)) {
             log_printf(15, "WAKEUP ALARM id=%s uuid=" LU "fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU " handle->mode=%d\n", fd->id, fd->uuid, fd->object_name, rw_mode, fol->read_count, fol->write_count, handle->fd->uuid, handle->rw_mode);
@@ -720,7 +719,7 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 // full_object_lock -  Locks the object across all systems
 //***********************************************************************
 
-int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int max_wait)
+int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int max_wait)
 {
     tbx_pch_t obj_pch;
     fobj_lock_t *fol;
@@ -737,15 +736,18 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int ma
 
     apr_thread_mutex_lock(flock->fobj_lock);
 
-    fol = tbx_list_search(flock->fobj_table, fd->object_name);
+    //** See if we already have a reference stored
+    fol = (fd->fol[fol_slot]) ? fd->fol[fol_slot] : tbx_list_search(flock->fobj_table, fd->realpath);
 
     if (fol == NULL) {  //** No one else is accessing the file
         obj_pch =  tbx_pch_reserve(flock->fobj_pc);
         fol = (fobj_lock_t *)tbx_pch_data(&obj_pch);
         fol->pch = obj_pch;  //** Reverse link my PCH for release later
-        tbx_list_insert(flock->fobj_table, fd->object_name, fol);
+        tbx_list_insert(flock->fobj_table, fd->realpath, fol);
         log_printf(15, "fname=%s new lock!\n", fd->object_name);
     }
+
+    if (fd->fol[fol_slot] == NULL) fd->fol[fol_slot] = fol;  //** Go ahead and store if for future reference
 
     log_printf(15, "START id=%s uuid=" LU " fname=%s mymode=%d do_wait=%d read_count=%d write_count=%d\n", fd->id, fd->uuid, fd->object_name, rw_mode, do_wait, fol->read_count, fol->write_count);
 
@@ -753,9 +755,9 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int ma
     if (rw_mode & OS_MODE_READ_BLOCKING) { //** I'm reading
         if (fol->write_count == 0) { //** No one currently writing
             //** Check and make sure the person waiting isn't a writer
-            if (tbx_stack_count(fol->stack) != 0) {
-                tbx_stack_move_to_top(fol->stack);
-                handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
+            if (tbx_stack_count(fol->pending_stack) != 0) {
+                tbx_stack_move_to_top(fol->pending_stack);
+                handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack);
                 if (handle->rw_mode & OS_MODE_WRITE_BLOCKING) {  //** They want to write so sleep until my turn
                     err = (do_wait) ? fobj_wait(flock, fol, fd, rw_mode, max_wait) : 1;  //** The fobj_lock is released/acquired inside
                 }
@@ -766,7 +768,7 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int ma
 
         if (err == 0) fol->read_count++;
     } else {   //** I'm writing
-        if ((fol->write_count != 0) || (fol->read_count != 0) || (tbx_stack_count(fol->stack) != 0)) {  //** Make sure no one else is doing anything
+        if ((fol->write_count != 0) || (fol->read_count != 0) || (tbx_stack_count(fol->pending_stack) != 0)) {  //** Make sure no one else is doing anything
             err = (do_wait) ? fobj_wait(flock, fol, fd, rw_mode, max_wait) : 1;  //** The fobj_lock is released/acquired inside
         }
         if (err == 0) fol->write_count++;
@@ -785,19 +787,16 @@ int full_object_lock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int ma
 // full_object_unlock - Unlocks an object
 //***********************************************************************
 
-void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
+void full_object_unlock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
 {
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
     int err;
 
-    apr_thread_mutex_lock(flock->fobj_lock);
+    fol = fd->fol[fol_slot];
+    if (fol == NULL) { return; }  //** Nothing to do. No outstanding lock
 
-    fol = tbx_list_search(flock->fobj_table, fd->object_name);
-    if (fol == NULL) {  //**Exit if it wasn't found
-        apr_thread_mutex_unlock(flock->fobj_lock);
-        return;
-    }
+    apr_thread_mutex_lock(flock->fobj_lock);
 
     err = fobj_remove_active(fol, fd);
 
@@ -815,12 +814,12 @@ void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
 
     log_printf(15, "fname=%s mymode=%d read_count=%d write_count=%d fd->id=%s fd->uuid=" LU "\n", fd->object_name, fd->mode, fol->read_count, fol->write_count, fd->id, fd->uuid);
 
-    if ((tbx_stack_count(fol->stack) == 0) && (fol->read_count == 0) && (fol->write_count == 0)) {  //** No one else is waiting so remove the entry
-        tbx_list_remove(flock->fobj_table, fd->object_name, NULL);
+    if ((tbx_stack_count(fol->pending_stack) == 0) && (fol->read_count == 0) && (fol->write_count == 0)) {  //** No one else is waiting so remove the entry
+        tbx_list_remove(flock->fobj_table, fd->realpath, NULL);
         tbx_pch_release(flock->fobj_pc, &(fol->pch));
-    } else if (tbx_stack_count(fol->stack) > 0) { //** Wake up the next person
-        tbx_stack_move_to_top(fol->stack);
-        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
+    } else if (tbx_stack_count(fol->pending_stack) > 0) { //** Wake up the next person
+        tbx_stack_move_to_top(fol->pending_stack);
+        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack);
 
         if (((handle->rw_mode & OS_MODE_READ_BLOCKING) && (fol->write_count == 0)) ||
                 ((handle->rw_mode & OS_MODE_WRITE_BLOCKING) && (fol->write_count == 0) && (fol->read_count == 0))) {
@@ -837,18 +836,15 @@ void full_object_unlock(fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
 // full_object_downgrade_lock - Downgrades the lock from a WRITE to READ lock
 //***********************************************************************
 
-void full_object_downgrade_lock(fobject_lock_t *flock, osfile_fd_t *fd)
+void full_object_downgrade_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd)
 {
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
 
-    apr_thread_mutex_lock(flock->fobj_lock);
+    fol = fd->fol[fol_slot];
+    if (fol == NULL) { return; };  //** No lock currently stored so kick out
 
-    fol = tbx_list_search(flock->fobj_table, fd->object_name);
-    if (fol == NULL) {  //**Exit if it wasn't found
-        apr_thread_mutex_unlock(flock->fobj_lock);
-        return;
-    }
+    apr_thread_mutex_lock(flock->fobj_lock);
 
     //** Adjust the counts
     fol->write_count--;
@@ -856,9 +852,9 @@ void full_object_downgrade_lock(fobject_lock_t *flock, osfile_fd_t *fd)
 
     log_printf(15, "fname=%s mymode=%d read_count=%d write_count=%d\n", fd->object_name, fd->mode, fol->read_count, fol->write_count);
 
-    if (tbx_stack_count(fol->stack) > 0) { //** Wake up the next person if also a reader
-        tbx_stack_move_to_top(fol->stack);
-        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack);
+    if (tbx_stack_count(fol->pending_stack) > 0) { //** Wake up the next person if also a reader
+        tbx_stack_move_to_top(fol->pending_stack);
+        handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack);
 
         if (handle->rw_mode & OS_MODE_READ_BLOCKING) {
             log_printf(15, "WAKEUP ALARM fname=%s mymode=%d read_count=%d write_count=%d handle->fd->uuid=" LU "\n", fd->object_name, fd->mode, fol->read_count, fol->write_count, handle->fd->uuid);
@@ -871,51 +867,108 @@ void full_object_downgrade_lock(fobject_lock_t *flock, osfile_fd_t *fd)
 }
 
 //***********************************************************************
-// osf_multi_lock - Used to resolve/lock a collection of attrs that are
+// osf_multi_unlock - Releases a collection of locks
+//***********************************************************************
+
+void osf_multi_unlock(apr_thread_mutex_t **lock, int n)
+{
+    int i;
+
+    for (i=0; i<n; i++) {
+        apr_thread_mutex_unlock(lock[i]);
+    }
+
+    return;
+}
+
+//***********************************************************************
+
+int compare_int(const void *av, const void *bv)
+{
+    const int a = *(const int *)av;
+    const int b = *(const int *)bv;
+
+    if (a>b) {
+        return(1);
+    } else if (a==b) {
+        return(0);
+    }
+
+    return(-1);
+}
+
+//***********************************************************************
+// osf_compact_ilocks - Compact the list of lock indexes down to an irreducible
+//     in ascending order.  The ilock table is MODIFIED so the that unique
+//     locks are stored at the beginning.
+// Return
+//     The number of unique locks are returned.
+//
+//***********************************************************************
+
+int osf_compact_ilocks(int n_locks, int *ilock)
+{
+    int i, n;
+
+    //** Sort them
+    qsort(ilock, n_locks, sizeof(int), compare_int);
+
+    //** Make them unique
+    n = 0;
+    for (i=1; i<n_locks; i++) {
+        if (ilock[n] != ilock[i]) {
+            n++;
+            ilock[n] = ilock[i];
+        }
+    }
+
+    n++;
+    return(n);
+}
+
+//***********************************************************************
+// osf_multi_attr_lock - Used to resolve/lock a collection of attrs that are
 //     links
 //***********************************************************************
 
-void osf_multi_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *fd, char **key, int n_keys, int first_link, apr_thread_mutex_t **lock_table, int *n_locks)
+void osf_multi_attr_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *fd, char **key, int n_keys, int first_link, apr_thread_mutex_t **lock_table, int *n_locks)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int i, j, n, atype, small_slot, small_index, max_index;
-    int v_size, va_prefix_len;
-    int lock_slot[n_keys+1];
+    int i, j, n, len, atype, small_slot, small_index, max_index;
+    int slot_rp, slot_obj;
+    int lock_slot[n_keys+2];
     char linkname[OS_PATH_MAX];
-    char attr_name[OS_PATH_MAX];
-    void *val = linkname;
+    char rpath[OS_PATH_MAX];
 
     //** Always get the primary
+try_again:
     n = 0;
-    lock_table[n] = osf_retrieve_lock(os, fd->object_name, &lock_slot[n]);
+    slot_rp = tbx_atomic_get(fd->ilock_rp);
+    lock_slot[n] = slot_rp;
+    lock_table[n] = osf->internal_lock[slot_rp];
     n++;
+    slot_obj = tbx_atomic_get(fd->ilock_obj);
+    if (slot_obj != slot_rp) {
+        lock_slot[n] = slot_obj;
+        lock_table[n] = osf->internal_lock[slot_obj];
+        n++;
+    }
 
-    log_printf(15, "lock_slot[0]=%d fname=%s\n", lock_slot[0], fd->object_name);
-
-    //** Set up the va attr_link key for use
-    va_prefix_len = (long)osf->attr_link_pva.priv;
-    strcpy(attr_name, osf->attr_link_pva.attribute);
-    attr_name[va_prefix_len] = '.';
-    va_prefix_len++;
+    log_printf(15, "lock_slot[0]=%d n=%d fname=%s rp=%s\n", lock_slot[0], n, fd->object_name, fd->realpath);
 
     //** Now cycle through the attributes starting with the 1 that triggered the call
     linkname[sizeof(linkname)-1] = 0;
     for (i=first_link; i<n_keys; i++) {
-        v_size = sizeof(linkname);
-        linkname[0] = 0;
-        strcpy(&(attr_name[va_prefix_len]), key[i]);
-        osf->attr_link_pva.get(&osf->attr_link_pva, os, creds, fd, attr_name, &val, &v_size, &atype);
-        log_printf(15, "key[%d]=%s v_size=%d attr_name=%s linkname=%s\n", i, key[i], v_size, attr_name, linkname);
-
-        if (v_size > 0) {
-            j=v_size-1;  //** Peel off the key name.  We only need the parent object path
-            while (linkname[j] != '\n' && (j>0)) {
+        len = osf_resolve_attr_path(os, linkname, fd->object_name, key[i], fd->ftype, &atype, 20);
+        log_printf(15, "i=%d len=%d fname=%s key=%s linkname=%s\n", i, len, fd->object_name, key[i], linkname);
+        if ((atype & OS_OBJECT_SYMLINK_FLAG) && (len > 0)) {
+            j=len-1;  //** Peel off the key name.  We only need the parent object path
+            while (linkname[j] != '/' && (j>0)) {
                 j--;
             }
             linkname[j] = 0;
-
-            lock_table[n] = osf_retrieve_lock(os, linkname, &lock_slot[n]);
-            log_printf(15, "checking n=%d key=%s lname=%s v_size=%dj=%d\n", n, key[i], linkname, v_size, j);
+            lock_table[n] = osf_retrieve_lock(os, _osf_realpath(os, linkname + osf->file_path_len, rpath, 1), &lock_slot[n]);
+            log_printf(15, "checking n=%d key=%s lname=%s lrp=%s lock_slot=%d j=%d\n", n, key[i], linkname, rpath, lock_slot[n], j);
 
             //** Make sure I don't already have it in the list
             for (j=0; j<n; j++) {
@@ -932,16 +985,15 @@ void osf_multi_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t
 
     *n_locks = n;  //** Return the lock count
 
-    //** Now acquire them in order from smallest->largest
     //** This is done naively cause normally there will be just a few locks
     max_index = osf->internal_lock_size;
     for (i=0; i<n; i++) {
         small_slot = -1;
         small_index = max_index;
         for (j=0; j<n; j++) {
-            if (small_index > lock_slot[i]) {
-                small_index = lock_slot[i];
-                small_slot = i;
+            if (small_index > lock_slot[j]) {
+                small_index = lock_slot[j];
+                small_slot = j;
             }
         }
 
@@ -949,24 +1001,460 @@ void osf_multi_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t
         lock_slot[small_slot] = max_index;
     }
 
-    return;
-}
-
-
-//***********************************************************************
-// osf_multi_unlock - Releases a collection of locks
-//***********************************************************************
-
-void osf_multi_unlock(apr_thread_mutex_t **lock, int n)
-{
-    int i;
-
-    for (i=0; i<n; i++) {
-        apr_thread_mutex_unlock(lock[i]);
+    //** Make sure the fd slot didn't change
+    i = tbx_atomic_get(fd->ilock_rp);
+    if ((tbx_atomic_get(fd->ilock_rp) != slot_rp) || (tbx_atomic_get(fd->ilock_obj) != slot_obj)) { //** If so unlock everything and try again
+        osf_multi_unlock(lock_table, n);
+        goto try_again;
     }
 
     return;
 }
+
+//***********************************************************************
+// osf_internal_fd_lock - Locking for multiple FDs
+//***********************************************************************
+
+void osf_internal_2fd_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *fd1, osfile_fd_t *fd2, apr_thread_mutex_t **lock_table, int *n_locks)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i;
+    int lock_slot[4];
+
+    //** Always get the primary
+try_again:
+    lock_slot[0] = tbx_atomic_get(fd1->ilock_obj);
+    lock_slot[1] = tbx_atomic_get(fd1->ilock_rp);
+    lock_slot[3] = tbx_atomic_get(fd2->ilock_obj);
+    lock_slot[4] = tbx_atomic_get(fd2->ilock_rp);
+
+    log_printf(15, "lock_slot[0]=%d fname1=%s\n", lock_slot[0], fd1->object_name);
+
+    //** Sort and compact them
+    *n_locks = osf_compact_ilocks(4, lock_slot);
+
+    //** Now acquire them in order from smallest->largest
+    for (i=0; i<(*n_locks); i++) {
+        lock_table[i] = osf->internal_lock[lock_slot[i]];
+        apr_thread_mutex_lock(lock_table[i]);
+    }
+
+    //** Make sure the fd slot didn't change
+    if ((tbx_atomic_get(fd1->ilock_obj) != lock_slot[0]) || (tbx_atomic_get(fd1->ilock_rp) != lock_slot[1]) ||
+        (tbx_atomic_get(fd2->ilock_obj) != lock_slot[2]) || (tbx_atomic_get(fd2->ilock_rp) != lock_slot[3])) { //** If so unlock everything and try again
+        osf_multi_unlock(lock_table, *n_locks);
+        goto try_again;
+    }
+
+    return;
+}
+
+//***********************************************************************
+
+int mycompare(int n_prefix, const char *prefix, const char *fname)
+{
+    int cmp;
+
+    if (!fname) return(1);  //** No file
+
+    cmp = strncmp(prefix, fname, n_prefix);
+    if (cmp == 0) {
+        if ((fname[n_prefix] == 0) || (fname[n_prefix] == '/')) {
+            cmp = 0;
+        } else {
+            cmp = 1;
+        }
+     }
+
+     return(cmp);
+}
+
+//***********************************************************************
+// _get_matching_fobj_locks - Gets the matching locks to the prefix for open files
+//     Returns the number of locks added to the list.
+//
+// NOTE: The flock structure should be locked by the calling program and a if the table is to small
+//***********************************************************************
+
+int _get_matching_fobj_locks(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *prefix, int *lock_index, int max_locks)
+{
+    int n, n_prefix;
+    fobj_lock_t *fol;
+    tbx_list_iter_t it;
+    char *fname;
+
+    n_prefix = strlen(prefix);
+    n = 0;
+    it = tbx_list_iter_search(flock->fobj_table, (char *)prefix, 0);
+    tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
+    while (mycompare(n_prefix, prefix, fname) == 0) {
+        if (n < max_locks) osf_retrieve_lock(os, fname, &(lock_index[n]));
+        n++;
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
+    }
+
+    return(n);
+}
+
+//***********************************************************************
+// _get_matching_fobj_locks_and_alloc - Same as _get_matching_fobj_locks but iterates allocating space as needed
+//***********************************************************************
+
+int _get_matching_fobj_locks_and_alloc(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *prefix, int n_used, int *max_locks, int **lock_index, int do_lock)
+{
+    int k, nleft;
+    int *ilock = *lock_index;
+
+    //** Now add the os_lock
+again:
+    nleft = (*max_locks) - n_used;
+    if (do_lock) apr_thread_mutex_lock(flock->fobj_lock);
+    k = _get_matching_fobj_locks(os, flock, prefix, ilock + n_used, nleft);
+    if (do_lock) apr_thread_mutex_unlock(flock->fobj_lock);
+
+    if (nleft < k) {
+        *max_locks = 2 * (*max_locks);
+        if (k> (*max_locks)) *max_locks = 2*(k + n_used);
+        tbx_type_realloc(ilock, int, *max_locks);
+        goto again;
+    }
+
+    //** Update the count
+    n_used = n_used + k;
+
+    return(n_used);
+}
+
+
+//***********************************************************************
+// _get_matching_open_fd_locks - Gets the matching open FD locks to the prefix for open files
+//     Returns the number of locks added to the list.
+//
+// NOTE: The open_fd_lock structure should be locked by the calling program and a if the table is to small
+//***********************************************************************
+
+int _get_matching_open_fd_locks(lio_object_service_fn_t *os, const char *prefix, int *lock_index, int max_locks)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int n, n_prefix;
+    osfile_fd_t *fd;
+    tbx_list_iter_t it;
+    char *fname;
+
+    n_prefix = strlen(prefix);
+    n = 0;
+    it = tbx_list_iter_search(osf->open_fd, (char *)prefix, 0);
+    tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+    while (mycompare(n_prefix, prefix, fname) == 0) {
+        if (n < max_locks) osf_retrieve_lock(os, fname, &(lock_index[n]));
+        n++;
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+    }
+
+    return(n);
+}
+
+//***********************************************************************
+// _get_matching_open_fd_locks_and_alloc - Same as _get_matching_open_fd_locks but iterates allocating space as needed
+//***********************************************************************
+
+int _get_matching_open_fd_locks_and_alloc(lio_object_service_fn_t *os, const char *prefix, int n_used, int *max_locks, int **lock_index, int do_lock)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int k, nleft;
+    int *ilock = *lock_index;
+
+    //** Now add the open FD locks
+again:
+    nleft = (*max_locks) - n_used;
+    if (do_lock) apr_thread_mutex_lock(osf->open_fd_lock);
+    k = _get_matching_open_fd_locks(os, prefix, ilock + n_used, nleft);
+    if (do_lock) apr_thread_mutex_unlock(osf->open_fd_lock);
+
+    if (nleft < k) {
+        *max_locks = 2 * (*max_locks);
+        if (k> (*max_locks)) *max_locks = 2*(k + n_used);
+        tbx_type_realloc(ilock, int, *max_locks);
+        goto again;
+    }
+
+    //** Update the count
+    n_used = n_used + k;
+
+    return(n_used);
+}
+
+//***********************************************************************
+// osf_match_fobj_lock_try - Locks all the matching prefix/file objects and and any open objects
+//  NOTE: The flock structs are locked when returned
+//***********************************************************************
+
+int osf_match_fobj_lock_try(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int *max_locks, int **lock_index, int do_lock)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int n, i;
+    int *ilock = *lock_index;
+
+    if (*max_locks <= 4) {
+        *max_locks = 1024;
+        tbx_type_malloc_clear(ilock, int, *max_locks);
+        *lock_index = ilock;
+    }
+
+    //** Add the src and dest to the locks initially
+    osf_retrieve_lock(os, rp_src, &(ilock[0]));
+    osf_retrieve_lock(os, rp_dest, &(ilock[1]));
+    osf_retrieve_lock(os, obj_src, &(ilock[2]));
+    osf_retrieve_lock(os, obj_dest, &(ilock[3]));
+    n = 4;
+
+    //** Now add the os_locks and os_user_locks
+    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock, rp_src, n, max_locks, lock_index, do_lock);
+    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock, rp_dest, n, max_locks, lock_index, do_lock);
+    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock_user, rp_src, n, max_locks, lock_index, do_lock);
+    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock_user, rp_dest, n, max_locks, lock_index, do_lock);
+
+    //** And the open FD locks
+    n = _get_matching_open_fd_locks_and_alloc(os, obj_src, n, max_locks, lock_index, do_lock);
+    n = _get_matching_open_fd_locks_and_alloc(os, obj_dest, n, max_locks, lock_index, do_lock);
+
+    //** Compact them
+    n = osf_compact_ilocks(n, ilock);
+
+    if (do_lock == 0) return(n);
+
+    for (i=0; i<n; i++) {
+        apr_thread_mutex_lock(osf->internal_lock[ilock[i]]);
+    }
+
+    //** And the lock table's
+    apr_thread_mutex_lock(osf->os_lock->fobj_lock);
+    apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
+
+    return(n);
+}
+
+
+//***********************************************************************
+// osf_match_fobj_unlock - Unlocks all the matching prefix/file objects and and any open objects
+//  NOTE: The flock structs are unlocked when returned
+//***********************************************************************
+
+void osf_match_fobj_unlock(lio_object_service_fn_t *os, int n_locks, int *lock_index)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i;
+
+    apr_thread_mutex_unlock(osf->os_lock->fobj_lock);
+    apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+    apr_thread_mutex_unlock(osf->open_fd_lock);
+
+    for (i=0; i<n_locks; i++) {
+        apr_thread_mutex_unlock(osf->internal_lock[lock_index[i]]);
+    }
+}
+
+
+//***********************************************************************
+// _compare_fobj_locks - Compares 2 lists of objects and makes sure that
+//    all indices in lock2 are in lock1.  On success 0 is returned 1 otherwise
+//***********************************************************************
+
+int _compare_fobj_locks(int n1, int *ilock1, int n2, int *ilock2)
+{
+    int i1, i2;
+
+    if (n2>n1) return(1);  //** The 2nd is to big
+
+    i1 = 0;
+    for (i2=0; i2<n2; i2++) {
+        while ((i1>=n1) || (ilock2[i2] > ilock1[i1])) {
+            i1++;
+        }
+        if (ilock2[i2] != ilock1[i1]) return(1);  //** Got a miss
+        i1++;  //** Got a match so skip to the next index for
+    }
+
+    return(0);
+}
+
+//***********************************************************************
+// osf_match_fobj_lock - Locks all the matching prefix/file objects and and any open objects
+//  NOTE: The flock structs are locked when returned
+//***********************************************************************
+
+int osf_match_fobj_lock(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int max_locks, int **lock_index, int do_lock)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int n1, n2, max1, max2, i;
+    int *ilock1;
+    int *ilock2;
+
+    max1 = max_locks;
+    ilock1 = *lock_index;
+    max2 = 0;
+    ilock2 = NULL;
+
+    n1 = osf_match_fobj_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max1, &ilock1, 1);  //** Get the inital set
+again:
+    n2 = osf_match_fobj_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max2, &ilock2, 0);  //** again but under the locks
+
+    //**Compare lock tables to see if we're Ok.
+    if (_compare_fobj_locks(n1, ilock1, n2, ilock2) != 0) {  //** They aren't a subset so got to do it again
+        osf_match_fobj_unlock(os, n1, ilock1);  //** Unlock the base set
+        if (ilock1 != *lock_index) free(ilock1);  //** Free the space
+        ilock1 = ilock2; ilock2 = NULL;   //** And swap the sets
+        n1 = n2; n2 = 0;
+        max1 = max2; max2 = 0;
+
+        //** Lock the new set
+        for (i=0; i<n1; i++) {
+            apr_thread_mutex_lock(osf->internal_lock[ilock1[i]]);
+        }
+        apr_thread_mutex_lock(osf->os_lock->fobj_lock);
+        apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
+        apr_thread_mutex_lock(osf->open_fd_lock);
+
+        goto again;  //** And try again
+    } else {
+        if (ilock2) free(ilock2);
+    }
+
+    *lock_index = ilock1;
+    return(n1);
+}
+
+
+//***********************************************************************
+// _update_fobj_path_active_stack - Does the FD path update for active locks
+//***********************************************************************
+
+void _update_fobj_path_active_stack(int n_old, int n_new, const char *rp_new, tbx_stack_t *stack)
+{
+    osfile_fd_t *fd;
+    char fname[OS_PATH_MAX];
+
+    //** The active stack has FD's on it
+    tbx_stack_move_to_top(stack);
+    while ((fd = (osfile_fd_t *)tbx_stack_get_current_data(stack)) != NULL) {
+        snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
+        strcpy(fd->realpath, fname);
+        tbx_stack_move_down(stack);
+    }
+
+    return;
+}
+
+//***********************************************************************
+// _update_fobj_path_pending_stack - Does the FD path update for pending locks
+//***********************************************************************
+
+void _update_fobj_path_pending_stack(int n_old, int n_new, const char *rp_new, tbx_stack_t *stack)
+{
+    fobj_lock_task_t *ftask;
+    osfile_fd_t *fd;
+    char fname[OS_PATH_MAX];
+
+    //** The pending stack has task handles
+    tbx_stack_move_to_top(stack);
+    while ((ftask = (fobj_lock_task_t *)tbx_stack_get_current_data(stack)) != NULL) {
+        fd = ftask->fd;
+        snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
+        strcpy(fd->realpath, fname);
+        tbx_stack_move_down(stack);
+    }
+
+    return;
+}
+
+//***********************************************************************
+// _update_fobj_path_entry - Updates the fol individual fd paths
+//     NOTE: Assummes the internal locks are all held.
+//***********************************************************************
+
+void _update_fobj_path_entry(fobject_lock_t *flock, int n_old, int n_new, const char *rp_new, char *fname, fobj_lock_t *fol)
+{
+    //** Update the individual FDs
+    _update_fobj_path_pending_stack(n_old, n_new, rp_new, fol->pending_stack);
+    _update_fobj_path_active_stack(n_old, n_new, rp_new, fol->active_stack);
+
+    return;
+}
+
+//***********************************************************************
+// _osf_update_fobj_path - Updates all the open FD's fnames with the updated prefix from the rename
+//   NOTE: The flock and all internal FDs to be modified should be locked!
+//***********************************************************************
+
+void _osf_update_fobj_path(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *rp_old, const char *rp_new)
+{
+    int n_old, n_new, cmp;
+    fobj_lock_t *fol;
+    tbx_list_iter_t it;
+    char *fname;
+    char fnew[OS_PATH_MAX];
+
+    n_old = strlen(rp_old);
+    n_new = strlen(rp_new);
+    do {
+        it = tbx_list_iter_search(flock->fobj_table, (char *)rp_old, 0);
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
+        cmp = mycompare(n_old, rp_old, fname);
+        if (cmp == 0) {  //** Got a match
+            _update_fobj_path_entry(flock, n_old, n_new, rp_new, fname, fol); //** Upate the entry
+            snprintf(fnew, OS_PATH_MAX, "%s%s", rp_new, fname + n_old);  //** Make the new path
+
+            //** Remove/add the new entry list entry
+            tbx_list_iter_remove(&it);
+            tbx_list_insert(flock->fobj_table, fnew, fol);
+
+            //** Need to restart the iter since we did an update
+            it = tbx_list_iter_search(flock->fobj_table, (char *)rp_old, 0);
+            tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
+        }
+    } while (cmp == 0);
+
+    return;
+}
+
+
+//***********************************************************************
+// _osf_update_open_fd_path - Updates all the open FD's fnames with the updated prefix from the rename
+//   NOTE: The open_fd_lock and all internal FDs to be modified should be locked!
+//***********************************************************************
+
+void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_old, const char *prefix_new)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int n_old, cmp;
+    osfile_fd_t *fd;
+    tbx_list_iter_t it;
+    char *fname;
+    char fnew[OS_PATH_MAX];
+
+    n_old = strlen(prefix_old);
+    do {
+        it = tbx_list_iter_search(osf->open_fd, (char *)prefix_old, 0);
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+        cmp = mycompare(n_old, prefix_old, fname);
+        if (cmp == 0) {  //** Got a match
+            snprintf(fnew, OS_PATH_MAX, "%s%s", prefix_new, fname + n_old);  //** Make the new path
+            free(fd->object_name);
+            fd->object_name = strdup(fnew);
+
+            //** Remove/add the new entry list entry
+            tbx_list_iter_remove(&it);
+            tbx_list_insert(osf->open_fd, fnew, fd);
+
+            //** Need to restart the iter since we did an update
+            it = tbx_list_iter_search(osf->open_fd, (char *)prefix_old, 0);
+            tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+        }
+    } while (cmp == 0);
+
+    return;
+}
+
 
 //***********************************************************************
 // va_create_get_attr - Returns the object creation time in secs since epoch
@@ -1134,6 +1622,7 @@ void _lock_get_attr(fobj_lock_t *fol, char *buf, int *used, int bufsize, int is_
         tbx_append_printf(buf, used, bufsize, "active_count=%d\n", fol->write_count);
     }
 
+    //** The active stack just has FDs
     tbx_stack_move_to_top(fol->active_stack);
     while ((pfd = (osfile_fd_t *)tbx_stack_get_current_data(fol->active_stack)) != NULL) {
         mode = (is_lock_user) ? pfd->user_mode : pfd->mode;
@@ -1147,16 +1636,21 @@ void _lock_get_attr(fobj_lock_t *fol, char *buf, int *used, int bufsize, int is_
         tbx_stack_move_down(fol->active_stack);
     }
 
+    //** The pending task has a lock handle
     tbx_append_printf(buf, used, bufsize, "\n");
-    tbx_append_printf(buf, used, bufsize, "pending_count=%d\n", tbx_stack_count(fol->stack));
-    tbx_stack_move_to_top(fol->stack);
-    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
-        if (handle->rw_mode & OS_MODE_READ_BLOCKING) {
-            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":READ\n", handle->fd->id, handle->fd->uuid);
+    tbx_append_printf(buf, used, bufsize, "pending_count=%d\n", tbx_stack_count(fol->pending_stack));
+    tbx_stack_move_to_top(fol->pending_stack);
+    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack)) != NULL) {
+        mode = handle->rw_mode;
+        pfd = handle->fd;
+        if (mode & OS_MODE_READ_BLOCKING) {
+            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":READ\n", pfd->id, pfd->uuid);
+        } else if (mode & OS_MODE_WRITE_BLOCKING) {
+            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":WRITE\n", pfd->id, pfd->uuid);
         } else {
-            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":WRITE\n", handle->fd->id, handle->fd->uuid);
+            tbx_append_printf(buf, used, bufsize, "pending_id=%s:" LU ":UNKNOWN(%d)\n", pfd->id, pfd->uuid, mode);
         }
-        tbx_stack_move_down(fol->stack);
+        tbx_stack_move_down(fol->pending_stack);
     }
 
 }
@@ -1177,12 +1671,11 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
-    log_printf(15, "fname=%s\n", fd->object_name);
+    log_printf(15, "fname=%s rp=%s\n", fd->object_name, fd->realpath);
 
     apr_thread_mutex_lock(osf->os_lock->fobj_lock);
 
-    fol = tbx_list_search(osf->os_lock->fobj_table, fd->object_name);
-    log_printf(15, "fol=%p\n", fol);
+    fol = (fd->fol[FOL_OS]) ? fd->fol[FOL_OS] : tbx_list_search(osf->os_lock->fobj_table, fd->realpath);
 
     if (fol == NULL) {
         *val = NULL;
@@ -1227,12 +1720,11 @@ int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
-    log_printf(15, "fname=%s\n", fd->object_name);
+    log_printf(15, "fname=%s rp=%s\n", fd->object_name, fd->realpath);
 
     apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
 
-    fol = tbx_list_search(osf->os_lock_user->fobj_table, fd->object_name);
-    log_printf(15, "fol=%p\n", fol);
+    fol = (fd->fol[FOL_USER]) ? fd->fol[FOL_USER] : tbx_list_search(osf->os_lock_user->fobj_table, fd->realpath);
 
     if (fol == NULL) {
         *val = NULL;
@@ -1543,7 +2035,7 @@ int va_null_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 //  osf_retrieve_lock - Returns the internal lock for the object
 //***********************************************************************
 
-apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, char *path, int *table_slot)
+apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     tbx_chksum_t cs;
@@ -1553,7 +2045,7 @@ apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, char *path, i
     tbx_tbuf_t tbuf;
 
     nbytes = strlen(path);
-    tbx_tbuf_single(&tbuf, nbytes, path);
+    tbx_tbuf_single(&tbuf, nbytes, (char *)path);
     tbx_chksum_set(&cs, OSF_LOCK_CHKSUM);
     tbx_chksum_add(&cs, nbytes, &tbuf, 0);
     tbx_chksum_get(&cs, CHKSUM_DIGEST_BIN, digest);
@@ -1567,6 +2059,60 @@ apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, char *path, i
     return(osf->internal_lock[slot]);
 }
 
+//***********************************************************************
+// osf_internal_fd_lock - Locks the internal quick lock associated with the FD
+//***********************************************************************
+
+void osf_internal_fd_lock(lio_object_service_fn_t *os, osfile_fd_t *fd)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int s1, s2, s3;
+
+    //** Do the initial lock
+try_again:
+    s1 = tbx_atomic_get(fd->ilock_obj);
+    s2 = tbx_atomic_get(fd->ilock_rp);
+    if (s1 == s2) {
+        apr_thread_mutex_lock(osf->internal_lock[s1]);
+    } else if (s1 < s2) {
+        apr_thread_mutex_lock(osf->internal_lock[s1]);
+        apr_thread_mutex_lock(osf->internal_lock[s2]);
+    } else {
+        apr_thread_mutex_lock(osf->internal_lock[s2]);
+        apr_thread_mutex_lock(osf->internal_lock[s1]);
+    }
+
+    //** Verify the slot didn't change
+    s3= tbx_atomic_get(fd->ilock_obj);
+    if (s1 == s3) {
+        s3= tbx_atomic_get(fd->ilock_rp);
+        if (s2 == s3) {
+            return;    //** No change so kick out
+        }
+    }
+
+    //** IF we made it here we have to try again
+    apr_thread_mutex_unlock(osf->internal_lock[s1]);
+    apr_thread_mutex_unlock(osf->internal_lock[s2]);
+    goto try_again;
+
+    return;
+}
+
+//***********************************************************************
+// osf_internal_fd_unlock - Unlocks the internal quick lock associated with the FD
+//***********************************************************************
+
+void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int s1, s2;
+
+    s1 = tbx_atomic_get(fd->ilock_obj);
+    s2 = tbx_atomic_get(fd->ilock_rp);
+    apr_thread_mutex_unlock(osf->internal_lock[s1]);
+    if (s1 != s2) apr_thread_mutex_unlock(osf->internal_lock[s2]);
+}
 
 //***********************************************************************
 // safe_remove - Does a simple check that the object to be removed
@@ -2044,7 +2590,7 @@ gop_op_status_t osfile_object_exec_modify_fn(void *arg, int id)
     if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1), OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
-    lock = osf_retrieve_lock(op->os, op->src_path, NULL);
+    lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
 
     if (osf_object_exec_modify(op->os, fname, op->type) == 0) {
@@ -2164,14 +2710,14 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
-    if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1)) == 0)  return(gop_failure_status);
+    ftype = lio_os_local_filetype(fname);
+    if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, ((ftype&OS_OBJECT_SYMLINK)?0:1) )) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
-    lock = osf_retrieve_lock(op->os, op->src_path, NULL);
+    lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
 
     inode[0] = '0'; inode[1] = '\0'; inode_len = sizeof(inode);
-    ftype = lio_os_local_filetype(fname);
     if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {  //** Regular file so rm the attributes dir and the object
         log_printf(15, "Simple file removal: fname=%s\n", op->src_path);
         osf_get_inode(op->os, op->creds, op->src_path, ftype, inode, &inode_len);
@@ -2574,7 +3120,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     log_printf(15, "base=%s src=%s fname=%s mode=%x\n", osf->file_path, op->src_path, fname, op->type);
 
-    lock = osf_retrieve_lock(op->os, op->src_path, NULL);
+    lock = osf_retrieve_lock(op->os, rpath, NULL);
     osf_obj_lock(lock);
 
     if (op->type & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
@@ -2870,12 +3416,13 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     int hslot, dslot;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
-    char rpath[OS_PATH_MAX];
+    char rp_src[OS_PATH_MAX];
+    char rp_dest[OS_PATH_MAX];
     char *sapath, *dapath, *link_path;
     int err, ftype;
 
-    if ((osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rpath, 1), OS_MODE_READ_IMMEDIATE) < 2) ||
-            (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0)) return(gop_failure_status);
+    if ((osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp_src, 1), OS_MODE_READ_IMMEDIATE) < 2) ||
+            (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rp_dest, 0)) == 0)) return(gop_failure_status);
 
     //** Verify the source exists
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
@@ -2895,6 +3442,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
 
     }
 
+
     //** Resolve the hardlink by looking at the src objects attr path
     link_path = resolve_hardlink(op->os, op->src_path, 1);
     if (link_path == NULL) {
@@ -2907,8 +3455,8 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     snprintf(dfname, OS_PATH_MAX, "%s%s", osf->file_path, op->dest_path);
 
     //** Acquire the locks
-    hlock = osf_retrieve_lock(op->os, link_path, &hslot);
-    dlock = osf_retrieve_lock(op->os, dfname, &dslot);
+    hlock = osf_retrieve_lock(op->os, link_path, &hslot);   //FIXME what should this rp be????
+    dlock = osf_retrieve_lock(op->os, rp_dest, &dslot);
     if (hslot < dslot) {
         apr_thread_mutex_lock(hlock);
         apr_thread_mutex_lock(dlock);
@@ -2984,9 +3532,11 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_mk_mv_rm_t rm;
-    int slot_src, slot_dest;
-    apr_thread_mutex_t *lock_src = NULL, *lock_dest = NULL;
     int ftype, dtype;
+    int n_locks;
+    int max_locks = 1024;
+    int ilock_table[max_locks];
+    int *ilock;
     unsigned int ui;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
@@ -3004,18 +3554,8 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
     if (dolock == 1) {
-        lock_src = osf_retrieve_lock(os, src_path, &slot_src);
-        lock_dest = osf_retrieve_lock(os, dest_path, &slot_dest);
-        if (slot_src < slot_dest) {
-           osf_obj_lock(lock_src);
-            osf_obj_lock(lock_dest);
-        } else if (slot_src > slot_dest) {
-            osf_obj_lock(lock_dest);
-            osf_obj_lock(lock_src);
-        } else {  //** Same slot so only need to lock one
-            lock_dest = NULL;
-            osf_obj_lock(lock_src);
-        }
+        ilock = ilock_table;
+        n_locks = osf_match_fobj_lock(os, srpath, drpath, src_path, dest_path, max_locks, &ilock, 1);
     }
 
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
@@ -3051,7 +3591,6 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
         free(base);
 
         log_printf(15, "ATTR sfname=%s dfname=%s\n", sfname, dfname);
-
         err = rename(sfname, dfname);  //** Move the attribute directory
         if (err != 0) { //** Got to undo the main file/dir entry if the attr rename fails
             snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
@@ -3073,8 +3612,13 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 
 fail:
     if (dolock == 1) {
-        osf_obj_unlock(lock_src);
-        if (lock_dest != NULL) osf_obj_unlock(lock_dest);
+        if (err == 0) {
+            _osf_update_fobj_path(os, osf->os_lock, srpath, drpath);
+            _osf_update_fobj_path(os, osf->os_lock_user, srpath, drpath);
+            _osf_update_open_fd_path(os, src_path, dest_path);
+        }
+        osf_match_fobj_unlock(os, n_locks, ilock);
+        if (ilock != ilock_table) free(ilock);
     }
 
     if (err == 0) {
@@ -3087,6 +3631,7 @@ fail:
 
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
+
 
 //***********************************************************************
 // osfile_move_object_fn - Actually Moves an object
@@ -3128,29 +3673,35 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
     osfile_copy_attr_t *op = (osfile_copy_attr_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     gop_op_status_t status;
-    apr_thread_mutex_t *lock_src, *lock_dest;
     lio_os_authz_local_t  ug;
     osaz_attr_filter_t filter;
     void *val;
     int v_size;
     int slot_src, slot_dest;
-    int i, err, atype;
+    int i, j, err, atype;
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
-    lock_src = osf_retrieve_lock(op->os, op->fd_src->object_name, &slot_src);
-    lock_dest = osf_retrieve_lock(op->os, op->fd_dest->object_name, &slot_dest);
+try_again:
+    slot_src = tbx_atomic_get(op->fd_src->ilock_rp);
+    slot_dest = tbx_atomic_get(op->fd_dest->ilock_rp);
     if (slot_src < slot_dest) {
-        osf_obj_lock(lock_src);
-        osf_obj_lock(lock_dest);
+        osf_obj_lock(osf->internal_lock[slot_src]);
+        osf_obj_lock(osf->internal_lock[slot_dest]);
     } else if (slot_src > slot_dest) {
-        osf_obj_lock(lock_dest);
-        osf_obj_lock(lock_src);
+        osf_obj_lock(osf->internal_lock[slot_dest]);
+        osf_obj_lock(osf->internal_lock[slot_src]);
     } else {  //** Same slot so only need to lock one
-        lock_dest = NULL;
-        osf_obj_lock(lock_src);
+        osf_obj_lock(osf->internal_lock[slot_src]);
     }
 
-
+    //** Make sure nothing changed while we were doin the handshake
+    i = tbx_atomic_get(op->fd_src->ilock_rp);
+    j = tbx_atomic_get(op->fd_dest->ilock_rp);
+    if ((i != slot_src) || (j != slot_dest)) {
+        osf_obj_lock(osf->internal_lock[slot_dest]);
+        osf_obj_lock(osf->internal_lock[slot_src]);
+        goto try_again;
+    }
     osaz_ug_hint_init(osf->osaz, op->creds, &ug);
     ug.creds = op->creds;
     osaz_ug_hint_set(osf->osaz, op->creds, &ug);
@@ -3182,8 +3733,8 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
         }
     }
 
-    osf_obj_unlock(lock_src);
-    if (lock_dest != NULL) osf_obj_unlock(lock_dest);
+    osf_obj_lock(osf->internal_lock[slot_src]);
+    if (slot_src != slot_dest) osf_obj_lock(osf->internal_lock[slot_dest]);
 
     osaz_ug_hint_free(osf->osaz, op->creds, &ug);
 
@@ -3247,22 +3798,18 @@ gop_op_status_t osfile_symlink_multiple_attrs_fn(void *arg, int id)
     osfile_copy_attr_t *op = (osfile_copy_attr_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     gop_op_status_t status;
-    apr_thread_mutex_t *lock_dest;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
-    char rpath[OS_PATH_MAX];
-    int slot_dest;
     int i, err;
 
     //** Lock the source
-    lock_dest = osf_retrieve_lock(op->os, op->fd_dest->object_name, &slot_dest);
-    osf_obj_lock(lock_dest);
+    osf_internal_fd_lock(op->os, op->fd_dest);
 
-    log_printf(15, " fsrc[0]=%s fdest=%s (lock=%d)   n=%d key_src[0]=%s key_dest[0]=%s\n", op->src_path[0], op->fd_dest->object_name, slot_dest, op->n, op->key_src[0], op->key_dest[0]);
+    log_printf(15, " fsrc[0]=%s fdest=%s n=%d key_src[0]=%s key_dest[0]=%s\n", op->src_path[0], op->fd_dest->object_name, op->n, op->key_src[0], op->key_dest[0]);
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        if (osaz_attr_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->fd_dest->object_name, rpath, 1), op->key_dest[i]) == 1) {
+        if (osaz_attr_create(osf->osaz, op->creds, NULL, op->fd_dest->realpath, op->key_dest[i]) == 1) {
 
             osf_make_attr_symlink(op->os, sfname, op->src_path[i], op->key_src[i]);
             snprintf(dfname, OS_PATH_MAX, "%s/%s", op->fd_dest->attr_dir, op->key_dest[i]);
@@ -3282,7 +3829,7 @@ gop_op_status_t osfile_symlink_multiple_attrs_fn(void *arg, int id)
         }
     }
 
-    osf_obj_unlock(lock_dest);
+    osf_internal_fd_unlock(op->os, op->fd_dest);
 
     log_printf(15, "fsrc[0]=%s fdest=%s err=%d\n", op->src_path[0], op->fd_dest->object_name, status.error_code);
 
@@ -3347,20 +3894,16 @@ gop_op_status_t osfile_move_multiple_attrs_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     lio_os_virtual_attr_t *va1, *va2;
     gop_op_status_t status;
-    apr_thread_mutex_t *lock;
     int i, err;
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
-    char rpath[OS_PATH_MAX];
 
-    lock = osf_retrieve_lock(op->os, op->fd->object_name, NULL);
-    osf_obj_lock(lock);
+    osf_internal_fd_lock(op->os, op->fd);
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        _osf_realpath(op->os, op->fd->object_name, rpath, 1);  //** It's used twice
-        if ((osaz_attr_create(osf->osaz, op->creds, NULL, rpath, op->key_new[i]) == 1) &&
-                (osaz_attr_remove(osf->osaz, op->creds, NULL, rpath, op->key_old[i]) == 1)) {
+        if ((osaz_attr_create(osf->osaz, op->creds, NULL, op->fd->realpath, op->key_new[i]) == 1) &&
+                (osaz_attr_remove(osf->osaz, op->creds, NULL, op->fd->realpath, op->key_old[i]) == 1)) {
 
             //** Do a Virtual Attr check
             va1 = apr_hash_get(osf->vattr_hash, op->key_old[i], APR_HASH_KEY_STRING);
@@ -3383,7 +3926,7 @@ gop_op_status_t osfile_move_multiple_attrs_fn(void *arg, int id)
         }
     }
 
-    osf_obj_unlock(lock);
+    osf_internal_fd_unlock(op->os, op->fd);
 
     return(status);
 }
@@ -3488,8 +4031,6 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         return(1);
     }
 
-    *atype = lio_os_local_filetype(fname);
-
     fd = tbx_io_fopen(fname, "r");
     if (fd == NULL) {
         if (*v_size < 0) *val = NULL;
@@ -3546,7 +4087,7 @@ gop_op_status_t osf_get_ma_links(void *arg, int id, int first_link)
 
     status = gop_success_status;
 
-    osf_multi_lock(op->os, op->creds, op->fd, op->key, op->n, first_link, lock_table, &n_locks);
+    osf_multi_attr_lock(op->os, op->creds, op->fd, op->key, op->n, first_link, lock_table, &n_locks);
 
     err = 0;
     for (i=0; i<op->n; i++) {
@@ -3575,12 +4116,10 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id)
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     int err, i, j, atype, v_start[op->n], oops;
     gop_op_status_t status;
-    apr_thread_mutex_t *lock;
 
     status = gop_success_status;
 
-    lock = osf_retrieve_lock(op->os, op->fd->object_name, NULL);
-    osf_obj_lock(lock);
+    osf_internal_fd_lock(op->os, op->fd);
 
     err = 0;
     oops = 0;
@@ -3598,8 +4137,7 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id)
         }
     }
 
-    //** Update the access time attribute
-    osf_obj_unlock(lock);
+    osf_internal_fd_unlock(op->os, op->fd);
 
     if (oops == 1) { //** Multi object locking required
         for (j=0; j<=i; j++) {  //** Clean up any data allocated
@@ -3706,12 +4244,8 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     int n;
     char *ca;
     char fname[OS_PATH_MAX];
-    char rpath[OS_PATH_MAX];
-    char *rp;
 
-    rp = _osf_realpath(os, ofd->object_name, rpath, 1);
-
-    if (osaz_attr_access(osf->osaz, creds, NULL, rp, attr, OS_MODE_WRITE_BLOCKING, &filter) == 0) {
+    if (osaz_attr_access(osf->osaz, creds, NULL, ofd->realpath, attr, OS_MODE_WRITE_BLOCKING, &filter) == 0) {
         *atype = 0;
         return(1);
     }
@@ -3734,7 +4268,7 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     }
 
     if (v_size == -2) { //** Want to remove the attribute from the object ignoring if it's a symlink
-        if (osaz_attr_remove(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
+        if (osaz_attr_remove(osf->osaz, creds, NULL, ofd->realpath, attr) == 0) return(1);
         snprintf(fname, OS_PATH_MAX, "%s/%s", ofd->attr_dir, attr);
         safe_remove(os, fname);
         return(0);
@@ -3746,19 +4280,18 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         return(1);
     }
 
-    if ( v_size == -1) {  //** Want to delete the attribute target following the symlinks 
-        if (osaz_attr_remove(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
+    if ( v_size == -1) {  //** Want to delete the attribute target following the symlinks
+        if (osaz_attr_remove(osf->osaz, creds, NULL, ofd->realpath, attr) == 0) return(1);
         safe_remove(os, fname);
         return(0);
     }
 
     //** Store the value
     if (lio_os_local_filetype(fname) != OS_OBJECT_FILE_FLAG) {
-        if (osaz_attr_create(osf->osaz, creds, NULL, rp, attr) == 0) return(1);
+        if (osaz_attr_create(osf->osaz, creds, NULL, ofd->realpath, attr) == 0) return(1);
     }
 
     fd = tbx_io_fopen(fname, (append_val == 0) ? "w" : "a");
-
     if (fd == NULL) log_printf(0, "ERROR opening attr file attr=%s val=%p v_size=%d fname=%s append=%d\n", attr, val, v_size, fname, append_val);
     if (fd == NULL) return(-1);
     if (v_size > 0) tbx_io_fwrite(val, v_size, 1, fd);
@@ -3781,7 +4314,7 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
 
     status = gop_success_status;
 
-    osf_multi_lock(op->os, op->creds, op->fd, op->key, op->n, 0, lock_table, &n_locks);
+    osf_multi_attr_lock(op->os, op->creds, op->fd, op->key, op->n, 0, lock_table, &n_locks);
 
     err = 0;
     for (i=0; i<op->n; i++) {
@@ -3857,12 +4390,11 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
     apr_ssize_t klen;
     lio_os_virtual_attr_t *va;
     struct dirent *entry;
-    char rpath[OS_PATH_MAX];
     char *rp;
     lio_os_regex_table_t *rex = it->regex;
 
     //** Check the VA's 1st
-    rp = (it->realpath) ? it->realpath : _osf_realpath(it->os, it->fd->object_name, rpath, 1);
+    rp = (it->realpath) ? it->realpath : it->fd->realpath;
     while (it->va_index != NULL) {
         apr_hash_this(it->va_index, (const void **)key, &klen, (void **)&va);
         it->va_index = apr_hash_next(it->va_index);
@@ -3967,7 +4499,6 @@ int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     int ftype;
 
     ftype = osf_next_object(it, fname, prefix_len);
-    log_printf(15, " MATCH=%s\n", *fname);
 
     if (*fname != NULL) {
         if (it->n_list < 0) {  //** ATtr regex mode
@@ -4240,7 +4771,6 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     char rpath[OS_PATH_MAX];
     char *rp;
     gop_op_status_t status;
-    apr_thread_mutex_t *lock;
 
     log_printf(15, "Attempting to open object=%s\n", op->path);
 
@@ -4256,10 +4786,10 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         return(gop_failure_status);
     }
 
-    lock = osf_retrieve_lock(op->os, op->path, NULL);
-    osf_obj_lock(lock);
-
     tbx_type_malloc(fd, osfile_fd_t, 1);
+
+    osf_retrieve_lock(op->os, rpath, &(fd->ilock_rp));
+    osf_retrieve_lock(op->os, op->path, &(fd->ilock_obj));
 
     fd->os = op->os;
     fd->ftype = ftype;
@@ -4271,10 +4801,8 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
-    osf_obj_unlock(lock);
-
-    err = full_object_lock(osf->os_lock, fd, fd->mode, op->max_wait);  //** Do a full lock if needed
-    log_printf(15, "full_object_lock=%d fname=%s uuid=" LU " max_wait=%d\n", err, fd->object_name, fd->uuid, op->max_wait);
+    err = full_object_lock(FOL_OS, osf->os_lock, fd, fd->mode, op->max_wait);  //** Do a full lock if needed
+    log_printf(15, "full_object_lock=%d fname=%s uuid=" LU " max_wait=%d fd=%p fd->fol=%p\n", err, fd->object_name, fd->uuid, op->max_wait, fd, fd->fol);
     if (err != 0) {  //** Either a timeout or abort occured
         *(op->fd) = NULL;
         free(fd->attr_dir);
@@ -4286,6 +4814,11 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         op->id = NULL;
         status = gop_success_status;
     }
+
+    //** Also add us to the open file list
+    apr_thread_mutex_lock(osf->open_fd_lock);
+    tbx_list_insert(osf->open_fd, fd->object_name, fd);
+    apr_thread_mutex_unlock(osf->open_fd_lock);
 
     return(status);
 }
@@ -4334,16 +4867,16 @@ gop_op_status_t osfile_abort_open_object_fn(void *arg, int id)
 
     //** Find the task in the pending list and remove it
     status = gop_failure_status;
-    tbx_stack_move_to_top(fol->stack);
-    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
+    tbx_stack_move_to_top(fol->pending_stack);
+    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack)) != NULL) {
         if (handle->fd->uuid == op->uuid) {
-            tbx_stack_delete_current(fol->stack, 1, 0);
+            tbx_stack_delete_current(fol->pending_stack, 1, 0);
             status = gop_success_status;
             handle->abort = 1;
             apr_thread_cond_signal(handle->cond);   //** They will wake up when fobj_lock is released
             break;
         }
-        tbx_stack_move_down(fol->stack);
+        tbx_stack_move_down(fol->pending_stack);
     }
 
     apr_thread_mutex_unlock(osf->os_lock->fobj_lock);
@@ -4376,8 +4909,11 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
 
     if (op->cfd == NULL) return(gop_success_status);
 
-    full_object_unlock(osf->os_lock, op->cfd, op->cfd->mode);
-    if (op->cfd->user_mode != 0) full_object_unlock(osf->os_lock_user, op->cfd, op->cfd->user_mode);
+    full_object_unlock(FOL_OS, osf->os_lock, op->cfd, op->cfd->mode);
+    if (op->cfd->user_mode != 0) full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, op->cfd->user_mode);
+    apr_thread_mutex_lock(osf->open_fd_lock);
+    tbx_list_remove(osf->open_fd, op->cfd->object_name, op->cfd);
+    apr_thread_mutex_unlock(osf->open_fd_lock);
     free(op->cfd->object_name);
     free(op->cfd->attr_dir);
     free(op->cfd->id);
@@ -4416,21 +4952,21 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
 
     if (op->fd->user_mode != 0) { //** Already have a lock so see how we change it
         if (op->mode & OS_MODE_UNLOCK) { //** Got an unlock operation
-           full_object_unlock(osf->os_lock_user, op->fd, op->fd->user_mode);
+           full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, op->fd->user_mode);
            op->fd->user_mode = op->mode;
            return(gop_success_status);
         } else if (op->fd->user_mode & OS_MODE_READ_BLOCKING) {
            if (op->mode & OS_MODE_WRITE_BLOCKING) {
-               full_object_unlock(osf->os_lock_user, op->fd, op->fd->user_mode);
+               full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, op->fd->user_mode);
                op->fd->user_mode = 0;
-               err = full_object_lock(osf->os_lock_user, op->fd, op->mode, op->max_wait);
-               op->fd->user_mode = op->mode;
+               err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait);
+               if (err == 0) op->fd->user_mode = op->mode;
                goto finished;
            }
            return(gop_success_status);
         } else if (op->fd->user_mode & OS_MODE_WRITE_BLOCKING) {
             if (op->mode & OS_MODE_READ_BLOCKING) {
-                full_object_downgrade_lock(osf->os_lock_user, op->fd);
+                full_object_downgrade_lock(FOL_USER, osf->os_lock_user, op->fd);
                 op->fd->user_mode = op->mode;
             }
             return(gop_success_status);
@@ -4439,8 +4975,8 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
         return(gop_success_status);
     }
 
-    err = full_object_lock(osf->os_lock_user, op->fd, op->mode, op->max_wait);
-    op->fd->user_mode = op->mode;
+    err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait);
+    if (err == 0) op->fd->user_mode = op->mode;
 
 finished:
     if (err != 0) {  //** Either a timeout or abort occured
@@ -4487,21 +5023,21 @@ gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
 
     apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
 
-    fol = tbx_list_search(osf->os_lock_user->fobj_table, op->fd->object_name);
+    fol = tbx_list_search(osf->os_lock_user->fobj_table, op->fd->realpath);
     if (fol == NULL) return(gop_failure_status);
 
     //** Find the task in the pending list and remove it
     status = gop_failure_status;
-    tbx_stack_move_to_top(fol->stack);
-    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->stack)) != NULL) {
+    tbx_stack_move_to_top(fol->pending_stack);
+    while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack)) != NULL) {
         if (handle->fd->uuid == op->fd->uuid) {
-            tbx_stack_delete_current(fol->stack, 1, 0);
+            tbx_stack_delete_current(fol->pending_stack, 1, 0);
             status = gop_success_status;
             handle->abort = 1;
             apr_thread_cond_signal(handle->cond);   //** They will wake up when fobj_lock is released
             break;
         }
-        tbx_stack_move_down(fol->stack);
+        tbx_stack_move_down(fol->pending_stack);
     }
 
     apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
@@ -4810,6 +5346,31 @@ void osfile_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 }
 
 //***********************************************************************
+// osfile_print_open_fd - Prints the open file list
+//***********************************************************************
+
+void osfile_print_open_fd(lio_object_service_fn_t *os, FILE *rfd, int print_section_heading)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    char *fname;
+    osfile_fd_t *fd;
+    tbx_list_iter_t it;
+
+    apr_thread_mutex_lock(osf->open_fd_lock);
+    fprintf(rfd, "OSFile Open Files (n=%d) -----------------------------\n", tbx_list_key_count(osf->open_fd));
+
+    it = tbx_list_iter_search(osf->open_fd, NULL, 0);
+    tbx_list_next(&it, (tbx_list_key_t *)&fname, (tbx_list_data_t **)&fd);
+    while (fname) {
+        fprintf(rfd, "   fname=%s ftype=%d mode=%d  id=%s\n", fname, fd->ftype, fd->mode, fd->id);
+        tbx_list_next(&it, (tbx_list_key_t *)&fname, (tbx_list_data_t **)&fd);
+    }
+    fprintf(rfd, "\n");
+    apr_thread_mutex_unlock(osf->open_fd_lock);
+
+
+}
+//***********************************************************************
 // osfile_print_running_config - Prints the running config
 //***********************************************************************
 
@@ -4832,6 +5393,9 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
 
     //** Print the AuthZ configuration
     osaz_print_running_config(osf->osaz, fd, 1);
+
+    //** Also print the open files
+    osfile_print_open_fd(os, fd, 0);
 }
 
 //***********************************************************************
@@ -4851,6 +5415,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
     fobj_lock_destroy(osf->os_lock);
     fobj_lock_destroy(osf->os_lock_user);
     tbx_list_destroy(osf->vattr_prefix);
+    tbx_list_destroy(osf->open_fd);
 
     osaz_destroy(osf->osaz);
 
@@ -4936,6 +5501,8 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
 
     osf->os_lock = fobj_lock_create();
     osf->os_lock_user = fobj_lock_create();
+    osf->open_fd = tbx_list_create(1, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
+    apr_thread_mutex_create(&(osf->open_fd_lock), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
 
     osf->base_path_len = strlen(osf->base_path);
 
