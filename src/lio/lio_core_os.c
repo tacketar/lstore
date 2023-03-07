@@ -981,6 +981,7 @@ typedef struct {
     lio_config_t *lc;
     lio_creds_t *creds;
     const char *path;
+    os_fd_t *fd;
     char *id;
     char **mkeys;
     void **mvals;
@@ -990,6 +991,31 @@ typedef struct {
     int *sv_size;
     int n_keys;
 } lio_attrs_op_t;
+
+//***********************************************************************
+// lio_get_multiple_attrs_fd
+//***********************************************************************
+
+int lio_get_multiple_attrs_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n_keys)
+{
+    int serr;
+
+    //** IF the attribute doesn't exist *val == NULL an *v_size = 0
+    serr = gop_sync_exec(os_get_multiple_attrs(lc->os, creds, fd, key, val, v_size, n_keys));
+
+    if (serr != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR getting attributes\n");
+    }
+
+    return(serr);
+}
+
+//***********************************************************************
+
+gop_op_generic_t *lio_get_multiple_attrs_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n_keys)
+{
+    return(os_get_multiple_attrs(lc->os, creds, fd, key, val, v_size, n_keys));
+}
 
 //***********************************************************************
 // lio_get_multiple_attrs
@@ -1055,6 +1081,35 @@ gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *cred
 
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_get_multiple_attrs_fn, (void *)op, free, 1));
 }
+
+//***********************************************************************
+// lio_getattr_fd - Returns an attribute from the object FD
+//***********************************************************************
+
+int lio_getattr_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char *key, void **val, int *v_size)
+{
+    int err;
+
+    //** IF the attribute doesn't exist *val == NULL an *v_size = 0
+    err = gop_sync_exec(os_get_attr(lc->os, creds, fd, key, val, v_size));
+
+    if (err != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR getting attribute!\n");
+    }
+
+    return(err);
+}
+
+
+//***********************************************************************
+// lio_getattr_fd_gop - GOP version for fetching an attribute from the object FD
+//***********************************************************************
+
+gop_op_generic_t *lio_getattr_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char *key, void **val, int *v_size)
+{
+    return(os_get_attr(lc->os, creds, fd, key, val, v_size));
+}
+
 
 //***********************************************************************
 // lio_getattr - Returns an attribute
@@ -1277,6 +1332,101 @@ gop_op_generic_t *lio_setattr_gop(lio_config_t *lc, lio_creds_t *creds, const ch
     op->n_keys = v_size;  //** Double use for the vaiable
 
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
+// lio_multiple_setattr_fd_op - Returns an attribute
+//***********************************************************************
+
+int lio_multiple_setattr_fd_op(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n)
+{
+    int err;
+
+    err = gop_sync_exec(os_set_multiple_attrs(lc->os, creds, fd, key, val, v_size, n));
+    if (err != OP_STATE_SUCCESS) {  //** Got an error
+        sleep(1);  //** Wait a bit before retrying
+        err = gop_sync_exec(os_set_multiple_attrs(lc->os, creds, fd, key, val, v_size, n));
+    }
+
+    return(err);
+}
+
+//***********************************************************************
+
+gop_op_status_t lio_multiple_setattr_fd_op_fn(void *arg, int id)
+{
+    lio_attrs_op_t *op = (lio_attrs_op_t *)arg;
+    gop_op_status_t status;
+    int err;
+
+    err = lio_multiple_setattr_fd_op(op->lc, op->creds, op->fd, op->mkeys, op->mvals, op->mv_size, op->n_keys);
+    status.error_code = err;
+    status.op_status = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
+    return(status);
+}
+
+//***********************************************************************
+
+gop_op_generic_t *lio_multiple_setattr_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n_keys)
+{
+    lio_attrs_op_t *op;
+    tbx_type_malloc_clear(op, lio_attrs_op_t, 1);
+
+    op->lc = lc;
+    op->creds = creds;
+    op->fd = fd;
+    op->mkeys = key;
+    op->mvals = val;
+    op->mv_size = v_size;
+    op->n_keys = n_keys;
+
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_multiple_setattr_fd_op_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
+// lio_setattr_fd - Sets a single attribute for an open file
+//***********************************************************************
+
+int lio_setattr_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char *key, void *val, int v_size)
+{
+    int err;
+
+    err = gop_sync_exec(os_set_attr(lc->os, creds, fd, key, val, v_size));
+    if (err != OP_STATE_SUCCESS) {  //** Got an error
+        sleep(1);  //** Wait a bit before retrying
+        err = gop_sync_exec(os_set_attr(lc->os, creds, fd, key, val, v_size));
+    }
+
+    return(err);
+}
+
+//***********************************************************************
+
+gop_op_status_t lio_setattr_fd_fn(void *arg, int id)
+{
+    lio_attrs_op_t *op = (lio_attrs_op_t *)arg;
+    gop_op_status_t status;
+
+    status.op_status = lio_setattr_fd(op->lc, op->creds, op->fd, op->skey, op->sval, op->n_keys); //** NOTE: n_keys = v_size
+    status.error_code = 0;
+    return(status);
+}
+
+//***********************************************************************
+
+gop_op_generic_t *lio_setattr_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char *key, void *val, int v_size)
+{
+    lio_attrs_op_t *op;
+    tbx_type_malloc_clear(op, lio_attrs_op_t, 1);
+
+    op->lc = lc;
+    op->creds = creds;
+    op->fd = fd;
+    op->skey = key;
+    op->sval = val;
+    op->n_keys = v_size;  //** Double use for the vaiable
+
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fd_fn, (void *)op, free, 1));
 }
 
 //***********************************************************************
