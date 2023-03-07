@@ -137,6 +137,7 @@ typedef struct {
     ex_id_t sid;
     int ref_count;
     int remove_on_close;
+    int special;
 }  fs_open_file_t;
 
 struct lio_fs_dir_iter_t {
@@ -167,8 +168,9 @@ struct lio_fs_t {
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
     int enable_fuse_hacks;
-    int enable_rw_locks;
-    int rw_locks_max_wait;
+    int enable_internal_lock_mode;     //** 0=no persistent locking, 1=Use normal R/W locks, 2=Just use R locks for tracking
+    int internal_locks_max_wait;
+    int user_locks_max_wait;
     int xattr_error_for_hard_errors;
     int ug_mode;
     int shutdown;
@@ -177,8 +179,6 @@ struct lio_fs_t {
     int _inode_key_size;
     int enable_fifo;
     int enable_socket;
-    int os_read_mode;
-    int os_write_mode;
     ex_off_t copy_bufsize;
     tbx_atomic_int_t read_cmds_inflight;
     tbx_atomic_int_t read_bytes_inflight;
@@ -754,6 +754,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     ftype = lio_next_object(dit->fs->lc, dit->it, &fname, &prefix_len);
     tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
     if (ftype <= 0) { //** No more files
+        if (fname) free(fname);
         return((ftype == 0) ? 1 : -EIO);
     }
 
@@ -920,6 +921,7 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     } else {
         FS_MON_OBJ_DESTROY();
     }
+
     return(err);
 }
 
@@ -976,7 +978,7 @@ int lio_fs_flock(lio_fs_t *fs, lio_fd_t *fd, int lock_type)
 
     FS_MON_OBJ_CREATE("FS_FLOCK: fname=%s type:%s", fd->path, type[i]);
 
-    status = gop_sync_exec_status(lio_flock_gop(fd, rw_lock, fs->id, fs->rw_locks_max_wait));
+    status = gop_sync_exec_status(lio_flock_gop(fd, rw_lock, fs->id, fs->user_locks_max_wait));
     err = 0;
     if (status.op_status == OP_STATE_FAILURE) {
         if (lock_type & LOCK_NB) {
@@ -1025,10 +1027,15 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         }
     }
 
-    if (fs->enable_rw_locks) lflags |= LIO_LOCK_MODE;
+    if (fs->enable_internal_lock_mode == 1) {
+        lflags |= LIO_ILOCK_MODE;  //** Add the internal lock mode
+    } else if (fs->enable_internal_lock_mode == 2) { //** Just use tracking so downgrade an write lock
+        lflags |= LIO_ILOCK_MODE|LIO_READ_MODE;  //** Add the internal lock mode and reading
+        lflags ^= LIO_WRITE_MODE;  //** Remove a write lock if specified
+    }
 
     //** Ok we can access the file if we made it here
-    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->rw_locks_max_wait));
+    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->internal_locks_max_wait));
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
@@ -1043,6 +1050,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         tbx_type_malloc_clear(fop, fs_open_file_t, 1);
         fop->fname = strdup(fd->path);
         fop->sid = segment_id(fd->fh->seg);
+        if ((fd->ftype & OS_OBJECT_SYMLINK_FLAG) || (fd->sfd != -1)) fop->special = 1;
         apr_hash_set(fs->open_files, fop->fname, APR_HASH_KEY_STRING, fop);
     }
     fop->ref_count++;
@@ -1072,12 +1080,12 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
     //** We lock overthe whole close process to make sure an immediate stat call
     //** doesn't get stale information.
     fs_lock(fs);
-    fop = apr_hash_get(fs->open_files, fd->path, APR_HASH_KEY_STRING);
+    fop = apr_hash_get(fs->open_files, fd->fh->fname, APR_HASH_KEY_STRING);
     if (fop) {
         remove_on_close = fop->remove_on_close;
         fop->ref_count--;
         if (fop->ref_count <= 0) {  //** Last one so remove it.
-            apr_hash_set(fs->open_files, fd->path, APR_HASH_KEY_STRING, NULL);
+            apr_hash_set(fs->open_files, fd->fh->fname, APR_HASH_KEY_STRING, NULL);
             free(fop->fname);
             free(fop);
         }
@@ -1086,9 +1094,9 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
 
     //** See if we need to remove it
     if (remove_on_close == 1) {
-        segment_lock(fd->fh->seg);
+        apr_thread_mutex_lock(fd->fh->lock);
         fd->fh->remove_on_close = 1;
-        segment_unlock(fd->fh->seg);
+        apr_thread_mutex_unlock(fd->fh->lock);
     }
 
     err = gop_sync_exec(lio_close_gop(fd)); // ** Close it but keep track of the error
@@ -1432,6 +1440,8 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
 {
     fs_open_file_t *fop;
     gop_op_status_t status;
+    ex_id_t sid;
+    lio_file_handle_t *fh;
 
     log_printf(1, "oldname=%s newname=%s\n", oldname, newname);
 
@@ -1450,8 +1460,26 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
         free(fop->fname);
         fop->fname = strdup(newname);
         apr_hash_set(fs->open_files, fop->fname, APR_HASH_KEY_STRING, fop);
+        if (fop->special) {
+            fop = NULL;
+        } else {
+            sid = fop->sid;
+        }
     }
     fs_unlock(fs);
+
+    //** If we got an open file hit we also need to change the low level file handle
+    if (fop) {
+        lio_lock(fs->lc);
+        fh = _lio_get_file_handle(fs->lc, sid);
+        if (fh) {
+            apr_thread_mutex_lock(fh->lock);
+            free(fh->fname);
+            fh->fname = strdup(newname);
+            apr_thread_mutex_unlock(fh->lock);
+        }
+        lio_unlock(fs->lc);
+    }
 
     //** Do the move
     status = gop_sync_exec_status(lio_move_object_gop(fs->lc, fs->lc->creds, (char *)oldname, (char *)newname));
@@ -2199,13 +2227,13 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
         //** If needed get a read lock
         ofd = NULL;
-        if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+        if ((fs->enable_internal_lock_mode) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
             if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
                 if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
                     goto already_have_a_lock;
                 }
             }
-            err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_READ_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+            err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_READ_BLOCKING, fs->id, &ofd, fs->internal_locks_max_wait));
             if (err != OP_STATE_SUCCESS) {
                 log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
                 FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
@@ -2260,7 +2288,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     osaz_attr_filter_t filter;
     char *val;
     os_fd_t *ofd;
-    int v_size, err;
+    int v_size, err, lmode;
     int n_readers, n_writers;
 
     v_size= size;
@@ -2273,14 +2301,16 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     //** If needed get a read lock
     ofd = NULL;
-    if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+    if ((fs->enable_internal_lock_mode) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
         if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
             if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
                 goto already_have_a_lock;
             }
         }
 
-        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_WRITE_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+        //** See what kind of lock we are getting.  If they just want tracking use a read lock
+        lmode = (fs->enable_internal_lock_mode == 1) ? OS_MODE_WRITE_BLOCKING : OS_MODE_READ_BLOCKING;
+        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, lmode, fs->id, &ofd, fs->internal_locks_max_wait));
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
             FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
@@ -2347,7 +2377,7 @@ already_have_a_lock:
 
 int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, const char *name)
 {
-    int v_size, err;
+    int v_size, err, lmode;
     int n_readers, n_writers;
     os_fd_t *ofd;
 
@@ -2373,16 +2403,18 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
         return(-EACCES);
     }
 
-    //** If needed get a read lock
+    //** If needed get a lock
     ofd = NULL;
-    if ((fs->enable_rw_locks) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
+    if ((fs->enable_internal_lock_mode) && (fs->rw_lock_attr_string) && (regexec(&(fs->rw_lock_attr_regex), name, 0, NULL, 0) == 0)) {
         if (fs->enable_fuse_hacks) {  //** See if we need to hack around FUSE oddities on order of operations
             if (lio_open_file_check(fs->lc, fname, &n_readers, &n_writers)) { //** We already have it open in some form with a lock
                 goto already_have_a_lock;
             }
         }
 
-        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_WRITE_BLOCKING, fs->id, &ofd, fs->rw_locks_max_wait));
+        //** See what kind of lock we are getting.  If they just want tracking use a read lock
+        lmode = (fs->enable_internal_lock_mode == 1) ? OS_MODE_WRITE_BLOCKING : OS_MODE_READ_BLOCKING;
+        err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, lmode, fs->id, &ofd, fs->internal_locks_max_wait));
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
             FS_MON_OBJ_DESTROY_MESSAGE("ENOLCK");
@@ -2599,8 +2631,9 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
     fprintf(fd, "enable_fuse_hacks = %d\n", fs->enable_fuse_hacks);
-    fprintf(fd, "enable_rw_locks = %d\n", fs->enable_rw_locks);
-    if (fs->enable_rw_locks) fprintf(fd, "rw_locks_max_wait = %d\n", fs->rw_locks_max_wait);
+    fprintf(fd, "enable_internal_lock_mode = %d # 0=No locks, 1=Internal R/W locks, 2=Internal shared locks for tracking\n", fs->enable_internal_lock_mode);
+    if (fs->enable_internal_lock_mode) fprintf(fd, "internal_locks_max_wait = %d\n", fs->internal_locks_max_wait);
+    fprintf(fd, "user_locks_max_wait = %d\n", fs->user_locks_max_wait);
     if (fs->rw_lock_attr_string) fprintf(fd, "rw_lock_attrs = %s\n", fs->rw_lock_attr_string);
     fprintf(fd, "enable_fifo = %d\n", fs->enable_fifo);
     fprintf(fd, "enable_socket = %d\n", fs->enable_socket);
@@ -2659,15 +2692,13 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
     fs->enable_fuse_hacks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fuse_hacks", 0);
-    fs->enable_rw_locks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_rw_locks", 0);
-    fs->os_read_mode = OS_MODE_READ_IMMEDIATE;
-    fs->os_write_mode = OS_MODE_WRITE_IMMEDIATE;
-    fs->rw_locks_max_wait = 60;     //** Default is to wait 60s if not using locks. It should be immediate in this case
-    if (fs->enable_rw_locks) {
-        fs->rw_locks_max_wait = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "rw_locks_max_wait", 600);
-        fs->os_read_mode = OS_MODE_READ_BLOCKING;
-        fs->os_write_mode = OS_MODE_WRITE_BLOCKING;
+    fs->enable_internal_lock_mode = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_internal_lock_mode", 0);
+    fs->internal_locks_max_wait = 60;     //** Default is to wait 60s if not using locks. It should be immediate in this case
+    if (fs->enable_internal_lock_mode) {
+        fs->internal_locks_max_wait = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "internal_locks_max_wait", 600);
     }
+
+    fs->user_locks_max_wait = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "user_locks_max_wait", 600);
 
     //** See if there are any attributes to not cache (and optionally protect with RW locks if enabled
     fs->rw_lock_attr_string = tbx_inip_get_string(fd, fs->fs_section, "rw_lock_attrs", NULL);
