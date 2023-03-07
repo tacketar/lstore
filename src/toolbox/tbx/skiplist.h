@@ -88,6 +88,7 @@ TBX_API void tbx_sl_iter_search_init(tbx_sl_iter_t *it,
                                                  tbx_sl_t *sl,
                                                  tbx_sl_key_t *key,
                                                  int round_mode);
+TBX_API int tbx_sl_iter_remove(tbx_sl_iter_t *it);
 TBX_API tbx_sl_iter_t *tbx_sl_iter_new();
 TBX_API void tbx_sl_iter_del(tbx_sl_iter_t *it);
 TBX_API int tbx_sl_key_count(tbx_sl_t *sl);

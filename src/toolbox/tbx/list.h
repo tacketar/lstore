@@ -35,25 +35,16 @@ typedef tbx_sl_compare_t tbx_list_compare_t;
     tbx_sl_new_full(20, 0.5, allow_dups, cmp, dup_fn, key_free_fn, data_free_fn)
 
 #define tbx_list_destroy(sl) tbx_sl_del(sl)
-
 #define tbx_list_first_key(a) tbx_sl_first_key(a)
-
 #define tbx_list_insert(sl, key, data) tbx_sl_insert(sl, key, data)
-
 #define tbx_list_iter_search(sl, nkey, round_mode) tbx_sl_iter_search_compare(sl, nkey, (sl)->compare, round_mode)
-
 #define tbx_list_iter_search_compare(sl, nkey, compare, round_mode) tbx_sl_iter_search_compare(sl, nkey, compare, round_mode)
-
+#define tbx_list_iter_remove(sl) tbx_sl_iter_remove(sl);
 #define tbx_list_key_count(a) (a)->n_keys
-
 #define tbx_list_next(it, nkey, ndata) tbx_sl_next(it, nkey, ndata)
-
 #define tbx_list_no_data_free tbx_sl_free_no_data
-
 #define tbx_list_no_key_free tbx_sl_free_no_key
-
 #define tbx_list_remove(sl, key, data) tbx_sl_remove(sl, key, data)
-
 #define tbx_list_search(sl, key) tbx_sl_search_compare(sl, key, (sl)->compare)
 
 #define tbx_list_simple_free tbx_sl_free_simple

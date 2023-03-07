@@ -96,7 +96,7 @@ tbx_sl_t *create_skiplist(bool allow_dups,
                             void (*data_free)(tbx_sl_data_t *a));
 int skiplist_element_count(tbx_sl_t *sl);
 
-int iter_tbx_sl_remove(tbx_sl_iter_t *it);
+int tbx_sl_iter_remove(tbx_sl_iter_t *it);
 
 int find_key_compare(tbx_sl_t *sl, tbx_sl_node_t **ptr, tbx_sl_key_t *key, tbx_sl_compare_t *compare, int fixed_cmp);
 tbx_sl_node_t *pos_tbx_sl_insert(tbx_sl_t *sl, tbx_sl_node_t **ptr, tbx_sl_key_t *key, tbx_sl_data_t *data);

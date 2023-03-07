@@ -783,7 +783,7 @@ int tbx_sl_next(tbx_sl_iter_t *it, tbx_sl_key_t **nkey, tbx_sl_data_t **ndata)
 // iter_remove_skiplist - Removes the current skiplist element
 //*********************************************************************************
 
-int iter_tbx_sl_remove(tbx_sl_iter_t *it)
+int tbx_sl_iter_remove(tbx_sl_iter_t *it)
 {
     int empty_node;
     unsigned int i;
