@@ -57,6 +57,7 @@ LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(ftruncate64)(int fd, off_t length);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(truncate64)(const char *path, off_t length);
 
 // ** Everything else
+LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(flock)(int fd, int operation);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(chdir)(const char *path);
 LIO_STDIO_WRAPPER_API int WRAPPER_PREFIX(fchdir)(int fd);
 LIO_STDIO_WRAPPER_API char *WRAPPER_PREFIX(getcwd)(char *buf, size_t size);
