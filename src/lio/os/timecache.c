@@ -643,6 +643,7 @@ ostc_base_object_info_t ostc_attr_cacheprep_info_process(ostc_cacheprep_t *cp, i
         *err = OP_STATE_FAILURE;
         return(base);
     }
+
     sscanf((char *)cp->val[cp->ftype_index], "%d", &(base.ftype));
     sscanf((char *)cp->val[cp->link_count_index], "%d", &(base.link_count));
     sscanf((char *)cp->val[cp->inode_index], XIDT, &(base.inode));
@@ -2547,7 +2548,7 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     ostc_object_iter_t *it = (ostc_object_iter_t *)oit;
     ostc_priv_t *ostc = (ostc_priv_t *)it->os->priv;
     ostc_base_object_info_t base;
-    int ftype, i, err;
+    int ftype, i, err, start_index;
 
     log_printf(5, "START\n");
 
@@ -2569,13 +2570,15 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
         //** Copy any results back
         ostc_attr_cacheprep_copy(&(it->cp), it->val, it->v_size);
         base = ostc_attr_cacheprep_info_process(&(it->cp), &err);
+        start_index = it->cp.n_keys;
         if (err == OP_STATE_SUCCESS) {
             ostc_cache_process_attrs(it->os, *fname, &base, it->cp.key, it->cp.val, it->cp.v_size, it->n_keys);
         } else {
             ftype = -1;
+            start_index = 0;  //** Also free the user requested attributes if they exist
         }
         //** We have to do a manual cleanup and can't call the CP destroy method
-        for (i=it->cp.n_keys; i<it->cp.n_keys_total; i++) {
+        for (i=start_index; i<it->cp.n_keys_total; i++) {
             if (it->cp.val[i] != NULL) {
                 free(it->cp.val[i]);
                 it->cp.val[i] = NULL;
