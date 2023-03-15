@@ -174,12 +174,16 @@ LIO_API int os_user_locking_tests(char *prefix);
 #define OS_FSCK_FINISHED  0   // ** FSCK scan is finished
 #define OS_FSCK_ERROR    -1   // ** FSCK internal error
 
-#define OS_MODE_READ_IMMEDIATE  1
-#define OS_MODE_WRITE_IMMEDIATE 2
-#define OS_MODE_READ_BLOCKING   4
-#define OS_MODE_WRITE_BLOCKING  8
-#define OS_MODE_UNLOCK         16
-#define OS_MODE_NONBLOCKING    32
+#define OS_MODE_READ_IMMEDIATE          1
+#define OS_MODE_WRITE_IMMEDIATE         2
+#define OS_MODE_READ_BLOCKING           4
+#define OS_MODE_WRITE_BLOCKING          8
+#define OS_MODE_UNLOCK                 16
+#define OS_MODE_NONBLOCKING            32
+#define OS_MODE_NO_CACHE_INFO_IF_FILE  64  // ** Don't get attrs from local cache if it's a file
+#define OS_MODE_BLOCK_ONLY_IF_FILE    128  // ** Only use a blocking lock if a file
+#define OS_MODE_BASE_MODES             63
+#define OS_MODE_FLAGS                 192
 
 // Preprocessor macros
 #define os_close_object(os, fd) (os)->close_object(os, fd)

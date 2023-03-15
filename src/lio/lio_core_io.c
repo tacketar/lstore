@@ -510,7 +510,7 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
     if (ofd) {
         err= lio_get_multiple_attrs_fd(lc, creds, ofd, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS);
     } else {
-        err = lio_get_multiple_attrs(lc, creds, myfname, NULL, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS);
+        err = lio_get_multiple_attrs(lc, creds, myfname, NULL, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS, 1);
     }
     if (val[LFH_KEY_EXNODE] == NULL) err = OP_STATE_FAILURE;
     if (err != OP_STATE_SUCCESS) {

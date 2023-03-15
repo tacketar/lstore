@@ -4793,7 +4793,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     fd->os = op->os;
     fd->ftype = ftype;
-    fd->mode = op->mode;
+    fd->mode = op->mode & OS_MODE_BASE_MODES;  //** We ignore any lock modifier
     fd->object_name = op->path;
     fd->id = op->id;
     fd->uuid = op->uuid;

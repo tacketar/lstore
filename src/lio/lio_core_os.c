@@ -488,7 +488,7 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
     if ((op->type & OS_OBJECT_HARDLINK_FLAG) > 0) { //** Got a hard link so check if we do a data removal
         val[0] = val[1] = NULL;
         vs[0] = vs[1] = -op->lc->max_attr;
-        lio_get_multiple_attrs(op->lc, op->creds, op->src_path, op->id, hkeys, (void **)val, vs, 2);
+        lio_get_multiple_attrs(op->lc, op->creds, op->src_path, op->id, hkeys, (void **)val, vs, 2, 1);
 
         if (val[0] == NULL) {
             log_printf(15, "Missing link count for fname=%s\n", op->src_path);
@@ -990,6 +990,7 @@ typedef struct {
     void *sval;
     int *sv_size;
     int n_keys;
+    int no_cache_attrs_if_file;
 } lio_attrs_op_t;
 
 //***********************************************************************
@@ -1021,12 +1022,44 @@ gop_op_generic_t *lio_get_multiple_attrs_fd_gop(lio_config_t *lc, lio_creds_t *c
 // lio_get_multiple_attrs
 //***********************************************************************
 
-int lio_get_multiple_attrs(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys)
+int lio_get_multiple_attrs(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys, int no_cache_attrs_if_file)
 {
     int err, serr;
     os_fd_t *fd;
 
-    err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE, id, &fd, lc->timeout));
+    err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE|no_cache_attrs_if_file, id, &fd, lc->timeout));
+    if (err != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR opening object=%s\n", path);
+        return(err);
+    }
+
+    //** IF the attribute doesn't exist *val == NULL an *v_size = 0
+    serr = gop_sync_exec(os_get_multiple_attrs(lc->os, creds, fd, key, val, v_size, n_keys));
+
+    //** Close the parent
+    err = gop_sync_exec(os_close_object(lc->os, fd));
+    if (err != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR closing object=%s\n", path);
+    }
+
+    if (serr != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR getting attributes object=%s\n", path);
+        err = OP_STATE_FAILURE;
+    }
+
+    return(err);
+}
+
+//***********************************************************************
+// lio_get_multiple_attrs_lock
+//***********************************************************************
+
+int lio_get_multiple_attrs_lock(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys, int lock_flags)
+{
+    int err, serr;
+    os_fd_t *fd;
+
+    err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE|lock_flags, id, &fd, lc->timeout));
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR opening object=%s\n", path);
         return(err);
@@ -1057,7 +1090,7 @@ gop_op_status_t lio_get_multiple_attrs_fn(void *arg, int id)
     gop_op_status_t status;
     int err;
 
-    err = lio_get_multiple_attrs(op->lc, op->creds, (char *)op->path, op->id, op->mkeys, op->mvals, op->mv_size, op->n_keys);
+    err = lio_get_multiple_attrs(op->lc, op->creds, (char *)op->path, op->id, op->mkeys, op->mvals, op->mv_size, op->n_keys, op->no_cache_attrs_if_file);
     status.error_code = err;
     status.op_status = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
     return(status);
@@ -1065,7 +1098,7 @@ gop_op_status_t lio_get_multiple_attrs_fn(void *arg, int id)
 
 //***********************************************************************
 
-gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys)
+gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys, int no_cache_attrs_if_file)
 {
     lio_attrs_op_t *op;
     tbx_type_malloc_clear(op, lio_attrs_op_t, 1);
@@ -1078,6 +1111,7 @@ gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *cred
     op->mvals = val;
     op->mv_size = v_size;
     op->n_keys = n_keys;
+    op->no_cache_attrs_if_file = no_cache_attrs_if_file;
 
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_get_multiple_attrs_fn, (void *)op, free, 1));
 }
@@ -1574,7 +1608,7 @@ void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size
 // lio_stat - Do a simple file stat
 //***********************************************************************
 
-int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink)
+int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink, int no_cache_stat_if_file)
 {
     char *val[_lio_stat_key_size];
     int v_size[_lio_stat_key_size], i, err;
@@ -1586,7 +1620,7 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
     tbx_log_flush();
 
     for (i=0; i<_lio_stat_key_size; i++) v_size[i] = -lc->max_attr;
-    err = lio_get_multiple_attrs(lc, creds, fname, NULL, _lio_stat_keys, (void **)val, v_size, _lio_stat_key_size);
+    err = lio_get_multiple_attrs(lc, creds, fname, NULL, _lio_stat_keys, (void **)val, v_size, _lio_stat_key_size, no_cache_stat_if_file);
 
     if (err != OP_STATE_SUCCESS) {
         return(-ENOENT);
@@ -1676,7 +1710,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
 
     //** Add "."
     dit->dot.dentry = ".";
-    if (lio_stat(lc, creds, (char *)path, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink) != 0) {
+    if (lio_stat(lc, creds, (char *)path, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink, 0) != 0) {
         lio_stat_iter_destroy(dit);
         return(NULL);
     }
@@ -1690,7 +1724,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
     }
 
     dit->dot.dentry = "..";
-    if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink) != 0) {
+    if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink, 0) != 0) {
         if (dir) free(dir);
         lio_stat_iter_destroy(dit);
         return(NULL);
@@ -2008,7 +2042,7 @@ gop_op_status_t lio_fsck_gop_fn(void *arg, int id)
             val[i] = NULL;
             v_size[i] = -op->lc->max_attr;
         }
-        lio_get_multiple_attrs(op->lc, op->creds, op->path, NULL, _fsck_keys, (void **)&val, v_size, _n_fsck_keys);
+        lio_get_multiple_attrs(op->lc, op->creds, op->path, NULL, _fsck_keys, (void **)&val, v_size, _n_fsck_keys, 0);
         err = lio_fsck_check_object(op->lc, op->creds, op->path, op->ftype, op->owner_mode, op->owner, op->exnode_mode, val, v_size);
         for (i=0; i<_n_fsck_keys; i++) if (val[i] != NULL) free(val[i]);
     } else {

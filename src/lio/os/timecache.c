@@ -98,6 +98,7 @@ typedef struct ostcb_object_s {
 typedef struct {
     char *fname;
     int mode;
+    int mflags;
     int max_wait;
     lio_creds_t *creds;
     char *id;
@@ -809,12 +810,14 @@ int _ostc_lio_cache_tree_walk(lio_object_service_fn_t *os, char *fname, tbx_stac
     err = 0;
 finished:
     log_printf(15, "fname=%s err=%d\n", fname, err);
-    ostcdb_object_t *lo;
-    tbx_stack_move_to_top(tree);
-    log_printf(15, "stack_size=%d\n", tbx_stack_count(tree));
-    while ((lo = tbx_stack_get_current_data(tree)) != NULL) {
-        log_printf(15, "pwalk lo=%s ftype=%d\n", lo->fname, lo->ftype);
-        tbx_stack_move_down(tree);
+    if (tbx_log_level() >= 15) {
+        ostcdb_object_t *lo;
+        tbx_stack_move_to_top(tree);
+        log_printf(15, "stack_size=%d\n", tbx_stack_count(tree));
+        while ((lo = tbx_stack_get_current_data(tree)) != NULL) {
+            log_printf(15, "pwalk lo=%s ftype=%d\n", lo->fname, lo->ftype);
+            tbx_stack_move_down(tree);
+        }
     }
 
     return(err);
@@ -2308,7 +2311,11 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     int err;
 
     //** 1st see if we can satisfy everything from cache
-    status = ostc_cache_fetch(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
+    if ((ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE) == 0) {
+        status = ostc_cache_fetch(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
+    } else {
+        status = gop_failure_status;
+    }
 
     //** Uncomment line below to verify the cached attrs match what is in the LServer.
     //** Changes made to directories, hard links, etc outside the calling program won't get reflected perfectly
@@ -2316,9 +2323,9 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     //if (status.op_status == OP_STATE_SUCCESS) get_attrs_sanity_check(ma);
 
     if (status.op_status == OP_STATE_SUCCESS) {
-        log_printf(10, "ATTR_CACHE_HIT: fname=%s key[0]=%s n_keys=%d\n", ma->fd->fname, ma->key[0], ma->n);
+        log_printf(10, "ATTR_CACHE_HIT: fname=%s key[0]=%s n_keys=%d no_cache_if_file_flag=%d\n", ma->fd->fname, ma->key[0], ma->n, (ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
     } else {
-        log_printf(10, "ATTR_CACHE_MISS fname=%s key[0]=%s n_keys=%d\n", ma->fd->fname, ma->key[0], ma->n);
+        log_printf(10, "ATTR_CACHE_MISS fname=%s key[0]=%s n_keys=%d no_cache_flig_if_file_flag=%d\n", ma->fd->fname, ma->key[0], ma->n, (ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
     }
     if (status.op_status == OP_STATE_SUCCESS) return(status);
 
@@ -2718,23 +2725,43 @@ gop_op_status_t ostc_open_object_fn(void *arg, int tid)
 {
     ostc_open_op_t *op = (ostc_open_op_t *)arg;
     ostc_priv_t *ostc = (ostc_priv_t *)op->os->priv;
+    ostcdb_object_t *oo;
     gop_op_status_t status;
     ostc_fd_t *fd;
     tbx_stack_t tree;
-    int err;
+    int err, rw_mode;
 
     log_printf(5, "mode=%d OS_MODE_READ_IMMEDIATE=%d fname=%s\n", op->mode, OS_MODE_READ_IMMEDIATE, op->path);
 
-    if (op->mode == OS_MODE_READ_IMMEDIATE) { //** Can use a delayed open if the object is in cache
+    if (op->mode & OS_MODE_READ_IMMEDIATE) { //** Can use a delayed open if the object is in cache
         tbx_stack_init(&tree);
         OSTC_LOCK(ostc);
         err = _ostc_lio_cache_tree_walk(op->os, op->path, &tree, NULL, 0, OSTC_MAX_RECURSE);
+        if ((err == 0) && (op->mode & OS_MODE_NO_CACHE_INFO_IF_FILE)) { //** Not supposed to use the cache if this is a file
+            tbx_stack_move_to_bottom(&tree);
+            oo = tbx_stack_get_current_data(&tree);
+            if (oo->ftype & OS_OBJECT_FILE_FLAG) {  // ** It's a file so don't use the cache
+                err = 1;  //** Throw an error to force the file opening
+                if (op->mode & OS_MODE_BLOCK_ONLY_IF_FILE) {  //** Force a blocking R/W open
+                    rw_mode = op->mode & (OS_MODE_READ_IMMEDIATE|OS_MODE_READ_BLOCKING|OS_MODE_WRITE_IMMEDIATE|OS_MODE_WRITE_BLOCKING);
+                    op->mode ^= rw_mode;  //** Clear the mode bits
+                    if (rw_mode & (OS_MODE_READ_IMMEDIATE|OS_MODE_READ_BLOCKING)) {
+                        op->mode |= OS_MODE_READ_BLOCKING;
+                    } else if (rw_mode & (OS_MODE_WRITE_IMMEDIATE|OS_MODE_WRITE_BLOCKING)) {
+                        op->mode |= OS_MODE_WRITE_BLOCKING;
+                    }
+                }
+            } else { //** Not a file so clear the flag
+                op->mode ^= OS_MODE_NO_CACHE_INFO_IF_FILE;
+            }
+        }
         OSTC_UNLOCK(ostc);
         tbx_stack_empty(&tree, 0);
         if (err == 0) goto finished;
     }
 
     //** Force an immediate file open
+    op->gop = os_open_object(ostc->os_child, op->creds, op->path, op->mode & OS_MODE_BASE_MODES, op->id, &(op->cfd), op->max_wait);
     log_printf(5, "forced open of file. fname=%s gid=%d\n", op->path, gop_id(op->gop));
     status = gop_sync_exec_status(op->gop);
     op->gop = NULL;
@@ -2749,7 +2776,8 @@ finished:
     op->path = NULL;
     fd->fd_child = op->cfd;
     *op->fd = fd;
-    fd->mode = op->mode;
+    fd->mode = op->mode & OS_MODE_BASE_MODES;
+    fd->mflags = op->mode & OS_MODE_FLAGS;
     fd->creds = op->creds;
     fd->id = op->id;
     fd->max_wait = op->max_wait;
@@ -2791,7 +2819,6 @@ gop_op_generic_t *ostc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     op->max_wait = max_wait;
     op->cfd = NULL;
 
-    op->gop = os_open_object(ostc->os_child, op->creds, op->path, op->mode, op->id, &(op->cfd), op->max_wait);
     gop = gop_tp_op_new(ostc->tpc, NULL, ostc_open_object_fn, (void *)op, ostc_open_free, 1);
 
     gop_set_private(gop, op);

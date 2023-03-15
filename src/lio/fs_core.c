@@ -548,10 +548,10 @@ int lio_fs_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int
 // lio_fs_stat - Does a stat on the file/dir.
 //*************************************************************************
 
-int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink)
+int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink, int no_cache_stat_if_file)
 {
     char *val[_inode_key_size_security];
-    int v_size[_inode_key_size_security], i, err;
+    int v_size[_inode_key_size_security], i, err, lflags;
 
     FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
 
@@ -562,8 +562,12 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     }
 
     for (i=0; i<fs->_inode_key_size; i++) v_size[i] = -fs->lc->max_attr;
-    err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size);
-
+    if (fs->enable_internal_lock_mode == 0) {
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
+    } else {
+        lflags = (no_cache_stat_if_file) ? (OS_MODE_NO_CACHE_INFO_IF_FILE|OS_MODE_BLOCK_ONLY_IF_FILE) : 0;
+        err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
+    }
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
         return(-ENOENT);
@@ -695,7 +699,7 @@ log_printf(0, "CACN_ACCESS=2 fname=%s\n", fname);
 
     //** Add "."
     dit->dot_path = strdup(fname);
-    if (lio_fs_stat(fs, ug, fname, &(dit->dot_de.stat), NULL, 1) != 0) {
+    if (lio_fs_stat(fs, ug, fname, &(dit->dot_de.stat), NULL, 1, 0) != 0) {
         lio_fs_closedir(dit);
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         return(NULL);
@@ -712,7 +716,7 @@ log_printf(0, "CACN_ACCESS=2 fname=%s\n", fname);
 
     log_printf(1, "dot=%s dotdot=%s\n", dit->dot_path, dit->dotdot_path);
 
-    if (lio_fs_stat(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), NULL, 1) != 0) {
+    if (lio_fs_stat(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), NULL, 1, 0) != 0) {
         lio_fs_closedir(dit);
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         return(NULL);
@@ -2084,7 +2088,7 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
 
     log_printf(15, "fname=%s ftype=%d\n", fname, ftype);
     nkeys = (ftype & OS_OBJECT_SYMLINK_FLAG) ? 1 : _tape_key_size;
-    i = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _tape_keys, (void **)val, v_size, nkeys);
+    i = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _tape_keys, (void **)val, v_size, nkeys, 0);
     if (i != OP_STATE_SUCCESS) {
         log_printf(15, "Failed retrieving file info!  path=%s\n", fname);
         return;
@@ -2242,7 +2246,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         }
 
 already_have_a_lock:
-        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, NULL, attrs, (void **)val, v_size, na);
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, NULL, attrs, (void **)val, v_size, na, 0);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
             return(-ENODATA);

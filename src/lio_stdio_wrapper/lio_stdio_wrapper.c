@@ -120,6 +120,7 @@ lio_config_t **lc_table = NULL;
 int n_lc = 0;
 char cwd[PATH_MAX-1];
 int cwd_len = -1;
+int no_cache_stat_if_file = 1;   //** this is the only flag we get directly from the config
 
 char *ROOT_PATH = "/";    //** This is returned when hitting the LStore root path
 
@@ -676,7 +677,7 @@ int WRAPPER_PREFIX(renameat2)(int olddirfd, const char *oldpath, int newdirfd, c
                 ftype = lio_os_local_filetype(newfull);
                 FPRINTF("renameat2: lio2local: ftype_new=%d lio_dir_is_empty=1\n", ftype);
                 if (ftype == 0) { //** Dest doesn't exist so create it
-                    lio_fs_stat(fs_old, NULL, fold, &sbuf, NULL, 1);
+                    lio_fs_stat(fs_old, NULL, fold, &sbuf, NULL, 1, no_cache_stat_if_file);
                     err = mkdirat_stdio(newdirfd, newpath, sbuf.st_mode);
                 } else {  //** Destination already exists
                     if ((ftype & OS_OBJECT_DIR_FLAG) == 0) {
@@ -1818,7 +1819,7 @@ int WRAPPER_PREFIX(__xstat)(int __ver, const char *pathname, struct stat *statbu
         return(__xstat_stdio(__ver, fullpath, statbuf));
     }
 
-    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0, no_cache_stat_if_file);
     FPRINTF("xstat: LIO fname=%s err=%d\n", pathname, err);
     if (err) {
         errno = -err;
@@ -1847,7 +1848,7 @@ int WRAPPER_PREFIX(__xstat64)(int __ver, const char *pathname, struct stat64 *st
         return(__xstat64_stdio(__ver, fullpath, statbuf));
     }
 
-    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0, no_cache_stat_if_file);
     FPRINTF("xstat64: LIO fname=%s err=%d ino=" XIDT "\n", pathname, err, statbuf->st_ino);
     if (err) {
         errno = -err;
@@ -1877,7 +1878,7 @@ int WRAPPER_PREFIX(__lxstat)(int __ver, const char *pathname, struct stat *statb
     }
 
     FPRINTF("lxstat: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
-    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 1);
+    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 1, no_cache_stat_if_file);
     if (err) {
         errno = -err;
         err = -1;
@@ -1907,7 +1908,7 @@ int WRAPPER_PREFIX(__lxstat64)(int __ver, const char *pathname, struct stat64 *s
     }
 
     FPRINTF("lxstat64: before pathname=%s fname=%s len=%d\n", pathname, fname, len); fflush(stderr);
-    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 1);
+    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 1, no_cache_stat_if_file);
     if (err) {
         errno = -err;
         err = -1;
@@ -1930,7 +1931,7 @@ int WRAPPER_PREFIX(__fxstat64)(int __ver, int fd, struct stat64 *statbuf)
     if (CFD_IS_STD(fd, cfd)) return(__fxstat64_stdio(__ver, fd, statbuf));
 
     FPRINTF("fxstat64: slot=%d before lio call lfd=%p\n", fd, cfd->lfd);
-    err = lio_fs_stat(cfd->fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), (struct stat *)statbuf, NULL, 0);
+    err = lio_fs_stat(cfd->fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), (struct stat *)statbuf, NULL, 0, no_cache_stat_if_file);
 
     FPRINTF("fxstat64: slot=%d err=%d\n", fd, err);
     if (err) {
@@ -1955,7 +1956,7 @@ int WRAPPER_PREFIX(__fxstat)(int __ver, int fd, struct stat *statbuf)
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) return(__fxstat_stdio(__ver, fd, statbuf));
 
-    err = lio_fs_stat(cfd->fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), statbuf, NULL, 0);
+    err = lio_fs_stat(cfd->fs, NULL, ((cfd->lfd) ? lio_fd_path(cfd->lfd) : cfd->lname_dir), statbuf, NULL, 0, no_cache_stat_if_file);
     if (err) {
         errno = -err;
         err = -1;
@@ -1983,7 +1984,7 @@ int WRAPPER_PREFIX(__fxstatat)(int __ver, int dirfd, const char *pathname, struc
         return(__fxstatat_stdio(__ver, dirfd, fullpath, statbuf, flags));
     }
 
-    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, fname + len, statbuf, NULL, 0, no_cache_stat_if_file);
     if (err) {
         errno = -err;
         err = -1;
@@ -2014,7 +2015,7 @@ int WRAPPER_PREFIX(__fxstatat64)(int __ver, int dirfd, const char *pathname, str
         return(__fxstatat64_stdio(__ver, dirfd, fullpath, statbuf, flags));
     }
 
-    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0);
+    err = lio_fs_stat(fs, NULL, fname + len, (struct stat *)statbuf, NULL, 0, no_cache_stat_if_file);
     if (err) {
         errno = -err;
         err = -1;
@@ -2050,7 +2051,7 @@ int WRAPPER_PREFIX(statx)(int dirfd, const char *pathname, int flags, unsigned i
 
     //** It's an LStore file so do a stat
     stat_symlink = (flags & AT_SYMLINK_NOFOLLOW) ? 1 : 0;
-    err = lio_fs_stat(fs, NULL, fname + len, &statbuf, NULL, stat_symlink);
+    err = lio_fs_stat(fs, NULL, fname + len, &statbuf, NULL, stat_symlink, no_cache_stat_if_file);
     if (err == 0) {  //** Convert it to a statx struct
         memset(statxbuf, 0, sizeof(struct statx));
         statxbuf->stx_ino = statbuf.st_ino;
@@ -3103,6 +3104,9 @@ static void lio_stdio_wrapper_construct_fn()
     tbx_type_malloc(argv, char *, 1);
     argv[0] = "lio_stdio_wrapper";
     lio_init(&argc, &argv);
+
+    //** See if we allow cache hits on stat calls if a file.
+    no_cache_stat_if_file = tbx_inip_get_integer(lio_gc->ifd, "lfs", "no_cache_stat_if_file", 1);
 
     //** Create the default file system handler
     fs_default = lio_fs_create(lio_gc->ifd, "lfs", lio_gc, getuid(), getgid());

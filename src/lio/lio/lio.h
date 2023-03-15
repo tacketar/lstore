@@ -70,7 +70,7 @@ LIO_API int lio_read_ex(lio_fd_t *fd, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t
 LIO_API int lio_write(lio_fd_t *fd, char *buf, ex_off_t size, off_t off, lio_segment_rw_hints_t *rw_hints);
 LIO_API int lio_writev(lio_fd_t *fd, tbx_iovec_t *iov, int n_iov, ex_off_t size, off_t off, lio_segment_rw_hints_t *rw_hints);
 LIO_API int lio_write_ex(lio_fd_t *fd, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *buffer, ex_off_t boff, lio_segment_rw_hints_t *rw_hints);
-LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink);
+LIO_API int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *stat, char **readlink, int stat_symlink, int no_cache_stat_if_file);
 LIO_API int lio_wq_enable(lio_fd_t *fd, int max_in_flight);
 
 LIO_API void lio_store_stat_size(struct stat *stat, ex_off_t nbytes);
@@ -92,10 +92,11 @@ LIO_API gop_op_generic_t *lio_flock_abort_gop(lio_fd_t *fd, gop_op_generic_t *go
 
 LIO_API gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const char *stype, const char *match_section, const char *args_section, tbx_inip_file_t *afd, int dryrun, int timeout);
 
-LIO_API gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n);
+LIO_API gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n, int no_cache_attrs_if_file);
 LIO_API gop_op_generic_t *lio_get_multiple_attrs_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n_keys);
 LIO_API gop_op_generic_t *lio_multiple_setattr_gop(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n);
-LIO_API int lio_get_multiple_attrs(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n);
+LIO_API int lio_get_multiple_attrs(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n, int no_cache_attrs_if_file);
+LIO_API int lio_get_multiple_attrs_lock(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n, int no_cache_attrs_if_file);
 LIO_API int lio_get_multiple_attrs_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char **key, void **val, int *v_size, int n_keys);
 LIO_API gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path);
 

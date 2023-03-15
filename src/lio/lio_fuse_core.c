@@ -387,7 +387,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
     char *flink;
 
     flink = NULL;
-    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sbuf, &flink, 1);
+    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sbuf, &flink, 1, lfs->no_cache_stat_if_file);
     lio_fs_hint_release(lfs->fs, &ug);
 
     if (err == 0) {
@@ -1181,6 +1181,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "[%s]\n", lfs->lfs_section);
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
+    fprintf(fd, "no_cache_stat_if_file = %d\n", lfs->no_cache_stat_if_file);
     if (lfs->enable_flock) {
         fprintf(fd, "# flock() is ENABLED\n");
     } else {
@@ -1265,6 +1266,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     lfs->fs = lio_fs_create(lfs->lc->ifd, section, lfs->lc, getuid(), getgid());
 log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
+    lfs->no_cache_stat_if_file = tbx_inip_get_integer(lfs->lc->ifd, section, "no_cache_stat_if_file", 1);
     lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;
 
 #ifdef FUSE_CAP_POSIX_ACL
