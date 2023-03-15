@@ -36,12 +36,17 @@ limitations under the License.
 #include <tbx/list.h>
 #include <tbx/log.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Typedefs are in ex3/fwd.h to break a potential dependency cycle
 
 // Functions
 LIO_API gop_op_generic_t *lio_exnode_clone_gop(gop_thread_pool_context_t *tpc, lio_exnode_t *src_ex, data_attr_t *da, lio_exnode_t **ex, void *arg, int mode, int timeout);
 LIO_API lio_exnode_t *lio_exnode_create();
 LIO_API lio_segment_t *lio_exnode_default_get(lio_exnode_t *ex);
+LIO_API void lio_exnode_default_set(lio_exnode_t *ex, lio_segment_t *seg);
 LIO_API int lio_exnode_deserialize(lio_exnode_t *ex, lio_exnode_exchange_t *exp, lio_service_manager_t *ess);
 LIO_API void lio_exnode_destroy(lio_exnode_t *ex);
 LIO_API lio_exnode_exchange_t *lio_exnode_exchange_create(int type);
@@ -151,4 +156,4 @@ struct lio_exnode_exchange_t {
 }
 #endif
 
-#endif /* ^ ACCRE_LIO_EX3_ABSTRACT_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_LIO_EX3_ABSTRACT_H_INCLUDED ^ */

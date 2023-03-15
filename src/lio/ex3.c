@@ -75,7 +75,7 @@ void ex_iovec_destroy(ex_tbx_iovec_t *iov)
 }
 
 //*************************************************************************
-// exnode_[g|s]et_default - Retreives/Sets the default segment
+// lio_exnode_default_[g|s]et - Retreives/Sets the default segment
 //
 //  NOTE: The default segment should also be placed in the view list!
 //*************************************************************************
@@ -84,7 +84,7 @@ lio_segment_t *lio_exnode_default_get(lio_exnode_t *ex)
 {
     return(ex->default_seg);
 }
-void exnode_set_default(lio_exnode_t *ex, lio_segment_t *seg)
+void lio_exnode_default_set(lio_exnode_t *ex, lio_segment_t *seg)
 {
     ex->default_seg = seg;
 }
