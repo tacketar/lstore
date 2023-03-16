@@ -1025,8 +1025,8 @@ void osf_internal_2fd_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfi
 try_again:
     lock_slot[0] = tbx_atomic_get(fd1->ilock_obj);
     lock_slot[1] = tbx_atomic_get(fd1->ilock_rp);
-    lock_slot[3] = tbx_atomic_get(fd2->ilock_obj);
-    lock_slot[4] = tbx_atomic_get(fd2->ilock_rp);
+    lock_slot[2] = tbx_atomic_get(fd2->ilock_obj);
+    lock_slot[3] = tbx_atomic_get(fd2->ilock_rp);
 
     log_printf(15, "lock_slot[0]=%d fname1=%s\n", lock_slot[0], fd1->object_name);
 
@@ -3533,7 +3533,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_mk_mv_rm_t rm;
     int ftype, dtype;
-    int n_locks;
+    int n_locks = 0;
     int max_locks = 1024;
     int ilock_table[max_locks];
     int *ilock;
