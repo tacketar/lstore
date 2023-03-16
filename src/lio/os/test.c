@@ -1977,8 +1977,8 @@ int os_locking_tests(char *prefix)
     char *lock_attr = "os.lock";
 
     memset(fd_read, 0, sizeof(fd_read));
-    memset(fd_write, 0, sizeof(fd_read));
-    memset(fd_abort, 0, sizeof(fd_read));
+    memset(fd_write, 0, sizeof(fd_write));
+    memset(fd_abort, 0, sizeof(fd_abort));
 
     q = gop_opque_new();
     opque_start_execution(q);
@@ -2343,8 +2343,8 @@ int os_user_locking_tests(char *prefix)
     char *lock_attr = "os.lock.user";
 
     memset(fd_read, 0, sizeof(fd_read));
-    memset(fd_write, 0, sizeof(fd_read));
-    memset(fd_abort, 0, sizeof(fd_read));
+    memset(fd_write, 0, sizeof(fd_write));
+    memset(fd_abort, 0, sizeof(fd_abort));
 
     q = gop_opque_new();
     opque_start_execution(q);
