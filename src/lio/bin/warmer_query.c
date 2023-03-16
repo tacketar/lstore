@@ -24,6 +24,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/type_malloc.h>
 #include <tbx/string_token.h>
+#include <tbx/stack.h>
 
 #include <lio/authn.h>
 #include <lio/ds.h>
@@ -33,6 +34,181 @@
 #include <lio/rs.h>
 
 #include "warmer_helpers.h"
+
+typedef struct {
+    char *rid;
+    ex_off_t nbytes;
+    ex_off_t ngood;
+    ex_off_t nbad;
+} rid_summary_t;
+
+//*************************************************************************
+// warmer_inode_summary - Summarizes the inode DB
+//*************************************************************************
+
+void warmer_inode_summary(warm_db_t *inode_db, ex_off_t *nfiles, ex_off_t *nwrite, ex_off_t *ngood, ex_off_t *nbad, ex_off_t *nbad_caps)
+{
+    rocksdb_iterator_t *it;
+    char *buf;
+    size_t nbytes;
+    int state, nfailed;
+    char *errstr;
+    char *name;
+
+    *nfiles = 0;
+    *nwrite = 0;
+    *ngood = 0;
+    *nbad = 0;
+    *nbad_caps = 0;
+
+    //** Create the iterator
+    it = rocksdb_create_iterator(inode_db->db, inode_db->ropt);
+    rocksdb_iter_seek_to_first(it);
+
+    while (rocksdb_iter_valid(it) > 0) {
+        buf = (char *)rocksdb_iter_value(it, &nbytes);
+        if (nbytes == 0) { goto next; }
+
+        if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) { goto next; }
+
+        (*nfiles)++;
+        if (state & WFE_SUCCESS) {
+            (*ngood)++;
+        } else if (state & WFE_FAIL) {
+            (*nbad)++;
+        }
+        if (state & WFE_WRITE_ERR) { (*nwrite)++; }
+
+        (*nbad_caps) += nfailed;
+        free(name);
+next:
+        rocksdb_iter_next(it);
+
+        errstr = NULL;
+        rocksdb_iter_get_error(it, &errstr);
+        if (errstr != NULL) { printf("ERROR: %s\n", errstr); fflush(stdout); }
+    }
+
+    //** Cleanup
+    rocksdb_iter_destroy(it);
+}
+
+//*************************************************************************
+// warmer_rid_summary - Generate list based on the RID
+//*************************************************************************
+
+void warmer_rid_summary(warm_db_t *rid_db, tbx_stack_t *rid_stack, rid_summary_t *totals)
+{
+    rocksdb_iterator_t *it;
+    size_t nbytes;
+    ex_off_t bsize;
+    char *buf;
+    int n;
+    int state;
+    ex_id_t inode;
+    char *errstr, *rec_rid, *drid, *last;
+    const char *key;
+    rid_summary_t *rid;
+
+    //** Create the iterator
+    it = rocksdb_create_iterator(rid_db->db, rid_db->ropt);
+    rocksdb_iter_seek_to_first(it);
+
+    bsize = 0;
+    rid = NULL;
+    while (rocksdb_iter_valid(it) > 0) {
+        key = rocksdb_iter_key(it, &nbytes);
+        drid = strdup(key);
+        rec_rid = tbx_stk_string_token(drid, "|", &last, &n);
+        sscanf(tbx_stk_string_token(NULL, "|", &last, &n), XIDT, &inode);
+        if ((rid==NULL) || (strcmp(rec_rid, rid->rid) != 0)) { //** New RID
+            if (rid) {
+                tbx_stack_push(rid_stack, rid);
+                totals->nbytes += rid->nbytes;
+                totals->ngood += rid->ngood;
+                totals->nbad += rid->nbad;
+            }
+            tbx_type_malloc_clear(rid, rid_summary_t, 1);
+            rid->rid = rec_rid;
+        } else {
+            free(drid);
+        }
+
+        buf = (char *)rocksdb_iter_value(it, &nbytes);
+        if (warm_parse_rid(buf, nbytes, &inode, &bsize, &state) != 0) { goto next; }
+
+        rid->nbytes += bsize;
+        if (state & WFE_SUCCESS) {
+            rid->ngood++;
+        } else {
+            rid->nbad++;
+        }
+
+next:
+        rocksdb_iter_next(it);
+
+        errstr = NULL;
+        rocksdb_iter_get_error(it, &errstr);
+        if (errstr != NULL) { printf("ERROR: %s\n", errstr); fflush(stdout); }
+    }
+
+    if (rid) {
+        tbx_stack_push(rid_stack, rid);
+        totals->nbytes += rid->nbytes;
+        totals->ngood += rid->ngood;
+        totals->nbad += rid->nbad;
+    }
+
+    //** Cleanup
+    rocksdb_iter_destroy(it);
+}
+
+
+//*************************************************************************
+// warmer_summary - Print the DB summary
+//*************************************************************************
+
+void warmer_summary(FILE *fd, warm_db_t *inode_db, warm_db_t *rid_db)
+{
+    tbx_stack_t *rids;
+    char ppbuf[128];
+    ex_off_t nfiles, nwrite, ngood, nbad, nbad_caps, total;
+    rid_summary_t totals;
+    rid_summary_t *rid;
+
+    //** Get the inode/file summary
+    warmer_inode_summary(inode_db, &nfiles, &nwrite, &ngood, &nbad, &nbad_caps);
+
+    //** Print it
+    fprintf(fd, "Inode Summary ---------  Files: " XOT " Success: " XOT " Failed: " XOT " Failed caps: " XOT " Write errors: " XOT "\n", nfiles, ngood, nbad,  nbad_caps, nwrite);
+    fprintf(fd, "\n");
+
+    //** Now do the same for the RIDs
+    rids = tbx_stack_new();
+    memset(&totals, 0, sizeof(totals));
+    warmer_rid_summary(rid_db, rids, &totals);
+
+    fprintf(fd, "                                                              Allocations\n");
+    fprintf(fd, "                 RID Key                    Size       Total       Good         Bad\n");
+    fprintf(fd, "----------------------------------------  ---------  ----------  ----------  ----------\n");
+
+    while ((rid = tbx_stack_pop(rids)) != NULL) {
+        total = rid->ngood + rid->nbad;
+        fprintf(fd, "%-40s  %s  %10" PXOT "  %10" PXOT "  %10" PXOT "\n", rid->rid,
+            tbx_stk_pretty_print_double_with_scale_full(1024, (double)rid->nbytes, ppbuf, 1),
+            total, rid->ngood, rid->nbad);
+        free(rid->rid);
+        free(rid);
+    }
+    tbx_stack_free(rids, 0);
+
+    fprintf(fd, "----------------------------------------  ---------  ----------  ----------  ----------\n");
+    total = totals.ngood + totals.nbad;
+    fprintf(fd, "%-40s  %s  %10" PXOT "  %10" PXOT "  %10" PXOT "\n", "Totals",
+        tbx_stk_pretty_print_double_with_scale_full(1024, (double)totals.nbytes, ppbuf, 1),
+        total, totals.ngood, totals.nbad);
+
+}
 
 //*************************************************************************
 // warmer_query_inode - Generate list based on inode
@@ -160,12 +336,13 @@ next:
     free(match);
 }
 
+
 //*************************************************************************
 //*************************************************************************
 
 int main(int argc, char **argv)
 {
-    int i, start_option;
+    int i, start_option, summary;
     int fonly, mode;
     char *db_base = "/lio/log/warm";
     char *rid_key;
@@ -185,6 +362,7 @@ int main(int argc, char **argv)
         printf("    -w                 - Print files containing write errors\n");
         printf("    -s                 - Print files that were sucessfully warmed\n");
         printf("    -f                 - Print files that failed warming\n");
+        printf("    --summary          - Print a summary of files and RIDs. Use of this option disables other selection options\n");
         printf("\n");
         printf("If no secondary modifier is provided all files matching the initial filter are printed\n");
         return(1);
@@ -192,6 +370,7 @@ int main(int argc, char **argv)
 
     i=1;
     fonly = 0;
+    summary = 0;
     mode = 0;
     rid_key = NULL;
     do {
@@ -201,6 +380,9 @@ int main(int argc, char **argv)
             i++;
             db_base = argv[i];
             i++;
+        } else if (strcmp(argv[i], "--summary") == 0) { //** Summary mode
+            i++;
+            summary = 1;
         } else if (strcmp(argv[i], "-r") == 0) { //** Use the RID name for selection
             i++;
             rid_key = argv[i];
@@ -234,7 +416,9 @@ int main(int argc, char **argv)
         return(1);
     }
 
-    if (rid_key == NULL) {
+    if (summary == 1) {
+        warmer_summary(stdout, inode_db, rid_db);
+    } else if (rid_key == NULL) {
         warmer_query_inode(inode_db, mode, fonly);
     } else {
         warmer_query_rid(rid_key, inode_db, rid_db, mode, fonly, total_bytes);

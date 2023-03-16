@@ -815,7 +815,7 @@ int main(int argc, char **argv)
     //** Process all the files
     //** Loop through all the partitions
     for (j=0;  j<wp->wdb->n_partitions; j++) {
-        log_printf(1, "Processing partition %d of n_partitions=%d\n", j, wp->wdb->n_partitions);
+        info_printf(lio_ifd, 1, "Processing partition %d of n_partitions=%d\n", j, wp->wdb->n_partitions);
         part_load_inodes(wp, j);
         part_annotate_write_errors(wp, j);
         part_annotate_missing_exnode_errors(wp, j);

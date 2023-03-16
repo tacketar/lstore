@@ -52,7 +52,7 @@
 
 int main(int argc, char **argv)
 {
-    int i, start_option, rg_mode, ftype, prefix_len, return_code, n_parts;
+    int i, start_option, rg_mode, ftype, prefix_len, return_code, n_parts, count, last;
     char *fname, *path;
     char *keys[] = { "system.exnode", "system.inode", "system.write_errors" };
     char *vals[3];
@@ -67,16 +67,19 @@ int main(int argc, char **argv)
 
     n_parts = 1024;
     return_code = 0;
+    count = 0;
+    last = 0;
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm_prep_walk LIO_COMMON_OPTIONS [-db DB_output_dir] [-rd recurse_depth] [-n_partitions] LIO_PATH_OPTIONS\n");
+        printf("lio_warm_prep_walk LIO_COMMON_OPTIONS [-db DB_output_dir] [-rd recurse_depth] [-n_partitions] [-count] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
         printf("    -db DB_output_dir - Output Directory for the DBes. Default is %s\n", db_base);
         printf("    -rd recurse_depth - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
         printf("    -n_partitions n   - NUmber of partitions for managing workload. Defaults to %d\n", n_parts);
-        printf("    -                  - If no file is given but a single dash is used the files are taken from stdin\n");
+        printf("    -count n          - Post an update every n files processed\n");
+        printf("    -                 - If no file is given but a single dash is used the files are taken from stdin\n");
         return(1);
     }
 
@@ -102,6 +105,10 @@ int main(int argc, char **argv)
             i++;
             n_parts = atoi(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "-count") == 0) { //** They want ongoing updates
+            i++;
+            count = atoi(argv[i]);
+            i++;
         }
 
     } while ((start_option < i) && (i<argc));
@@ -118,6 +125,7 @@ int main(int argc, char **argv)
 
     wdb = create_prep_db(db_base, n_parts);  //** Create the DB
 
+    i = 0;
     piter = tbx_stdinarray_iter_create(argc-start_option, (const char **)&(argv[start_option]));
     while ((path = tbx_stdinarray_iter_next(piter)) != NULL) {
         if (rg_mode == 0) {
@@ -146,6 +154,11 @@ int main(int argc, char **argv)
         while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
             update_warm_prep_db(lio_ifd, wdb, fname, vals, v_size);
             free(fname);
+            i++;
+            if ((count > 0) && ((i/count) != last)) {
+                last = i/count;
+                fprintf(stderr, "Processed %d objects\n", i);
+            }
         }
 
         lio_destroy_object_iter(lio_gc, it);

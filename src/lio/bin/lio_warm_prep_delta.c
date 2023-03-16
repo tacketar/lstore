@@ -443,7 +443,7 @@ void process_objects(warm_prep_db_t *wdb, apr_hash_t *obj_hash)
 
         //** Fetch the object info
         for (i=0; i<3; i++) obj->v_size[i] = -lio_gc->max_attr;
-        err = lio_get_multiple_attrs(lio_gc, lio_gc->creds, obj->fname, NULL, keys, (void **)(obj->vals), obj->v_size, 2);
+        err = lio_get_multiple_attrs(lio_gc, lio_gc->creds, obj->fname, NULL, keys, (void **)(obj->vals), obj->v_size, 2, 0);
         if (err != OP_STATE_SUCCESS) {
             log_printf(0, "ERROR: failed getting the attributes for fname=%s\n", obj->fname);
             info_printf(lio_ifd, 0, "ERROR: Failed getting attributes for fname=%s\n", obj->fname); //** Log it for a quick followup lio_warm
@@ -503,7 +503,7 @@ next:
 
 int main(int argc, char **argv)
 {
-    int i, start_option, return_code;
+    int i, start_option, return_code, count, last;
     char *text;
     char *db_base = "/lio/log/warm";
     char *clog_base = "/lio/log/os_file.log";
@@ -520,11 +520,13 @@ int main(int argc, char **argv)
     clog_entry_t ce;
 
     return_code = 0;
+    count = 0;
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm_prep_delta LIO_COMMON_OPTIONS [-db DB_base_dir] [-cdir change_dir] [-date yyyy-mm-dd] [-line N]\n");
+        printf("lio_warm_prep_delta LIO_COMMON_OPTIONS [-count n] [-db DB_base_dir] [-cdir change_dir] [-date yyyy-mm-dd] [-line N]\n");
         lio_print_options(stdout);
+        printf("    -count n          - Post an update every n objects processed\n");
         printf("    -db DB_base_dir   - Directory for the DBes to update. Default is %s\n", db_base);
         printf("    -cdir change_dir  - Prefix containing the change logs. Default is %s\n", clog_base);
         printf("    -date yyyy-mm-dd  - Change log date to start adding records. Default is to pick up from the last update.\n");
@@ -556,8 +558,11 @@ int main(int argc, char **argv)
             i++;
             clog_line = atoi(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "-count") == 0) { //** They want ongoing updates
+            i++;
+            count = atoi(argv[i]);
+            i++;
         }
-
     } while ((start_option < i) && (i<argc));
 
     //** Make the change log hashes
@@ -575,9 +580,15 @@ int main(int argc, char **argv)
 
     //** Filter the logs
     ci = notify_iter_create(clog_base, year, month, day, line);
+    i = 0;
     while ((text = notify_iter_next(ci)) != NULL) {
         if (interesting_clog_entry(text, &ce)) {
             process_clog_entry(wdb, &ce, obj_hash);
+            i++;
+            if ((count > 0) && ((i/count) != last)) {
+                last = i/count;
+                fprintf(stderr, "Processed %d objects\n", i);
+            }
         }
     }
 
