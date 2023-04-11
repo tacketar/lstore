@@ -2710,7 +2710,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
-    ftype = lio_os_local_filetype(fname);
+    ftype = lio_os_local_filetype(op->src_path);
     if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, ((ftype&OS_OBJECT_SYMLINK)?0:1) )) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
