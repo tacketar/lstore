@@ -443,7 +443,7 @@ int _dio_read_merge(dio_tbuf_t *tdio)
         tbx_tbuf_single(&tb,tdio->page_size, tdio->lo_buf);
         poff = tdio->lo_extra + tdio->blen;
         if (poff > tdio->page_size) {
-            tb_err =+ tbx_tbuf_copy(&tb, tdio->lo_extra, tdio->tbuf, tdio->tbuf_bpos, tdio->page_size - tdio->lo_extra, 1);
+            tb_err += tbx_tbuf_copy(&tb, tdio->lo_extra, tdio->tbuf, tdio->tbuf_bpos, tdio->page_size - tdio->lo_extra, 1);
         } else {
             return(tbx_tbuf_copy(&tb, tdio->lo_extra, tdio->tbuf, tdio->tbuf_bpos, tdio->blen, 1));
         }
@@ -454,7 +454,7 @@ int _dio_read_merge(dio_tbuf_t *tdio)
         tbx_tbuf_single(&tb, tdio->page_size, tdio->hi_buf);
         nbytes = tdio->lo_extra + tdio->blen - tdio->hi_pstart;
         poff = tdio->blen - nbytes;
-        tb_err =+ tbx_tbuf_copy(&tb, 0, tdio->tbuf, tdio->tbuf_bpos+poff, nbytes, 1);
+        tb_err += tbx_tbuf_copy(&tb, 0, tdio->tbuf, tdio->tbuf_bpos+poff, nbytes, 1);
     }
 
     return(tb_err);
@@ -474,7 +474,7 @@ int _dio_write_merge(dio_tbuf_t *tdio)
         tbx_tbuf_single(&tb,tdio->page_size, tdio->lo_buf);
         poff = tdio->lo_extra + tdio->blen;
         if (poff > tdio->page_size) {
-            tb_err =+ tbx_tbuf_copy(tdio->tbuf, tdio->tbuf_bpos, &tb, tdio->lo_extra, tdio->page_size - tdio->lo_extra, 1);
+            tb_err += tbx_tbuf_copy(tdio->tbuf, tdio->tbuf_bpos, &tb, tdio->lo_extra, tdio->page_size - tdio->lo_extra, 1);
         } else {
             return(tbx_tbuf_copy(tdio->tbuf, tdio->tbuf_bpos, &tb, tdio->lo_extra, tdio->blen, 1));
         }
@@ -485,7 +485,7 @@ int _dio_write_merge(dio_tbuf_t *tdio)
         tbx_tbuf_single(&tb, tdio->page_size, tdio->hi_buf);
         nbytes = tdio->lo_extra + tdio->blen - tdio->hi_pstart;
         poff = tdio->blen - nbytes;
-        tb_err =+ tbx_tbuf_copy( tdio->tbuf, tdio->tbuf_bpos+poff, &tb, 0, nbytes, 1);
+        tb_err += tbx_tbuf_copy( tdio->tbuf, tdio->tbuf_bpos+poff, &tb, 0, nbytes, 1);
     }
 
     return(tb_err);

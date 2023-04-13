@@ -1,4 +1,4 @@
-/*
+\/*
    Copyright 2016 Vanderbilt University
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -1208,7 +1208,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
     //** Slurp in the events we're going to process
     i = 0;
     for (j=0; j<size; j++) {
-        i =+ gop_mq_pipe_read(c->pc->efd[0], &v);
+        i += gop_mq_pipe_read(c->pc->efd[0], &v);
     }
 
     if (i < 0) {
