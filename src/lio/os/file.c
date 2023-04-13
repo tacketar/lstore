@@ -69,6 +69,10 @@ static lio_osfile_priv_t osf_default_options = {
     .section = "os_file",
     .base_path = "/lio/osfile",
     .os_activity = "notify_os_activity",
+    .shard_enable = 0,
+    .shard_splits = 10000,
+    .n_shard_prefix = 0,
+    .shard_prefix = NULL,
     .internal_lock_size = 200,
     .max_copy = 1024*1024,
     .hardlink_dir_size = 256,
@@ -2121,13 +2125,11 @@ void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd)
 
 int safe_remove(lio_object_service_fn_t *os, char *path)
 {
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-
-    if ((strlen(path) > SAFE_MIN_LEN) && (strncmp(osf->base_path, path, osf->base_path_len) == 0)) {
+    if (strlen(path) > SAFE_MIN_LEN) {
         return(remove(path));
     }
 
-    log_printf(15, " ERROR with remove!  base_path=%s path=%s safe_len=%d\n", osf->base_path, path, SAFE_MIN_LEN);
+    log_printf(0, " ERROR with remove! path=%s safe_len=%d \n", path, SAFE_MIN_LEN);
     return(-1234);
 }
 
@@ -2497,6 +2499,7 @@ int osf_purge_dir(lio_object_service_fn_t *os, char *path, int depth)
     if (d == NULL) return(1);
 
     while ((entry = readdir(d)) != NULL) {
+        if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) continue;
         snprintf(fname, OS_PATH_MAX, "%s/%s", path, entry->d_name);
         ftype = lio_os_local_filetype(fname);
         if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) {
@@ -2629,10 +2632,11 @@ gop_op_generic_t *osfile_object_exec_modify(lio_object_service_fn_t *os, lio_cre
 
 int osf_object_remove(lio_object_service_fn_t *os, char *path)
 {
-    int ftype, err;
+    int ftype, atype, err, n;
     char *dir, *base, *hard_inode;
     struct stat s;
     char fattr[OS_PATH_MAX];
+    char alink[OS_PATH_MAX];
 
     ftype = lio_os_local_filetype(path);
     hard_inode = NULL;
@@ -2667,9 +2671,23 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
         }
     } else if (ftype & OS_OBJECT_DIR_FLAG) {  //** A directory
         log_printf(15, "dir removal\n");
-        osf_purge_dir(os, path, 0);  //** Removes all the files
         snprintf(fattr, OS_PATH_MAX, "%s/%s", path,  FILE_ATTR_PREFIX);
-        osf_purge_dir(os, fattr, 1);
+
+        //** See if we have a shard.  If so we need to remove it
+        atype = lio_os_local_filetype(fattr);
+        if (atype & OS_OBJECT_SYMLINK_FLAG) {
+            n = readlink(fattr, alink, OS_PATH_MAX);
+            if (n == -1) {
+                log_printf(0, "ERROR: failed to remove shard attr dir=%s\n", fattr);
+            } else {
+                osf_purge_dir(os, alink, 1);
+            }
+            osf_purge_dir(os, alink, 0);  //** Removes all the files AFTER the shard since the attr dir is a symlink it will get lopped off
+            safe_remove(os, alink);
+        } else {
+            osf_purge_dir(os, path, 0);  //** Removes all the files
+            osf_purge_dir(os, fattr, 1); //** And the attr directory
+        }
         safe_remove(os, fattr);
         safe_remove(os, path);
     }
@@ -2710,9 +2728,9 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
 
-    ftype = lio_os_local_filetype(op->src_path);
-    if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, ((ftype&OS_OBJECT_SYMLINK)?0:1) )) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
+    ftype = lio_os_local_filetype(fname);
+    if (osaz_object_remove(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, ((ftype&OS_OBJECT_SYMLINK)?0:1) )) == 0)  return(gop_failure_status);
 
     lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
@@ -3105,12 +3123,14 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 {
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    struct stat sbuf;
     FILE *fd;
-    int err;
+    int err, mod;
     dev_t dev = 0;
     char *dir, *base;
     char fname[OS_PATH_MAX];
     char fattr[OS_PATH_MAX];
+    char sattr[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
     apr_thread_mutex_t *lock;
 
@@ -3177,14 +3197,39 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
         //** Also need to make the attributes directory
         snprintf(fattr, OS_PATH_MAX, "%s/%s", fname, FILE_ATTR_PREFIX);
-        err = mkdir(fattr, DIR_PERMS);
-        if (err != 0) {
-            log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
-            safe_remove(op->os, fname);
-            osf_obj_unlock(lock);
-            return(gop_failure_status);
-        }
+        if (osf->shard_enable) {
+            //** Use the ino of the directory as a random number
+            stat(fname, &sbuf);
 
+            //** Make the shard directory
+            mod = sbuf.st_ino % osf->n_shard_prefix;
+            snprintf(sattr, OS_PATH_MAX, "%s/%d/" LU, osf->shard_prefix[mod], mod, sbuf.st_ino);
+            err = mkdir(sattr, DIR_PERMS);
+            if (err != 0) {
+                log_printf(0, "Error creating object shard attr directory! path=%s full=%s\n", op->src_path, sattr);
+                safe_remove(op->os, fname);
+                osf_obj_unlock(lock);
+                return(gop_failure_status);
+            }
+
+            //** And symlink it in
+            err = symlink(sattr, fattr);
+            if (err != 0) {
+                log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
+                safe_remove(op->os, fname);
+                safe_remove(op->os, sattr);
+                osf_obj_unlock(lock);
+                return(gop_failure_status);
+            }
+        } else {
+            err = mkdir(fattr, DIR_PERMS);
+            if (err != 0) {
+                log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
+                safe_remove(op->os, fname);
+                osf_obj_unlock(lock);
+                return(gop_failure_status);
+            }
+        }
         char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
         char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
         notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
@@ -5377,6 +5422,7 @@ void osfile_print_open_fd(lio_object_service_fn_t *os, FILE *rfd, int print_sect
 void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_section_heading)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i;
 
     if (print_section_heading) fprintf(fd, "[%s]\n", osf->section);
     fprintf(fd, "type = %s\n", OS_TYPE_FILE);
@@ -5386,6 +5432,17 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "hardlink_dir_size = %d\n", osf->hardlink_dir_size);
     fprintf(fd, "authz = %s\n", osf->authz_section);
     fprintf(fd, "log_activity = %s\n", osf->os_activity);
+
+    fprintf(fd, "shard_enable = %d\n", osf->shard_enable);
+    if (osf->shard_enable) {
+        fprintf(fd, "shard_splits = %d\n", osf->shard_splits);
+        fprintf(fd, "#n_shard_prefix = %d\n", osf->n_shard_prefix);
+        for (i=0; i<osf->n_shard_prefix; i++) {
+            fprintf(fd, "shard_prefix = %s\n", osf->shard_prefix[i]);
+        }
+
+    }
+
     fprintf(fd, "\n");
 
     //** Print the notification log section
@@ -5417,6 +5474,13 @@ void osfile_destroy(lio_object_service_fn_t *os)
     tbx_list_destroy(osf->vattr_prefix);
     tbx_list_destroy(osf->open_fd);
 
+    if (osf->shard_prefix) {
+        for (i=0; i<osf->n_shard_prefix; i++) {
+            if (osf->shard_prefix[i]) free(osf->shard_prefix[i]);
+        }
+        free(osf->shard_prefix);
+    }
+
     osaz_destroy(osf->osaz);
 
     apr_pool_destroy(osf->mpool);
@@ -5434,6 +5498,50 @@ void osfile_destroy(lio_object_service_fn_t *os)
 }
 
 //***********************************************************************
+// osf_load_shard_prefix - Loads the shard prefixes
+//***********************************************************************
+
+void osf_load_shard_prefix(lio_object_service_fn_t *os, tbx_inip_file_t *fd, const char *section)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    tbx_inip_group_t *g;
+    tbx_inip_element_t *ele;
+    char *key, *value;
+    int n;
+    tbx_stack_t *stack;
+
+    g = tbx_inip_group_find(fd, section);
+    if (g == NULL) {
+        log_printf(0, "WARNING: Can't find OSFile section: %s\n", section);
+        return;
+    }
+
+    //** Get all the paths
+    stack = tbx_stack_new();
+    ele = tbx_inip_ele_first(g);
+    while (ele != NULL) {
+        key = tbx_inip_ele_get_key(ele);
+        if (strcmp(key, "shard_prefix") == 0) {
+            value = tbx_inip_ele_get_value(ele);
+            tbx_stack_move_to_bottom(stack);
+            tbx_stack_insert_below(stack, strdup(value));
+        }
+        ele = tbx_inip_ele_next(ele);
+    }
+
+    //** Now convert them to a list
+    tbx_type_malloc_clear(osf->shard_prefix, char *, tbx_stack_count(stack));
+    n = 0;
+    while ((osf->shard_prefix[n] = tbx_stack_pop(stack)) != NULL) {
+        n++;
+    }
+
+    osf->n_shard_prefix = n;
+    tbx_stack_free(stack, 0);
+}
+
+
+//***********************************************************************
 //  object_service_file_create - Creates a file backed OS
 //***********************************************************************
 
@@ -5444,7 +5552,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osaz_create_t *osaz_create;
     char pname[OS_PATH_MAX], pattr[OS_PATH_MAX];
     char *atype, *asection;
-    int i, err;
+    int i, j, err;
 
     if (section == NULL) section = osf_default_options.section;
 
@@ -5484,8 +5592,27 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
             free(os);
             return(NULL);
         }
+
+        //** Now get the sharding info
+        osf->shard_enable = tbx_inip_get_integer(fd, section, "shard_enable", osf_default_options.shard_enable);
+        if (osf->shard_enable) {
+            osf->shard_splits = tbx_inip_get_integer(fd, section, "shard_splits", osf_default_options.shard_splits);
+            if (osf->shard_splits <= 0) {
+                log_printf(0, "WARNING: shard_splits=%d. Disabling sharding\n", osf->shard_splits);
+                osf->shard_enable = 0;
+                goto next;
+            }
+
+            osf_load_shard_prefix(os, fd, section);
+            if (osf->n_shard_prefix == 0) {
+                log_printf(0, "WARNING: n_shard_prefix=%d. Disabling sharding\n", osf->n_shard_prefix);
+                osf->shard_enable = 0;
+                goto next;
+            }
+        }
     }
 
+next:
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "file");
     osf->file_path = strdup(pname);
     osf->file_path_len = strlen(osf->file_path);
@@ -5669,11 +5796,9 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
             os = NULL;
             return(NULL);
         }
-
-
     }
 
-    //** Make sure al lthe hardlink dirs exist
+    //** Make sure all the hardlink dirs exist
     for (i=0; i<osf->hardlink_dir_size; i++) {
         snprintf(pname, OS_PATH_MAX, "%s/%d", osf->hardlink_path, i);
         if (lio_os_local_filetype(pname) == 0) {
@@ -5697,6 +5822,23 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         }
     }
 
+    //** If we have sharding enabled make sure all those directories are there
+    if (osf->shard_enable == 1) {
+        for (i=0; i<osf->n_shard_prefix; i++) {
+            for (j=0; j<osf->shard_splits; j++) {
+                snprintf(pname, OS_PATH_MAX, "%s/%d", osf->shard_prefix[i], j);
+                if (lio_os_local_filetype(pname) == 0) {
+                    err = mkdir(pname, DIR_PERMS);
+                    if (err != 0) {
+                        log_printf(0, "ERROR creating shard_prefix split directory! full=%s\n", pname);
+                        os_destroy(os);
+                        os = NULL;
+                        return(NULL);
+                    }
+                }
+            }
+        }
+    }
     //** Make the activity log
     osf->olog = notify_create(fd, NULL, osf->os_activity);
 

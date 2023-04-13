@@ -71,7 +71,11 @@ struct lio_osfile_priv_t {
     int hardlink_path_len;
     int internal_lock_size;
     int hardlink_dir_size;
+    int shard_enable;
+    int shard_splits;
+    int n_shard_prefix;
     tbx_atomic_int_t hardlink_count;
+    char **shard_prefix;
     char *base_path;
     char *file_path;
     char *hardlink_path;
