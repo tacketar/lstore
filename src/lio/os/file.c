@@ -5550,7 +5550,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     lio_object_service_fn_t *os;
     lio_osfile_priv_t *osf;
     osaz_create_t *osaz_create;
-    char pname[OS_PATH_MAX], pattr[OS_PATH_MAX];
+    char pname[OS_PATH_MAX], pattr[OS_PATH_MAX], rpath[OS_PATH_MAX];
     char *atype, *asection;
     int i, j, err;
 
@@ -5613,8 +5613,25 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     }
 
 next:
+    //** Get the base path and also make sure it isn't symlinked in.  This is a requirement for all the realpath() calls to work
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "file");
+    rpath[0] = '\0';
+    realpath(pname, rpath);
+    if (strcmp(pname, rpath) != 0) {
+        log_printf(0, "ERROR: File base path is a symlink which is not allowed!!!!!!!\n");
+        log_printf(0, "ERROR: base_path=%s with base path for files=%s\n", osf->base_path, pname);
+        log_printf(0, "ERROR: realpath(%s) = %s and they should be the same!\n", pname, rpath);
+        log_printf(0, "aborting\n");
+        fprintf(stderr, "ERROR: File base path is a symlink which is not allowed!!!!!!!\n");
+        fprintf(stderr, "ERROR: base_path=%s with base path for files=%s\n", osf->base_path, pname);
+        fprintf(stderr, "ERROR: realpath(%s) = %s and they should be the same!\n", pname, rpath);
+        fprintf(stderr, "aborting\n");
+        tbx_log_flush();
+        fflush(stderr);
+        abort();
+    }
     osf->file_path = strdup(pname);
+    
     osf->file_path_len = strlen(osf->file_path);
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "hardlink");
     osf->hardlink_path = strdup(pname);
