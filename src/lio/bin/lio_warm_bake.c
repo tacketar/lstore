@@ -209,7 +209,7 @@ void object_warm_finish(warm_partition_t *wp, warm_prep_info_t *info)
 // process_warm_result - Processes the results of the warming operation
 //*************************************************************************
 
-void process_warm_result(warm_partition_t *wp, warm_task_t *wt)
+ex_off_t process_warm_result(warm_partition_t *wp, warm_task_t *wt)
 {
     int i, j;
     rid_tally_t *tally = wt->rcl->tally;
@@ -271,13 +271,15 @@ void process_warm_result(warm_partition_t *wp, warm_task_t *wt)
     }
 
     wt->gop = NULL;  //** Clear it just in case
+
+    return(wt->n);
 }
 
 //*************************************************************************
 // part_warm_caps - Does the actual warming of the caps for the partition
 //*************************************************************************
 
-void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
+ex_off_t part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
 {
     apr_ssize_t hlen;
     apr_hash_index_t *hi;
@@ -288,6 +290,7 @@ void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
     warm_task_t wtask[n_parallel];
     warm_task_t *wt;
     int *failed;
+    ex_off_t count;
 
     //** Push the warming task details on the unused stack
     tbx_type_malloc_clear(failed, int, n_parallel* n_bulk);
@@ -297,8 +300,10 @@ void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
 
     q = gop_opque_new();
     i = 0;
+    count = 0;
     do {
         n_processed = 0;
+
         for (hi=apr_hash_first(NULL, wp->rid_caps); hi != NULL; hi = apr_hash_next(hi)) {
             apr_hash_this(hi, NULL, &hlen, (void **)&rcl);
 
@@ -307,7 +312,7 @@ void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
                 if (i >= n_parallel) {
                     gop = opque_waitany(q);
                     wt = gop_get_private(gop);
-                    process_warm_result(wp, wt);
+                    count += process_warm_result(wp, wt);
                     gop_free(gop, OP_DESTROY);
                 } else {
                     wt = wtask + i;
@@ -321,7 +326,7 @@ void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
                 wt->n = rcl->n_caps - rcl->curr;
                 if (wt->n > n_bulk) wt->n = n_bulk;
                 ibp_cap2depot(rcl->cap[wt->slot], &(wt->depot));
-                rcl->curr =+ wt->n;
+                rcl->curr += wt->n;
                 gop = ibp_rid_bulk_warm_gop(ic, &(wt->depot), dt, wt->n, &(rcl->cap[wt->slot]), &(wt->n_failed), wt->failed, lio_gc->timeout);
                 wt->gop = gop;
                 gop_set_private(gop, wt);
@@ -333,19 +338,21 @@ void part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
     //** Process the remaining tasks
     while ((gop = opque_waitany(q)) != NULL) {
         wt = gop_get_private(gop);
-        process_warm_result(wp, wt);
+        count += process_warm_result(wp, wt);
         gop_free(gop, OP_DESTROY);
     }
 
     gop_opque_free(q, OP_DESTROY);
     free(failed);
+
+    return(count);
 }
 
 //*************************************************************************
 // part_load_inodes - Loads the inode/fnames for the partition
 //*************************************************************************
 
-void part_load_inodes(warm_partition_t *wp, int n_part)
+ex_off_t part_load_inodes(warm_partition_t *wp, int n_part)
 {
     rocksdb_iterator_t *it;
     ex_id_t inode_dummy;
@@ -353,6 +360,7 @@ void part_load_inodes(warm_partition_t *wp, int n_part)
     size_t nbytes;
     inode_value_t *ival;
     warm_prep_info_t *info;
+    ex_off_t count;
 
     //** Make the iterator
     it = rocksdb_create_iterator(wp->wdb->inode->db, wp->wdb->inode->ropt);
@@ -360,6 +368,7 @@ void part_load_inodes(warm_partition_t *wp, int n_part)
     rocksdb_iter_seek(it, (const char *)&inode_dummy, sizeof(ex_id_t));
 
     //** Iterate over the partition
+    count = 0;
     while (rocksdb_iter_valid(it)) {
         inode_ptr = (ex_id_t *)rocksdb_iter_key(it, &nbytes);
         if ((*inode_ptr % wp->wdb->n_partitions) != (unsigned int)n_part) break;  //** Kick out on partition change
@@ -375,18 +384,21 @@ void part_load_inodes(warm_partition_t *wp, int n_part)
 
         //** Finally add it to the hash
         apr_hash_set(wp->inode, &(info->inode), sizeof(ex_id_t), info);
+        count++;
         rocksdb_iter_next(it);
     }
 
     //** Cleanup
     rocksdb_iter_destroy(it);
+
+    return(count);
 }
 
 //*************************************************************************
 // part_load_caps - Loads the caps for the partition
 //*************************************************************************
 
-void part_load_caps(warm_partition_t *wp, int n_part)
+ex_off_t part_load_caps(warm_partition_t *wp, int n_part)
 {
     rocksdb_iterator_t *it;
     rid_prep_key_t rcap_dummy;
@@ -397,6 +409,7 @@ void part_load_caps(warm_partition_t *wp, int n_part)
     ex_off_t total_cap_size;
     char *rid_key;
     rid_cap_list_t *rcl;
+    ex_off_t count;
 
 
     //** Make the iterator
@@ -410,6 +423,7 @@ void part_load_caps(warm_partition_t *wp, int n_part)
     total_cap_size = 0;
     rid_key = NULL;
     kick_out = 0;
+    count = 0;
     while (rocksdb_iter_valid(it)) {
         rcap_ptr = (rid_prep_key_t *)rocksdb_iter_key(it, &nbytes);
         if ((rcap_ptr->id % wp->wdb->n_partitions) != (unsigned int)n_part) { //** Kick out on partition change
@@ -462,16 +476,17 @@ kick_out:
         kick_out = 1;
         goto kick_out;
     }
+
     //** Now iterate over everything again but this time store the caps
     rocksdb_iter_seek(it, (const char *)&rcap_dummy, sizeof(rcap_dummy));
     n_caps = 0;
     n_caps_size = 0;
     rid_key = NULL;
+    rcl = NULL;
     while (rocksdb_iter_valid(it)) {
         rcap_ptr = (rid_prep_key_t *)rocksdb_iter_key(it, &nbytes);
         if ((rcap_ptr->id % wp->wdb->n_partitions) != (unsigned int)n_part) break; //** Kick out on partition change
 
-        rcl = NULL;
         if ((rid_key == NULL) || (strcmp(rid_key, rcap_ptr->strings) != 0)) { //** RID change
             rcl = apr_hash_get(wp->rid_caps, rcap_ptr->strings, APR_HASH_KEY_STRING);  //** The start of the strings is the new RID key
             if (!rcl) {
@@ -487,16 +502,19 @@ kick_out:
 
         rcl->cap[n_caps] = rcl->cap_buffer + n_caps_size;
         strcpy(rcl->cap[n_caps], rcap_ptr->strings + rcap_ptr->rid_len + 1);
-        rcl->nbytes[n_caps] =+ *(ex_off_t *)rocksdb_iter_value(it, &nbytes);
+        rcl->nbytes[n_caps] += *(ex_off_t *)rocksdb_iter_value(it, &nbytes);
         rcl->inode[n_caps] = rcap_ptr->id;
         n_caps++;
         n_caps_size += rcap_ptr->mcap_len + 1;
+        count++;
 
         rocksdb_iter_next(it);
     }
 
     //** Cleanup
     rocksdb_iter_destroy(it);
+
+    return(count);
 }
 
 //*************************************************************************
@@ -546,18 +564,20 @@ void part_cleanup_and_tally_results(warm_partition_t *wp)
 // part_annotate_write_errors - Adds the write error flag
 //*************************************************************************
 
-void part_annotate_write_errors(warm_partition_t *wp, int n_partition)
+ex_off_t part_annotate_write_errors(warm_partition_t *wp, int n_partition)
 {
     rocksdb_iterator_t *it;
     size_t nbytes;
     ex_id_t inode;
     ex_id_t *inode_ptr;
     warm_prep_info_t *info;
+    ex_off_t count;
 
     //** Make the iterator
     it = rocksdb_create_iterator(wp->wdb->write_errors->db, wp->wdb->write_errors->ropt);
     inode = n_partition;
     rocksdb_iter_seek(it, (const char *)&inode, sizeof(ex_id_t));
+    count = 0;
 
     while (rocksdb_iter_valid(it)) {
         inode_ptr = (ex_id_t *)rocksdb_iter_key(it, &nbytes);
@@ -565,6 +585,7 @@ void part_annotate_write_errors(warm_partition_t *wp, int n_partition)
 
         info = apr_hash_get(wp->inode, inode_ptr, sizeof(ex_id_t));
         if (!info) goto next;
+        count++;
         info->write_error = 1;
         info_printf(lio_ifd, 0, "WRITE_ERROR for file %s\n", info->fname);
 next:
@@ -573,25 +594,29 @@ next:
 
     //** Cleanup
     rocksdb_iter_destroy(it);
+
+    return(count);
 }
 
 //*************************************************************************
 // part_annotate_missing_exnode_errors - Flags the files with missing exnodes
 //*************************************************************************
 
-void part_annotate_missing_exnode_errors(warm_partition_t *wp, int n_partition)
+ex_off_t part_annotate_missing_exnode_errors(warm_partition_t *wp, int n_partition)
 {
     rocksdb_iterator_t *it;
     size_t nbytes;
     ex_id_t inode;
     ex_id_t *inode_ptr;
     warm_prep_info_t *info;
+    ex_off_t count;
 
     //** Make the iterator
     it = rocksdb_create_iterator(wp->wdb->missing_exnode_errors->db, wp->wdb->missing_exnode_errors->ropt);
     inode = n_partition;
     rocksdb_iter_seek(it, (const char *)&inode, sizeof(ex_id_t));
 
+    count = 0;
     while (rocksdb_iter_valid(it)) {
         inode_ptr = (ex_id_t *)rocksdb_iter_key(it, &nbytes);
         if ((*inode_ptr % wp->wdb->n_partitions) != (unsigned int)n_partition) goto next;  //** Skip if not in this partition
@@ -600,12 +625,16 @@ void part_annotate_missing_exnode_errors(warm_partition_t *wp, int n_partition)
         if (!info) goto next;
         wp->n_missing_err++;
         info_printf(lio_ifd, 0, "MISSING_EXNODE for file %s\n", info->fname);
+        count++;
+
 next:
         rocksdb_iter_next(it);
     }
 
     //** Cleanup
     rocksdb_iter_destroy(it);
+
+    return(count);
 }
 
 //*************************************************************************
@@ -727,6 +756,7 @@ int warm_dump_summary(warm_partition_t *wp, int summary_mode)
 int main(int argc, char **argv)
 {
     int i, j, start_option, return_code, n_warm, n_bulk;
+    ex_off_t n_inodes, n_we, n_missing, n_load, n_pwarm;
     warm_partition_t *wp;
     tbx_que_t  *que_setattr;
     apr_thread_t *sa_thread;
@@ -816,11 +846,16 @@ int main(int argc, char **argv)
     //** Loop through all the partitions
     for (j=0;  j<wp->wdb->n_partitions; j++) {
         info_printf(lio_ifd, 1, "Processing partition %d of n_partitions=%d\n", j, wp->wdb->n_partitions);
-        part_load_inodes(wp, j);
-        part_annotate_write_errors(wp, j);
-        part_annotate_missing_exnode_errors(wp, j);
-        part_load_caps(wp, j);
-        part_warm_caps(wp, lio_parallel_task_count, n_bulk);
+        n_inodes = part_load_inodes(wp, j);
+        info_printf(lio_ifd, 1, "  Loaded inodes: " XOT "\n", n_inodes);
+        n_we = part_annotate_write_errors(wp, j);
+        info_printf(lio_ifd, 1, "  Write errors: " XOT "\n", n_we);
+        n_missing = part_annotate_missing_exnode_errors(wp, j);
+        info_printf(lio_ifd, 1, "  Missing exnodes: " XOT "\n", n_missing);
+        n_load = part_load_caps(wp, j);
+        info_printf(lio_ifd, 1, "  Loaded caps: " XOT "\n", n_load);
+        n_pwarm = part_warm_caps(wp, lio_parallel_task_count, n_bulk);
+        info_printf(lio_ifd, 1, "  Warmed caps: " XOT "\n", n_pwarm);
         part_cleanup_and_tally_results(wp);
     }
 

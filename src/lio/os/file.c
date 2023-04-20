@@ -42,6 +42,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <tbx/append_printf.h>
+#include <tbx/apr_wrapper.h>
 #include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/chksum.h>
@@ -55,6 +56,7 @@
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
+#include <tbx/que.h>
 #include <unistd.h>
 
 #include "authn.h"
@@ -69,6 +71,12 @@ static lio_osfile_priv_t osf_default_options = {
     .section = "os_file",
     .base_path = "/lio/osfile",
     .os_activity = "notify_os_activity",
+    .piter_enable = 0,
+    .n_piter_threads = 2,
+    .n_piter_que_fname = 1024,
+    .n_piter_que_attr = 1024,
+    .n_piter_fname_size = 1024,
+    .n_piter_attr_size = 1*1024*1024,
     .shard_enable = 0,
     .shard_splits = 10000,
     .n_shard_prefix = 0,
@@ -186,6 +194,32 @@ typedef struct {
 } osf_obj_level_t;
 
 typedef struct {
+    int prefix_len;
+    int ftype;
+    char *fname;
+    char *realpath;
+} piq_fname_t;
+
+typedef struct {
+    int len;
+    void *value;
+} piq_attr_t;
+
+
+typedef struct {
+    apr_pool_t *mpool;
+    apr_thread_t **attr_workers;
+    apr_thread_t *fname_worker;
+    tbx_atomic_int_t n_active;
+    tbx_atomic_int_t abort;
+    tbx_que_t *que_fname;
+    tbx_que_t *que_attr;
+    int attr_curr_slot;
+    piq_attr_t *attr_curr;
+    int optimized_enable;
+} piter_t;
+
+typedef struct {
     lio_object_service_fn_t *os;
     lio_os_regex_table_t *table;
     lio_os_regex_table_t *attr;
@@ -195,11 +229,14 @@ typedef struct {
     lio_creds_t *creds;
     lio_os_authz_local_t ug;
     os_attr_iter_t **it_attr;
+    piter_t *piter;
     os_fd_t *fd;
     tbx_stack_t *recurse_stack;
     apr_pool_t *mpool;
     apr_hash_t *symlink_loop;
+    int (*next_object)(os_object_iter_t *oit, char **fname, int *prefix_len);
     char rp[OS_PATH_MAX];
+    char prev_match[OS_PATH_MAX];
     char *realpath;
     char **key;
     void **val;
@@ -211,6 +248,7 @@ typedef struct {
     int max_level;
     int v_max;
     int curr_level;
+    int prev_match_prefix;
     int mode;
     int object_types;
     int finished;
@@ -289,6 +327,7 @@ typedef struct {
 #define osf_obj_lock(lock)  apr_thread_mutex_lock(lock)
 #define osf_obj_unlock(lock)  apr_thread_mutex_unlock(lock)
 
+gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id);
 char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_prefix);
 apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot);
 int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void *val, int v_size, int *atype, int append_val);
@@ -2282,7 +2321,7 @@ void my_seekdir(osf_dir_t *d, long offset)
 // osf_next_object - Returns the iterators next object
 //***********************************************************************
 
-int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
+int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int *dir_change)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
     int i, rmatch, tweak, do_recurse, can_access;
@@ -2294,8 +2333,8 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
     char fullname[OS_PATH_MAX];
     char rp[OS_PATH_MAX];
     char *obj_fixed = NULL;
-//char rp_check[OS_PATH_MAX];
 
+    *dir_change = 0;
     *prefix_len = 0;
     if (it->finished == 1) {
         *myfname = NULL;
@@ -2354,9 +2393,6 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len)
                 snprintf(fname, OS_PATH_MAX, "%s/%s", itl->path, itl->entry);
                 snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fname);
 
-//char *slash = NULL;
-//    slash = strchr(itl->entry, '/');
-log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->entry, '/') == NULL) ? 0 : 1));
                 i = os_local_filetype_stat(fullname, &link_stat, &object_stat);
                 if ((i & OS_OBJECT_SYMLINK_FLAG) || (strchr(itl->entry, '/'))) {
                      _osf_realpath(it->os, fname, rp, 1);
@@ -2364,12 +2400,6 @@ log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->e
                     snprintf(rp, OS_PATH_MAX, "%s/%s", itl->realpath, itl->entry);
                 }
                 log_printf(15, "POSSIBLE MATCH level=%d table->n=%d fname=%s max_level=%d\n", it->curr_level, it->table->n, fname, it->max_level);
-
-//_osf_realpath(it->os, fname, rp_check, 1);
-//log_printf(0, "rp=%s rp_check=%s\n", rp, rp_check);
-//if (strcmp(rp_check, rp) != 0) {
-//    log_printf(0, "OOPS: rp=%s rp_check=%s\n", rp, rp_check);
-//}
 
                 can_access = osaz_object_access(osf->osaz, it->creds, &(it->ug), rp, OS_MODE_READ_IMMEDIATE);
                 if (can_access > 0) { //** See if I can access it
@@ -2414,6 +2444,8 @@ log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->e
                                             if (*prefix_len == 0) *prefix_len = tweak;
                                         }
                                         log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
+                                        if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
+                                        strcpy(it->prev_match, itl->path);
                                         if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                         return(i);
                                     }
@@ -2452,6 +2484,8 @@ log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->e
                                             *myfname=strdup(fname);
                                             strncpy(it->rp, rp, OS_PATH_MAX); it->realpath = it->rp;
                                             log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
+                                            if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
+                                            strcpy(it->prev_match, itl->path);
                                             if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                             return(i);
                                         }
@@ -2480,7 +2514,364 @@ log_printf(0, "fname=%s entry=%s slash=%d\n", fname, itl->entry, ((strchr(itl->e
     return(0);
 }
 
+//***********************************************************************
+// piter_fname_thread - Thread that handles the parallel fname fetching
+//***********************************************************************
 
+void *piter_fname_thread(apr_thread_t *th, void *arg)
+{
+    osf_object_iter_t *it = (osf_object_iter_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
+    piter_t *pi = it->piter;
+    piq_fname_t *pf;
+    char *fname;
+    int slot, ftype, prefix_len, dir_change, n;
+
+    tbx_type_malloc_clear(pf, piq_fname_t, osf->n_piter_fname_size+1);
+    n = sizeof(piq_fname_t)*(osf->n_piter_fname_size+1);
+
+    slot = 0;
+    while ((ftype = osf_next_object(it, &fname, &prefix_len, &dir_change)) > 0) {
+        if (((dir_change) && (slot>0)) || (slot >= osf->n_piter_fname_size)) {
+            pf[slot].fname = NULL;
+            tbx_que_put(pi->que_fname, pf, TBX_QUE_BLOCK);
+            slot = 0;
+            bzero(pf, n);  //** Make sure and blank the data
+
+            if (tbx_atomic_get(pi->abort) > 0) {  //** See if we got an abort
+                free(fname);  //** Cleanup this since we going to kick out
+                goto kickout;
+            }
+        }
+
+        //** Store the next entry
+        pf[slot].ftype = ftype;
+        pf[slot].prefix_len = prefix_len;
+        pf[slot].fname = fname;
+        pf[slot].realpath = strdup(it->realpath);
+        slot++;
+    }
+
+kickout:
+    if (slot > 0) {  //** Flush the last entry
+        pf[slot].fname = NULL;
+        tbx_que_put(pi->que_fname, pf, TBX_QUE_BLOCK);
+    }
+
+    //** Now dump the terminators for each of the worker threads
+    pf[0].fname = NULL;
+    for (slot=0; slot < osf->n_piter_threads; slot++) {
+        tbx_que_put(pi->que_fname, pf, TBX_QUE_BLOCK);
+    }
+
+    //** Now we can clean up and exit
+    free(pf);
+
+    apr_thread_exit(th, 0);
+    return(NULL);
+}
+
+
+//***********************************************************************
+// attr_list_is_special - Check if any attribute in the list is special
+//     and if so return 1 otherwise 0.
+//***********************************************************************
+
+int attr_list_is_special(lio_object_service_fn_t *os, char **key, int n_keys)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i, n;
+    tbx_list_iter_t it;
+    lio_os_virtual_attr_t *va;
+    char *ca;
+
+    for (i=0; i<n_keys; i++) {
+        //** Do a Virtual Attr check
+        //** Check the prefix VA's first
+        va = NULL;
+        it = tbx_list_iter_search(osf->vattr_prefix, key[i], -1);
+        tbx_list_next(&it, (tbx_list_key_t **)&ca, (tbx_list_data_t **)&va);
+        if (va != NULL) {
+            n = (int)(long)va->priv;  //*** HACKERY **** to get the attribute length
+            if (strncmp(key[i], va->attribute, n) == 0) {  //** Prefix matches
+                return(1);
+            }
+        }
+
+        //** Now check the normal VA's
+        va = apr_hash_get(osf->vattr_hash, key[i], APR_HASH_KEY_STRING);
+        if (va != NULL)  return(1);
+    }
+
+    return(0);
+}
+
+//***********************************************************************
+// fast_get_attr - Optimized get_attr. It assumes no special files or symlinked objects or attrs
+//***********************************************************************
+
+int fast_get_attr(lio_object_service_fn_t *os, osfile_fd_t *ofd, char *attr, void **val, int *v_size)
+{
+    FILE *fd;
+    char *ca;
+    char fname[OS_PATH_MAX];
+    int n, bsize, err;
+
+    err = 0;
+
+    snprintf(fname, OS_PATH_MAX, "%s/%s", ofd->attr_dir, attr);
+
+    fd = tbx_io_fopen(fname, "r");
+    if (fd == NULL) {
+        if (*v_size < 0) *val = NULL;
+        *v_size = -1;
+        return(1);
+    }
+
+    if (*v_size < 0) { //** Need to determine the size
+        tbx_io_fseek(fd, 0L, SEEK_END);
+        n = tbx_io_ftell(fd);
+        tbx_io_fseek(fd, 0L, SEEK_SET);
+        if (n < 1) {    //** Either have an error (-1) or an empty file (0)
+           *v_size = 0;
+            *val = NULL;
+            tbx_io_fclose(fd);
+            return((n<0) ? 1 : 0);
+        } else {
+            *v_size = (n > (-*v_size)) ? -*v_size : n;
+            bsize = *v_size + 1;
+            log_printf(15, " adjusting v_size=%d n=%d\n", *v_size, n);
+            *val = malloc(bsize);
+         }
+    } else {
+        bsize = *v_size;
+    }
+
+    *v_size = tbx_io_fread(*val, 1, *v_size, fd);
+    if (bsize > *v_size) {
+        ca = (char *)(*val);    //** Add a NULL terminator in case it may be a string
+        ca[*v_size] = 0;
+    }
+
+    tbx_io_fclose(fd);
+
+    return(err);
+}
+
+//***********************************************************************
+
+gop_op_status_t my_osf_get_multiple_attr_fn(void *arg, int id)
+{
+    osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
+    int err, i;
+    gop_op_status_t status;
+
+    status = gop_success_status;
+
+    err = 0;
+    for (i=0; i<op->n; i++) {
+        err += fast_get_attr(op->os, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]));
+    }
+
+    if (err) status = gop_failure_status;
+    return(status);
+}
+
+//***********************************************************************
+// pattr_append - Adds an entry to the que_attr
+//***********************************************************************
+
+int pattr_append_optimized(osf_object_iter_t *it, piq_attr_t *pa, int *aslot, piq_fname_t *pf)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
+    int v_size[it->n_list];
+    void *value[it->n_list];
+    osfile_attr_op_t aop;
+    osfile_fd_t fd_manual;
+    osfile_fd_t *fd;
+    int slot = *aslot;
+    int i, nbytes;
+
+    nbytes = 0;
+    memset(&fd_manual, 0, sizeof(fd_manual));
+    fd_manual.object_name = pf->fname;
+    fd_manual.ftype = pf->ftype;
+    fd_manual.attr_dir = object_attr_dir(it->os, osf->file_path, fd_manual.object_name, fd_manual.ftype);
+    fd = &fd_manual;
+    aop.os = it->os;
+    aop.creds = it->creds;
+    aop.fd = fd;
+    aop.key = it->key;
+    aop.ug = &(it->ug);
+    aop.realpath = pf->realpath;
+
+    aop.val = value;
+    aop.v_size = v_size;
+    memcpy(v_size, it->v_size_user, sizeof(int)*it->n_list);
+    aop.n = it->n_list;
+    my_osf_get_multiple_attr_fn(&aop, 0);
+
+    //** Dump the info into the slot
+    pa[slot].len = pf->ftype; slot++;
+    pa[slot].len = pf->prefix_len; pa[slot].value = (void *)pf->fname; slot++;
+
+    for (i=0; i<it->n_list; i++) {
+        pa[slot].len = v_size[i];
+        pa[slot].value = value[i];
+        value[i] = NULL;
+        nbytes += v_size[i];
+        slot++;
+    }
+
+    *aslot = slot;
+
+    if (fd_manual.attr_dir) free(fd_manual.attr_dir);
+    if (pf->realpath) free(pf->realpath);  //** Cleanup the realpath
+
+    return(nbytes);
+}
+
+//***********************************************************************
+// pattr_append - Adds an entry to the que_attr
+//***********************************************************************
+
+int pattr_append_general(osf_object_iter_t *it, piq_attr_t *pa, int *aslot, piq_fname_t *pf)
+{
+    int v_size[it->n_list];
+    void *value[it->n_list];
+    osfile_open_op_t op;
+    osfile_attr_op_t aop;
+    osfile_fd_t *fd;
+    gop_op_status_t status;
+    int slot = *aslot;
+    int i, nbytes;
+
+    nbytes = 0;
+
+    //** Open the file and make the attr iterator
+    op.os = it->os;
+    op.creds = it->creds;
+    op.path = strdup(pf->fname);
+    op.fd = &fd;
+    op.mode = OS_MODE_READ_IMMEDIATE;
+    op.id = NULL;
+    op.max_wait = 0;
+    op.uuid = 0;
+    op.ug = &(it->ug);
+    op.realpath = pf->realpath;
+    tbx_random_get_bytes(&(op.uuid), sizeof(op.uuid));
+    status = osfile_open_object_fn(&op, 0);
+    if (status.op_status != OP_STATE_SUCCESS) return(0);
+
+    aop.os = it->os;
+    aop.creds = it->creds;
+    aop.fd = fd;
+    aop.key = it->key;
+    aop.ug = &(it->ug);
+    aop.realpath = pf->realpath;
+
+    aop.val = value;
+    aop.v_size = v_size;
+    memcpy(v_size, it->v_size_user, sizeof(int)*it->n_list);
+    aop.n = it->n_list;
+    osf_get_multiple_attr_fn(&aop, 0);
+
+    //** Dump the info into the slot
+    pa[slot].len = pf->ftype; slot++;
+    pa[slot].len = pf->prefix_len; pa[slot].value = (void *)pf->fname; slot++;
+
+    for (i=0; i<it->n_list; i++) {
+        pa[slot].len = v_size[i];
+        pa[slot].value = value[i];
+        value[i] = NULL;
+        nbytes += v_size[i];
+        slot++;
+    }
+
+    *aslot = slot;
+
+    //**Close the file and iter
+    op.os = it->os;
+    op.cfd = fd;
+    osfile_close_object_fn((void *)&op, 0);
+
+    free(pf->realpath);  //** Cleanup the realpath
+
+    return(nbytes);
+}
+
+//***********************************************************************
+// piter_attr_thread - Thread that handles the parallel attribute iterator
+//***********************************************************************
+
+void *piter_attr_thread(apr_thread_t *th, void *arg)
+{
+    osf_object_iter_t *it = (osf_object_iter_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
+    piter_t *pi = it->piter;
+    piq_fname_t *pf;
+    piq_attr_t *pa;
+    int n, i, aslot, nbytes, finished, active_count, used;
+    int (*pattr_append)(osf_object_iter_t *it, piq_attr_t *pa, int *aslot, piq_fname_t *pf);
+
+    pattr_append = (pi->optimized_enable) ? pattr_append_optimized : pattr_append_general;
+
+    i = 0;
+    tbx_type_malloc_clear(pf, piq_fname_t, osf->n_piter_fname_size+1);
+    n = (it->n_list+2) * (osf->n_piter_que_attr + 1);
+    tbx_type_malloc_clear(pa, piq_attr_t, n);
+
+    aslot = 0; finished = 0; nbytes = 0; used = 0;
+    while ((tbx_que_get(pi->que_fname, pf, TBX_QUE_BLOCK) == 0) && (finished == 0)) {
+        if (pf[0].fname == NULL) break;  //** Got the sentinel
+
+        for (i = 0; pf[i].fname; i++) {
+            //** Add the entry
+            nbytes += pattr_append(it, pa, &aslot, pf + i);
+            used++;
+            if ((nbytes > osf->n_piter_attr_size) || (used >= osf->n_piter_que_attr)) {  //** Dump it on the que if full
+                pa[aslot].len = 0;
+                tbx_que_put(pi->que_attr, pa, TBX_QUE_BLOCK);
+                nbytes = 0;
+                aslot = 0;
+                used = 0;
+                bzero(pa, n);
+                finished = tbx_atomic_get(pi->abort); //** See if we kick out after processing the block
+            }
+        }
+    }
+
+    //** Dump any remaining objects on the que
+    if (aslot > 0) {
+        pa[aslot].len = 0;
+        tbx_que_put(pi->que_attr, pa, TBX_QUE_BLOCK);
+        nbytes = 0;
+    }
+
+    if (finished) { //** We got an early abort so go ahead and dump everything on the fname que
+        while (tbx_que_get(pi->que_fname, pf, TBX_QUE_BLOCK) == 0) {
+            if (pf[0].fname == NULL) break;  //** Got the sentinel
+
+            for (i = 0; pf[i].fname; i++) {
+                free(pf[i].fname);
+                free(pf[i].realpath);
+            }
+        }
+    }
+
+    //** See if we throw the sentinel
+    active_count = tbx_atomic_dec(pi->n_active);
+    if (active_count == 0) {
+        tbx_que_set_finished(pi->que_attr);
+    }
+
+    //** Cleanup and exit
+    free(pa);
+    free(pf);
+
+    apr_thread_exit(th, 0);
+    return(NULL);
+}
 
 
 //***********************************************************************
@@ -4170,6 +4561,7 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id)
     oops = 0;
     for (i=0; i<op->n; i++) {
         v_start[i] = op->v_size[i];
+        atype = 0;
         err += osf_get_attr(op->os, op->creds, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, op->ug, op->fd->realpath);
         if (op->v_size[i] != 0) {
             log_printf(15, "PTR i=%d key=%s val=%s v_size=%d atype=%d err=%d\n", i, op->key[i], (char *)op->val[i], op->v_size[i], atype, err);
@@ -4531,22 +4923,22 @@ void osfile_destroy_attr_iter(os_attr_iter_t *oit)
 }
 
 //***********************************************************************
-// osfile_next_object - Returns the iterators next matching object
+// osfile_next_object_serial - Returns the iterators next matching object
 //***********************************************************************
 
-int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
+int osfile_next_object_serial(os_object_iter_t *oit, char **fname, int *prefix_len)
 {
     osf_object_iter_t *it = (osf_object_iter_t *)oit;
     osfile_attr_iter_t *ait;
     osfile_open_op_t op;
     osfile_attr_op_t aop;
     gop_op_status_t status;
-    int ftype;
+    int ftype, dir_change;
 
-    ftype = osf_next_object(it, fname, prefix_len);
+    ftype = osf_next_object(it, fname, prefix_len, &dir_change);
 
     if (*fname != NULL) {
-        if (it->n_list < 0) {  //** ATtr regex mode
+        if (it->n_list < 0) {  //** Attr regex mode
             if (it->it_attr != NULL) {
                 if (*(it->it_attr) != NULL) osfile_destroy_attr_iter(*(it->it_attr));
                 if (it->fd != NULL) {
@@ -4594,7 +4986,7 @@ int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
 
             aop.os = it->os;
             aop.creds = it->creds;
-            aop.fd = (osfile_fd_t *)it->fd;
+            aop.fd = (os_fd_t *)it->fd;
             aop.key = it->key;
             aop.ug = &(it->ug);
             aop.realpath = it->realpath;
@@ -4618,6 +5010,53 @@ int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     return(0);
 }
 
+//***********************************************************************
+// osfile_next_object_parallel - Returns the iterators next matching object
+//***********************************************************************
+
+int osfile_next_object_parallel(os_object_iter_t *oit, char **fname, int *prefix_len)
+{
+    osf_object_iter_t *it = (osf_object_iter_t *)oit;
+    piter_t *piter = it->piter;
+    int slot = piter->attr_curr_slot;
+    piq_attr_t *pa = piter->attr_curr;
+    int i, ftype;
+
+    if (slot == -1) return(0);  //** Nothing left to do
+
+    //** See if we load the next one
+    if (pa[slot].len == 0) {
+        if (tbx_que_get(piter->que_attr, pa, TBX_QUE_BLOCK) != 0) {
+            piter->attr_curr_slot = -1;
+            return(0);  //** Nothing left so kick out
+        }
+        slot = 0;
+    }
+
+    ftype = pa[slot].len; slot++;  //**Base slot is the ftype
+    *prefix_len = pa[slot].len; *fname = (char *)pa[slot].value; slot++;  //** The next is the fname and prefix_len
+
+    //**Now peel off the attrs
+    for (i=0; i<it->n_list; i++) {
+        it->v_size[i] = pa[slot].len;
+        it->val[i] = pa[slot].value;
+        slot++;
+    }
+
+    piter->attr_curr_slot = slot;  //** Update the slot
+    return(ftype);
+}
+
+//***********************************************************************
+// osfile_next_object - Returns the iterators next matching object
+//***********************************************************************
+
+int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
+{
+    osf_object_iter_t *it = (osf_object_iter_t *)oit;
+
+    return(it->next_object(oit, fname, prefix_len));
+}
 
 //***********************************************************************
 // osfile_create_object_iter - Creates an object iterator to selectively
@@ -4642,6 +5081,8 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
     it->recurse_depth = recurse_depth;
     it->max_level = path->n + recurse_depth;
     it->creds = creds;
+    it->prev_match_prefix = -1;
+    it->next_object = osfile_next_object_serial;
 
     osaz_ug_hint_init(osf->osaz, it->creds, &(it->ug));
     it->ug.creds = creds;
@@ -4675,24 +5116,17 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
 
     if (object_regex != NULL) it->object_preg = &(object_regex->regex_entry[0].compiled);
 
-log_printf(0, "OBJITER: n=%d\n", it->table->n);
+//log_printf(0, "OBJITER: n=%d\n", it->table->n);
     if (it->table->n > 0) {
         itl = &(it->level_info[0]);
         itl->path[0] = '\0';
-log_printf(0, "OBJITER: fragment=%s\n", itl->fragment);
-log_printf(0, "OBJITER: file_path=%s\n", itl->fragment);
+//log_printf(0, "OBJITER: fragment=%s\n", itl->fragment);
+//log_printf(0, "OBJITER: file_path=%s\n", itl->fragment);
         snprintf(fname, OS_PATH_MAX, "/%s", itl->fragment);
-//        _osf_realpath(it->os, fname, itl->realpath, 1);
-//        i = osaz_object_access(osf->osaz, it->creds, &(it->ug), itl->realpath, OS_MODE_READ_IMMEDIATE);
-//log_printf(0, "OBJITER: can_access=%d realpath=%s\n", i, itl->realpath);
         itl->realpath[0] = '\0';
-//        if (i == 2) {
-            itl->d = my_opendir(osf->file_path, itl->fragment);
-            itl->curr_pos = my_telldir(itl->d);
-            itl->firstpass = 1;
-//        } else {
-//            it->finished = 1;
-//        }
+        itl->d = my_opendir(osf->file_path, itl->fragment);
+        itl->curr_pos = my_telldir(itl->d);
+        itl->firstpass = 1;
     }
 
     return((os_object_iter_t *)it);
@@ -4708,7 +5142,8 @@ os_object_iter_t *osfile_create_object_iter_alist(lio_object_service_fn_t *os, l
         int recurse_depth, char **key, void **val, int *v_size, int n_keys)
 {
     osf_object_iter_t *it;
-    int i;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i, n;
 
     //** Use the regex attr version to make the base struct
     it = osfile_create_object_iter(os, creds, path, object_regex, object_types, NULL, recurse_depth, NULL, 0);
@@ -4732,6 +5167,26 @@ os_object_iter_t *osfile_create_object_iter_alist(lio_object_service_fn_t *os, l
         }
     }
 
+    //** See if we need to setup for a parallel iter
+    if (osf->piter_enable) {
+        tbx_type_malloc_clear(it->piter, piter_t, 1);
+        if ((object_types & OS_OBJECT_SYMLINK_FLAG) == 0) { //** We might be able short circuit some steps
+            if (attr_list_is_special(os, key, n_keys) == 0) it->piter->optimized_enable = 1;
+        }
+        it->piter->que_fname = tbx_que_create(osf->n_piter_que_fname, sizeof(piq_fname_t)*(osf->n_piter_fname_size+1));
+        n = (it->n_list+2) * (osf->n_piter_que_attr + 1);  //** The (n_list+2) is for the ftype and fname which are the first 2 and the last +1 is used as an fname terminator
+        it->piter->que_attr = tbx_que_create(osf->n_piter_que_attr, sizeof(piq_attr_t) * n);
+        tbx_type_malloc_clear(it->piter->attr_curr, piq_attr_t, n);
+        assert_result(apr_pool_create(&(it->piter->mpool), NULL), APR_SUCCESS);
+        tbx_type_malloc_clear(it->piter->attr_workers, apr_thread_t *, osf->n_piter_threads);
+        tbx_atomic_set(it->piter->n_active, osf->n_piter_threads);
+        for (i=0; i<osf->n_piter_threads; i++) {
+            tbx_thread_create_assert(&(it->piter->attr_workers[i]), NULL, piter_attr_thread, (void *)it, it->piter->mpool);
+        }
+        tbx_thread_create_assert(&(it->piter->fname_worker), NULL, piter_fname_thread, (void *)it, it->piter->mpool);
+        it->next_object = osfile_next_object_parallel;
+    }
+
     return(it);
 }
 
@@ -4748,7 +5203,40 @@ void osfile_destroy_object_iter(os_object_iter_t *oit)
     apr_hash_index_t *hi;
     void *key, *val;
     apr_ssize_t klen;
-    int i;
+    apr_status_t value;
+    char *fname;
+    int i, ftype;
+
+    //** Shutdown the piter if enabled
+    if (it->piter) {
+        //** Flag us as finished
+        tbx_atomic_set(it->piter->abort, 1);
+        tbx_que_set_finished(it->piter->que_fname);
+
+        //** Wait for the fname thread to complete
+        apr_thread_join(&value, it->piter->fname_worker);
+
+        //** Drop everything on the attr que
+        while ((ftype = osfile_next_object(oit, &fname, &i)) > 0) {
+            for (i=0; i<it->n_list; i++) {
+                if (it->v_size[i] > 0) free(it->val[i]);
+            }
+            free(fname);
+        }
+
+        //** Wait for the threads to complete
+        for (i=0; i<osf->n_piter_threads; i++) {
+            apr_thread_join(&value, it->piter->attr_workers[i]);
+        }
+        free(it->piter->attr_workers);
+        free(it->piter->attr_curr);
+
+        //** Tear down the piter
+        tbx_que_destroy(it->piter->que_fname);
+        tbx_que_destroy(it->piter->que_attr);
+        apr_pool_destroy(it->piter->mpool);
+        free(it->piter);
+    }
 
     //** Close any open directories
     for (i=0; i<it->table->n; i++) {
@@ -5443,6 +5931,15 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
 
     }
 
+    fprintf(fd, "piter_enable = %d\n", osf->piter_enable);
+    if (osf->piter_enable) {
+        fprintf(fd, "n_piter_threads = %d #** Number of threads for each alist iterator\n", osf->n_piter_threads);
+        fprintf(fd, "n_piter_que_fname = %d #** Objects in the fname que\n", osf->n_piter_que_fname);
+        fprintf(fd, "n_piter_fname_size = %d #** Max bundle of fnames in a fname que objects\n", osf->n_piter_fname_size);
+        fprintf(fd, "n_piter_que_qttr = %d #** Objects in the attr que\n", osf->n_piter_que_attr);
+        fprintf(fd, "n_piter_attr_size = %d #** Max size in bytes for each que attr object\n", osf->n_piter_attr_size);
+    }
+
     fprintf(fd, "\n");
 
     //** Print the notification log section
@@ -5551,7 +6048,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     lio_osfile_priv_t *osf;
     osaz_create_t *osaz_create;
     char pname[OS_PATH_MAX], pattr[OS_PATH_MAX], rpath[OS_PATH_MAX];
-    char *atype, *asection;
+    char *atype, *asection, *rp;
     int i, j, err;
 
     if (section == NULL) section = osf_default_options.section;
@@ -5610,14 +6107,32 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
                 goto next;
             }
         }
+
+        //** Get all the parallel iter values if enabled
+        osf->piter_enable = tbx_inip_get_integer(fd, section, "piter_enable", osf_default_options.piter_enable);  //** Enable parallel iterators
+        if (osf->piter_enable) {
+            //** Number of piter threads. For max performance this should be a a multiple of the number of shards.
+            osf->n_piter_threads = tbx_inip_get_integer(fd, section, "n_piter_threads", osf_default_options.n_piter_threads);
+
+            //** These handle how many fnames can be buffered. que_fname=# of objects in the fname que and fname_size=max # of fname in each object
+            //** A new object is always created on a directory change.
+            osf->n_piter_que_fname = tbx_inip_get_integer(fd, section, "n_piter_que_fname", osf_default_options.n_piter_que_fname);
+            osf->n_piter_fname_size = tbx_inip_get_integer(fd, section, "n_piter_fname_size", osf_default_options.n_piter_fname_size);
+
+            //** These handle how much memory is used to buffer parallel iter responses.  que_attr=# of objects in the attr que and
+            //** attr_size=Max size in bytes for each que_attr object.  This allows packing of multiple fname/attr fetches into a single object
+            //** Each entry consists of all the requested objects for a single fname. attrs for an fname are not split across objects.
+            osf->n_piter_que_attr = tbx_inip_get_integer(fd, section, "n_piter_que_attr", osf_default_options.n_piter_que_attr);
+            osf->n_piter_attr_size = tbx_inip_get_integer(fd, section, "n_piter_attr_size", osf_default_options.n_piter_attr_size);
+        }
     }
 
 next:
     //** Get the base path and also make sure it isn't symlinked in.  This is a requirement for all the realpath() calls to work
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "file");
     rpath[0] = '\0';
-    realpath(pname, rpath);
-    if (strcmp(pname, rpath) != 0) {
+    rp = realpath(pname, rpath);
+    if ((rp == NULL) || (strcmp(pname, rpath) != 0)) {
         log_printf(0, "ERROR: File base path is a symlink which is not allowed!!!!!!!\n");
         log_printf(0, "ERROR: base_path=%s with base path for files=%s\n", osf->base_path, pname);
         log_printf(0, "ERROR: realpath(%s) = %s and they should be the same!\n", pname, rpath);
@@ -5630,8 +6145,8 @@ next:
         fflush(stderr);
         abort();
     }
+
     osf->file_path = strdup(pname);
-    
     osf->file_path_len = strlen(osf->file_path);
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "hardlink");
     osf->hardlink_path = strdup(pname);
@@ -5869,7 +6384,9 @@ next:
 
 int local_next_object(local_object_iter_t *it, char **myfname, int *prefix_len)
 {
-    return(osf_next_object(it->oit, myfname, prefix_len));
+    int dir_change;
+
+    return(osf_next_object(it->oit, myfname, prefix_len, &dir_change));
 }
 
 

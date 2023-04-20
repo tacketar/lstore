@@ -72,6 +72,12 @@ struct lio_osfile_priv_t {
     int internal_lock_size;
     int hardlink_dir_size;
     int shard_enable;
+    int piter_enable;
+    int n_piter_threads;
+    int n_piter_que_fname;
+    int n_piter_que_attr;
+    int n_piter_fname_size;
+    int n_piter_attr_size;
     int shard_splits;
     int n_shard_prefix;
     tbx_atomic_int_t hardlink_count;
