@@ -47,6 +47,27 @@
 
 #include "warmer_helpers.h"
 
+warm_prep_db_t *wdb;
+
+typedef struct {
+  char *fname;
+  char *vals[3];
+  int v_size[3];
+} update_prep_t;
+
+//*************************************************************************
+// update_prep_task  - Does the prep update
+//*************************************************************************
+
+gop_op_status_t update_prep_task(void *arg, int id)
+{
+    update_prep_t *op = arg;
+
+    update_warm_prep_db(lio_ifd, wdb, op->fname, op->vals, op->v_size);
+    free(op->fname);
+    return(gop_success_status);
+}
+
 //*************************************************************************
 //*************************************************************************
 
@@ -63,7 +84,9 @@ int main(int argc, char **argv)
     void *piter;
     lio_path_tuple_t tuple;
     int recurse_depth = 10000;
-    warm_prep_db_t *wdb;
+    update_prep_t *op;
+    gop_op_generic_t *gop;
+    gop_opque_t *q = NULL;
 
     n_parts = 1024;
     return_code = 0;
@@ -72,7 +95,7 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm_prep_walk LIO_COMMON_OPTIONS [-db DB_output_dir] [-rd recurse_depth] [-n_partitions] [-count] LIO_PATH_OPTIONS\n");
+        printf("lio_warm_prep_walk LIO_COMMON_OPTIONS [-db DB_output_dir] [-rd recurse_depth] [-n_partitions npart] [-count cnt] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
         printf("    -db DB_output_dir - Output Directory for the DBes. Default is %s\n", db_base);
@@ -84,6 +107,9 @@ int main(int argc, char **argv)
     }
 
     lio_init(&argc, &argv);
+
+    q = gop_opque_new();
+    opque_start_execution(q);
 
     //*** Parse the path args
     rp_single = ro_single = NULL;
@@ -152,14 +178,26 @@ int main(int argc, char **argv)
         }
 
         while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
-            update_warm_prep_db(lio_ifd, wdb, fname, vals, v_size);
-            free(fname);
+            if (i>lio_parallel_task_count) {
+                gop = opque_waitany(q);
+                if (gop) gop_free(gop, OP_DESTROY);
+            }
+
+            tbx_type_malloc(op, update_prep_t, 1);
+            op->fname = fname;
+            memcpy(op->vals, vals, sizeof(vals));
+            memcpy(op->v_size, v_size, sizeof(v_size));
+            gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, update_prep_task, op, free, 1);
+            gop_opque_add(q, gop);
             i++;
             if ((count > 0) && ((i/count) != last)) {
                 last = i/count;
                 fprintf(stderr, "Processed %d objects\n", i);
             }
         }
+
+        //** Wait for everything to finish
+        opque_waitall(q);
 
         lio_destroy_object_iter(lio_gc, it);
         if (ftype < 0) {
@@ -181,6 +219,7 @@ int main(int argc, char **argv)
 finished:
     close_prep_db(wdb);  //** Close the DBs
 
+    if (q) gop_opque_free(q, OP_DESTROY);
     tbx_stdinarray_iter_destroy(piter);
     lio_shutdown();
 
