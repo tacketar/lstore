@@ -44,10 +44,6 @@
 
 #include "os.h"
 
-apr_thread_mutex_t *_path_parse_lock = NULL;
-apr_pool_t *_path_parse_pool = NULL;
-tbx_atomic_int_t _path_parse_counter = 0;
-
 //***********************************************************************
 // lio_os_glob2regex - Converts a string in shell glob notation to regex
 //***********************************************************************
@@ -202,7 +198,7 @@ int lio_os_regex_is_fixed(lio_os_regex_table_t *regex)
 // lio_os_path_glob2regex - Converts a path glob to a regex table
 //***********************************************************************
 
-lio_os_regex_table_t *lio_os_path_glob2regex(char *path)
+lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
 {
     lio_os_regex_table_t *table;
     char *bstate, *p2, *frag, *f2;
@@ -336,42 +332,81 @@ void lio_os_regex_table_destroy(lio_os_regex_table_t *table)
 }
 
 //***********************************************************************
-//  path_split - Splits the path into a basename and dirname
+//  lio_os_path_split - Splits the path into a basename and dirname
 //***********************************************************************
 
-void lio_os_path_split(const char *path, char **dir, char **file)
+void lio_os_path_split(const char *mypath, char **dir, char **file)
 {
-    char *ptr;
+    int i, n;
+    char *c;
+    char *path;
 
-    log_printf(15, "path=%s\n", path);
+    path = (char *)mypath;
 
-    ptr = strdup(path);
-
-    if (_path_parse_lock == NULL) {
-        if (tbx_atomic_inc(_path_parse_counter) == 0) {   //** Only init if needed
-            apr_pool_create(&_path_parse_pool, NULL);
-            apr_thread_mutex_create(&_path_parse_lock, APR_THREAD_MUTEX_DEFAULT, _path_parse_pool);
-            tbx_atomic_set(_path_parse_counter, 1000000);
-        } else {
-            while (tbx_atomic_get(_path_parse_counter) != 1000000) {
-                usleep(100);
+again:
+    if (path[0] == '.') {
+        if (path[1] == '.') {
+            if (path[2] == '\0') {
+                *dir = strdup(".");
+                *file = strdup("..");
+                goto finished;
             }
+        } else if (path[1] == '\0') {
+            *dir = strdup(".");
+            *file = strdup(".");
+            goto finished;
+        }
+    } else if ((path[0] == '/') && (path[1] == '\0')) {
+        *dir = strdup("/");
+        *file = strdup("/");
+        goto finished;
+    }
+
+    c = rindex(path, '/');
+    if (c == NULL) {
+        *dir = strdup(".");
+        *file = strdup(path);
+        goto finished;
+    }
+
+    //** See if we terminate with a "/"
+    *file = strdup(c + 1);
+    i = strlen(*file);
+    if (i>0) {
+        n = i;
+        while ((*file)[n-1] == '/') n--;
+        if (n != i) {
+            free(*file);
+            *file = NULL;
+            i = c - path + n;
+            if (path != mypath) free(path);
+            path = strndup(path, i);
+            goto again;
+        }
+    } else {
+        i = c - path;
+        n = i;
+        while (path[n-1] == '/') n--;
+        if (n != i) {
+            if (path != mypath) free(path);
+            path = strndup(path, n);
+            goto again;
+        } else {
+            if (path != mypath) free(path);
+            path = strdup(path);
+            path[n] = '\0';
+            c = rindex(path, '/');
+            *file = strdup(c + 1);
         }
     }
 
-    apr_thread_mutex_lock(_path_parse_lock);
+    i = c - path;
+    while (path[i-1] == '/') i--;
+    *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
 
-    *dir = strdup(dirname(ptr));
-
-    free(ptr);
-    ptr = strdup(path);
-    *file = strdup(basename(ptr));
-    free(ptr);
-
-    apr_thread_mutex_unlock(_path_parse_lock);
-
-    log_printf(15, "path=%s dir=%s file=%s\n", path, *dir, *file);
-
+finished:
+    if (mypath != path) free(path);
+    return;
 }
 
 //***********************************************************************
