@@ -45,7 +45,6 @@ typedef void os_attr_iter_t;
 typedef void os_object_iter_t;
 typedef void os_fsck_iter_t;
 
-typedef enum lio_object_type_t lio_object_type_t;
 enum lio_object_type_t {
     OS_OBJECT_FILE           =  0,  // ** File object or attribute
     OS_OBJECT_DIR            =  1,  // ** Directory object
@@ -60,8 +59,8 @@ enum lio_object_type_t {
     OS_OBJECT_BLOCK          = 10,  // ** Block device -- UNSUPPORTED
     OS_OBJECT_CHAR           = 11,  // ** Character device -- UNSUPPORTED
 };
+typedef enum lio_object_type_t lio_object_type_t;
 
-typedef enum lio_object_type_flag_t lio_object_type_flag_t;
 enum lio_object_type_flag_t {
     OS_OBJECT_FILE_FLAG           = (1 << OS_OBJECT_FILE),
     OS_OBJECT_DIR_FLAG            = (1 << OS_OBJECT_DIR),
@@ -79,6 +78,7 @@ enum lio_object_type_flag_t {
     OS_OBJECT_ANYFILE_FLAG        = (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG),  // ** All the "file" type objects
     OS_OBJECT_UNSUPPORTED_FLAG    = (OS_OBJECT_BLOCK_FLAG|OS_OBJECT_CHAR_FLAG)  // ** All the unsupported object types
 };
+typedef enum lio_object_type_flag_t lio_object_type_flag_t;
 
 typedef void (*lio_os_print_running_config_fn_t)(lio_object_service_fn_t *rs, FILE *fd, int print_section_heading);
 typedef void (*lio_os_portal_install_fn_t)(lio_object_service_fn_t *os, gop_mq_command_table_t *ctable);
@@ -147,7 +147,7 @@ LIO_API void os_log_iter_destroy(os_log_iter_t *oli);
 LIO_API int lio_os_globregex_parse(regex_t *regex, const char *text);
 LIO_API char *lio_os_glob2regex(const char *glob);
 LIO_API int lio_os_local_filetype(const char *path);
-LIO_API lio_os_regex_table_t *lio_os_path_glob2regex(char *path);
+LIO_API lio_os_regex_table_t *lio_os_path_glob2regex(const char *path);
 LIO_API void lio_os_path_split(const char *path, char **dir, char **file);
 LIO_API lio_os_regex_table_t *lio_os_regex2table(char *regex);
 LIO_API int lio_os_regex_is_fixed(lio_os_regex_table_t *regex);
@@ -196,6 +196,9 @@ LIO_API int os_user_locking_tests(char *prefix);
 #define os_object_exec_modify(os, c, path, exec_state) (os)->exec_modify(os, c, path, exec_state)
 #define os_lock_user_object(os, fd, rw_mode, max_wait) (os)->lock_user_object(os, fd, rw_mode, max_wait)
 #define os_abort_lock_user_object(os, gop) (os)->abort_lock_user_object(os, gop)
+#define os_create_attr_iter(os, c, fd, attr, v_max) (os)->create_attr_iter(os, c, fd, attr, v_max)
+#define os_destroy_attr_iter(os, it) (os)->destroy_attr_iter(it)
+#define os_next_attr(os, it, key, val, vsize) (os)->next_attr(it, key, val, vsize)
 
 // Exported types. To be obscured
 struct lio_object_service_fn_t {

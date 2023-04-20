@@ -88,9 +88,6 @@ struct lio_os_attr_list_t {
 #define os_set_multiple_attrs(os, c, fd, keys, vals, v_sizes, n) (os)->set_multiple_attrs(os, c, fd, keys, vals, v_sizes, n)
 #define os_move_multiple_attrs(os, c, fd, key_old, key_new, n) (os)->move_multiple_attrs(os, c, fd, key_old, key_new, n)
 #define os_copy_multiple_attrs(os, c, fd_src, key_src, fd_dest, key_dest, n) (os)->copy_multiple_attrs(os, c, fd_src, key_src, fd_dest, key_dest, n)
-#define os_create_attr_iter(os, c, fd, attr, v_max) (os)->create_attr_iter(os, c, fd, attr, v_max)
-#define os_next_attr(os, it, key, val, vsize) (os)->next_attr(it, key, val, vsize)
-#define os_destroy_attr_iter(os, it) (os)->destroy_attr_iter(it)
 #define os_destroy(os) (os)->destroy_service(os)
 #define os_print_running_config(os, fd, psh) (os)->print_running_config(os, fd, psh)
 
