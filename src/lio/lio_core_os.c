@@ -32,6 +32,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/normalize_path.h>
 #include <tbx/skiplist.h>
 #include <tbx/type_malloc.h>
 #include <tbx/random.h>
@@ -461,6 +462,85 @@ gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
     op->id = (id != NULL) ? strdup(id) : NULL;
     op->ex = (ex != NULL) ? strdup(ex) : NULL;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_create_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
+}
+
+
+//***********************************************************************
+// lio_mkpath_fn - Does the actual path creation
+//***********************************************************************
+
+gop_op_status_t lio_mkpath_fn(void *arg, int id)
+{
+    lio_mk_mv_rm_t *op = (lio_mk_mv_rm_t *)arg;
+    gop_op_status_t status;
+    regex_t *np_regex;
+    char fullpath[OS_PATH_MAX];
+    char *curr, *next;
+    int exists;
+
+    //** See if we get lucky and all the intervening directories already exist
+    status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, op->src_path, op->type, op->id, op->ex));
+    if (status.op_status == OP_STATE_SUCCESS) return(status);  //** Got lucky so kick out
+
+    //** Ok we have to normalize the path and recurse down making the intermediate directories
+    np_regex = tbx_normalize_check_make();  //** Make the regex for seeing if we need to simplify the path
+    if (tbx_path_is_normalized(np_regex, op->src_path) == 0) { //** Got to normalize it first
+        if (tbx_normalize_path(op->src_path, fullpath) == NULL) {
+            status = gop_failure_status;
+            goto finished;
+        }
+    } else {
+        strncpy(fullpath, op->src_path, sizeof(fullpath)-1); fullpath[sizeof(fullpath)-1] = 0;
+    }
+
+    //** Cycle through checking if the intermediate directories exists and creating if needed
+    curr = fullpath;
+    exists = 1;
+    while ((next = index(curr + 1, '/')) != NULL) {
+        if (next[0] == '\0') { //** Got the terminal so use the provided object type
+            status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, op->type, op->id, op->ex));
+            goto finished;
+        } else {  //** Intermediate directory
+            next[0] = '\0';  //** NULL terminate the string
+            if (exists) {  //** See if the current part exists. Skip it if already in the "new" bits
+                exists = lio_exists(op->lc, op->creds, fullpath);
+            }
+
+            if (exists) {
+                status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, OS_OBJECT_DIR_FLAG, op->id, op->ex));
+                if (status.op_status != OP_STATE_SUCCESS) {
+                    log_printf(1, "ERROR: src_path=%s failed creating partial path=%s\n", op->src_path, fullpath);
+                    goto finished;
+                }
+            }
+            next[0] = '/';  //** Put back the '/'
+        }
+
+        curr = next;
+    }
+
+finished:
+    tbx_normalize_check_destroy(np_regex);
+    return(status);
+}
+
+//*************************************************************************
+//  lio_mkpath_gop - Generate a make path task.
+//*************************************************************************
+
+gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id)
+{
+    lio_mk_mv_rm_t *op;
+
+    tbx_type_malloc_clear(op, lio_mk_mv_rm_t, 1);
+
+    op->lc = lc;
+    op->creds = creds;
+    op->src_path = strdup(path);
+    op->type = type;
+    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_mkpath_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
 //***********************************************************************

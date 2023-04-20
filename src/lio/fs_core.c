@@ -583,6 +583,15 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 }
 
 //*************************************************************************
+// lio_fs_fstat - Does a stat on the open file.
+//*************************************************************************
+
+int lio_fs_fstat(lio_fs_t *fs, lio_fd_t *fd, struct stat *sbuf)
+{
+    return(lio_fs_stat(fs, NULL, fd->path, sbuf, NULL, 1, 0));
+}
+
+//*************************************************************************
 // lio_fs_fadvise - Same as posix_fadvise()
 //   Currently this does nothing.
 //*************************************************************************
@@ -773,7 +782,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
 // lio_fs_object_create
 //*************************************************************************
 
-int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode)
+int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath)
 {
     char fullname[OS_PATH_MAX];
     int err, n, exec_mode;
@@ -800,7 +809,11 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     //** If we made it here it's a new file or dir
     //** Create the new object
-    err = gop_sync_exec(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+    if (mkpath == 0) {
+        err = gop_sync_exec(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+    } else {
+        err = gop_sync_exec(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+    }
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fullname);
         if (strlen(fullname) > 3900) {  //** Probably a path length issue
@@ -832,7 +845,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
 int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev)
 {
-    return(lio_fs_object_create(fs, ug, fname, mode));
+    return(lio_fs_object_create(fs, ug, fname, mode, 0));
 }
 
 //*************************************************************************
@@ -869,7 +882,17 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
 int lio_fs_mkdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode)
 {
     mode |= S_IFDIR;
-    return(lio_fs_object_create(fs, ug, fname, mode));
+    return(lio_fs_object_create(fs, ug, fname, mode, 0));
+}
+
+//*************************************************************************
+// lio_fs_mkpath - Makes all the paths in the path
+//*************************************************************************
+
+int lio_fs_mkpath(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath)
+{
+    mode |= S_IFDIR;
+    return(lio_fs_object_create(fs, ug, fname, mode, mkpath));
 }
 
 //*****************************************************************
@@ -2666,7 +2689,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
 //
 //*************************************************************************
 
-lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, char *fs_section, lio_config_t *lc, uid_t uid, gid_t gid)
+lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_t *lc, uid_t uid, gid_t gid)
 {
     lio_fs_t *fs;
     char *atype;
