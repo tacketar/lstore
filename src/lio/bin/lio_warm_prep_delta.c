@@ -581,6 +581,7 @@ int main(int argc, char **argv)
     //** Filter the logs
     ci = notify_iter_create(clog_base, year, month, day, line);
     i = 0;
+    last = 0;
     while ((text = notify_iter_next(ci)) != NULL) {
         if (interesting_clog_entry(text, &ce)) {
             process_clog_entry(wdb, &ce, obj_hash);

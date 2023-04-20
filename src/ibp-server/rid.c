@@ -34,8 +34,8 @@ char *ibp_rid2str(rid_t rid, char *buffer)
 
 int ibp_str2rid(char *rid_str, rid_t *rid)
 {
-    strncpy(rid->name, rid_str, RID_LEN);
-
+    strncpy(rid->name, rid_str, RID_LEN-1);
+    rid->name[RID_LEN-1] = 0;
     return (0);
 }
 

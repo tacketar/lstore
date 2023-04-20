@@ -453,7 +453,7 @@ char * _get_line(bfile_t *bfd, int *err)
 
 again:
     comment = (bfd->curr->text) ? _fetch_text(bfd->curr->buffer, BUFMAX, bfd->curr) : fgets(bfd->curr->buffer, BUFMAX, bfd->curr->fd);
-    log_printf(15, "_get_line: fgets=%s\n", comment);
+    if (comment) { log_printf(15, "_get_line: fgets=%s\n", comment); }
 
     if (comment == NULL) {  //** EOF or error
         if (bfd->curr->fd) tbx_io_fclose(bfd->curr->fd);

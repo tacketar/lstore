@@ -1139,7 +1139,7 @@ int os_attribute_tests(char *prefix)
     }
     if (strcmp(val, rval) != 0) {
         nfailed++;
-        log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", mkey[i], mval[i], mrval[i]);
+        log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
 

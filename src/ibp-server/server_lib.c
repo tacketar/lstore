@@ -367,7 +367,7 @@ int read_command(ibp_task_t *task)
 
     clear_stat(&(task->stat));
     memset(task->stat.address, 0, sizeof(task->stat.address));
-    strncpy(task->stat.address, tbx_ns_peer_address_get(task->ns), sizeof(task->stat.address));
+    strncpy(task->stat.address, tbx_ns_peer_address_get(task->ns), sizeof(task->stat.address)-1); task->stat.address[sizeof(task->stat.address)-1] = 0;
 
     tbx_ns_timeout_t dt;
     tbx_ns_timeout_set(&dt, 1, 0);
