@@ -939,7 +939,7 @@ log_printf(15, "incoming: hp=%s CONN_GOP_SUBMIT gid=%d c->workload=" I64T " c->n
             if (c) {
 log_printf(15, "hpc=%s hp=%s workload=" I64T " max=" I64T "\n", hpc->name, hp->skey, c->workload, hpc->max_workload);
 
-                if (c->workload > hpc->max_workload) break;
+                if (c->workload >= hpc->max_workload) break;
             } else {
 log_printf(15, "hpc=%s hp=%s c=NULL\n", hpc->name, hp->skey);
                 //** Check if we have essentially a dead connection and need to start failing GOPs
