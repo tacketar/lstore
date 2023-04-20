@@ -24,6 +24,26 @@
 extern "C" {
 #endif
 
+/*! Checksum return type */
+enum tbx_chksum_digest_output_t {
+    /** Hexidecimal output */
+    CHKSUM_DIGEST_HEX = 0,
+    /** Binary output */
+    CHKSUM_DIGEST_BIN = 1
+};
+
+/*! @brief Checksum algorithm */
+enum tbx_chksum_type_t {
+    CHKSUM_DEFAULT = -1, /*!< Default checksum(TODO?) */
+    CHKSUM_NONE    = 0,    /*!< No checksum */
+    CHKSUM_SHA256  = 1,  /*!< SHA256 */
+    CHKSUM_SHA512  = 2,  /*!< SHA512 */
+    CHKSUM_SHA1    = 3,    /*!< SHA1 */
+    CHKSUM_MD5     = 4,     /*!< MD5 */
+    CHKSUM_MAX_TYPE= 5/*!< Number of checksums */
+};
+
+
 // Types
 /*! Generic checksum container (opaque) */
 typedef struct tbx_chksum_t tbx_chksum_t;
@@ -113,25 +133,6 @@ TBX_API int tbx_blank_chksum_set(tbx_chksum_t *cs);
 #define CHKSUM_STATE_SIZE  1024
 /** Maximum size of resulting checksum in bytes */
 #define CHKSUM_MAX_SIZE    257
-
-/*! Checksum return type */
-enum tbx_chksum_digest_output_t {
-    /** Hexidecimal output */
-    CHKSUM_DIGEST_HEX = 0,
-    /** Binary output */
-    CHKSUM_DIGEST_BIN = 1
-};
-
-/*! @brief Checksum algorithm */
-enum tbx_chksum_type_t {
-    CHKSUM_DEFAULT = -1, /*!< Default checksum(TODO?) */
-    CHKSUM_NONE    = 0,    /*!< No checksum */
-    CHKSUM_SHA256  = 1,  /*!< SHA256 */
-    CHKSUM_SHA512  = 2,  /*!< SHA512 */
-    CHKSUM_SHA1    = 3,    /*!< SHA1 */
-    CHKSUM_MD5     = 4,     /*!< MD5 */
-    CHKSUM_MAX_TYPE= 5/*!< Number of checksums */
-};
 
 // TEMPORARY
 #include <tbx/transfer_buffer.h>

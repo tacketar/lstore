@@ -60,19 +60,18 @@ LIO_API lio_service_manager_t *lio_exnode_service_set_create();
 LIO_API void lio_exnode_service_set_destroy(lio_service_manager_t *ess);
 
 // Preprocessor constants
-typedef enum lio_ex3_format_t lio_ex3_format_t;
 enum lio_ex3_format_t {
     EX_TEXT,
     EX_PROTOCOL_BUFFERS,
 };
+typedef enum lio_ex3_format_t lio_ex3_format_t;
 
-typedef enum lio_ex3_clone_t lio_ex3_clone_t;
 enum lio_ex3_clone_t {
     CLONE_STRUCTURE,
     CLONE_STRUCT_AND_DATA,
 };
+typedef enum lio_ex3_clone_t lio_ex3_clone_t;
 
-typedef enum lio_ex3_inspect_command_t lio_ex3_inspect_command_t;
 enum lio_ex3_inspect_command_t {
     INSPECT_NO_CHECK,
     INSPECT_QUICK_CHECK,
@@ -89,6 +88,8 @@ enum lio_ex3_inspect_command_t {
      *       following line as well.
      */
 };
+typedef enum lio_ex3_inspect_command_t lio_ex3_inspect_command_t;
+
 /* WRITE_ERRORS is 10 (0b1010 AKA 0xA), so we need to mask 4 bits: 0b1111 AKA
  * 0xF
  */
@@ -138,6 +139,7 @@ struct lio_inspect_args_t {
     apr_hash_t *rid_changes;  //** List of RID space changes
     apr_thread_mutex_t *rid_lock;     //** Lock for manipulating the rid_changes table
     tbx_stack_t *bad_ranges;      //** List of bad byte ranges
+    int log_skip_base;          //** A log segment should go ahead and inspect it's base if 0
     int n_dev_rows;
     int dev_row_replaced[128];
 };

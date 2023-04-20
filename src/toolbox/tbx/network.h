@@ -35,7 +35,6 @@ typedef struct tbx_ns_chksum_t tbx_ns_chksum_t;
 typedef struct tbx_ns_monitor_t tbx_ns_monitor_t;
 typedef struct tbx_ns_t tbx_ns_t;
 typedef apr_time_t tbx_ns_timeout_t;
-typedef enum tbx_net_type_t tbx_net_type_t;
 enum tbx_net_type_t {
     NS_TYPE_UNKNOWN,  //** Unspecified type
     NS_TYPE_SOCK,     //** Base socket implementation
@@ -45,6 +44,7 @@ enum tbx_net_type_t {
     NS_TYPE_ZSOCK,	 //** ZMQ implementation
     NS_TYPE_MAX,      //** Not an actual type just the number of different types
 };
+typedef enum tbx_net_type_t tbx_net_type_t;
 
 //** Return values for write_netstream_block **
 #define NS_OK       0   //** Command completed without errors

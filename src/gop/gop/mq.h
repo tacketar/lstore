@@ -57,18 +57,18 @@ typedef int mq_pipe_t;       // ** Event notification FD
 typedef void (*gop_mq_exec_fn_t)(void *arg, gop_mq_task_t *task);
 typedef void (*gop_mq_task_arg_free_fn_t)(void *arg);  // ** Function for cleaning up the GOP arg. (GOP)
 
-typedef enum gop_mqf_msg_t gop_mqf_msg_t;
 enum gop_mqf_msg_t {
     MQF_MSG_AUTO_FREE, // ** Auto free data on destroy
     MQF_MSG_KEEP_DATA, // ** Skip free'ing of data on destroy.  App is responsible.
     MQF_MSG_INTERNAL_FREE, // ** The msg routines are responsible for free'ing the data. Used on gop_mq_recv().
 };
+typedef enum gop_mqf_msg_t gop_mqf_msg_t;
 
-typedef enum gop_mq_cmode_t gop_mq_cmode_t;
 enum gop_mq_cmode_t {
     MQ_CMODE_CLIENT, // ** Normal outgoing connection
     MQ_CMODE_SERVER, // ** USed by servers for incoming connections
 };
+typedef enum gop_mq_cmode_t gop_mq_cmode_t;
 
 // Preprocessor defines required for command stats
 #define MQS_PING_INDEX         0

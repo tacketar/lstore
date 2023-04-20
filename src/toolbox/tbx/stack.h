@@ -34,7 +34,7 @@ TBX_TYPE(tbx_stack_t, tbx_stack);
 // Functions
 TBX_API int tbx_stack_count(tbx_stack_t *stack);
 TBX_API int tbx_stack_delete_current(tbx_stack_t *stack, int mv_up, int data_also);
-TBX_API void tbx_stack_dup(tbx_stack_t *new, tbx_stack_t *old);
+TBX_API void tbx_stack_dup(tbx_stack_t *snew, tbx_stack_t *old);
 TBX_API void *tbx_stack_ele_get_data(tbx_stack_ele_t *ele);
 TBX_API tbx_stack_ele_t *tbx_stack_ele_get_down(tbx_stack_ele_t * stack);
 TBX_API void tbx_stack_empty(tbx_stack_t *stack, int data_also);

@@ -35,11 +35,12 @@ typedef struct tbx_tbuf_state_t tbx_tbuf_state_t;
 typedef struct tbx_tbuf_t tbx_tbuf_t;
 
 typedef struct tbx_tbuf_var_t tbx_tbuf_var_t;
-typedef enum tbx_tbuf_ret_t tbx_tbuf_ret_t;
 enum tbx_tbuf_ret_t {
     TBUFFER_OK = 1,
     TBUFFER_OUTOFSPACE = 2,
 };
+typedef enum tbx_tbuf_ret_t tbx_tbuf_ret_t;
+
 // Functions
 TBX_API tbx_iovec_t * tbx_tbuf_var_buffer_get(tbx_tbuf_var_t *tbv);
 TBX_API int tbx_tbuf_copy(tbx_tbuf_t *tb_s, size_t off_s, tbx_tbuf_t *tb_d,

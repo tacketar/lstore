@@ -43,7 +43,7 @@ typedef gop_op_status_t (*gop_op_recv_phase_fn_t)(gop_op_generic_t *gop, tbx_ns_
 typedef int (*gop_op_on_submit_fn_t)(tbx_stack_t *stack, tbx_stack_ele_t *gop_ele);
 typedef int (*gop_op_before_exec_fn_t)(gop_op_generic_t *gop);
 typedef int (*gop_op_destroy_command_fn_t)(gop_op_generic_t *gop);
-typedef enum gop_op_state_t gop_op_state_t;
+
 enum gop_op_state_t {
     OP_STATE_SUCCESS = 10,
     OP_STATE_FAILURE = 20,
@@ -54,24 +54,27 @@ enum gop_op_state_t {
     OP_STATE_CANT_CONNECT = 70,
     OP_STATE_ERROR = 80,
 };
-typedef enum gop_op_type_t gop_op_type_t;
+typedef enum gop_op_state_t gop_op_state_t;
+
 enum gop_op_type_t {
     Q_TYPE_OPERATION = 50,
     Q_TYPE_QUE = 51,
 };
+typedef enum gop_op_type_t gop_op_type_t;
 
-typedef enum gop_op_free_mode_t gop_op_free_mode_t;
 enum gop_op_free_mode_t {
     OP_FINALIZE = -10,
     OP_DESTROY = -20,
 };
-typedef enum gop_fm_t gop_fm_t;
+typedef enum gop_op_free_mode_t gop_op_free_mode_t;
+
 enum gop_fm_t {
     OP_FM_FORCED = 11,
     OP_FM_GET_END = 22,
 };
+typedef enum gop_fm_t gop_fm_t;
 
-typedef enum gop_op_exec_mode_t gop_op_exec_mode_t;
+//typedef enum gop_op_exec_mode_t gop_op_exec_mode_t;
 //enum gop_op_exec_mode_t {
 //    OP_EXEC_QUEUE,
 //    OP_EXEC_DIRECT,

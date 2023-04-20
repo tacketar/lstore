@@ -174,7 +174,6 @@ LIO_API char *lio_stdinlist_iter_next(void *ptr);
 LIO_API int lio_rw_test_exec(int rw_mode, char *section);
 
 // Preprocessor constants
-typedef enum lio_fsck_repair_t lio_fsck_repair_t;
 enum lio_fsck_repair_t {
     LIO_FSCK_MANUAL =    0,
     LIO_FSCK_PARENT =    (1 << 0),
@@ -182,8 +181,8 @@ enum lio_fsck_repair_t {
     LIO_FSCK_USER   =    (1 << 2),
     LIO_FSCK_SIZE_REPAIR  = (1 << 3),
 };
+typedef enum lio_fsck_repair_t lio_fsck_repair_t;
 
-typedef enum lio_fsck_error_flags_t lio_fsck_error_flags_t;
 enum lio_fsck_error_flags_t {
     LIO_FSCK_FINISHED          =  (-1),
     LIO_FSCK_GOOD              =  (0),
@@ -193,6 +192,7 @@ enum lio_fsck_error_flags_t {
     LIO_FSCK_MISSING_INODE     =  (1 << 3),
     LIO_FSCK_MISSING           =  (1 << 4),
 };
+typedef enum lio_fsck_error_flags_t lio_fsck_error_flags_t;
 
 #define LIO_READ_MODE      1
 #define LIO_WRITE_MODE     2
@@ -207,11 +207,11 @@ enum lio_fsck_error_flags_t {
 #define LIO_ILOCK_MODE   1024    // **Use internal R/W locking
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
-typedef enum lio_copy_hint_t lio_copy_hint_t;
 enum lio_copy_hint_t {
     LIO_COPY_DIRECT   = 0,
     LIO_COPY_INDIRECT = 1,
 };
+typedef enum lio_copy_hint_t lio_copy_hint_t;
 
 // Global variables
 LIO_API extern lio_config_t *lio_gc;
