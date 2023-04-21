@@ -90,6 +90,7 @@ lio_config_t lio_default_options = {
     .stream_buffer_max_size = 0,
     .small_files_in_metadata_max_size = 0,
     .jerase_paranoid = 0,
+    .lun_max_retry = 5,
     .jerase_max_parity_on_stack = 2*1024*1024,
     .tpc_unlimited_count = 300,
     .tpc_max_recursion = 10,
@@ -194,6 +195,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
     fprintf(fd, "jerase_paranoid = %d\n", lio->jerase_paranoid);
     fprintf(fd, "jerase_max_parity_on_stack = %s\n", tbx_stk_pretty_print_int_with_scale(lio->jerase_max_parity_on_stack, text));
+    fprintf(fd, "lun_max_retry = %d\n", lio->lun_max_retry);
     fprintf(fd, "tpc_unlimited = %d\n", lio->tpc_unlimited_count);
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
     fprintf(fd, "tpc_cache = %d\n", lio->tpc_cache_count);
@@ -1096,6 +1098,10 @@ void lio_destroy_nl(lio_config_t *lio)
     remove_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack");
     if (val) free(val);
 
+    val = lio_lookup_service(lio->ess, ESS_RUNNING, "lun_max_retry");
+    remove_service(lio->ess, ESS_RUNNING, "lun_max_retry");
+    if (val) free(val);
+
     _lio_destroy_plugins(lio);
 
     lio_exnode_service_set_destroy(lio->ess);
@@ -1255,6 +1261,11 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     *eval = tbx_inip_get_integer(lio->ifd, section, "jerase_max_parity_on_stack", lio_default_options.jerase_max_parity_on_stack);
     add_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack", eval);
     lio->jerase_max_parity_on_stack = *eval;
+
+    //** Add the LUN max retry options
+    tbx_type_malloc(val, int, 1);
+    *val = tbx_inip_get_integer(lio->ifd, section, "lun_max_retry", lio_default_options.lun_max_retry);
+    add_service(lio->ess, ESS_RUNNING, "lun_max_retry", val);
 
     cores = tbx_inip_get_integer(lio->ifd, section, "tpc_unlimited", lio_default_options.tpc_unlimited_count);
     lio->tpc_unlimited_count = cores;
@@ -2033,15 +2044,13 @@ int lio_shutdown()
     rc_server_destroy();
     if (lio_gc->rc_section) free(lio_gc->rc_section);
 
+    lio_wq_shutdown();
+
     cache_destroy(_lio_cache);
     _lio_cache = NULL;
 
-    lio_wq_shutdown();
-
     lio_destroy(lio_gc);
     lio_gc = NULL;  //** Reset the global to NULL so it's not accidentally reused.
-
-    //lc_object_remove_unused(0);
 
     exnode_system_destroy();
 

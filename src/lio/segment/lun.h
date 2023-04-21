@@ -56,6 +56,7 @@ struct lio_seglun_priv_t {
     int grow_count;
     int n_devices;
     int n_shift;
+    int max_retry;
     int hard_errors;
     int grow_break;
     int map_version;
