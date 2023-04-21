@@ -273,6 +273,7 @@ struct lio_config_t {
     int anonymous_creation;
     int auto_translate;
     int jerase_paranoid;
+    int lun_max_retry;
     int tpc_unlimited_count;
     int tpc_cache_count;
     int tpc_max_recursion;
