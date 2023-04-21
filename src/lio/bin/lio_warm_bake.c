@@ -108,6 +108,7 @@ int verbose = 0;
 
 ibp_context_t *ic = NULL;
 int bulk_mode = 1;
+int do_setattr = 1;
 static int dt = 30*86400;
 
 //*************************************************************************
@@ -136,6 +137,8 @@ void *setattr_thread(apr_thread_t *th, void *data)
     running = 0;
     while (!tbx_que_is_finished(que)) {
         n = tbx_que_bulk_get(que, n_max, fname, TBX_QUE_BLOCK);
+
+        if (do_setattr == 0) continue;  //** Loop back if we aren't updating the attr
 
         //** Clean up any oustanding setattr calls
         while ((gop = opque_get_next_finished(q)) != NULL) {
@@ -771,7 +774,7 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm LIO_COMMON_OPTIONS [-db_prep DB_prep_dir] [-db_bake DB_output_dir] [-serial] [-n_bulk n] [-n_warm n] [-dt time] [-sb] [-sf] [-v]\n");
+        printf("lio_warm LIO_COMMON_OPTIONS [-db_prep DB_prep_dir] [-db_bake DB_output_dir] [-serial] [-n_bulk n] [-n_warm n] [-dt time] [setwarm n] [-sb] [-sf] [-v]\n");
         lio_print_options(stdout);
         printf("    -db_prep DB_prep_dir   - Input prep directory for the DBes. Default is %s\n", db_prep_base);
         printf("    -db_bake DB_bake_dir   - Outputp directory for the DBes. Default is %s\n", db_bake_base);
@@ -780,6 +783,7 @@ int main(int argc, char **argv)
         printf("                         NOTE: This is evenly divided among the warming threads. Default is %d\n", n_bulk);
         printf("    -n_warm            - Number of bulk warming operations to perform at a time. Default is %d\n", n_warm);
         printf("    -dt time           - Duration time in sec.  Default is %d sec\n", dt);
+        printf("    -setwarm n         - Sets the system.warm attribute if 1. Default is %d\n", do_setattr);
         printf("    -sb                - Print the summary but only list the bad RIDs\n");
         printf("    -sf                - Print the the full summary\n");
         printf("    -v                 - Print all Success/Fail messages instead of just errors\n");
@@ -822,6 +826,10 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-v") == 0) { //** Verbose printing
             i++;
             verbose = 1;
+        } else if (strcmp(argv[i], "-setwarm") == 0) { //** See if they want to set the warming attr
+            i++;
+            do_setattr = atoi(argv[i]);
+            i++;
         }
     } while ((start_option < i) && (i<argc));
 

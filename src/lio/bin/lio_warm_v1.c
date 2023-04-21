@@ -78,6 +78,7 @@ tbx_stack_t *tagged_keys = NULL;
 warm_db_t *db_rid = NULL;
 warm_db_t *db_inode = NULL;
 int verbose = 0;
+int do_setattr = 1;
 
 static int dt = 86400;
 
@@ -228,7 +229,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
 
     etext = NULL;
     i = 0;
-    lio_setattr(lio_gc, w->tuple.creds, w->tuple.path, NULL, "os.timestamp.system.warm", (void *)etext, i);
+    if (do_setattr) lio_setattr(lio_gc, w->tuple.creds, w->tuple.path, NULL, "os.timestamp.system.warm", (void *)etext, i);
 
     gop_opque_free(q, OP_DESTROY);
 
@@ -275,18 +276,21 @@ int main(int argc, char **argv)
     tbx_stack_t *stack;
     int recurse_depth = 10000;
     int summary_mode;
+    int count, last;
     warm_t *w;
     double dtime, dtime_total;
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-dt time] [-sb] [-sf] [ -v] LIO_PATH_OPTIONS\n");
+        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-dt time] [-count n] [-setwarm n] [-sb] [-sf] [ -v] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
-        printf("    -db DB_output_dir   - Output Directory for the DBes. Default is %s\n", db_base);
+        printf("    -db DB_output_dir  - Output Directory for the DBes. Default is %s\n", db_base);
         printf("    -t tag.cfg         - INI file with RID to tag by printing any files usign the RIDs\n");
         printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
         printf("    -dt time           - Duration time in sec.  Default is %d sec\n", dt);
+        printf("    -count n           - Post an update every n files processed\n");
+        printf("    -setwarm n         - Sets the system.warm attribute if 1. Default is %d\n", do_setattr);
         printf("    -sb                - Print the summary but only list the bad RIDs\n");
         printf("    -sf                - Print the the full summary\n");
         printf("    -v                 - Print all Success/Fail messages instead of just errors\n");
@@ -303,6 +307,7 @@ int main(int argc, char **argv)
     i=1;
     summary_mode = 0;
     verbose = 0;
+    count = 0;
     do {
         start_option = i;
 
@@ -330,6 +335,14 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-t") == 0) { //** Got a list of RIDs to tag
             i++;
             parse_tag_file(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-count") == 0) { //** They want ongoing updates
+            i++;
+            count = atoi(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-setwarm") == 0) { //** See if they want to set the warming attr
+            i++;
+            do_setattr = atoi(argv[i]);
             i++;
         }
 
@@ -359,6 +372,7 @@ int main(int argc, char **argv)
         w[j].hash = apr_hash_make(w[j].mpool);
     }
 
+    last = 0;
     submitted = good = bad = werr = missing_err = 0;
     return_code = 0;
     while ((path = tbx_stdinarray_iter_next(piter)) != NULL) {
@@ -437,6 +451,12 @@ int main(int argc, char **argv)
                 }
                 slot = gop_get_myid(gop);
                 gop_free(gop, OP_DESTROY);
+
+                //** See if we update the count
+                if ((count > 0) && ((submitted/count) != last)) {
+                    last = submitted/count;
+                    fprintf(stderr, "Submitted " XOT " objects\n", submitted);
+                }
             } else {
                 slot++;
             }
