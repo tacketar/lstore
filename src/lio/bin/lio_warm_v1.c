@@ -75,8 +75,8 @@ typedef struct {
 apr_hash_t *tagged_rids = NULL;
 apr_pool_t *tagged_pool = NULL;
 tbx_stack_t *tagged_keys = NULL;
-warm_db_t *db_rid = NULL;
-warm_db_t *db_inode = NULL;
+warm_results_db_t *results = NULL;
+int n_partitions = 100;
 int verbose = 0;
 int do_setattr = 1;
 
@@ -138,7 +138,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
     gop_op_status_t status;
     gop_op_generic_t *gop;
     tbx_inip_file_t *fd;
-    int i, nfailed, state;
+    int i, nfailed, state, mod;
     warm_hash_entry_t *wrid = NULL;
     char *etext;
     gop_opque_t *q;
@@ -210,7 +210,8 @@ gop_op_status_t gen_warm_task(void *arg, int id)
             wrid->bad++;
             info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", w->tuple.path, w->cap[i].cap);
         }
-        warm_put_rid(db_rid, wrid->rid_key, w->inode, w->cap[i].nbytes, 0);
+        mod = w->inode % n_partitions;
+        warm_put_rid(results->p[mod]->rid, wrid->rid_key, w->inode, w->cap[i].nbytes, 0);
 
         gop_free(gop, OP_DESTROY);
     }
@@ -225,7 +226,8 @@ gop_op_status_t gen_warm_task(void *arg, int id)
         state |= WFE_FAIL;
         info_printf(lio_ifd, 0, "Failed with file %s on %d out of %d allocations\n", w->tuple.path, nfailed, w->n);
     }
-    warm_put_inode(db_inode, w->inode, state, nfailed, w->tuple.path);
+    mod = w->inode % n_partitions;
+    warm_put_inode(results->p[mod]->inode, w->inode, state, nfailed, w->tuple.path);
 
     etext = NULL;
     i = 0;
@@ -282,12 +284,13 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-dt time] [-count n] [-setwarm n] [-sb] [-sf] [ -v] LIO_PATH_OPTIONS\n");
+        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-dt time] [-n_partitions npart] [-count n] [-setwarm n] [-sb] [-sf] [ -v] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
         printf("    -db DB_output_dir  - Output Directory for the DBes. Default is %s\n", db_base);
         printf("    -t tag.cfg         - INI file with RID to tag by printing any files usign the RIDs\n");
         printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
+        printf("    -n_partitions n   - NUmber of partitions for managing workload. Defaults to %d\n", n_partitions);
         printf("    -dt time           - Duration time in sec.  Default is %d sec\n", dt);
         printf("    -count n           - Post an update every n files processed\n");
         printf("    -setwarm n         - Sets the system.warm attribute if 1. Default is %d\n", do_setattr);
@@ -336,6 +339,10 @@ int main(int argc, char **argv)
             i++;
             parse_tag_file(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "-n_partitions") == 0) { //** Number of partitions to manage workload
+            i++;
+            n_partitions = atoi(argv[i]);
+            i++;
         } else if (strcmp(argv[i], "-count") == 0) { //** They want ongoing updates
             i++;
             count = atoi(argv[i]);
@@ -361,7 +368,7 @@ int main(int argc, char **argv)
 
     piter = tbx_stdinarray_iter_create(argc-start_option, (const char **)&(argv[start_option]));
 
-    create_warm_db(db_base, &db_inode, &db_rid);  //** Create the DB
+    results = create_results_db(db_base, n_partitions); //** Create the results DB
 
     q = gop_opque_new();
     opque_start_execution(q);
@@ -615,7 +622,7 @@ finished:
         apr_pool_destroy(tagged_pool);
     }
 
-    close_warm_db(db_inode, db_rid);  //** Close the DBs
+    close_results_db(results);  //** Close the DBs
 
     tbx_stdinarray_iter_destroy(piter);
 

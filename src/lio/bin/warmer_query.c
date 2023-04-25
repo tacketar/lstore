@@ -43,10 +43,10 @@ typedef struct {
 } rid_summary_t;
 
 //*************************************************************************
-// warmer_inode_summary - Summarizes the inode DB
+// warmer_inode_summary_part - Summarizes the inode DB partition
 //*************************************************************************
 
-void warmer_inode_summary(warm_db_t *inode_db, ex_off_t *nfiles, ex_off_t *nwrite, ex_off_t *ngood, ex_off_t *nbad, ex_off_t *nbad_caps)
+void warmer_inode_summary_part(warm_db_t *inode_db, ex_off_t *nfiles, ex_off_t *nwrite, ex_off_t *ngood, ex_off_t *nbad, ex_off_t *nbad_caps)
 {
     rocksdb_iterator_t *it;
     char *buf;
@@ -54,12 +54,6 @@ void warmer_inode_summary(warm_db_t *inode_db, ex_off_t *nfiles, ex_off_t *nwrit
     int state, nfailed;
     char *errstr;
     char *name;
-
-    *nfiles = 0;
-    *nwrite = 0;
-    *ngood = 0;
-    *nbad = 0;
-    *nbad_caps = 0;
 
     //** Create the iterator
     it = rocksdb_create_iterator(inode_db->db, inode_db->ropt);
@@ -94,10 +88,29 @@ next:
 }
 
 //*************************************************************************
-// warmer_rid_summary - Generate list based on the RID
+// warmer_inode_summary - Summarizes the inode DB
 //*************************************************************************
 
-void warmer_rid_summary(warm_db_t *rid_db, tbx_stack_t *rid_stack, rid_summary_t *totals)
+void warmer_inode_summary(warm_results_db_t *r, ex_off_t *nfiles, ex_off_t *nwrite, ex_off_t *ngood, ex_off_t *nbad, ex_off_t *nbad_caps)
+{
+    int i;
+
+    *nfiles = 0;
+    *nwrite = 0;
+    *ngood = 0;
+    *nbad = 0;
+    *nbad_caps = 0;
+
+    for (i=0; i<r->n_partitions; i++) {
+        warmer_inode_summary_part(r->p[i]->inode, nfiles, nwrite, ngood, nbad, nbad_caps);
+    }
+}
+
+//*************************************************************************
+// warmer_rid_summary_part - Generate list based on the RID partition
+//*************************************************************************
+
+void warmer_rid_summary_part(warm_db_t *rid_db, tbx_stack_t *rid_stack, rid_summary_t *totals)
 {
     rocksdb_iterator_t *it;
     size_t nbytes;
@@ -163,12 +176,24 @@ next:
     rocksdb_iter_destroy(it);
 }
 
+//*************************************************************************
+// warmer_rid_summary - Generate list based on the RID
+//*************************************************************************
+
+void warmer_rid_summary(warm_results_db_t *r, tbx_stack_t *rid_stack, rid_summary_t *totals)
+{
+    int i;
+
+    for (i=0; i<r->n_partitions; i++) {
+        warmer_rid_summary_part(r->p[i]->rid, rid_stack, totals);
+    }
+}
 
 //*************************************************************************
 // warmer_summary - Print the DB summary
 //*************************************************************************
 
-void warmer_summary(FILE *fd, warm_db_t *inode_db, warm_db_t *rid_db)
+void warmer_summary(FILE *fd, warm_results_db_t *r)
 {
     tbx_stack_t *rids;
     char ppbuf[128];
@@ -177,7 +202,7 @@ void warmer_summary(FILE *fd, warm_db_t *inode_db, warm_db_t *rid_db)
     rid_summary_t *rid;
 
     //** Get the inode/file summary
-    warmer_inode_summary(inode_db, &nfiles, &nwrite, &ngood, &nbad, &nbad_caps);
+    warmer_inode_summary(r, &nfiles, &nwrite, &ngood, &nbad, &nbad_caps);
 
     //** Print it
     fprintf(fd, "Inode Summary ---------  Files: " XOT " Success: " XOT " Failed: " XOT " Failed caps: " XOT " Write errors: " XOT "\n", nfiles, ngood, nbad,  nbad_caps, nwrite);
@@ -186,7 +211,7 @@ void warmer_summary(FILE *fd, warm_db_t *inode_db, warm_db_t *rid_db)
     //** Now do the same for the RIDs
     rids = tbx_stack_new();
     memset(&totals, 0, sizeof(totals));
-    warmer_rid_summary(rid_db, rids, &totals);
+    warmer_rid_summary(r, rids, &totals);
 
     fprintf(fd, "                                                              Allocations\n");
     fprintf(fd, "                 RID Key                    Size       Total       Good         Bad\n");
@@ -211,10 +236,10 @@ void warmer_summary(FILE *fd, warm_db_t *inode_db, warm_db_t *rid_db)
 }
 
 //*************************************************************************
-// warmer_query_inode - Generate list based on inode
+// warmer_query_inode_part - Generate list based on inode partition
 //*************************************************************************
 
-void warmer_query_inode(warm_db_t *inode_db, int mode, int fonly)
+void warmer_query_inode_part(warm_db_t *inode_db, int mode, int fonly)
 {
     rocksdb_iterator_t *it;
     char *buf;
@@ -256,12 +281,25 @@ next:
     rocksdb_iter_destroy(it);
 }
 
+//*************************************************************************
+// warmer_query_inode - Generate list based on inode
+//*************************************************************************
+
+void warmer_query_inode(warm_results_db_t *r, int mode, int fonly)
+{
+    int i;
+
+    for (i=0; i<r->n_partitions; i++) {
+        warmer_query_inode_part(r->p[i]->inode, mode, fonly);
+    }
+}
+
 
 //*************************************************************************
-// warmer_query_rid - Generate list based on the RID
+// warmer_query_rid_part - Generate list based on the RID partition
 //*************************************************************************
 
-void warmer_query_rid(char *rid_key, warm_db_t *inode_db, warm_db_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
+ex_off_t warmer_query_rid_part(char *rid_key, warm_db_t *inode_db, warm_db_t *rid_db, int mode, int fonly, ex_off_t total_bytes)
 {
     rocksdb_iterator_t *it;
     ex_off_t bytes_found;
@@ -334,8 +372,29 @@ next:
     //** Cleanup
     rocksdb_iter_destroy(it);
     free(match);
+
+    return(bytes_found);
 }
 
+//*************************************************************************
+// warmer_query_rid - Generate list based on the RID
+//*************************************************************************
+
+void warmer_query_rid(char *rid_key, warm_results_db_t *r, int mode, int fonly, ex_off_t total_bytes)
+{
+    int i;
+    ex_off_t nbytes, nleft;
+
+    nbytes = 0;
+    nleft = total_bytes;
+    for (i=0; i<r->n_partitions; i++) {
+        nbytes += warmer_query_rid_part(rid_key, r->p[i]->inode, r->p[i]->rid, mode, fonly, nleft);
+        if (total_bytes > 0) {
+            nleft = total_bytes - nbytes;
+            if (nleft <= 0) break;
+        }
+    }
+}
 
 //*************************************************************************
 //*************************************************************************
@@ -346,7 +405,7 @@ int main(int argc, char **argv)
     int fonly, mode;
     char *db_base = "/lio/log/warm";
     char *rid_key;
-    warm_db_t *inode_db, *rid_db;
+    warm_results_db_t *results;
     ex_off_t total_bytes;
 
     total_bytes = -1;  //** Default to print all files
@@ -411,21 +470,21 @@ int main(int argc, char **argv)
     if (mode == 0) mode = WFE_SUCCESS|WFE_FAIL|WFE_WRITE_ERR;
 
     //** Open the DBs
-    if (open_warm_db(db_base, &inode_db, &rid_db) != 0) {
-        printf("ERROR:  Failed opening the warmer DB!\n");
+    if ((results = open_results_db(db_base, DB_OPEN_EXISTS)) == NULL) {
+        printf("ERROR:  Failed opening the warmer DB! path=%s\n", db_base);
         return(1);
     }
 
     if (summary == 1) {
-        warmer_summary(stdout, inode_db, rid_db);
+        warmer_summary(stdout, results);
     } else if (rid_key == NULL) {
-        warmer_query_inode(inode_db, mode, fonly);
+        warmer_query_inode(results, mode, fonly);
     } else {
-        warmer_query_rid(rid_key, inode_db, rid_db, mode, fonly, total_bytes);
+        warmer_query_rid(rid_key, results, mode, fonly, total_bytes);
     }
 
     //** Close the DBs
-    close_warm_db(inode_db, rid_db);
+    close_results_db(results);
 
     return(0);
 }

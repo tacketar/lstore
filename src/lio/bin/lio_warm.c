@@ -118,9 +118,10 @@ typedef struct {
 apr_hash_t *tagged_rids = NULL;
 apr_pool_t *tagged_pool = NULL;
 tbx_stack_t *tagged_keys = NULL;
-warm_db_t *db_rid = NULL;
-warm_db_t *db_inode = NULL;
+warm_results_db_t *results = NULL;
+int n_partitions = 100;
 int verbose = 0;
+int do_setattr = 1;
 
 ibp_context_t *ic = NULL;
 int bulk_mode = 1;
@@ -179,6 +180,7 @@ void parse_tag_file(char *fname)
 void object_warm_finish(warm_thread_t *w, inode_entry_t *inode)
 {
     int state;
+    int mod;
 
     state = (inode->write_err == 0) ? 0 : WFE_WRITE_ERR;
     if (inode->n_bad == 0) {
@@ -190,9 +192,15 @@ void object_warm_finish(warm_thread_t *w, inode_entry_t *inode)
         state |= WFE_FAIL;
         info_printf(lio_ifd, 0, "Failed with file %s on %d out of %d allocations\n", inode->fname, inode->n_bad, inode->n_good+inode->n_bad);
     }
-    warm_put_inode(db_inode, inode->inode, state, inode->n_bad, inode->fname);
 
-    tbx_que_put(w->que_setattr, &(inode->fname), TBX_QUE_BLOCK);
+    mod = inode->inode % n_partitions;
+    warm_put_inode(results->p[mod]->inode, inode->inode, state, inode->n_bad, inode->fname);
+
+    if (do_setattr) {
+        tbx_que_put(w->que_setattr, &(inode->fname), TBX_QUE_BLOCK);
+    } else {
+        if (inode->fname) free(inode->fname);
+    }
     free(inode);
 }
 
@@ -203,7 +211,7 @@ void object_warm_finish(warm_thread_t *w, inode_entry_t *inode)
 void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
 {
     rid_warm_t *r = wr->warm;
-    int i, j;
+    int i, j, mod;
     int *failed;
     ex_off_t *nbytes;
     inode_entry_t **inode;
@@ -244,13 +252,14 @@ void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
 
     //** Now process all the allocations and clean up as we go
     for (i=0; i<r->n_running; i++) {
+        mod = inode[i]->inode % n_partitions;
         if (cap[i] != NULL) {
             free(cap[i]);
             wr->good++;
             inode[i]->n_good++;
-            warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_SUCCESS);
+            warm_put_rid(results->p[mod]->rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_SUCCESS);
         } else {
-            warm_put_rid(db_rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_FAIL);
+            warm_put_rid(results->p[mod]->rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_FAIL);
         }
 
         inode[i]->n_left--;
@@ -657,7 +666,7 @@ int main(int argc, char **argv)
     void *piter;
     char ppbuf[128], ppbuf2[128], ppbuf3[128];
     lio_path_tuple_t tuple;
-    ex_off_t total, good, bad, nbytes, submitted, werr, missing_err;
+    ex_off_t total, good, bad, nbytes, submitted, werr, missing_err, count, last;
     tbx_list_iter_t lit;
     tbx_stack_t *stack;
     int recurse_depth = 10000;
@@ -668,20 +677,26 @@ int main(int argc, char **argv)
     n_bulk = 1000;
     n_warm = 2;
     n_put = 1000;
+    count = 0;
+    last = 0;
+    que_setattr = NULL;
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-serial] [-dt time] [-sb] [-sf] [-v] LIO_PATH_OPTIONS\n");
+        printf("lio_warm LIO_COMMON_OPTIONS [-db DB_output_dir] [-t tag.cfg] [-rd recurse_depth] [-n_partitions n] [-serial] [-dt time] [-sb] [-sf] [-v] LIO_PATH_OPTIONS\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
-        printf("    -db DB_output_dir   - Output Directory for the DBes. Default is %s\n", db_base);
+        printf("    -db DB_output_dir  - Output Directory for the DBes. Default is %s\n", db_base);
         printf("    -t tag.cfg         - INI file with RID to tag by printing any files usign the RIDs\n");
         printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
+        printf("    -n_partitions n    - Number of partitions for managing workload. Defaults to %d\n", n_partitions);
         printf("    -serial            - Use the IBP individual warming operation.\n");
         printf("    -n_bulk            - Number of allocations to warn at a time for bulk operations.\n");
         printf("                         NOTE: This is evenly divided among the warming threads. Default is %d\n", n_bulk);
         printf("    -n_warm            - Number of warming threads. Default is %d\n", n_warm);
         printf("    -dt time           - Duration time in sec.  Default is %d sec\n", dt);
+        printf("    -setwarm n         - Sets the system.warm attribute if 1. Default is %d\n", do_setattr);
+        printf("    -count n           - Post an update every n files processed\n");
         printf("    -sb                - Print the summary but only list the bad RIDs\n");
         printf("    -sf                - Print the the full summary\n");
         printf("    -v                 - Print all Success/Fail messages instead of just errors\n");
@@ -700,7 +715,6 @@ int main(int argc, char **argv)
     verbose = 0;
     do {
         start_option = i;
-
         if (strcmp(argv[i], "-db") == 0) { //** DB output base directory
             i++;
             db_base = argv[i];
@@ -724,6 +738,10 @@ int main(int argc, char **argv)
             i++;
             recurse_depth = atoi(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "-n_partitions") == 0) { //** Number of partitions to manage workload
+            i++;
+            n_partitions = atoi(argv[i]);
+            i++;
         } else if (strcmp(argv[i], "-sb") == 0) { //** Print only bad RIDs
             i++;
             summary_mode = 1;
@@ -737,11 +755,17 @@ int main(int argc, char **argv)
             i++;
             parse_tag_file(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "-count") == 0) { //** They want ongoing updates
+            i++;
+            count = atoi(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-setwarm") == 0) { //** See if they want to set the warming attr
+            i++;
+            do_setattr = atoi(argv[i]);
+            i++;
         }
-
     } while ((start_option < i) && (i<argc));
     start_option = i;
-
 
     if (rg_mode == 0) {
         if (i>=argc) {
@@ -754,7 +778,7 @@ int main(int argc, char **argv)
 
     piter = tbx_stdinarray_iter_create(argc-start_option, (const char **)&(argv[start_option]));
 
-    create_warm_db(db_base, &db_inode, &db_rid);  //** Create the DB
+    results = create_results_db(db_base, n_partitions);  //** Create the DB
     ic = hack_ds_ibp_context_get(lio_gc->ds);
 
     n_bulk = n_bulk / n_warm;  //** Rescale the # of bulk caps to warn at a time
@@ -763,7 +787,7 @@ int main(int argc, char **argv)
 
     //** Launch the warming threads
     que = tbx_que_create(4*n_bulk*n_warm, sizeof(inode_entry_t *));
-    que_setattr = tbx_que_create(10000, sizeof(char *));
+    if (do_setattr) que_setattr = tbx_que_create(10000, sizeof(char *));
     tbx_type_malloc_clear(w, warm_thread_t, n_warm);
     for (j=0; j<n_warm; j++) {
         w[j].n_bulk = n_bulk;
@@ -779,8 +803,9 @@ int main(int argc, char **argv)
     }
 
     //** And the setattr thread
-    tbx_thread_create_assert(&sa_thread, NULL, setattr_thread,
-                                 (void *)que_setattr, lio_gc->mpool);
+    if (do_setattr) {
+        tbx_thread_create_assert(&sa_thread, NULL, setattr_thread, (void *)que_setattr, lio_gc->mpool);
+    }
 
     //** Process all the files
     submitted = good = bad = werr = missing_err = 0;
@@ -849,6 +874,12 @@ int main(int argc, char **argv)
             fname = NULL;
             submitted++;
 
+            //** See if we update the count
+            if ((count > 0) && ((submitted/count) != last)) {
+                last = submitted/count;
+                fprintf(stderr, "Submitted " XOT " objects\n", submitted);
+            }
+
             if (slot == n_put) {
                 nleft = slot;
                 do {
@@ -896,12 +927,14 @@ int main(int argc, char **argv)
         bad += w[i].bad;
     }
 
-    tbx_que_set_finished(que_setattr);  //** Let the setattr thread know we are done
-    apr_thread_join(&val, sa_thread);
+    if (do_setattr) {
+        tbx_que_set_finished(que_setattr);  //** Let the setattr thread know we are done
+        apr_thread_join(&val, sa_thread);
+        tbx_que_destroy(que_setattr);
+    }
 
     //** Cleanup the que's
     tbx_que_destroy(que);
-    tbx_que_destroy(que_setattr);
 
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
     info_printf(lio_ifd, 0, "Submitted: " XOT "   Success: " XOT "   Fail: " XOT "    Write Errors: " XOT "   Missing Exnodes: " XOT "\n", submitted, good, bad, werr, missing_err);
@@ -1027,7 +1060,7 @@ finished:
         apr_pool_destroy(tagged_pool);
     }
 
-    close_warm_db(db_inode, db_rid);  //** Close the DBs
+    close_results_db(results);  //** Close the DBs
 
     free(inode_list);
     tbx_stdinarray_iter_destroy(piter);
@@ -1035,5 +1068,3 @@ finished:
 
     return(return_code);
 }
-
-

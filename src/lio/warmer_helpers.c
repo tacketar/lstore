@@ -17,6 +17,9 @@
 // Warmer helper definitions
 //***********************************************************************
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <rocksdb/c.h>
 #include <stdio.h>
 #include <time.h>
@@ -30,6 +33,51 @@
 //=========================================================================
 //   Generic routines for opening/closing a RocksDB
 //=========================================================================
+
+//****************************************************************************
+// get_partitions - Retreives the partition info for the DB
+//****************************************************************************
+
+int get_partitions(char *prefix)
+{
+    int n;
+    FILE *fd;
+    char path[OS_PATH_MAX];
+
+    sprintf(path, "%s/n_partitions", prefix);
+
+    fd = fopen(path, "r");
+    if (fd == NULL) {
+        return(-1);
+    }
+
+    n = -1;
+    if (fscanf(fd, "%d", &n) == 0) n = -1;
+    fclose(fd);
+
+    return(n);
+}
+
+//****************************************************************************
+// put_partitions - Stores the partition info for the DB
+//****************************************************************************
+
+void put_partitions(char *prefix, int n)
+{
+    FILE *fd;
+    char path[OS_PATH_MAX];
+
+    sprintf(path, "%s/n_partitions", prefix);
+
+    fd = fopen(path, "w");
+    if (fd == NULL) {
+        fprintf(stderr, "ERROR: Unable to create partitions file!. path=%s\n", path); fflush(stderr);
+        exit(1);
+    }
+
+    fprintf(fd, "%d", n);
+    fclose(fd);
+}
 
 //*************************************************************************
 // open_a_db - Opens a rocksDB database
@@ -228,47 +276,134 @@ int warm_parse_rid(char *sbuf, int bufsize, ex_id_t *inode, ex_off_t *nbytes, in
     return(0);
 }
 
+
+
 //*************************************************************************
-//  create_warm_db - Creates the DBs using the given base directory
+//  create_results_part__db - Creates the results DB partition using the given base directory
 //*************************************************************************
 
-void create_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db)
+warm_results_db_part_t *create_results_part_db(char *db_base, int n_part)
 {
     char *db_path;
+    warm_results_db_part_t *p;
+
+    tbx_type_malloc_clear(p, warm_results_db_part_t, 1);
 
     tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
-    sprintf(db_path, "%s/inode", db_base); *inode_db = create_a_db(db_path, NULL);
-    sprintf(db_path, "%s/rid", db_base); *rid_db = create_a_db(db_path, NULL);
+    sprintf(db_path, "%s/inode", db_base); p->inode = create_a_db(db_path, NULL);
+    sprintf(db_path, "%s/rid", db_base); p->rid = create_a_db(db_path, NULL);
     free(db_path);
+
+    return(p);
 }
 
 //*************************************************************************
-//  open_warm_db - Opens the warmer DBs
+// create_results_db - Creates a DB for the warmer results
 //*************************************************************************
 
-int open_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db)
+warm_results_db_t *create_results_db(char *db_base, int n_partitions)
 {
+    int i;
     char *db_path;
+    warm_results_db_t *r;
 
-    tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
-    sprintf(db_path, "%s/inode", db_base); *inode_db = open_a_db(db_path, NULL, DB_OPEN_EXISTS);
-    if (inode_db == NULL) { free(db_path); return(1); }
+    tbx_type_malloc_clear(r, warm_results_db_t, 1);
+    tbx_type_malloc_clear(r->p, warm_results_db_part_t *, n_partitions);
+    r->n_partitions = n_partitions;
 
-    sprintf(db_path, "%s/rid", db_base); *rid_db = open_a_db(db_path, NULL, DB_OPEN_EXISTS);
-    if (rid_db == NULL) { free(db_path); return(2); }
+    tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1 + 20);
+    for (i=0; i<r->n_partitions; i++) {
+        sprintf(db_path, "%s/%d", db_base, i);
+        if (mkdir(db_path, 0) != 0) {   //** Kick out if we fail
+            fprintf(stderr, "ERROR: Unable to make partition directory! directory: %s\bn", db_path); fflush(stderr);
+            abort();
+        }
 
+        r->p[i] = create_results_part_db(db_path, i);
+    }
     free(db_path);
-    return(0);
+
+    //** Store the partitions
+    put_partitions(db_base, n_partitions);
+
+    return(r);
 }
 
 //*************************************************************************
-//  close_warm_db - Closes the DBs
+//  open_results_part__db - Open the results DB partition using the given base directory
 //*************************************************************************
 
-void close_warm_db(warm_db_t *inode, warm_db_t *rid)
+warm_results_db_part_t *open_results_part_db(char *db_base, int mode, int n_part)
 {
-    close_a_db(inode);
-    close_a_db(rid);
+    char *db_path;
+    warm_results_db_part_t *p;
+
+    tbx_type_malloc_clear(p, warm_results_db_part_t, 1);
+
+    tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
+    sprintf(db_path, "%s/inode", db_base); p->inode = open_a_db(db_path, NULL, mode);
+    sprintf(db_path, "%s/rid", db_base); p->rid = open_a_db(db_path, NULL, mode);
+    free(db_path);
+
+    return(p);
+}
+
+//*************************************************************************
+//  open_results_db - Opens the warmer results DBs
+//*************************************************************************
+
+warm_results_db_t *open_results_db(char *db_base, int mode)
+{
+    char *db_path;
+    warm_results_db_t *r;
+    int i;
+
+    i = get_partitions(db_base);
+    if (i <= 0) {
+        fprintf(stderr, "ERROR: Unable to get partition info! directory: %s\bn", db_base); fflush(stderr);
+        abort();
+    }
+
+    tbx_type_malloc_clear(r, warm_results_db_t, 1);
+    r->n_partitions = i;
+    tbx_type_malloc_clear(r->p, warm_results_db_part_t *, r->n_partitions);
+
+    tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1 + 20);
+    for (i=0; i<r->n_partitions; i++) {
+        sprintf(db_path, "%s/%d", db_base, i);
+        r->p[i] = open_results_part_db(db_path, mode, i);
+    }
+    free(db_path);
+
+    return(r);
+}
+
+//*************************************************************************
+//  close_results_db_part - Closes the results DB parttion
+//*************************************************************************
+
+void close_results_db_part(warm_results_db_part_t *p)
+{
+    close_a_db(p->inode);
+    close_a_db(p->rid);
+
+    free(p);
+}
+
+
+//*************************************************************************
+//  close_results_db - Closes the results DB
+//*************************************************************************
+
+void close_results_db(warm_results_db_t *r)
+{
+    int i;
+
+    for (i=0; i<r->n_partitions; i++) {
+        close_results_db_part(r->p[i]);
+    }
+    free(r->p);
+    free(r);
 }
 
 //=========================================================================
@@ -282,22 +417,9 @@ void close_warm_db(warm_db_t *inode, warm_db_t *rid)
 
 int inode_compare_op(void *arg, const char *a, size_t alen, const char *b, size_t blen)
 {
-    warm_prep_db_t *wdb = arg;
     ex_id_t aid = *(ex_id_t *)a;
     ex_id_t bid = *(ex_id_t *)b;
 
-    int a_part, b_part;
-
-    //** check based on the ID partition
-    a_part = aid % wdb->n_partitions;
-    b_part = bid % wdb->n_partitions;
-    if (a_part > b_part) {
-        return(1);
-    } else if (a_part < b_part) {
-        return(-1);
-    }
-
-    //** If made it here then the ID partitions are the same so check using the ID
     if (aid > bid) {
         return(1);
     } else if (aid < bid) {
@@ -320,27 +442,16 @@ const char *inode_compare_name(void *arg) { return("INODE"); }
 
 int rid_compare_op(void *arg, const char *aptr, size_t alen, const char *bptr, size_t blen)
 {
-    warm_prep_db_t *wdb = arg;
     rid_prep_key_t *a = (rid_prep_key_t *)aptr;
     rid_prep_key_t *b = (rid_prep_key_t *)bptr;
+    int n;
 
-    int a_part, b_part, n;
-
-    //** check based on the ID partition
-    a_part = a->id % wdb->n_partitions;
-    b_part = b->id % wdb->n_partitions;
-    if (a_part > b_part) {
-        return(1);
-    } else if (a_part < b_part) {
-        return(-1);
-    }
-
-    //** Nor compare based on the RID
+    //** Compare based on the RID
     n = strcmp(a->strings, b->strings);
     if (n != 0) return(n);
 
 
-    //** If made it here then the ID partitions and RID are the same so check using the ID
+    //** If made it here then the RIDs are the same so check using the ID
     if (a->id > b->id) {
         return(1);
     } else if (a->id < b->id) {
@@ -403,48 +514,47 @@ void warm_prep_put_timestamp(char *prefix, int year, int month, int day, int lin
 }
 
 //****************************************************************************
-// get_partitions - Retreives the partition info for the DB
+// open_prep_db_part - Opens a prep DB partition
 //****************************************************************************
 
-int get_partitions(char *prefix)
+warm_prep_db_part_t *open_prep_db_part(char *db_part_dir, int mode)
 {
-    int n;
-    FILE *fd;
+    warm_prep_db_part_t *p;
     char path[OS_PATH_MAX];
+    struct stat sbuf;
 
-    sprintf(path, "%s/n_partitions", prefix);
+    tbx_type_malloc_clear(p, warm_prep_db_part_t, 1);
 
-    fd = fopen(path, "r");
-    if (fd == NULL) {
-        return(-1);
+    //** Check if we need to make the parent directory for the partition
+    if ((mode == DB_OPEN_WIPE_CLEAN) || (mode == DB_OPEN_CREATE_IF_NEEDED) || (mode == DB_OPEN_CREATE_ONLY)) {
+        if (stat(db_part_dir, &sbuf) == 0) {
+            if (!S_ISDIR(sbuf.st_mode)) {  //** Exists but not a directory so throw an error
+                fprintf(stderr, "ERROR: Partition is NOT a directory! directory: %s\bn", db_part_dir); fflush(stderr);
+                abort();
+            }
+        } else { //** Need to go ahead and make the directory
+            if (mkdir(db_part_dir, 0) != 0) {   //** Kick out if we fail
+                fprintf(stderr, "ERROR: Unable to make partition directory! directory: %s\bn", db_part_dir); fflush(stderr);
+                abort();
+            }
+        }
     }
 
-    n = -1;
-    if (fscanf(fd, "%d", &n) == 0) n = -1;
-    fclose(fd);
+    p->inode_cmp = rocksdb_comparator_create(p, default_compare_destroy,
+        inode_compare_op, inode_compare_name);
+    p->rid_cmp = rocksdb_comparator_create(p, default_compare_destroy,
+        rid_compare_op, rid_compare_name);
 
-    return(n);
-}
+    sprintf(path, "%s/prep_inode", db_part_dir);
+    p->inode = open_a_db(path, p->inode_cmp, mode);
+    sprintf(path, "%s/prep_rid", db_part_dir);
+    p->rid = open_a_db(path, p->rid_cmp, mode);
+    sprintf(path, "%s/prep_write", db_part_dir);
+    p->write_errors = open_a_db(path, NULL, mode);
+    sprintf(path, "%s/prep_missing_exnode", db_part_dir);
+    p->missing_exnode_errors = open_a_db(path, NULL, mode);
 
-//****************************************************************************
-// put_partitions - Stores the partition info for the DB
-//****************************************************************************
-
-void put_partitions(char *prefix, int n)
-{
-    FILE *fd;
-    char path[OS_PATH_MAX];
-
-    sprintf(path, "%s/n_partitions", prefix);
-
-    fd = fopen(path, "w");
-    if (fd == NULL) {
-        fprintf(stderr, "ERROR: Unable to create partitions file!. path=%s\n", path); fflush(stderr);
-        exit(1);
-    }
-
-    fprintf(fd, "%d", n);
-    fclose(fd);
+    return(p);
 }
 
 //****************************************************************************
@@ -454,6 +564,7 @@ void put_partitions(char *prefix, int n)
 warm_prep_db_t *open_prep_db(char *db_dir, int mode, int n_partitions)
 {
     warm_prep_db_t *wdb;
+    int i;
     char path[OS_PATH_MAX];
 
     tbx_type_malloc_clear(wdb, warm_prep_db_t, 1);
@@ -464,19 +575,11 @@ warm_prep_db_t *open_prep_db(char *db_dir, int mode, int n_partitions)
         exit(1);
     }
 
-    wdb->inode_cmp = rocksdb_comparator_create(wdb, default_compare_destroy,
-        inode_compare_op, inode_compare_name);
-    wdb->rid_cmp = rocksdb_comparator_create(wdb, default_compare_destroy,
-        rid_compare_op, rid_compare_name);
-
-    sprintf(path, "%s/prep_inode", db_dir);
-    wdb->inode = open_a_db(path, wdb->inode_cmp, mode);
-    sprintf(path, "%s/prep_rid", db_dir);
-    wdb->rid = open_a_db(path, wdb->rid_cmp, mode);
-    sprintf(path, "%s/prep_write", db_dir);
-    wdb->write_errors = open_a_db(path, NULL, mode);
-    sprintf(path, "%s/prep_missing_exnode", db_dir);
-    wdb->missing_exnode_errors = open_a_db(path, NULL, mode);
+    tbx_type_malloc_clear(wdb->p, warm_prep_db_part_t *, wdb->n_partitions);
+    for (i=0; i<wdb->n_partitions; i++) {
+        sprintf(path, "%s/%d", db_dir, i);
+        wdb->p[i] = open_prep_db_part(path, mode);
+    }
 
     return(wdb);
 }
@@ -496,7 +599,6 @@ warm_prep_db_t *create_prep_db(char *db_dir, int n_partitions)
     //** Store the partitions
     put_partitions(db_dir, n_partitions);
 
-
     //** Store the timestamp
     now = time(NULL);
     localtime_r(&now, &tm_now);
@@ -506,19 +608,34 @@ warm_prep_db_t *create_prep_db(char *db_dir, int n_partitions)
 }
 
 //****************************************************************************
+// close_prep_db_pasrt - Close a prep DB partition
+//****************************************************************************
+
+void close_prep_db_part(warm_prep_db_part_t *p)
+{
+    close_a_db(p->inode);
+    close_a_db(p->rid);
+    close_a_db(p->write_errors);
+    close_a_db(p->missing_exnode_errors);
+
+    rocksdb_comparator_destroy(p->inode_cmp);
+    rocksdb_comparator_destroy(p->rid_cmp);
+
+    free(p);
+}
+
+//****************************************************************************
 // close_prep_db - Close a prep DB
 //****************************************************************************
 
 void close_prep_db(warm_prep_db_t *wdb)
 {
-    close_a_db(wdb->inode);
-    close_a_db(wdb->rid);
-    close_a_db(wdb->write_errors);
-    close_a_db(wdb->missing_exnode_errors);
+    int i;
 
-    rocksdb_comparator_destroy(wdb->inode_cmp);
-    rocksdb_comparator_destroy(wdb->rid_cmp);
-
+    for (i=0; i<wdb->n_partitions; i++) {
+        close_prep_db_part(wdb->p[i]);
+    }
+    free(wdb->p);
     free(wdb);
 }
 
@@ -530,7 +647,7 @@ void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, cha
 {
     int nbuf = 100*1024;
     char rbuf[nbuf];
-    int n_rid, n_mcap, n;
+    int n_rid, n_mcap, n, modulo;
     rid_prep_key_t *rkey;
     char *errstr;
 
@@ -549,7 +666,8 @@ void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, cha
     memcpy(rkey->strings + n_rid+1, mcap, n_mcap+1);
 
     errstr = NULL;
-    rocksdb_put(wdb->rid->db, wdb->rid->wopt, (const char *)rkey, n, (const char *)&nbytes, sizeof(ex_off_t), &errstr);
+    modulo = inode % wdb->n_partitions;
+    rocksdb_put(wdb->p[modulo]->rid->db, wdb->p[modulo]->rid->wopt, (const char *)rkey, n, (const char *)&nbytes, sizeof(ex_off_t), &errstr);
     if (rkey != (rid_prep_key_t *)rbuf) free(rkey);
 
     if (errstr != NULL) {
@@ -574,7 +692,7 @@ int prep_warm_rid_db_parse(warm_prep_db_t *wdb, char *buffer, int blen, ex_id_t 
 }
 
 //****************************************************************************
-// prep_warm_inode_db_put - Stores an entry inthe inode prep DB
+// prep_warm_inode_db_put - Stores an entry in the inode prep DB
 //****************************************************************************
 
 void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int n_allocs, apr_hash_t *rids, int free_rids)
@@ -586,7 +704,7 @@ void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int
     char *rid_buffer;
     char *errstr;
     int n_rids, ntotal, n, n_v;
-    int fname_len;
+    int fname_len, modulo;
     apr_hash_index_t *hi;
     apr_ssize_t hlen;
 
@@ -619,7 +737,8 @@ void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int
 
     //** Store it
     errstr = NULL;
-    rocksdb_put(wdb->inode->db, wdb->inode->wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)v, n_v, &errstr);
+    modulo = inode % wdb->n_partitions;
+    rocksdb_put(wdb->p[modulo]->inode->db, wdb->p[modulo]->inode->wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)v, n_v, &errstr);
     free(v);
 
     if (errstr != NULL) {
@@ -642,9 +761,10 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
 {
     tbx_inip_file_t *fd;
     tbx_inip_group_t *g;
+    warm_prep_db_part_t *p;
     char *etext, *mcap, *errstr;
     ex_id_t inode, *iptr;
-    int n_allocs;
+    int n_allocs, modulo;
     ex_off_t nbytes;
     size_t ns;
     apr_pool_t *mpool;
@@ -658,7 +778,6 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
     apr_pool_create(&mpool, NULL);
     rids = apr_hash_make(mpool);
     n_allocs = 0;
-
 
     //** Translate the attributes with some sanity checking
 
@@ -676,10 +795,15 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
         return;
     }
 
+    modulo = inode % wdb->n_partitions;
+    p = wdb->p[modulo];
+
     //** write_error
     if (v_size[2] > 0) {
         errstr = NULL;
-        rocksdb_put(wdb->write_errors->db, wdb->write_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
+info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inode, modulo);
+        info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT "\n", fname, inode);
+        rocksdb_put(p->write_errors->db, p->write_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
         free(vals[2]);
         v_size[2] = 0;
         if (errstr) {
@@ -692,7 +816,7 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
     if (v_size[0] <= 0) {
         errstr = NULL;
         info_printf(ifd, 0, "MISSING_EXNODE_ERROR: fname=%s inode=" XIDT "\n", fname, inode);
-        rocksdb_put(wdb->missing_exnode_errors->db, wdb->missing_exnode_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
+        rocksdb_put(p->missing_exnode_errors->db, p->missing_exnode_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
         free(vals[2]);
         v_size[2] = 0;
         if (errstr) {
@@ -702,11 +826,11 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
         goto no_exnode;
     } else {  //** Got an exnode so check if we need to clear it
         errstr = NULL;
-        iptr = (ex_id_t *)rocksdb_get(wdb->missing_exnode_errors->db, wdb->missing_exnode_errors->ropt, (const char *)&inode, sizeof(ex_id_t), &ns, &errstr);
+        iptr = (ex_id_t *)rocksdb_get(p->missing_exnode_errors->db, p->missing_exnode_errors->ropt, (const char *)&inode, sizeof(ex_id_t), &ns, &errstr);
         if (errstr) free(errstr);
         if (iptr != NULL) { //** Got a match so delete
             errstr = NULL;
-            rocksdb_delete(wdb->missing_exnode_errors->db, wdb->missing_exnode_errors->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
+            rocksdb_delete(p->missing_exnode_errors->db, p->missing_exnode_errors->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
             if (errstr) {
                 info_printf(ifd, 0, "ERROR: RocksDB error removing missing_exnode_error entry! fname=%s errstr=%s\n", fname, errstr);
                 free(errstr);

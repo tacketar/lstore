@@ -43,22 +43,36 @@ extern "C" {
 void rocksdb_cancel_all_background_work(rocksdb_t* db, unsigned char wait);
 #endif
 
-typedef struct {  //** PREP databases
+typedef struct {  //** Databases
     rocksdb_t *db;
     rocksdb_comparator_t *cmp;
     rocksdb_writeoptions_t *wopt;
     rocksdb_readoptions_t  *ropt;
 } warm_db_t;
 
-typedef struct {  //** PREP databases
+typedef struct {    //** PREP DB partition
     warm_db_t *inode;
     warm_db_t *rid;
     warm_db_t *write_errors;
     warm_db_t *missing_exnode_errors;
     rocksdb_comparator_t *inode_cmp;
     rocksdb_comparator_t *rid_cmp;
+} warm_prep_db_part_t;
+
+typedef struct {  //** PREP databases
+    warm_prep_db_part_t **p;
     int n_partitions;
 } warm_prep_db_t;
+
+typedef struct {    //** Warmer DB partition
+    warm_db_t *inode;
+    warm_db_t *rid;
+} warm_results_db_part_t;
+
+typedef struct {
+    warm_results_db_part_t **p;
+    int n_partitions;
+} warm_results_db_t;
 
 typedef struct {
     ex_id_t id;
@@ -76,13 +90,13 @@ typedef struct {
 } inode_value_t;
 
 //** These are helpers for lio_wamer and warmer_query *******
-LIO_API int open_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
-LIO_API void close_warm_db(warm_db_t *inode, warm_db_t *rid);
+LIO_API warm_results_db_t *open_results_db(char *db_base, int mode);
+LIO_API void close_results_db(warm_results_db_t *r);
 LIO_API int warm_put_inode(warm_db_t *db, ex_id_t inode, int state, int nfailed, char *name);
 LIO_API int warm_parse_inode(char *buf, int bufsize, int *state, int *nfailed, char **name);
 LIO_API int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int state);
 LIO_API int warm_parse_rid(char *buf, int bufsize, ex_id_t *inode, ex_off_t *nbytes,int *state);
-LIO_API void create_warm_db(char *db_base, warm_db_t **inode_db, warm_db_t **rid_db);
+LIO_API warm_results_db_t *create_results_db(char *db_base, int n_partitions);
 LIO_API warm_prep_db_t *open_prep_db(char *db_dir, int mode, int n_partitions);
 LIO_API void close_prep_db(warm_prep_db_t *wdb);
 LIO_API warm_prep_db_t *create_prep_db(char *db_dir, int n_partitions);

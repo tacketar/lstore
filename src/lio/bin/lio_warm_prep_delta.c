@@ -334,12 +334,16 @@ void warm_rid_delete(warm_prep_db_t *wdb, char *rid, clog_obj_info_t *obj)
     rocksdb_iterator_t *it;
     rid_prep_key_t *rkey;
     rid_prep_key_t *rkey_dummy;
+    warm_prep_db_part_t *p;
     char *errstr;
     size_t nbytes;
-    int n, nr;
+    int n, nr, modulo;
+
+    modulo = obj->inode % wdb->n_partitions;
+    p = wdb->p[modulo];
 
     //** Make the iterator
-    it = rocksdb_create_iterator(wdb->rid->db, wdb->rid->ropt);
+    it = rocksdb_create_iterator(p->rid->db, p->rid->ropt);
     nr = strlen(rid);
     n = sizeof(rid_prep_key_t) + nr + 1 + 1;
     rkey_dummy = malloc(n); memset(rkey_dummy, 0, n);
@@ -356,7 +360,7 @@ void warm_rid_delete(warm_prep_db_t *wdb, char *rid, clog_obj_info_t *obj)
         if (rkey->id != obj->inode) break;
 
         errstr = NULL;
-        rocksdb_delete(wdb->rid->db, wdb->rid->wopt, (const char *)rkey, nbytes, &errstr);
+        rocksdb_delete(p->rid->db, p->rid->wopt, (const char *)rkey, nbytes, &errstr);
         if (errstr) {
             info_printf(lio_ifd, 0, "ERROR: RocksDB error removing RID entry! fname=%s RID=%s errstr=%s\n", obj->fname, rid, errstr);
             free(errstr);
@@ -376,12 +380,16 @@ void warm_object_delete(warm_prep_db_t *wdb, clog_obj_info_t *obj)
 {
     char *rid, *errstr;
     inode_value_t *v;
+    warm_prep_db_part_t *p;
     size_t nbytes;
-    int i, j, n;
+    int i, j, n, modulo;
+
+    modulo = obj->inode % wdb->n_partitions;
+    p = wdb->p[modulo];
 
     //** Get the inode DB entry which has the list of RIDs
     errstr = NULL;
-    v = (inode_value_t *)rocksdb_get(wdb->inode->db, wdb->inode->ropt, (const char *)&(obj->inode), sizeof(ex_id_t), &nbytes, &errstr);
+    v = (inode_value_t *)rocksdb_get(p->inode->db, p->inode->ropt, (const char *)&(obj->inode), sizeof(ex_id_t), &nbytes, &errstr);
     if (errstr) free(errstr);
     if (v == NULL) { //** Skip it if we can't find the inode entry
         log_printf(0, "ERROR: Can't locate inode entry for inode=" LU " fname=%s\n", obj->inode, obj->fname);
@@ -415,7 +423,7 @@ void warm_object_delete(warm_prep_db_t *wdb, clog_obj_info_t *obj)
 
     //** Finally go ahead and delete the inode DB entry
     errstr = NULL;
-    rocksdb_delete(wdb->inode->db, wdb->inode->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
+    rocksdb_delete(p->inode->db, p->inode->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
     if (errstr) {
         info_printf(lio_ifd, 0, "ERROR: RocksDB error removing write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
         free(errstr);
@@ -435,7 +443,7 @@ void process_objects(warm_prep_db_t *wdb, apr_hash_t *obj_hash)
     apr_ssize_t hlen;
     apr_hash_index_t *hi;
     clog_obj_info_t *obj;
-    int err, i;
+    int err, i, modulo;
     char *keys[] = { "system.exnode", "system.inode" };
 
     for (hi=apr_hash_first(NULL, obj_hash); hi != NULL; hi = apr_hash_next(hi)) {
@@ -470,17 +478,19 @@ void process_objects(warm_prep_db_t *wdb, apr_hash_t *obj_hash)
             update_warm_prep_db(lio_ifd, wdb, obj->fname, obj->vals, obj->v_size);
         }
 
+        modulo = obj->inode % wdb->n_partitions;
+
         if (obj->write_error_state == 1) {  //** Write error set
             info_printf(lio_ifd, 0, "WRITE_ERROR: %s\n", obj->fname); //** Log it for a quick followup repair.  WRITE_ERROR clears are missed but that's ok.
             errstr = NULL;
-            rocksdb_put(wdb->write_errors->db, wdb->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), NULL, 0, &errstr);
+            rocksdb_put(wdb->p[modulo]->write_errors->db, wdb->p[modulo]->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), NULL, 0, &errstr);
             if (errstr) {
                 info_printf(lio_ifd, 0, "ERROR: RocksDB error putting write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
                 free(errstr);
             }
         } else if (obj->write_error_state == 2) {  //** Write error clear
             errstr = NULL;
-            rocksdb_delete(wdb->write_errors->db, wdb->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
+            rocksdb_delete(wdb->p[modulo]->write_errors->db, wdb->p[modulo]->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
             if (errstr) {
                 info_printf(lio_ifd, 0, "ERROR: RocksDB error removing write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
                 free(errstr);
