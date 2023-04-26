@@ -2368,8 +2368,6 @@ lio_segment_t *segment_jerasure_create(void *arg)
     lio_service_manager_t *es = (lio_service_manager_t *)arg;
     segjerase_priv_t *s;
     lio_segment_t *seg;
-    int *paranoid;
-    ex_off_t *max_stack_parity;
 
     //** Make the space
     tbx_type_malloc_clear(seg, lio_segment_t, 1);
@@ -2392,10 +2390,8 @@ lio_segment_t *segment_jerasure_create(void *arg)
     s->child_seg = NULL;
 
     //** Pluck the paranoid max parity stack size setting for Jerase
-    paranoid = lio_lookup_service(es, ESS_RUNNING, "jerase_paranoid");
-    s->paranoid_check = (paranoid == NULL) ? 0 : *paranoid;
-    max_stack_parity = lio_lookup_service(es, ESS_RUNNING, "jerase_max_parity_on_stack");
-    s->max_parity_on_stack = (max_stack_parity == NULL) ? 1024*1024 : *max_stack_parity;
+    s->paranoid_check = lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_paranoid", 0);
+    s->max_parity_on_stack = lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_max_parity_on_stack", 1024*1024);
     s->magic_cksum = 1;
 
     //** Also snag whether we're blacklisting

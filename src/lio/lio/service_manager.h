@@ -21,6 +21,7 @@ limitations under the License.
 #ifndef ACCRE_LIO_SERVICE_MANAGER_H_INCLUDED
 #define ACCRE_LIO_SERVICE_MANAGER_H_INCLUDED
 
+#include <tbx/iniparse.h>
 #include <lio/visibility.h>
 
 #ifdef __cplusplus
@@ -32,7 +33,11 @@ typedef struct lio_service_manager_t lio_service_manager_t;
 
 // Functions
 LIO_API void *lio_lookup_service(lio_service_manager_t *sm, char *service_section, char *service_name);
-
+LIO_API void lio_load_inip_flag_service(lio_service_manager_t *sm, char *service_section, tbx_inip_file_t *ifd, char *ini_section);
+LIO_API char *lio_lookup_string_flag_service(lio_service_manager_t *sm, char *service_section, char *flag_name, char *default_value);
+LIO_API double lio_lookup_double_flag_service(lio_service_manager_t *sm, char *service_section, char *flag_name, double default_value);
+LIO_API int64_t lio_lookup_integer_flag_service(lio_service_manager_t *sm, char *service_section, char *flag_name, int64_t default_value);
+LIO_API void lio_print_flag_service(lio_service_manager_t *sm, char *service_section, FILE *fd);
 #ifdef __cplusplus
 }
 #endif

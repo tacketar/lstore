@@ -89,9 +89,6 @@ lio_config_t lio_default_options = {
     .readahead_trigger = 0,
     .stream_buffer_max_size = 0,
     .small_files_in_metadata_max_size = 0,
-    .jerase_paranoid = 0,
-    .lun_max_retry = 5,
-    .jerase_max_parity_on_stack = 2*1024*1024,
     .tpc_unlimited_count = 300,
     .tpc_max_recursion = 10,
     .tpc_cache_count = 100,
@@ -193,9 +190,6 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "readahead_trigger = %s\n", tbx_stk_pretty_print_int_with_scale(lio->readahead_trigger, text));
     fprintf(fd, "stream_buffer_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_max_size, text));
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
-    fprintf(fd, "jerase_paranoid = %d\n", lio->jerase_paranoid);
-    fprintf(fd, "jerase_max_parity_on_stack = %s\n", tbx_stk_pretty_print_int_with_scale(lio->jerase_max_parity_on_stack, text));
-    fprintf(fd, "lun_max_retry = %d\n", lio->lun_max_retry);
     fprintf(fd, "tpc_unlimited = %d\n", lio->tpc_unlimited_count);
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
     fprintf(fd, "tpc_cache = %d\n", lio->tpc_cache_count);
@@ -211,6 +205,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "notify = %s\n", lio->notify_section);
     fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
     fprintf(fd, "monitor_enable = %d  #touch %s-enable to start logging or touch %s-disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
+    lio_print_flag_service(lio->ess, ESS_RUNNING, fd);
     fprintf(fd, "\n");
 
     rc_print_running_config(fd);
@@ -1098,10 +1093,6 @@ void lio_destroy_nl(lio_config_t *lio)
     remove_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack");
     if (val) free(val);
 
-    val = lio_lookup_service(lio->ess, ESS_RUNNING, "lun_max_retry");
-    remove_service(lio->ess, ESS_RUNNING, "lun_max_retry");
-    if (val) free(val);
-
     _lio_destroy_plugins(lio);
 
     lio_exnode_service_set_destroy(lio->ess);
@@ -1187,8 +1178,6 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     gop_mq_portal_t *portal;
     lio_path_tuple_t *tuple;
     gop_mq_ongoing_t *on = NULL;
-    int *val;
-    ex_off_t *eval;
 
     //** Add the LC first cause it may already exist
     log_printf(1, "START: Creating LIO context %s\n", obj_name);
@@ -1215,6 +1204,9 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         log_printf(-1, "ERROR: Failed to parse INI1\n");
         return NULL;
     }
+
+    //** Go ahead and load the service flags
+    lio_load_inip_flag_service(lio->ess, ESS_RUNNING, lio->ifd, section);
 
     _lio_load_plugins(lio, lio->ifd);  //** Load the plugins
 
@@ -1251,21 +1243,6 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         lio->blacklist = blacklist_load(lio->ifd, lio->blacklist_section);
         add_service(lio->ess, ESS_RUNNING, "blacklist", lio->blacklist);
     }
-
-    //** Add the Jerase paranoid and parity stack options
-    tbx_type_malloc(val, int, 1);
-    *val = tbx_inip_get_integer(lio->ifd, section, "jerase_paranoid", lio_default_options.jerase_paranoid);
-    add_service(lio->ess, ESS_RUNNING, "jerase_paranoid", val);
-    lio->jerase_paranoid = *val;
-    tbx_type_malloc(eval, ex_off_t, 1);
-    *eval = tbx_inip_get_integer(lio->ifd, section, "jerase_max_parity_on_stack", lio_default_options.jerase_max_parity_on_stack);
-    add_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack", eval);
-    lio->jerase_max_parity_on_stack = *eval;
-
-    //** Add the LUN max retry options
-    tbx_type_malloc(val, int, 1);
-    *val = tbx_inip_get_integer(lio->ifd, section, "lun_max_retry", lio_default_options.lun_max_retry);
-    add_service(lio->ess, ESS_RUNNING, "lun_max_retry", val);
 
     cores = tbx_inip_get_integer(lio->ifd, section, "tpc_unlimited", lio_default_options.tpc_unlimited_count);
     lio->tpc_unlimited_count = cores;

@@ -2861,8 +2861,7 @@ lio_segment_t *segment_lun_create(void *arg)
     s->rs = lio_lookup_service(es, ESS_RUNNING, ESS_RS);
     s->ds = lio_lookup_service(es, ESS_RUNNING, ESS_DS);
     s->bl = lio_lookup_service(es, ESS_RUNNING, "blacklist");
-    int *n = lio_lookup_service(es, ESS_RUNNING, "lun_max_retry");
-    s->max_retry = *n;
+    s->max_retry = lio_lookup_integer_flag_service(es, ESS_RUNNING, "lun_max_retry", 5);
 
     //** Set up remap notifications
     apr_thread_mutex_create(&(s->notify.lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
