@@ -234,6 +234,7 @@ void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t ui
     char buf[32*1024];
     int blen = sizeof(buf);
 
+    ug->valid_guids = 1;
     ug->uid = uid; //** This is needed for checking for a hint
 
     log_printf(10, "uid=%d gid=%d\n", uid, gid);
@@ -552,6 +553,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 {
     char *val[_inode_key_size_security];
     int v_size[_inode_key_size_security], i, err, lflags;
+    fs_open_file_t *fop;
 
     FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
 
@@ -563,10 +565,17 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 
     for (i=0; i<fs->_inode_key_size; i++) v_size[i] = -fs->lc->max_attr;
     if (fs->enable_internal_lock_mode == 0) {
-        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
     } else {
-        lflags = (no_cache_stat_if_file) ? (OS_MODE_NO_CACHE_INFO_IF_FILE|OS_MODE_BLOCK_ONLY_IF_FILE) : 0;
-        err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, NULL, _inode_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
+        fs_lock(fs);
+        fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
+        fs_unlock(fs);
+        if (fop) { //** We have the file open so no need to lock it
+            err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
+        } else {
+            lflags = (no_cache_stat_if_file) ? (OS_MODE_NO_CACHE_INFO_IF_FILE|OS_MODE_BLOCK_ONLY_IF_FILE) : 0;
+            err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
+        }
     }
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
@@ -675,13 +684,9 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     char *dir, *file;
     int i;
 
-    tbx_log_flush();
-log_printf(0, "START fname=%s\n", fname);
-
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) != 2) {
         return(NULL);
     }
-log_printf(0, "CACN_ACCESS=2 fname=%s\n", fname);
 
     tbx_type_malloc_clear(dit, lio_fs_dir_iter_t, 1);
 
