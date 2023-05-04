@@ -263,7 +263,6 @@ struct lio_config_t {
     ex_off_t readahead;
     ex_off_t readahead_trigger;
     ex_off_t stream_buffer_max_size;
-    ex_off_t jerase_max_parity_on_stack;
     ex_off_t small_files_in_metadata_max_size;
     ex_off_t uuid;
     int calc_adler32;
@@ -272,8 +271,6 @@ struct lio_config_t {
     int max_attr;
     int anonymous_creation;
     int auto_translate;
-    int jerase_paranoid;
-    int lun_max_retry;
     int tpc_unlimited_count;
     int tpc_cache_count;
     int tpc_max_recursion;

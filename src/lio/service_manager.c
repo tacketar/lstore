@@ -429,6 +429,29 @@ void *lio_lookup_service(lio_service_manager_t *sm, char *service_section, char 
 }
 
 //***********************************************************************
+// _clone_flags - Clones the flags in the service manager
+//***********************************************************************
+
+void _clone_flags(lio_service_manager_t *clone, char *section_name, service_section_t *section)
+{
+    apr_ssize_t klen;
+    apr_hash_index_t *his;
+    service_flag_t *sflag;
+    char *flag_name;
+
+    for (his = apr_hash_first(NULL, section->flags); his != NULL; his = apr_hash_next(his)) {
+        apr_hash_this(his, (const void **)&flag_name, &klen, (void **)&sflag);
+        if (sflag->type == SF_INT) {
+            add_flag_service(clone, section_name, flag_name, sflag->type, &(sflag->n));
+        } else if (sflag->type == SF_DOUBLE) {
+            add_flag_service(clone, section_name, flag_name, sflag->type, &(sflag->d));
+        } else {
+            add_flag_service(clone, section_name, flag_name, sflag->type, apr_pstrdup(clone->pool, sflag->string));
+        }
+    }
+}
+
+//***********************************************************************
 // clone_service_manager - Clones an existing SM
 //***********************************************************************
 
@@ -449,7 +472,9 @@ lio_service_manager_t *clone_service_manager(lio_service_manager_t *sm)
         apr_hash_this(his, (const void **)&key, &klen, (void **)&section);
         clone_section = apr_pcalloc(clone->pool, sizeof(service_section_t));
         clone_section->table = apr_hash_copy(clone->pool, section->table);
+        clone_section->flags = apr_hash_make(clone->pool);
         apr_hash_set(clone->table, apr_pstrdup(clone->pool, key), APR_HASH_KEY_STRING, clone_section);
+        _clone_flags(clone, key, section);
     }
     apr_thread_mutex_unlock(sm->lock);
 
