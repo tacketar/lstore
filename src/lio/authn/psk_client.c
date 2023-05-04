@@ -208,7 +208,7 @@ void psk_exchange(lio_authn_t *an, lio_creds_t *c, char *key)
 //
 //***********************************************************************
 
-int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fail)
+int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fail, mode_t bad_mode)
 {
     struct stat st;
     tbx_inip_file_t *fd;
@@ -221,14 +221,17 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
         if (do_fail) {
             log_printf(0, "ERROR: PSK file missing! fname:%s\n", psk_name);
             fprintf(stderr, "ERROR: PSK file missing! fname:%s\n", psk_name);
-            exit(1);
+            abort();
         }
         return(1);
     }
-    if ((st.st_mode & (S_IRWXO|S_IRWXG|S_IXUSR)) > 0) {
-        log_printf(0, "ERROR: PSK file has bad perms! Should only have user RW perms.  fname:%s\n", psk_name);
-        fprintf(stderr, "ERROR: PSK file has bad perms! Should only have user RW perms.  fname:%s\n", psk_name);
-        if (do_fail) exit(1);
+
+    if ((st.st_mode & bad_mode) > 0) {
+        if (do_fail) {
+            log_printf(0, "ERROR: PSK file has bad perms! Should only have user RW perms on local PSKs or group/other read-only perms for the global file. fname:%s\n", psk_name);
+            fprintf(stderr, "ERROR: PSK file has bad perms! Should only have user RW perms on local PSKs or group/other read-only perms for the global file. fname:%s\n", psk_name);
+            abort();
+        }
         return(1);
     }
 
@@ -238,7 +241,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
         if (do_fail) {
             log_printf(0, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
             fprintf(stderr, "ERROR: Can't open the PSK file! fname:%s\n", psk_name);
-            exit(1);
+            abort();
         }
         return(1);
     }
@@ -252,7 +255,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
             if (do_fail) {
                 log_printf(0, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
                 fprintf(stderr, "ERROR: PSK default account undefined! fname:%s\n", psk_name);
-                exit(1);
+                abort();
             }
             return(1);
         }
@@ -265,7 +268,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
         if (do_fail) {
             log_printf(0, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
             fprintf(stderr, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
-            exit(1);
+            abort();
         }
         free(account);
         return(1);
@@ -299,7 +302,7 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     lio_creds_t *c;
     char fname[PATH_MAX];
     char *home, *key_prefix, *fcreds;
-    int do_fail, err;
+    mode_t bad_mode;
 
     c = cred_default_create(NULL);
     c->priv = an;
@@ -307,31 +310,38 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     c->destroy = authn_psk_client_cred_destroy;
 
     //** Load the PSK Key
-    do_fail = 0;
     key_prefix = getenv(LIO_ENV_KEY_PREFIX);  //** Set up for searching the prefixes
+
+    bad_mode = S_IRWXO|S_IRWXG|S_IXUSR;
 
     //** 1st see if we have a specific file to use
     fcreds = getenv(LIO_ENV_KEY_FILE);
     if (fcreds) {
         snprintf(fname, sizeof(fname)-1, "%s", fcreds); fname[sizeof(fname)-1] = '\0';
-        goto specific_file_try;
+        if (get_psk(an, c, fname, (char *)args[0], 1, bad_mode) == 0) return(c);
     }
-again:
+
+    //** Now check for a local account
     if (key_prefix) {
         snprintf(fname, sizeof(fname)-1, "%s/accounts.psk", key_prefix); fname[sizeof(fname)-1] = '\0';
         key_prefix = NULL;
     } else {
-        do_fail = 1;
         home = getenv("HOME");
         snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
     }
 
-specific_file_try:
-    err = get_psk(an, c, fname, (char *)args[0], do_fail);
+    if (get_psk(an, c, fname, (char *)args[0], 0, bad_mode) == 0) return(c);
 
-    if (err) goto again;  //** Try again if needed
+    //** Now check the global location for anonymouns creds
+    bad_mode = S_IWOTH|S_IXOTH|S_IWGRP|S_IXGRP|S_IXUSR;
+    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) return(c);
 
-    return(c);
+    //** If we made it here nothing is good so try the local file again but fail this time
+    bad_mode = S_IRWXO|S_IRWXG|S_IXUSR;
+    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) return(c);
+
+    //** We will never make it here since we'll exit() on failure
+    return(NULL);
 }
 
 //***********************************************************************
