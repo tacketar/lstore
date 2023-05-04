@@ -401,8 +401,12 @@ again:
     }
 
     i = c - path;
-    while (path[i-1] == '/') i--;
-    *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
+    while ((i>0) && (path[i-1] == '/')) i--;
+    if (i == 0) {
+        *dir = strdup("/");
+    } else {
+        *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
+    }
 
 finished:
     if (mypath != path) free(path);
