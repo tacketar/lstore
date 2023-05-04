@@ -17,9 +17,12 @@
 #include <tbx/log.h>
 #include <tbx/iniparse.h>
 #include <lio/path_acl.h>
+#include <lio/os.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/xattr.h>
 
 //*************************************************************************
 //*************************************************************************
@@ -27,19 +30,28 @@
 //** Old C7 gcc 4.8.5 compiler optimizes arg processing loop and generates a potential signed overflow
 int __attribute__((optimize("O0"))) main(int argc, char **argv)
 {
-    int i, ll, start_option, seed;
+    int i, ll, start_option, seed, do_print, ftype;
     tbx_inip_file_t *ifd;
     char *pacl_fname;
     char *check_path = NULL;
+    char *apply_path = NULL;
+    void *acl;
+    int asize;
     path_acl_context_t *pa;
+    uid_t uid;
+    gid_t gid;
+    mode_t mode;
 
     if (argc < 2) {
         printf("\n");
-        printf("pacl_check [-d log_level] [--path map_path] --seed n] path_acl.ini\n");
-        printf("    --path map_path - Optional path to check where it maps\n");
+        printf("pacl_check [-d log_level] [--path map_path] --seed n] [--print] [--apply-acl path] path_acl.ini\n");
+        printf("    --path map_path  - Optional path to check where it maps\n");
+        printf("    --apply-acl path - Apply the map_path ACLs to the given file or directory contained in path\n");
+        printf("    --print          - Dump the parsed config to stdout\n");
         return(1);
     }
 
+    do_print = 0;
     i = 1;
     seed = -1;
     ll = -1;
@@ -53,10 +65,17 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
             i++;
             check_path = argv[i];
             i++;
+        } else if (strcmp(argv[i], "--apply-acl") == 0) { //** Want to apply the ACL to a real object
+            i++;
+            apply_path = argv[i];
+            i++;
         } else if (strcmp(argv[i], "--seed") == 0) { //** Want to check a path as well
             i++;
             seed = atoi(argv[i]);
             i++;
+        } else if (strcmp(argv[i], "--print") == 0) { //** Print the parsed config
+            i++;
+            do_print = 1;
         }
     } while ((start_option < i) && (i<argc));
     start_option = i;
@@ -81,6 +100,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
     //** Load the path acl
     pa = pacl_create(ifd, "/tmp/lfs.XXXXXX");
     if (pa == NULL) {
+        tbx_inip_destroy(ifd);
         printf("ERROR: Failed to parse the pacl file %s\n", pacl_fname);
         return(4);
     }
@@ -92,6 +112,39 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
         printf("Checking path %s\n", check_path);
         i = pacl_path_probe(pa, check_path, stdout, seed);
         printf("path_acl_probe()=%d\n", i);
+    }
+
+    //** See if we need to apply the ACL to a real file
+    if (apply_path) {
+        if (check_path == NULL) {
+            printf("ERROR: A --path map_path is required to select the source ACL!\n");
+        } else {
+            ftype = lio_os_local_filetype(apply_path);
+            if (ftype == 0) {
+                printf("ERROR: Unable to apply ACL. Object does not exist! path=%s\n", check_path);
+            } else {
+                if (pacl_lfs_get_acl(pa, check_path, ftype, &acl, &asize, &uid, &gid, &mode) != 0) {
+                    printf("ERROR: Failed getting LFS acl!\n");
+                } else {
+                    printf("Applying ACL to path %s (lio_fype=%d)\n", apply_path, ftype);
+                    printf("   Primary UID: %u  Primary GID: %u  mode: %o\n", uid, gid, mode);
+                    if (setxattr(apply_path, "system.posix_acl_access", acl, asize, 0) != 0) {
+                        printf("ERROR: setxattr() errno=%d. May need to be root for this to work\n", errno);
+                    }
+                    if (chown(apply_path, uid, gid) != 0) {
+                        printf("ERROR: chown() errno=%d. May need to be root for this to work\n", errno);
+                    }
+                }
+            }
+        }
+    }
+
+
+    if (do_print) {
+        printf("\n");
+        printf("========================= Path ACL Config BEGIN =================================\n");
+        pacl_print_running_config(pa, stdout);
+        printf("========================= Path ACL Config END =================================\n");
     }
 
     //** Cleanup
