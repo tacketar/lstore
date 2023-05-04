@@ -99,7 +99,7 @@ typedef void (*osaz_attr_filter_t)(lio_os_authz_t *osa, char *key, int mode, voi
 
 #define OS_AUTHZ_MAX_GID 100
 struct lio_os_authz_local_t {
-    int   internal_use_only;
+    int   valid_guids;
     uid_t uid;
     gid_t gid[OS_AUTHZ_MAX_GID];
     int n_gid;

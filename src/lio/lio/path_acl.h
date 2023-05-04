@@ -36,21 +36,20 @@ extern "C" {
 
 typedef struct path_acl_context_s path_acl_context_t;
 
-void pacl_print_running_config(path_acl_context_t *pa, FILE *fd);
-char *pacl_gid2account(path_acl_context_t *pa, gid_t gid);
-int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode);
-int pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode, int *perms);
-int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode, int *perms, char **acct);
-int pacl_can_access_gid_list(path_acl_context_t *pa, char *path, int n_gid, gid_t *gid_list, int mode, int *acl);
-void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug);
-void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug);
-void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug);
-void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug);
-int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
-int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl);
+LIO_API void pacl_print_running_config(path_acl_context_t *pa, FILE *fd);
+LIO_API int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode);
+LIO_API int pacl_can_access_account(path_acl_context_t *pa, char *path, char *account, int mode, int *perms);
+LIO_API void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+LIO_API void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+LIO_API void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+LIO_API void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+LIO_API int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
+LIO_API int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl);
 LIO_API path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls);
 LIO_API void pacl_destroy(path_acl_context_t *pa);
 LIO_API int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int seed);
+LIO_API uint64_t pacl_unused_guid_get();
+LIO_API void pacl_unused_guid_set(uint64_t guid);
 
 #ifdef __cplusplus
 }

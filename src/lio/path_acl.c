@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <grp.h>
+#include <pwd.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -45,10 +46,25 @@
 
 typedef struct {  //** FUSE compliant POSIX ACL
     gid_t gid_primary;  //** Primary GID to report for LFS
+    gid_t uid_primary;  //** Primary UID to report for LFS
     mode_t mode[3];     //** Normal perms User/Group/Other
     void *acl[3];       //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
     int  size[3];       //** And It's size
 } fuse_acl_t;
+
+typedef struct {    //** FS ACL for use by the FS layer and sits on top of the LStore account type ACLs
+    union {
+        uid_t uid;
+        gid_t gid;
+     };
+    int mode;
+    char *name;
+} fs_acl_t;
+
+typedef struct {   //** List of FS ACLs
+    int n;
+    fs_acl_t id[];
+} fs_acl_list_t;
 
 typedef struct {  //account->GID mappings
     char *account;
@@ -67,12 +83,18 @@ typedef struct {    //** Individual path ACL
     account_acl_t *account; //** Array of account name/mode ACLs
     int n_account;          //** Number of accounts in the list
     int n_prefix;           //** Length of the prefix
-    char *lfs_account;      //** Default account to report for FUSE
+    char *lfs_account;      //** Primary account to report for FS/FUSE
+    char *lfs_group;        //** Primary group to report for FUSE. Overrides lfs_account is both supplied
+    uid_t lfs_uid;          //** Primary user for FUSE
+    uid_t lfs_gid;          //** Primary group for FUSE
+    fs_acl_list_t *uid_map;
+    fs_acl_list_t *gid_map;
     int other_mode;         //** Access for other accounts. Defaults to NONE
     fuse_acl_t *lfs_acl;    //** Composite FUSE ACL
     int nested_end;         //** Tracks nesting of ACL prefixes
     int nested_primary;     //** Initial prefix of nested group
     int rlut;               //** Reverse LUT
+    int gid_account_start;  //** Index representing the GID was added from the account mappings
 } path_acl_t;
 
 struct path_acl_context_s {    //** Context for containing the Path ACL's
@@ -95,7 +117,8 @@ struct path_acl_context_s {    //** Context for containing the Path ACL's
 
 #define PA_MAX_ACCOUNT 100
 #define PA_HINT_TIMEOUT apr_time_from_sec(60)
-#define PA_UID_UNUSED   999999999
+
+uint64_t _pa_guid_unused = 999999999;   //** This is the value used to signify a uid/gid has not been set.
 
 typedef struct {
     int search_hint;
@@ -109,10 +132,23 @@ typedef struct {    //** Structure used for hints
     int to_release;
     path_acl_context_t *pa;               //** This is the parent PA in case of a lingering handle after destruction
     pacl_seed_hint_t prev_search;
+    int gid_last_match;
+    int gid_acl_last_match;
+    int uid_acl_last_match;
+    int last_match_was_uid;
     int n_account;
     char *account[PA_MAX_ACCOUNT];
-    gid_t gid[PA_MAX_ACCOUNT];
 } pa_hint_t;
+
+int _group2gid(const char *group, gid_t *gid);
+char *pacl_gid2account(path_acl_context_t *pa, gid_t gid);
+
+//**************************************************************************
+// These are helper routines to set/get the unused UID/GID value
+//**************************************************************************
+
+uint64_t pacl_unused_guid_get() { return(_pa_guid_unused); }
+void pacl_unused_guid_set(uint64_t guid) { _pa_guid_unused = guid; }
 
 //**************************************************************************
 // pacl_print_running_config - Dumps the PATh ACL running config
@@ -123,6 +159,7 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
     int i, j;
     path_acl_t *acl;
     account2gid_t *a2g;
+    char *from_acct;
 
     fprintf(fd, "#----------------Path ACL start------------------\n");
     fprintf(fd, "# n_path_acl = %d\n", pa->n_path_acl);
@@ -136,7 +173,7 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         } else {
             fprintf(fd, "# other groups have NO access\n");
         }
-        if (acl->lfs_account) fprintf(fd, "lfs_account=%s\n", acl->lfs_account);
+        if (acl->lfs_account) fprintf(fd, "lfs_account = %s\n", acl->lfs_account);
         for (j=0; j<acl->n_account; j++) {
             fprintf(fd, "account(%s) = %s\n", ((acl->account[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->account[j].account);
         }
@@ -155,6 +192,27 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         if (acl->lfs_account) fprintf(fd, "lfs_account = %s\n", acl->lfs_account);
         for (j=0; j<acl->n_account; j++) {
             fprintf(fd, "account(%s) = %s\n", ((acl->account[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->account[j].account);
+        }
+        if (acl->lfs_uid != _pa_guid_unused) fprintf(fd, "lfs_uid = %u\n", acl->lfs_uid);
+        if (acl->uid_map) {
+            for (j=0; j<acl->uid_map->n; j++) {
+                if (acl->uid_map->id[j].name) {
+                    fprintf(fd, "uid(%s) = %u # %s\n", ((acl->uid_map->id[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->uid_map->id[j].uid, acl->uid_map->id[j].name);
+                } else {
+                    fprintf(fd, "uid(%s) = %u\n", ((acl->uid_map->id[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->uid_map->id[j].uid);
+                }
+            }
+        }
+        if (acl->lfs_gid != _pa_guid_unused) fprintf(fd, "lfs_gid = %u\n", acl->lfs_gid);
+        if (acl->gid_map) {
+            for (j=0; j<acl->gid_map->n; j++) {
+                from_acct = (j>=acl->gid_account_start) ? "# - from account mapping" : "";
+                if (acl->gid_map->id[j].name) {
+                    fprintf(fd, "gid(%s) = %u # %s %s\n", ((acl->gid_map->id[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->gid_map->id[j].uid, acl->gid_map->id[j].name, from_acct);
+                } else {
+                    fprintf(fd, "gid(%s) = %u %s\n", ((acl->gid_map->id[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->gid_map->id[j].gid, from_acct);
+                }
+            }
         }
         fprintf(fd, "\n");
     }
@@ -185,11 +243,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
 
 void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 {
-    account2gid_t *a2g;
-    int n, i;
     pa_hint_t *hint;
 
-    if (ug->uid == PA_UID_UNUSED) {
+    if (ug->uid == _pa_guid_unused) {
         hint = ug->hint;
         if (!hint) return;
         if (ug->creds) {
@@ -224,18 +280,7 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 
     if (ug->n_gid >= PA_MAX_ACCOUNT) ug->n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
 
-    n = 0;
-    for (i=0; i<ug->n_gid; i++) {
-        a2g = apr_hash_get(pa->gid2acct_hash, &(ug->gid[i]), sizeof(gid_t));
-        if (a2g) {
-            hint->account[n] = a2g->account;
-            hint->gid[n] = ug->gid[i];
-            n++;
-        }
-    }
-    hint->n_account = n;
-
-    if (hint->uid != PA_UID_UNUSED) apr_hash_set(pa->hints_hash, &(hint->uid), sizeof(uid_t), hint);
+    if (hint->uid != _pa_guid_unused) apr_hash_set(pa->hints_hash, &(hint->uid), sizeof(uid_t), hint);
 }
 
 //**************************************************************************
@@ -249,16 +294,13 @@ int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     pa_hint_t *hint;
     apr_time_t dt;
 
-
-    hint = (ug->uid != PA_UID_UNUSED) ? apr_hash_get(pa->hints_hash, &(ug->uid), sizeof(gid_t)) : NULL;
+    hint = (ug->uid != _pa_guid_unused) ? apr_hash_get(pa->hints_hash, &(ug->uid), sizeof(gid_t)) : NULL;
     if (hint) {
         dt = apr_time_now() - hint->ts;
         if (dt < pa->dt_hint_cache) {
             ug->hint_counter = hint->ts;
             ug->hint = hint;
             hint->inuse++;
-            ug->n_gid = hint->n_account; //** copying these allows us to make a best effort attempt to map ACLS if the hint is destroyed
-            memcpy(ug->gid, hint->gid, sizeof(gid_t)*hint->n_account);
             log_printf(10, "HINT HIT! uid=%d\n", ug->uid);
             return(0);
         } else { //** Expired so destroy the hint and let the caller know
@@ -289,8 +331,8 @@ void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug)
 
     memset(ug, 0, sizeof(lio_os_authz_local_t));
 
-    ug->uid = PA_UID_UNUSED;
-    ug->gid[0] = PA_UID_UNUSED;
+    ug->uid = _pa_guid_unused;
+    ug->gid[0] = _pa_guid_unused;
 
     tbx_type_malloc_clear(hint, pa_hint_t, 1);
     ug->hint = hint;
@@ -310,7 +352,7 @@ void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     log_printf(10, "HINT_FREE ug=%p\n", ug);
 
     if (ug->hint) {
-        if (ug->uid == PA_UID_UNUSED) free(ug->hint);
+        if (ug->uid == _pa_guid_unused) free(ug->hint);
     }
     ug->hint = NULL;
 }
@@ -464,13 +506,13 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, in
 }
 
 //**************************************************************************
-//  _pacl_can_access_list - Verifies an account i nthe list can access the object
+//  _pacl_can_access_account_list - Verifies an account in the list can access the object
 //      Returns 2 for Full access
 //      Returns 1 for visible name only. Can't do anything else other than see the object
 //      and 0 no access allowed
 //**************************************************************************
 
-int _pacl_can_access_list(path_acl_context_t *pa, char *path, int n_account, char **account_list, int mode, int *perms, path_acl_t **acl_mapped, pacl_seed_hint_t *ps)
+int _pacl_can_access_account_list(path_acl_context_t *pa, char *path, int n_account, char **account_list, int mode, int *perms, path_acl_t **acl_mapped, pacl_seed_hint_t *ps)
 {
     int i, j, check, exact, got_default, old_seed;
     path_acl_t *acl;
@@ -529,86 +571,137 @@ int _pacl_can_access_list(path_acl_context_t *pa, char *path, int n_account, cha
 }
 
 //**************************************************************************
-//  pacl_can_access - Verifies the account can access the object
+//  pacl_can_access_account - Verifies the account can access the object
 //      Returns 2 for Full access
 //      Returns 1 for visible name only. Can't do anything else other than see the object
 //      and 0 no access allowed
 //**************************************************************************
 
-int pacl_can_access(path_acl_context_t *pa, char *path, char *account, int mode, int *perms)
+int pacl_can_access_account(path_acl_context_t *pa, char *path, char *account, int mode, int *perms)
 {
     char *account_list[1];
 
     account_list[0] = account;
-    return(_pacl_can_access_list(pa, path, 1, account_list, mode, perms, NULL, NULL));
+    return(_pacl_can_access_account_list(pa, path, 1, account_list, mode, perms, NULL, NULL));
 }
 
 //**************************************************************************
-//  pacl_can_access_gid - Verifies the gid can access the object
+//  pacl_can_access_acl_uid - Checks if the UID provided can access the object
 //      Returns 2,1 for success and 0 otherwise
 //**************************************************************************
 
-int pacl_can_access_gid(path_acl_context_t *pa, char *path, gid_t gid, int mode, int *acl, char **acct)
+int _pacl_can_access_acl_uid(path_acl_context_t *ctx, path_acl_t *pa, int *acl_last_index, uid_t uid, int mode, int *acl)
 {
-    account2gid_t *a2g;
+    int m, j;
+    int check;
+    fs_acl_t *id;
 
-    a2g = apr_hash_get(pa->gid2acct_hash, &gid, sizeof(gid));
-    if (!a2g) {
-        if (acct) *acct = NULL;
-        return(pacl_can_access(pa, path, NULL, mode, acl));  //** Basically only "other" ACL's are checked
-    } else if (acct) {
-        *acct = strdup(a2g->account);
-    }
-    return(pacl_can_access(pa, path, a2g->account, mode, acl));
-}
+    if (!pa->uid_map) return(0);
 
-//**************************************************************************
-//  pacl_can_access_gid_list -Checks if one of the gid's provided can access the object
-//      Returns 2,1 for success and 0 otherwise
-//**************************************************************************
+    id = pa->uid_map->id;
 
-int pacl_can_access_gid_list(path_acl_context_t *pa, char *path, int n_gid, gid_t *gid_list, int mode, int *acl)
-{
-    account2gid_t *a2g;
-    int n, i;
-    char *account_list[PA_MAX_ACCOUNT];
-
-    if (n_gid >= PA_MAX_ACCOUNT) n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
-
-    n = 0;
-    for (i=0; i<n_gid; i++) {
-        a2g = apr_hash_get(pa->gid2acct_hash, &gid_list[i], sizeof(gid_t));
-        if (a2g) {
-            account_list[n] = a2g->account;
-            n++;
+    for (j=0; j<pa->gid_map->n; j++) {
+        m = (j + (*acl_last_index)) % pa->uid_map->n;
+        if (id[m].gid == uid) {
+            check = mode & id[m].mode;
+            if (check == mode) {
+                *acl = id[m].mode;
+                *acl_last_index = m;
+                return(2);   //Full access so kick out
+            }
         }
     }
 
-    log_printf(10, "path=%s n_gid=%d n_account=%d\n", path, n_gid, n);
-    if (n == 0) {
-        return(pacl_can_access(pa, path, NULL, mode, acl));  //** Basically only "other" ACL's are checked
-    }
-
-    i = _pacl_can_access_list(pa, path, n, account_list, mode, acl, NULL, NULL);
-    return(i);
+    //** No match so check the defaults
+    *acl = pa->other_mode;
+    check = mode & (*acl);
+    return((check == mode) ? 2 : 0);
 }
 
+//**************************************************************************
+//  pacl_can_access_acl_gid_list - Checks if one of the gid's provided can access the object
+//      Returns 2,1 for success and 0 otherwise
+//**************************************************************************
+
+int _pacl_can_access_acl_gid_list(path_acl_context_t *ctx, path_acl_t *pa, int *gid_last_index, int *acl_last_index, int n_gid, gid_t *gid_list, int mode, int *acl)
+{
+    int n, m, i, j;
+    int check;
+    fs_acl_t *id;
+    gid_t cgid;
+
+    if (!pa->gid_map) return(0);
+
+    if (n_gid >= PA_MAX_ACCOUNT) n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
+
+    id = pa->gid_map->id;
+
+    for (i=0; i<n_gid; i++) {
+        n = (i + (*gid_last_index)) % n_gid;
+        cgid = gid_list[n];
+        for (j=0; j<pa->gid_map->n; j++) {
+            m = (j + (*acl_last_index)) % pa->gid_map->n;
+            if (id[m].gid == cgid) {
+                check = mode & id[m].mode;
+                if (check == mode) {
+                    *acl = id[m].mode;
+                    *gid_last_index = n;
+                    *acl_last_index = m;
+                    return(2);   //Full access so kick out
+                }
+            }
+        }
+    }
+
+    //** No match so check the defaults
+    *acl = pa->other_mode;
+    check = mode & (*acl);
+    return((check == mode) ? 2 : 0);
+}
 
 //**************************************************************************
 //  pacl_can_access_hint -Checks if the accounts in the hints provided can access the object
 //      Returns 2,1 for success and 0 otherwise
 //**************************************************************************
 
-int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl)
+int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_authz_local_t *ug, int *acl)
 {
+    path_acl_t *pa;
     pa_hint_t *hint;
-
-    if (ug->hint_counter < pa->timestamp) { //** It's an old hint so do the fallback using GIDs stored in the hint
-        return(pacl_can_access_gid_list(pa, path, ug->n_gid, ug->gid, mode, acl));
-    }
+    int exact, got_default, old_seed;
+    int check;
 
     hint = ug->hint;
-    return(_pacl_can_access_list(pa, path, hint->n_account, hint->account, mode, acl, NULL, &(hint->prev_search)));
+    if (ug->valid_guids == 0) {
+        hint->prev_search.search_hint = -1;
+        return(_pacl_can_access_account_list(ctx, path, hint->n_account, hint->account, mode, acl, NULL, &(hint->prev_search)));
+    }
+
+    if (ug->hint_counter > ctx->timestamp) {   //** hint is good so check if we can use it
+        old_seed = hint->prev_search.search_hint;
+        pa = pacl_search(ctx, path, &exact, &got_default, &(hint->prev_search.search_hint));
+
+        if (old_seed == hint->prev_search.search_hint) { //** Same Path acl as before
+            check = mode & hint->prev_search.perms;
+            *acl = hint->prev_search.perms;
+            return((check == mode) ? 2 : exact);
+        }
+    } else { //** Old hint so reset the seed;
+        hint->prev_search.search_hint = -1;
+        pa = pacl_search(ctx, path, &exact, &got_default, &(hint->prev_search.search_hint));
+    }
+
+    //** Check the UID 1st
+    check = _pacl_can_access_acl_uid(ctx, pa, &(hint->uid_acl_last_match), ug->uid, mode, acl);
+    if (check) {
+        hint->prev_search.perms = *acl;
+        return(2);
+    }
+
+    //** No match so check the GIDs. It also returns the default perms if they work
+    check = _pacl_can_access_acl_gid_list(ctx, pa, &(hint->gid_last_match),  &(hint->gid_acl_last_match), ug->n_gid, ug->gid, mode, acl);
+    hint->prev_search.perms = *acl;
+    return((check) ? 2 : exact);
 }
 
 //**************************************************************************
@@ -641,6 +734,7 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
             *acl_size = acl->lfs_acl->size[slot];
             *mode = acl->lfs_acl->mode[slot];
             *gid = acl->lfs_acl->gid_primary;
+            if (acl->lfs_acl->uid_primary != _pa_guid_unused) *uid = acl->lfs_acl->uid_primary;
 
             //** Still need to map the file type over
             *mode |= filebits;
@@ -690,7 +784,7 @@ gid_t pacl2lfs_gid_primary(path_acl_context_t *pa, char *account)
 // _make_lfs_acl - Makes an LFS compatible ACL
 //**************************************************************************
 
-int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size)
+int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *prefix, char *atype)
 {
     acl_t acl;
     char acl_buf[10*1024];
@@ -700,13 +794,13 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size)
     //** Convert from a string to an ACL
     acl = acl_from_text(acl_text);
     if (acl == (acl_t)NULL) {
-        log_printf(0, "acl_from_text ERROR: acl_text=%s errno=%d\n", acl_text, errno);
+        log_printf(0, "acl_from_text ERROR: prefix=%s type=%s acl_text=%s errno=%d\n", prefix, atype, acl_text, errno);
         return(1);
     }
 
     //** Apply it to the file
     if (acl_set_fd(fd, acl) != 0) {
-        log_printf(0, "acl_set_file ERROR: acl_text=%s acl_set_fd=%d\n", acl_text, errno);
+        log_printf(0, "acl_set_file ERROR: prefix=%s type=%s acl_text=%s acl_set_fd=%d\n", prefix, atype, acl_text, errno);
         acl_free(acl);
         return(2);
     }
@@ -716,12 +810,12 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size)
     //** Now read back the raw attribute
     *kacl_size = fgetxattr(fd, "system.posix_acl_access", acl_buf, sizeof(acl_buf));
     if (*kacl_size <= 0) {
-        log_printf(0, "acl_getxattr ERROR: acl_text=%s getxattr=%d\n", acl_text, errno);
+        log_printf(0, "acl_getxattr ERROR: prefix=%s type=%s acl_text=%s getxattr=%d\n", prefix, atype, acl_text, errno);
         return(3);
     }
 
     if (acl == (acl_t)NULL) {
-        log_printf(0, "ERROR: acl_copy_int acl_text=%s\n", acl_text);
+        log_printf(0, "ERROR: acl_copy_int prefix=%s type=%s acl_text=%s\n", prefix, atype, acl_text);
         return(1);
     }
 
@@ -742,10 +836,10 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     char dir_acl_text[nbytes];
     char file_acl_text[nbytes];
     char exec_acl_text[nbytes];
-    int dir_pos, file_pos, exec_pos, i, j;
-    account2gid_t *a2g;
-    account_acl_t *aa;
+    int dir_pos, file_pos, exec_pos, i, primary_added;
     gid_t gid;
+    uid_t uid;
+    int mode, err;
 
     //** Prep things
     dir_pos = file_pos = exec_pos = 0;
@@ -755,65 +849,124 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     tbx_type_malloc_clear(facl, fuse_acl_t, 1);
 
     //** First get the LFS primary group
-    facl->gid_primary = pacl2lfs_gid_primary(pa, acl->lfs_account);
+    facl->gid_primary = acl->lfs_gid;
+    facl->uid_primary = acl->lfs_uid;
 
-    log_printf(10, "gid_primary=%u lfs_account=%s n_account=%d\n", facl->gid_primary, acl->lfs_account, acl->n_account);
     if (acl->other_mode == 0) {
-        facl->mode[0] = S_IRWXU;
-        facl->mode[1] = S_IRUSR | S_IWUSR;
-        facl->mode[2] = S_IRWXU;
-        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::rwx,o::---,m::rwx");
-        tbx_append_printf(file_acl_text, &file_pos, nbytes, "u::rw-,o::---,m::rw-");
-        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::rwx,o::---,m::rwx");
+        facl->mode[0] = 0;
+        facl->mode[1] = 0;
+        facl->mode[2] = 0;
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::---,m::rwx");
+        tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::---,m::rw-");
+        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::---,m::rwx");
     } else if (acl->other_mode & PACL_MODE_WRITE) {   //** If you have write you also have read
-        facl->mode[0] = S_IRWXU | S_IRWXO;
-        facl->mode[1] = S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH;
-        facl->mode[2] = S_IRWXU | S_IRWXO;
-        tbx_append_printf(file_acl_text, &file_pos, nbytes, "u::rw-,o::rw-,m::rw-");
-        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::rwx,o::rwx,m::rwx");
+        facl->mode[0] = S_IRWXO;
+        facl->mode[1] = S_IROTH | S_IWOTH;
+        facl->mode[2] = S_IRWXO;
+        tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::rw-,m::rw-");
+        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::rwx,m::rwx");
     } else {  //** Read only access
-        facl->mode[0] = S_IRWXU | S_IROTH | S_IXOTH;
-        facl->mode[0] = S_IRWXU | S_IROTH | S_IXOTH;
-        facl->mode[1] = S_IRUSR | S_IWUSR | S_IROTH;
-        facl->mode[2] = S_IRWXU | S_IROTH | S_IXOTH;
-        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::rwx,o::r-x,m::rwx");
-        tbx_append_printf(file_acl_text, &file_pos, nbytes, "u::rw-,o::r--,m::rw-");
-        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::rwx,o::r-x,m::rwx");
+        facl->mode[0] = S_IROTH | S_IXOTH;
+        facl->mode[0] = S_IROTH | S_IXOTH;
+        facl->mode[1] = S_IROTH;
+        facl->mode[2] = S_IROTH | S_IXOTH;
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::r-x,m::rwx");
+        tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::r--,m::rw-");
+        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::r-x,m::rwx");
     }
 
-    //** Find the primary account and just add it's primary GID
-    for (i=0; i<acl->n_account; i++) {
-        aa = &(acl->account[i]);
-        log_printf(10, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
-        if (strcmp(aa->account, acl->lfs_account) == 0) {
-            a2g = apr_hash_get(pa->a2gid_hash, aa->account, APR_HASH_KEY_STRING);
-            if (!a2g) break;  //** Can't find it so kick out and use the default READ only
+    primary_added = 0;
+    if (acl->gid_map) {
+        for (i=0; i<acl->gid_map->n; i++) {
+            gid = acl->gid_map->id[i].gid;
+            mode = acl->gid_map->id[i].mode;
 
-            //** We have to find the primary GID first and add it
-            for (j=0; j<a2g->n_gid; j++) {
-                gid = a2g->gid[j];
-                if (gid == facl->gid_primary) {  //** It's the primary GID so also add the other default perms
-                    if (aa->mode & PACL_MODE_WRITE) {
-                        facl->mode[0] |= S_IRWXG;
-                        facl->mode[1] |= S_IRGRP | S_IWGRP;
-                        facl->mode[2] |= S_IRWXG;
-                        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::rwx");
-                        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::rw-");
-                        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::rwx");
-                    } else {
-                        facl->mode[0] |= S_IRGRP | S_IXGRP;
-                        facl->mode[1] |= S_IRGRP;
-                        facl->mode[2] |= S_IRGRP | S_IXGRP;
-                        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::r-x");
-                        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::r--");
-                        tbx_append_printf(file_acl_text, &exec_pos, nbytes, ",g::r-x");
-                    }
-
-                    break;
+            if (gid == facl->gid_primary) {  //** Primary GID
+                primary_added = 1;
+                if (mode & PACL_MODE_WRITE) {
+                    facl->mode[0] |= S_IRWXG;
+                    facl->mode[1] |= S_IRGRP | S_IWGRP;
+                    facl->mode[2] |= S_IRWXG;
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::rwx");
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::rw-");
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::rwx");
+                } else {
+                    facl->mode[0] |= S_IRGRP | S_IXGRP;
+                    facl->mode[1] |= S_IRGRP;
+                    facl->mode[2] |= S_IRGRP | S_IXGRP;
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::r-x");
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::r--");
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::r-x");
                 }
+            } else if (mode & PACL_MODE_WRITE) {
+                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
+                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:rw-", gid);
+                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:rwx", gid);
+            } else {
+                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:r-x", gid);
+                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:r--", gid);
+                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:r-x", gid);
             }
         }
     }
+
+    if (primary_added == 0) { //** No primary GID so manually add one. Assumes full perms.
+        facl->mode[0] |= S_IRWXG;
+        facl->mode[1] |= S_IRGRP | S_IWGRP;
+        facl->mode[2] |= S_IRWXG;
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::rwx");
+        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::rw-");
+        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::rwx");
+    }
+
+    primary_added = 0;
+    if (acl->uid_map) {
+        for (i=0; i<acl->uid_map->n; i++) {
+            uid = acl->uid_map->id[i].uid;
+            mode = acl->uid_map->id[i].mode;
+
+            if (uid == facl->uid_primary) {  //** Primary GID
+                primary_added = 1;
+                if (mode & PACL_MODE_WRITE) {
+                    facl->mode[0] |= S_IRWXU;
+                    facl->mode[1] |= S_IRUSR | S_IWUSR;
+                    facl->mode[2] |= S_IRWXU;
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
+                } else {
+                    facl->mode[0] |= S_IRUSR | S_IXUSR;
+                    facl->mode[1] |= S_IRUSR;
+                    facl->mode[2] |= S_IRUSR | S_IXUSR;
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::r-x");
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::r--");
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::r-x");
+                }
+            } else if (mode & PACL_MODE_WRITE) {
+                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:rwx", uid);
+                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:rw-", uid);
+                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:rwx", uid);
+            } else {
+                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:r-x", uid);
+                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:r--", uid);
+                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:r-x", uid);
+            }
+        }
+
+        if (primary_added == 0) { //** No primary UID so manually add one. Assumes full perms.
+            tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
+            tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
+            tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
+        }
+    } else {   //** No default user so manually add it
+        facl->mode[0] |= S_IRWXU;
+        facl->mode[1] |= S_IRUSR | S_IWUSR;
+        facl->mode[2] |= S_IRWXU;
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
+        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
+        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
+    }
+
 
     if (dir_pos == 0) { //** No default found so assume the worst and just give read access
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::r-x,g::r-x,o::---,m::r-x");
@@ -821,40 +974,24 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "u::r-x,g::r-x,o::---,m::r-x");
     }
 
-    //** Now cycle through all the accounts allowed to access and add them
-    for (i=0; i<acl->n_account; i++) {
-        aa = &(acl->account[i]);
-        log_printf(10, "i=%d account=%s mode=%d\n", i, aa->account, aa->mode); tbx_log_flush();
-
-        a2g = apr_hash_get(pa->a2gid_hash, aa->account, APR_HASH_KEY_STRING);
-        if (!a2g) continue;
-
-        for (j=0; j<a2g->n_gid; j++) {
-            gid = a2g->gid[j];
-            log_printf(10, "i=%d gid=%u mode=%d\n", i, gid, aa->mode);
-            if (gid != facl->gid_primary) {  //** Skip over the primary since it's already done
-                if (aa->mode & PACL_MODE_WRITE) {
-                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
-                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:rw-", gid);
-                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:rwx", gid);
-                } else {
-                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:r-x", gid);
-                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:r--", gid);
-                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:r-x", gid);
-                }
-
-            }
-        }
-    }
-
     log_printf(10, "DIRACL=%s\n", dir_acl_text);
     log_printf(10, "DIRMODE=%o\n", facl->mode[0]);
 
-    //** Convert it to an ACL
-    _make_lfs_acl(fdd, dir_acl_text, &(facl->acl[0]), &(facl->size[0]));
-    _make_lfs_acl(fdf, file_acl_text, &(facl->acl[1]), &(facl->size[1]));
-    _make_lfs_acl(fdf, exec_acl_text, &(facl->acl[2]), &(facl->size[2]));
+    log_printf(1, "Prefix: %s uid=%u gid=%u\n", acl->prefix, facl->uid_primary, facl->gid_primary);
 
+    //** Convert it to an ACL
+    log_printf(1, "    dir_acl=%s mode=%o\n", dir_acl_text, facl->mode[0]);
+    err = 0;
+    err += _make_lfs_acl(fdd, dir_acl_text, &(facl->acl[0]), &(facl->size[0]), acl->prefix, "dir_acl");
+    log_printf(1, "    file_acl=%s mode=%o\n", file_acl_text, facl->mode[1]);
+    err += _make_lfs_acl(fdf, file_acl_text, &(facl->acl[1]), &(facl->size[1]), acl->prefix, "file_acl");
+    log_printf(1, "    exec_acl=%s mode=%o\n", exec_acl_text, facl->mode[2]);
+    err += _make_lfs_acl(fdf, exec_acl_text, &(facl->acl[2]), &(facl->size[2]), acl->prefix, "exec_acl");
+
+    if (err) {
+        free(facl);
+        facl = NULL;
+    }
     return(facl);
 }
 
@@ -862,11 +999,14 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
 // pacl_lfs_acls_generate - Generates the LFS ACLS for use with FUSE
 //**************************************************************************
 
-void pacl_lfs_acls_generate(path_acl_context_t *pa)
+int pacl_lfs_acls_generate(path_acl_context_t *pa)
 {
     int i, fdf, fdd;
     DIR *dir;
     char *fname, *dname;
+    int err;
+
+    err = 0;
 
     //** Make the temp file for generating the ACLs on
     fname = strdup(pa->fname_acl);
@@ -874,6 +1014,7 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
     dname = strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
         log_printf(0, "ERROR: failed maing temp ACL directory: %s\n", dname);
+        return(1);
     }
     dir = opendir(dname);
     fdd = dirfd(dir);
@@ -881,11 +1022,13 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
     log_printf(10, "Generating default ACL\n"); tbx_log_flush();
     //** 1st set the default FUSE ACL
     pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd);
+    if (!pa->pacl_default->lfs_acl) err++;
 
     //** And now all the Path's
     for (i=0; i<pa->n_path_acl; i++) {
         log_printf(10, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
         pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd);
+        if (!pa->path_acl[i]->lfs_acl) err++;
     }
 
     //** Cleanup
@@ -895,6 +1038,8 @@ void pacl_lfs_acls_generate(path_acl_context_t *pa)
     rmdir(dname);
     free(fname);
     free(dname);
+
+    return(err);
 }
 
 //**************************************************************************
@@ -925,6 +1070,217 @@ int pacl_compare_nested_acls(path_acl_t *a, path_acl_t *b)
     return(0);
 }
 
+//**************************************************************************
+// _uid_found - Scans the UID list to see if it already exists and if so returns 1 otherwise 0
+//**************************************************************************
+
+int _uid_found(int n, fs_acl_t *uid_list, uid_t uid)
+{
+    int i;
+
+    for (i=0; i<n; i++) {
+        if (uid == uid_list[i].uid) return(i);
+    }
+
+    return(-1);
+}
+
+//**************************************************************************
+// _user2uid - converts the user name to a UID. Returns 0 on success -1 otherwise
+//**************************************************************************
+
+int _user2uid(const char *user, uid_t *uid)
+{
+    struct passwd *pw;
+
+    pw = getpwnam(user);
+    if (!pw) return(-1);
+    *uid = pw->pw_uid;
+    return(0);
+}
+
+//**************************************************************************
+// uid_list_add - Adds a UID to the list if it doesn't already exist
+//**************************************************************************
+
+int uid_list_add(uid_t uid, int mode, char *user, fs_acl_t *uid_list, int *n)
+{
+//    if (_uid_found(*n, uid_list, uid) != -1) return(-1);  //** Already exists so kick out
+
+    uid_list[*n].uid = uid;
+    uid_list[*n].mode = mode;
+    uid_list[*n].name = user;
+    (*n)++;
+    return(*n-1);
+}
+
+//**************************************************************************
+// uid_parse
+//**************************************************************************
+
+int uid_parse(char *uid_str, int mode, fs_acl_t *uid_list, int *n)
+{
+    uid_t uid;
+    struct passwd *pw;
+
+    uid = tbx_stk_string_get_integer(uid_str);
+    pw = getpwuid(uid);
+    if (_uid_found(*n, uid_list, uid) != -1) return(-1);
+
+    if (pw) return(uid_list_add(uid, mode, strdup(pw->pw_name), uid_list, n));
+
+    return(uid_list_add(uid, mode, NULL, uid_list, n));
+}
+
+//**************************************************************************
+// user_parse
+//**************************************************************************
+
+int user_parse(char *user, int mode, fs_acl_t *uid_list, int *n)
+{
+    uid_t uid;
+    int k;
+
+    if (_user2uid(user, &uid) == -1)  return(-1);
+
+    k =_uid_found(*n, uid_list, uid);
+    if (k != -1) return(k);   //** Already exists so kick out
+
+    return(uid_list_add(uid, mode, strdup(user), uid_list, n));
+}
+
+//**************************************************************************
+// _fsgid_found - Scans the GID list to see if it already exists and if so returns 1 otherwise 0
+//**************************************************************************
+
+int _fsgid_found(int n, fs_acl_t *gid_list, gid_t gid)
+{
+    int i;
+
+    for (i=0; i<n; i++) {
+        if (gid == gid_list[i].gid) return(i);
+    }
+
+    return(-1);
+}
+
+//**************************************************************************
+// gid_list_add - Adds a GID to the list if it doesn't already exist
+//**************************************************************************
+
+int gid_list_add(gid_t gid, int mode, char *group, fs_acl_t *gid_list, int *n)
+{
+//    if (_fsgid_found(*n, gid_list, gid) != -1) return(-1);  //** Already exists so kick out
+
+    gid_list[*n].gid = gid;
+    gid_list[*n].mode = mode;
+    gid_list[*n].name = group;
+
+    (*n)++;
+    return(*n-1);
+}
+
+//**************************************************************************
+// gid_parse
+//**************************************************************************
+
+int gid_parse(char *gid_str, int mode, fs_acl_t *gid_list, int *n)
+{
+    gid_t gid;
+    struct group *g;
+    int k;
+
+    gid = tbx_stk_string_get_integer(gid_str);
+    g = getgrgid(gid);
+    k = _fsgid_found(*n, gid_list, gid);
+    if (k != -1) return(k);
+    if (g) return(gid_list_add(gid, mode, strdup(g->gr_name), gid_list, n));
+    return(gid_list_add(gid, mode, NULL, gid_list, n));
+}
+
+//**************************************************************************
+// group_parse
+//**************************************************************************
+
+int group_parse(char *group, int mode, fs_acl_t *gid_list, int *n)
+{
+    gid_t gid;
+
+    if (_group2gid(group, &gid) == -1)  return(-1);
+
+    if (_fsgid_found(*n, gid_list, gid) != -1) return(-1);   //** Already exists so kick out
+
+    return(gid_list_add(gid, mode, strdup(group), gid_list, n));
+}
+
+//**************************************************************************
+// guid_set_primary - Sets the primary UIG/GID for the prefix
+//**************************************************************************
+
+void guid_set_primary(path_acl_context_t *ctx, path_acl_t *acl)
+{
+    account2gid_t *a2g;
+
+    if (acl->lfs_gid != _pa_guid_unused) goto set_uid;
+
+    //** Check if there is a default from the account->GID mappings
+    if (acl->lfs_account) {
+        a2g = apr_hash_get(ctx->a2gid_hash, acl->lfs_account, APR_HASH_KEY_STRING);
+        if (a2g) {
+            if (a2g->lfs_gid != _pa_guid_unused) {
+                acl->lfs_gid = a2g->lfs_gid;
+                goto set_uid;
+            }
+        }
+    }
+
+    //** So just use the process GID
+    acl->lfs_gid = getgid();
+
+set_uid:
+    if (acl->lfs_uid == _pa_guid_unused) {
+        acl->lfs_uid = getuid();
+    }
+}
+
+//**************************************************************************
+// lfs_add_account_mappings - Adds the account mappings to the GID list's for use by LFS and the FS
+//**************************************************************************
+
+void lfs_add_account_mappings(path_acl_context_t *ctx, path_acl_t *acl)
+{
+    int j, k, n_gid, n_old;
+    account2gid_t *a2g;
+    fs_acl_t gid_list[200];
+    struct group *g;
+
+    //** Copy the existing list
+    n_gid = n_old = 0;
+    acl->gid_account_start = 0;
+    if (acl->gid_map) {
+        acl->gid_account_start = n_gid+1;
+        n_gid = acl->gid_map->n;
+        n_old = n_gid;
+        if (n_gid > 0) memcpy(gid_list, acl->gid_map->id, sizeof(fs_acl_t)*n_gid);
+    }
+    for (j=0; j<acl->n_account; j++) {
+        a2g = apr_hash_get(ctx->a2gid_hash, acl->account[j].account, APR_HASH_KEY_STRING);
+        if (!a2g) continue;  //** Skip if no entry
+        for (k=0; k<a2g->n_gid; k++) {
+            if (_fsgid_found(n_gid, gid_list, a2g->gid[k]) == -1) {
+                g = getgrgid(a2g->gid[k]);
+                gid_list_add(a2g->gid[k], acl->account[j].mode, ((g) ? strdup(g->gr_name) : NULL), gid_list, &n_gid);
+            }
+        }
+    }
+
+    if (n_gid > n_old) { //** Added some entries so add them
+        if (acl->gid_map) free(acl->gid_map);
+        acl->gid_map = malloc(sizeof(fs_acl_list_t) + n_gid*sizeof(fs_acl_t));
+        memcpy(acl->gid_map->id, gid_list, sizeof(fs_acl_t)*n_gid);
+        acl->gid_map->n = n_gid;
+    }
+}
 
 //**************************************************************************
 // prefix_account_parse - Parse the INI file and populates the
@@ -940,7 +1296,13 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     tbx_inip_element_t *ele;
     char *key, *value, *prefix, *other_mode, *lfs;
     tbx_stack_t *stack, *acl_stack;
-    int i, j, def, match;
+    int i, j, def, match, n_uid, n_gid, err;
+    uid_t lfs_uid, uid;
+    gid_t lfs_gid, gid;
+    fs_acl_t uid_list[100];
+    fs_acl_t gid_list[100];
+
+    err = 0;
 
     stack = tbx_stack_new();
     acl_stack = tbx_stack_new();
@@ -958,6 +1320,8 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 def = 1;
             }
             lfs = NULL;
+            lfs_uid = _pa_guid_unused; n_uid = 0;
+            lfs_gid = _pa_guid_unused; n_gid = 0;
             while (ele != NULL) {
                 key = tbx_inip_ele_get_key(ele);
                 value = tbx_inip_ele_get_value(ele);
@@ -970,11 +1334,40 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     other_mode = value;
                 } else if (strcmp(key, "lfs_account") == 0) {  //** Only used with LFS
                     lfs = value;
+                } else if (strcmp(key, "lfs_uid") == 0) { //** Got the default UID for LFS
+                    lfs_uid = tbx_stk_string_get_integer(value);
+                } else if (strcmp(key, "lfs_user") == 0) { //** Got the default User for LFS
+                    if (_user2uid(value, &uid) != -1) {
+                        lfs_uid = uid;
+                    }
+                } else if (strcmp(key, "lfs_gid") == 0) { //** Got the default GID for LFS
+                    lfs_gid = tbx_stk_string_get_integer(value);
+                } else if (strcmp(key, "lfs_group") == 0) { //** Got the default Group for LFS
+                    if (_group2gid(value, &gid) != -1) {
+                        lfs_gid = gid;
+                    }
+                } else if ((strcmp(key, "user") == 0) || (strcmp(key, "user(rw)") == 0)) {
+                    user_parse(value, PACL_MODE_RW, uid_list, &n_uid);
+                } else if (strcmp(key, "user(r)") == 0) {
+                    user_parse(value, PACL_MODE_READ, uid_list, &n_uid);
+                } else if ((strcmp(key, "uid") == 0) || (strcmp(key, "uid(rw)") == 0)) {
+                    uid_parse(value, PACL_MODE_RW, uid_list, &n_uid);
+                } else if (strcmp(key, "uid(r)") == 0) {
+                    uid_parse(value, PACL_MODE_READ, uid_list, &n_uid);
+                } else if ((strcmp(key, "group") == 0) || (strcmp(key, "group(rw)") == 0)) {
+                    group_parse(value, PACL_MODE_RW, gid_list, &n_gid);
+                } else if (strcmp(key, "group(r)") == 0) {
+                    group_parse(value, PACL_MODE_READ, gid_list, &n_gid);
+                } else if ((strcmp(key, "gid") == 0) || (strcmp(key, "gid(rw)") == 0)) {
+                    gid_parse(value, PACL_MODE_RW, gid_list, &n_gid);
+                } else if (strcmp(key, "gid(r)") == 0) {
+                    gid_parse(value, PACL_MODE_READ, gid_list, &n_gid);
                 }
 
                 ele = tbx_inip_ele_next(ele);
             }
 
+            //** Make sure we have a default mapping if needed
             if ((prefix) && (tbx_stack_count(stack)>0)) { //** Got a valid entry
                 tbx_type_malloc_clear(acl, path_acl_t, 1);
                 acl->n_account = tbx_stack_count(stack)/2;
@@ -993,11 +1386,24 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 }
                 if (lfs) {
                     acl->lfs_account = strdup(lfs);
-                } else if (acl->n_account > 0) {
-                    acl->lfs_account = strdup(acl->account[acl->n_account-1].account);
                 }
+
+                acl->lfs_uid = lfs_uid;
+                if (n_uid > 0) {
+                    acl->uid_map = malloc(sizeof(fs_acl_list_t) + n_uid * sizeof(fs_acl_t));
+                    acl->uid_map->n = n_uid;
+                    memcpy(acl->uid_map->id, uid_list, sizeof(fs_acl_t)*n_uid);
+                }
+                acl->lfs_gid = lfs_gid;
+                if (n_gid > 0) {
+                    acl->gid_map = malloc(sizeof(fs_acl_list_t) + n_gid * sizeof(fs_acl_t));
+                    acl->gid_map->n = n_gid;
+                    memcpy(acl->gid_map->id, gid_list, sizeof(fs_acl_t)*n_gid);
+                }
+
             } else {
                 log_printf(0, "ERROR: Missing fields! prefix=%s stack_count(accounts)=%d\n", prefix, tbx_stack_count(stack));
+                err = 1;
                 tbx_stack_empty(stack, 0);
             }
         }
@@ -1026,6 +1432,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
             if (pa->path_acl[j]->nested_primary == -1) pa->path_acl[j]->nested_primary = i;
             if (pacl_compare_nested_acls(pa->path_acl[i], pa->path_acl[j]) != 0) {
                 log_printf(0, "ERROR: bad nested ACLs! prefix=%s prefix_nested=%s\n", pa->path_acl[i]->prefix, pa->path_acl[j]->prefix);
+                tbx_log_flush();
                 return(1);
             }
             match = j;
@@ -1038,22 +1445,11 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         }
     }
 
-    if (tbx_log_level() > 0) {
-        for (i=0; i<pa->n_path_acl; i++) {
-            log_printf(1, "i=%d prefix=%s nested_end=%d nested_primary=%d rlut=%d\n", i, pa->path_acl[i]->prefix, pa->path_acl[i]->nested_end, pa->path_acl[i]->nested_primary, pa->path_acl[i]->rlut);
-        }
-
-        log_printf(1, "n_lut=%d\n", pa->n_lut);
-        for (i=0; i<pa->n_lut; i++) {
-            log_printf(1, "lut[%d]=%d\n", i, pa->lut[i]);
-        }
-    }
-
     //** Clean up
     tbx_stack_free(stack, 0);
     tbx_stack_free(acl_stack, 0);
 
-    return(0);
+    return(err);
 }
 
 //**************************************************************************
@@ -1087,7 +1483,7 @@ int _group2gid(const char *group, gid_t *gid)
 }
 
 //**************************************************************************
-// gid2account_parse - Make the GID -> accoutn mappings
+// gid2account_parse - Make the GID -> account mappings
 //     NOTE: The INI file if from the LIO context and persists for
 //           duration of the program so no need to dup strings
 //**************************************************************************
@@ -1212,6 +1608,7 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
 {
     path_acl_context_t *pa;
     char fname[4096];
+    int i;
 
     log_printf(10, "Loading PACL's\n");
 
@@ -1230,11 +1627,21 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
     }
     gid2account_parse(pa, fd);     //** And the GID->Account mappings, if any exist
 
+    for (i=0; i<pa->n_path_acl; i++) {
+        lfs_add_account_mappings(pa, pa->path_acl[i]);  //** Add the account's GIDs to the GID lists for use by LFS and the FS layer
+        guid_set_primary(pa, pa->path_acl[i]);         //** Set the default UID/GID if not specified
+    }
+    lfs_add_account_mappings(pa, pa->pacl_default);
+    guid_set_primary(pa, pa->pacl_default);
+
     fname[sizeof(fname)-1] = 0;
     if (fname_lfs_acls) {
         snprintf(fname, sizeof(fname)-1, "%s.XXXXXX", fname_lfs_acls);
         pa->fname_acl = strdup(fname);
-        pacl_lfs_acls_generate(pa);
+        if (pacl_lfs_acls_generate(pa) != 0) {
+            pacl_destroy(pa);
+            return(NULL);
+        }
     }
 
     pa->timestamp = apr_time_now();
@@ -1256,6 +1663,20 @@ void prefix_destroy(path_acl_t *acl)
             if (acl->lfs_acl->acl[i]) free(acl->lfs_acl->acl[i]);
         }
         free(acl->lfs_acl);
+    }
+
+    if (acl->uid_map) {
+        for (i=0; i<acl->uid_map->n; i++) {
+            if (acl->uid_map->id[i].name) free(acl->uid_map->id[i].name);
+        }
+        free(acl->uid_map);
+    }
+
+    if (acl->gid_map) {
+        for (i=0; i<acl->gid_map->n; i++) {
+            if (acl->gid_map->id[i].name) free(acl->gid_map->id[i].name);
+        }
+        free(acl->gid_map);
     }
 
     if (acl->prefix) free(acl->prefix);
@@ -1334,7 +1755,7 @@ int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int se
     index = seed;
     acl = pacl_search(pa, prefix, &exact, &got_default, &index);
 
-    fprintf(fd, "exact=%d got_default=%d index=%d\n", exact, got_default, index);
-    fprintf(fd, "prefix=%s\n", acl->prefix);
+    fprintf(fd, "  Prefix: %s\n", acl->prefix);
+    fprintf(fd, "  exact=%d got_default=%d index=%d\n", exact, got_default, index);
     return(index);
 }
