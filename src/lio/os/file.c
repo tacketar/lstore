@@ -5341,6 +5341,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         free(fd->attr_dir);
         free(fd);
         status = gop_failure_status;
+        return(status);
     } else {
         *(op->fd) = (os_fd_t *)fd;
         op->path = NULL;  //** This is now used by the fd
@@ -6026,11 +6027,13 @@ void osf_load_shard_prefix(lio_object_service_fn_t *os, tbx_inip_file_t *fd, con
         ele = tbx_inip_ele_next(ele);
     }
 
-    //** Now convert them to a list
-    tbx_type_malloc_clear(osf->shard_prefix, char *, tbx_stack_count(stack));
     n = 0;
-    while ((osf->shard_prefix[n] = tbx_stack_pop(stack)) != NULL) {
-        n++;
+    if (tbx_stack_count(stack) > 0) {
+        //** Now convert them to a list
+        tbx_type_malloc_clear(osf->shard_prefix, char *, tbx_stack_count(stack)+1);  //** The +1 is to make the while loop happy
+        while ((osf->shard_prefix[n] = tbx_stack_pop(stack)) != NULL) {
+            n++;
+        }
     }
 
     osf->n_shard_prefix = n;
