@@ -1583,7 +1583,10 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 // pacl_create - Creates a Path ACL structure
 //    This parse all [path_acl] and [path_acl_mapping] sections in the INI file
 //    to create the structure.  The format for each section type are defined below.
-//    NOTE: The prefixes must be non-overlapping and not nested!
+//    Multiple account, user, group, uid, and gid entries are allowed in [path_acl] sections.
+//    If no default user or group is specified then the calling process user/group is used.
+//
+//    NOTE: The prefixes can be nested as long as the resulting ACLs are restrictive
 //          The GID->account mapping must be unique!
 //
 //    [path_acl_default]
@@ -1592,16 +1595,26 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 //
 //    [path_acl]
 //    path=<prefix>
-//    lfs_account=<account> #default account reported by FUSE
-//    account(r)=<account_1>
+//    lfs_account=<account> #Optional default account reported by FUSE. Must still have an "account" entry
+//    account =<account_1>   # Same as "(rw)"
+//    account(r)=<account_2>
 //    ...
 //    account(rw)=<account_N>
+//    lfs_user = <user>   #Optionial default owner reported by FUSE.  Must still have a user/uid entry
+//    lfs_uid = <uid>     #Optionial default owner UID reported by FUSE.  Must still have a user/uid entry.
+//    lfs_group = <group> #Optionial default group owner reported by FUSE.  Must still have a group/gid entry. Overrides lfs_account.
+//    lfs_gid = <gid>     #Optionial default group owner GID reported by FUSE.  Must still have a group/gid entry. Overrides lfs_account.
+//    user = <user>       #Local user access.  No modifier means full R/W access. Valid modifiers user(r), user(rw).
+//    uid = <uid>         #Local user UID access.  No modifier means full R/W access. Valid modifiers uid(r), uid(rw).
+//    group = <group>     #Local group access.  No modifier means full R/W access. Valid modifiers group(r), group(rw).
+//    gid = <gid>         #Local group UID access.  No modifier means full R/W access. Valid modifiers gid(r), gid(rw).
 //
 //    [path_acl_mapping]
 //    account=<account>
 //    lfs_gid=<gid_1>  #This is used for the FUSE group ownership
 //    ...
 //    gid=<gid_N>
+//
 //**************************************************************************
 
 path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
