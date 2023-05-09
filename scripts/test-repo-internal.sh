@@ -10,7 +10,7 @@ PARENT="${DISTRO%-*}"
 RELEASE="${DISTRO##*-}"
 
 case $DISTRO in
-    centos-*)
+    centos-*|rockylinux-*)
         note "Attempting to use yum to install."
         REPO_BASE=$LSTORE_RELEASE_BASE/build/repo/$PARENT/$RELEASE/
         cat > /etc/yum.repos.d/lstore.repo <<-EOF

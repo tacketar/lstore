@@ -37,7 +37,7 @@ else
     mkdir -p build/repo/$PARENT/$RELEASE/packages
 fi
 case $PARENT in
-    centos)
+    centos|rockylinux)
         find build/package/$DISTRO/ -name '*.rpm' | grep -v lstore-release.rpm | \
             xargs -I{} cp {} build/repo/$PARENT/$RELEASE/packages
         createrepo --retain-old-md 10 --deltas --num-deltas 5 -x '*-dev.rpm' \

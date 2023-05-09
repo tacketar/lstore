@@ -34,9 +34,10 @@ for DISTRO in "${DISTROS[@]}"; do
 
     mkdir -p $DISTRO
 
+    PREP=""
     GLOBAL_INSTALL=""
     case $PARENT in
-        centos|fedora)
+        centos|fedora|rockylinux)
             # Fedora claims:
             # Yum command has been deprecated, redirecting to
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
@@ -47,7 +48,7 @@ for DISTRO in "${DISTROS[@]}"; do
             PACKAGE_PREFIX="RUN yum install -y"
             PACKAGE_POSTFIX="&& yum clean all"
             JAVA_INSTALL=""
-            if [ $PARENT == "centos" ]; then
+            if [ $PARENT == "centos" ] || [ $PARENT == "rockylinux" ]; then
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all"
             else
                 # Fedora includes epel-releease already
@@ -80,7 +81,6 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libacl-devel
                                     libsodium-devel
                                     openssl-devel
-                                    python
                                     rsync
                                     tar
                                     wget
@@ -131,6 +131,13 @@ for DISTRO in "${DISTROS[@]}"; do
         focal)
             ADDITIONAL_PACKAGES+=( libfuse3-dev )
             ;;
+        6|7)
+            ADDITIONAL_PACKAGES+=( python )
+            ;;
+        8|9)
+            PREP="RUN yum install -y dnf-plugins-core && yum config-manager --enable powertools"
+            ADDITIONAL_PACKAGES+=( python3 cmake )
+            ;;
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then
         PACKAGE_INSTALL=$PACKAGE_PREFIX
@@ -149,6 +156,7 @@ for DISTRO in "${DISTROS[@]}"; do
 FROM $FROM
 MAINTAINER http://lstore.org
 ENV DEBIAN_FRONTEND=noninteractive
+$PREP
 $GLOBAL_INSTALL
 $PACKAGE_INSTALL
 EOF

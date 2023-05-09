@@ -28,10 +28,14 @@ reconfigure_lserver.sh ${LHOST} ${LPORT}
 #Launch the LServer
 launch_server.sh
 
-#Startup the services
-cron
-service ssh start
-/etc/init.d/nullmailer start
+if [ -e /etc/redhat-release ]; then
+	crond
+else
+	#Startup the services
+	cron
+	service ssh start
+	/etc/init.d/nullmailer start
+fi
 
 #Let them know how to kick out safely
 echo "Ctrl-P Ctrl-Q to exit without stopping this container"

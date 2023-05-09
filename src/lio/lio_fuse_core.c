@@ -1366,13 +1366,16 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .getattr = lfs_stat,
     .utimens = lfs_utimens,
     .rename = lfs_rename,
-    .copy_file_range = lfs_copy_file_range,
 #else
     .truncate = lfs_truncate,
     .ftruncate = lfs_ftruncate,
     .getattr = lfs_stat2,
     .utimens = lfs_utimens2,
     .rename = lfs_rename2,
+#endif
+#ifdef HAS_FUSE3_4
+// this operation requires fuse v3.4.1+ https://github.com/libfuse/libfuse/blob/master/ChangeLog.rst
+    .copy_file_range = lfs_copy_file_range,
 #endif
     .chmod = lfs_chmod,
     .mknod = lfs_mknod,

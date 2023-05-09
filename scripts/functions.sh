@@ -100,7 +100,7 @@ function build_lstore_package() {
             NATIVE_PKG="cp -ra $SOURCE_PATH ./ ; pushd $PACKAGE ; dpkg-buildpackage -uc -us ; popd"
             PKG_TYPE="deb"
             ;;
-        centos-*)
+        centos-*|rockylinux-*)
             CPACK_ARG="-G RPM"
             CMAKE_ARG="-DCPACK_GENERATOR=RPM:TGZ:TBZ2 -DCPACK_SOURCE_GENERATOR=RPM"
             NATIVE_PKG=""
