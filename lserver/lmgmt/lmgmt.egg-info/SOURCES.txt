@@ -1,3 +1,4 @@
+LICENSE
 README.md
 setup.py
 lmgmt.egg-info/PKG-INFO

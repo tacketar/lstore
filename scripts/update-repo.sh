@@ -46,6 +46,9 @@ for DISTRO in "${DISTROS[@]}"; do
         centos)
             BARE_DISTRO_IMAGE=centos-7
             ;;
+        rockylinux)
+            BARE_DISTRO_IMAGE=rockylinux-8
+            ;;
         ubuntu|debian)
             BARE_DISTRO_IMAGE=ubuntu-xenial
             ;;

@@ -35,6 +35,8 @@ echo_info() {
     echo 'host=tcp://${hostname}'
     echo 'hostport=${host}:${port}'
     echo 'the_host=THE|${hostport}'
+    echo '# Small files as metadata cutover'
+    echo 'small_md = 32ki'
 }
 
 echo_info > /etc/lio/params.cfg

@@ -49,7 +49,7 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_SUFFIX=deb
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_DEB_RELEASE=ON"
         ;;
-    centos-*)
+    centos-*|rockylinux-*)
         PACKAGE_INSTALL="rpm -i"
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
@@ -130,7 +130,9 @@ elif [[ $PACKAGE_SUFFIX == deb ]]; then
 )
 else
     cd $PACKAGE_BASE/build
-    cmake ..
+    # something is broken about passing the real compiler name as ARG1 to ccache when CMAKE tries to build jerasure at least on Rocky-8,
+    # just disable ccache until that is sorted out, only impacts build speed not final product
+    cmake -DENABLE_CCACHE=OFF ..
     make $PACKAGE_SUFFIX VERBOSE=1
 (
     umask 000
