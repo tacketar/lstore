@@ -43,11 +43,22 @@ if [[ $TARBALL -eq 0 ]]; then
     undefined)
         # TODO Fail gracefully
         ;;
+        
+    ubuntu-jammy)
+        # switch to gdebi if automatic dependency resolution is needed
+        PACKAGE_INSTALL="dpkg -i"
+        PACKAGE_SUFFIX=deb
+        CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_DEB_RELEASE=ON"
+        export EMAIL=alan.tackett@vanderbilt.edu
+        #This is is only way to get JErasure to build.
+        export JERASURE_CC=gcc
+        ;;
     ubuntu-*|debian-*)
         # switch to gdebi if automatic dependency resolution is needed
         PACKAGE_INSTALL="dpkg -i"
         PACKAGE_SUFFIX=deb
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_DEB_RELEASE=ON"
+        export EMAIL=alan.tackett@vanderbilt.edu
         ;;
     centos-*)
         PACKAGE_INSTALL="rpm -i"
@@ -58,7 +69,7 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_INSTALL="rpm -i"
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
-        #This is is only way to get JErasure to build.  For some reason ccache breaks on R8 even though all the vars are correct
+        #This is is only way to get JErasure to build.
         export JERASURE_CC=gcc
         ;;
     *)

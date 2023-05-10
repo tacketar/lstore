@@ -121,7 +121,6 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libz-dev
                                     libzmq5-dev
                                     lsb-release
-                                    python
                                     rsync
                                     wget
                                 )
@@ -134,10 +133,13 @@ for DISTRO in "${DISTROS[@]}"; do
             ADDITIONAL_PACKAGES+=( clang )
             ;;
         vivid|wily|xenial|yakkety|jessie)
-            ADDITIONAL_PACKAGES+=( libtool-bin )
+            ADDITIONAL_PACKAGES+=( libtool-bin python )
             ;;
         focal)
-            ADDITIONAL_PACKAGES+=( libfuse3-dev )
+            ADDITIONAL_PACKAGES+=( libfuse3-dev python )
+            ;;
+        jammy)
+            ADDITIONAL_PACKAGES+=( libfuse3-dev python3 )
             ;;
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then
