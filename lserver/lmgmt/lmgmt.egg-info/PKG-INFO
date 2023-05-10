@@ -6,6 +6,13 @@ Home-page: https://github.com/accre/lstore
 Author: Alan Tackett
 Author-email: alan.tackett@vanderbilt.edu
 License: UNKNOWN
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
 Description: LServer Management Library package
         =================================================================
         
@@ -13,8 +20,3 @@ Description: LServer Management Library package
         rebalancing data across resources
         
         
-Platform: UNKNOWN
-Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: MIT License
-Classifier: Operating System :: OS Independent
-Description-Content-Type: text/markdown

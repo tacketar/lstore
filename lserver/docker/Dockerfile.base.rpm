@@ -1,0 +1,71 @@
+####################################################################################################
+#
+#  Dockerfile to build a LStore server, client, or development environment
+#  Based on a RHEL-like distro
+#
+#  The base image is prepended to this file when packaging
+#
+####################################################################################################
+
+MAINTAINER Matthew Heller, matthew.f.heller@accre.vanderbilt.edu
+
+LABEL version="Generic LServer v1, April 2023"
+
+# Allow the host OS paths that are shared into the container to be changed on the "docker build" commandline (w/ "--build-arg <varname>=<value>)
+ENV LSERVER_HOST=""
+ENV OSFILE=0
+
+# needed for czmq
+RUN yum clean all && yum install -y epel-release
+
+#Setup up the LStore packages
+RUN echo -e '[Local_LStore_Repo]\n\
+name=Local_LStore_Repo\n\
+enabled=1\n\
+gpgcheck=0\n\
+baseurl=file:///repo/\n\
+' >>  /etc/yum.repos.d/lstore-local.repo
+RUN head /etc/yum.repos.d/lstore-local.repo
+COPY repo /repo
+
+# And install them
+RUN yum clean all && yum install -y \
+  lstore \
+  apr \
+  apr-util \
+  fuse3 \
+  czmq \
+  python3
+
+# Add all the tarballs
+COPY tarballs /tarballs
+#Install the generic tarballs first
+RUN GLOBIGNORE=/tarballs/*.site.tgz && cat /tarballs/*.tgz | tar -zxvf - -i
+#Then add the site versions which can override the default
+RUN cat /tarballs/*.site.tgz | tar -zxvf - -i
+
+#Copy the lmgmt python3 module to it's location referenced in bashrc.
+#This is sloppy because the Docker python3 doesn't ship with PIP
+COPY /tarballs/lmgmt.py /python3-extras/
+
+#Also copy any samples
+COPY samples /samples
+
+RUN yum clean all && yum install -y \
+  s-nail \
+  procps-ng \
+  cronie
+
+#Copy a default bashrc for root
+COPY bashrc /root/.bashrc
+
+#Copy the install scripts and execute them
+COPY install /install
+RUN /install/run-install.sh
+
+# Copy and setup the entrypoint
+COPY docker_start.sh /usr/local/bin/
+ENTRYPOINT /usr/local/bin/docker_start.sh
+
+ONBUILD RUN echo "To start run: docker run -e LSERVER_HOST=<host-ip-to-use> -e LSERVER_PORT=<port-to-use> -i -t --name <container-name> -e DOCKER_NAME=<containter-name> --privileged --net=host --dns-search=vampire -v /lio/osfile:/lio/osfile -v /lio/log/<uniq-dir>:/lio/log  <image:name> "
+

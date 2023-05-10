@@ -66,14 +66,31 @@ if [ "${skip_deb}" != "1" ]; then
     ${LSTORE_SCRIPT_BASE}/package.sh ${DISTRO}
 fi
 
-#Copy both the normal package and the debug info in the *.ddeb
-ddir=${DEBDIR}/$(ls -t ${DEBDIR}/ | head -n 1)
-cp ${ddir}/lstore_*.deb ${ddir}/lstore-dbgsym*.ddeb ${PDIR}/repo/packages
-cd ${PDIR}/repo
-dpkg-scanpackages packages . > /tmp/lserver.out
-dpkg-scanpackages -tddeb packages . >> /tmp/lserver.out
-cat /tmp/lserver.out | gzip -9c > packages/Packages.gz
-rm /tmp/lserver.out
+PARENT="${DISTRO%-*}"
+RELEASE="${DISTRO##*-}"
+
+# create a local repo containing the LStore packages
+case $PARENT in
+  centos|fedora|rockylinux)
+    ddir=${DEBDIR}/$(ls -t ${DEBDIR}/ | head -n 1)
+    cp ${ddir}/rpm_output/*/lstore-*.rpm ${ddir}/srpm_output/lstore-*.rpm ${PDIR}/repo/packages
+    cd ${PDIR}/repo
+    createrepo_c ./
+    ;;
+  ubuntu|debian)
+    #Copy both the normal package and the debug info in the *.ddeb
+    ddir=${DEBDIR}/$(ls -t ${DEBDIR}/ | head -n 1)
+    cp ${ddir}/lstore_*.deb ${ddir}/lstore-dbgsym*.ddeb ${PDIR}/repo/packages
+    cd ${PDIR}/repo
+    dpkg-scanpackages packages . > /tmp/lserver.out
+    dpkg-scanpackages -tddeb packages . >> /tmp/lserver.out
+    cat /tmp/lserver.out | gzip -9c > packages/Packages.gz
+    rm /tmp/lserver.out
+    ;;
+  *)
+    fatal "Unrecognized base image type: ${PARENT}"
+    ;;
+esac
 
 #Copy all the install scripts
 cp -a ${LSTORE_RELEASE_BASE}/lserver/install/* ${PDIR}/install || echo "No LServer install scripts"
@@ -102,4 +119,14 @@ cp ${LSTORE_RELEASE_BASE}/lserver/docker/* ${PDIR}/
 #Get the base image
 base=$(echo ${DISTRO} | sed 's/-/:/g')
 echo "FROM ${base}" > ${PDIR}/Dockerfile
-cat ${PDIR}/Dockerfile.base >> ${PDIR}/Dockerfile
+case $PARENT in
+  centos|fedora|rockylinux)
+    cat ${PDIR}/Dockerfile.base.rpm >> ${PDIR}/Dockerfile
+    ;;
+  ubuntu|debian)
+    cat ${PDIR}/Dockerfile.base >> ${PDIR}/Dockerfile
+    ;;
+  *)
+    fatal "Unrecognized base image type: ${PARENT}"
+    ;;
+esac
