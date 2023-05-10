@@ -1366,7 +1366,9 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .getattr = lfs_stat,
     .utimens = lfs_utimens,
     .rename = lfs_rename,
+#if FUSE_MINOR_VERSION > 4
     .copy_file_range = lfs_copy_file_range,
+#endif
 #else
     .truncate = lfs_truncate,
     .ftruncate = lfs_ftruncate,
