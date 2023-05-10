@@ -54,6 +54,13 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
         ;;
+    rockylinux-*)
+        PACKAGE_INSTALL="rpm -i"
+        PACKAGE_SUFFIX=rpm
+        CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
+        #This is is only way to get JErasure to build.  For some reason ccache breaks on R8 even though all the vars are correct
+        export JERASURE_CC=gcc
+        ;;
     *)
         fatal "Unexpected distro name $PACKAGE_DISTRO"
         ;;

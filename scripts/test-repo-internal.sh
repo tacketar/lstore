@@ -6,11 +6,11 @@ ABSOLUTE_PATH=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)
 source $ABSOLUTE_PATH/functions.sh
 
 DISTRO=$1
-PARENT="${DISTRO%-*}"                                                          
+PARENT="${DISTRO%-*}"
 RELEASE="${DISTRO##*-}"
 
 case $DISTRO in
-    centos-*)
+    centos-*|rockylinux-*)
         note "Attempting to use yum to install."
         REPO_BASE=$LSTORE_RELEASE_BASE/build/repo/$PARENT/$RELEASE/
         cat > /etc/yum.repos.d/lstore.repo <<-EOF

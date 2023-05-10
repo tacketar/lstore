@@ -1,5 +1,9 @@
+cmake_minimum_required(VERSION 2.8)
 
-cmake_minimum_required(VERSION 2.6)
+if(DEFINED ENV{JERASURE_CC} )
+    message(STATUS "Overriding C compiler since ccache fails with Rocky 8")
+    set(CMAKE_C_COMPILER "$ENV{JERASURE_CC}")
+endif()
 
 # make a project
 project( lstore-jerasure C CXX)

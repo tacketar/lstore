@@ -31,24 +31,31 @@ for DISTRO in "${DISTROS[@]}"; do
     RELEASE="${DISTRO##*-}"
     FROM="${PARENT}:${RELEASE}"
     ROCKSDB_MANUAL=""  #Default is to install it from a package
+    ADDITIONAL_PACKAGES=()
 
     mkdir -p $DISTRO
 
     GLOBAL_INSTALL=""
     case $PARENT in
-        centos|fedora)
+        centos|fedora|rockylinux)
             # Fedora claims:
             # Yum command has been deprecated, redirecting to
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
             # Should I rewrite this again to include dnf as a different packager
             # When does dnf first exist?
-            ROCKSDB_MANUAL="1"
+            if [ "$PARENT" != "rockylinux" ]; then
+                ROCKSDB_MANUAL="1"
+            else
+                ADDITIONAL_PACKAGES+=( rocksdb-devel )
+            fi
             PACKAGER="rpm"
             PACKAGE_PREFIX="RUN yum install -y"
             PACKAGE_POSTFIX="&& yum clean all"
             JAVA_INSTALL=""
-            if [ $PARENT == "centos" ]; then
+            if [ "$PARENT" == "centos" ]; then
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all"
+            elif [ "$PARENT" == "rockylinux" ]; then
+                GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all && dnf config-manager --set-enabled powertools && dnf update -y"
             else
                 # Fedora includes epel-releease already
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum clean all"
@@ -67,11 +74,12 @@ for DISTRO in "${DISTROS[@]}"; do
     esac
     case $PACKAGER in
         rpm)
-            ADDITIONAL_PACKAGES=(
+            ADDITIONAL_PACKAGES+=(
                                     apr-devel
                                     apr-util-devel
                                     autoconf
                                     ccache
+                                    cmake
                                     curl
                                     createrepo
                                     expat-devel
@@ -80,7 +88,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libacl-devel
                                     libsodium-devel
                                     openssl-devel
-                                    python
+                                    python3
                                     rsync
                                     tar
                                     wget
@@ -90,7 +98,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                 )
             ;;
         deb)
-            ADDITIONAL_PACKAGES=(
+            ADDITIONAL_PACKAGES+=(
                                     autoconf
                                     ca-certificates
                                     ccache

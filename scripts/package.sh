@@ -85,5 +85,9 @@ for DISTRO in "${DISTROS[@]}"; do
             $EXTRA_ARGS \
             lstore/builder:${DISTRO} \
             /tmp/source/scripts/package-internal.sh $PACKAGE_ARGS $DISTRO
+#    docker run -a -v $LSTORE_RELEASE_RELATIVE:/tmp/source \
+#            $EXTRA_ARGS \
+#            lstore/builder:${DISTRO} \
+#            /tmp/source/scripts/package-internal.sh $PACKAGE_ARGS $DISTRO
     set +x
 done
