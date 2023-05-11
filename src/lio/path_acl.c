@@ -462,8 +462,11 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, in
     myacl = pacl_search_base(pa, path, exact, got_default, &index, n);
 
     //** Kick out if an exact match or got the default
-    if ((*got_default == 1) || (*exact == 1)) {
+    if (*exact == 1) {
         if (seed_hint) *seed_hint = index;
+        return(myacl);
+    } else if (*got_default == 1) {
+        if (seed_hint) *seed_hint = -2;
         return(myacl);
     }
 
