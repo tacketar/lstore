@@ -1062,8 +1062,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     if (fs->enable_internal_lock_mode == 1) {
         lflags |= LIO_ILOCK_MODE;  //** Add the internal lock mode
     } else if (fs->enable_internal_lock_mode == 2) { //** Just use tracking so downgrade an write lock
-        lflags |= LIO_ILOCK_MODE|LIO_READ_MODE;  //** Add the internal lock mode and reading
-        lflags ^= LIO_WRITE_MODE;  //** Remove a write lock if specified
+        lflags |= LIO_ILOCK_TRACK_MODE;  //** Add the internal tracking lock mode
     }
 
     //** Ok we can access the file if we made it here
@@ -1135,7 +1134,7 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
 
     if (err != OP_STATE_SUCCESS) {
         log_printf(0, "Failed closing file!\n");
-        FS_MON_OBJ_DESTROY_MESSAGE("EREMOREIO");
+        FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO");
         return(-EREMOTEIO);
     }
 

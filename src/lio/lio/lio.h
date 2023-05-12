@@ -195,17 +195,18 @@ enum lio_fsck_error_flags_t {
 };
 typedef enum lio_fsck_error_flags_t lio_fsck_error_flags_t;
 
-#define LIO_READ_MODE      1
-#define LIO_WRITE_MODE     2
-#define LIO_TRUNCATE_MODE  4
-#define LIO_CREATE_MODE    8
-#define LIO_APPEND_MODE   16
-#define LIO_EXCL_MODE     32
-#define LIO_EXEC_MODE     64
-#define LIO_FILE_MODE    128
-#define LIO_SOCKET_MODE  256
-#define LIO_FIFO_MODE    512
-#define LIO_ILOCK_MODE   1024    // **Use internal R/W locking
+#define LIO_READ_MODE           1
+#define LIO_WRITE_MODE          2
+#define LIO_TRUNCATE_MODE       4
+#define LIO_CREATE_MODE         8
+#define LIO_APPEND_MODE        16
+#define LIO_EXCL_MODE          32
+#define LIO_EXEC_MODE          64
+#define LIO_FILE_MODE         128
+#define LIO_SOCKET_MODE       256
+#define LIO_FIFO_MODE         512
+#define LIO_ILOCK_MODE       1024    // **Use internal R/W locking
+#define LIO_ILOCK_TRACK_MODE 2048    // **Internal tracking mode. Only acquire a global READ lock no matter if it's opened for writing
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
 enum lio_copy_hint_t {

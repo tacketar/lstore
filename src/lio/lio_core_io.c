@@ -1124,7 +1124,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     ex_off_t data_size, fsize;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
-    int dtype, err, exec_flag, is_special, rw_mode, do_lock;
+    int dtype, err, exec_flag, is_special, rw_mode, do_lock, ilock_mode;
     lio_segment_errors_t serr;
 
     status = gop_success_status;
@@ -1133,7 +1133,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     dtype = lio_exists(lc, op->creds, op->path);
 
     exec_flag = (LIO_EXEC_MODE & op->mode) ? OS_OBJECT_EXEC_FLAG : 0;  //** Peel off the exec flag for use on new files only
-    do_lock = LIO_ILOCK_MODE & op->mode;
+    do_lock = (LIO_ILOCK_MODE|LIO_ILOCK_TRACK_MODE) & op->mode;
     rw_mode = LIO_READ_MODE;
 
     if ((op->mode & (LIO_WRITE_MODE|LIO_CREATE_MODE)) != 0) {  //** Writing and they want to create it if it doesn't exist
@@ -1204,7 +1204,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     //** Locking is enabled grab the file lock
     if (do_lock) {
-        err = gop_sync_exec(os_open_object(lc->os, fd->creds, fd->path, ((rw_mode == LIO_READ_MODE) ? OS_MODE_READ_BLOCKING : OS_MODE_WRITE_BLOCKING), op->id, &(fd->ofd), op->max_wait));
+        if (do_lock & LIO_ILOCK_MODE) { //** Normal R/W internal locks
+            ilock_mode = (rw_mode == LIO_READ_MODE) ? OS_MODE_READ_BLOCKING : OS_MODE_WRITE_BLOCKING;
+        } else {
+            ilock_mode = LIO_READ_MODE;  //** TRacking mode just acquires a global read lock
+        }
+        err = gop_sync_exec(os_open_object(lc->os, fd->creds, fd->path, ilock_mode, op->id, &(fd->ofd), op->max_wait));
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR opening os object fname=%s\n", fd->path);
             free(fd);
