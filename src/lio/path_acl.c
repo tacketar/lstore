@@ -462,11 +462,11 @@ path_acl_t *pacl_search(path_acl_context_t *pa, const char *path, int *exact, in
     myacl = pacl_search_base(pa, path, exact, got_default, &index, n);
 
     //** Kick out if an exact match or got the default
-    if (*exact == 1) {
-        if (seed_hint) *seed_hint = index;
+    if (*got_default == 1) {
+        if (seed_hint) *seed_hint = -1;
         return(myacl);
-    } else if (*got_default == 1) {
-        if (seed_hint) *seed_hint = -2;
+    } else if (*exact == 1) {
+        if (seed_hint) *seed_hint = index;
         return(myacl);
     }
 
@@ -603,9 +603,9 @@ int _pacl_can_access_acl_uid(path_acl_context_t *ctx, path_acl_t *pa, int *acl_l
 
     id = pa->uid_map->id;
 
-    for (j=0; j<pa->gid_map->n; j++) {
+    for (j=0; j<pa->uid_map->n; j++) {
         m = (j + (*acl_last_index)) % pa->uid_map->n;
-        if (id[m].gid == uid) {
+        if (id[m].uid == uid) {
             check = mode & id[m].mode;
             if (check == mode) {
                 *acl = id[m].mode;
@@ -683,7 +683,6 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
     if (ug->hint_counter > ctx->timestamp) {   //** hint is good so check if we can use it
         old_seed = hint->prev_search.search_hint;
         pa = pacl_search(ctx, path, &exact, &got_default, &(hint->prev_search.search_hint));
-
         if (old_seed == hint->prev_search.search_hint) { //** Same Path acl as before
             check = mode & hint->prev_search.perms;
             *acl = hint->prev_search.perms;
@@ -698,7 +697,7 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
     check = _pacl_can_access_acl_uid(ctx, pa, &(hint->uid_acl_last_match), ug->uid, mode, acl);
     if (check) {
         hint->prev_search.perms = *acl;
-        return(2);
+        return((check == mode) ? 2 : exact);
     }
 
     //** No match so check the GIDs. It also returns the default perms if they work
