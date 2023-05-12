@@ -676,7 +676,7 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
 
     hint = ug->hint;
     if (ug->valid_guids == 0) {
-        hint->prev_search.search_hint = -1;
+        hint->prev_search.search_hint = -2;
         return(_pacl_can_access_account_list(ctx, path, hint->n_account, hint->account, mode, acl, NULL, &(hint->prev_search)));
     }
 
@@ -689,7 +689,7 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
             return((check == mode) ? 2 : exact);
         }
     } else { //** Old hint so reset the seed;
-        hint->prev_search.search_hint = -1;
+        hint->prev_search.search_hint = -2;
         pa = pacl_search(ctx, path, &exact, &got_default, &(hint->prev_search.search_hint));
     }
 
