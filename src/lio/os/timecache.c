@@ -1426,7 +1426,7 @@ finished:
 //    minimal set of cache entries.
 //***********************************************************************
 
-int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int prefix_len)
+int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int prefix_len, char *id)
 {
     ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
     tbx_stack_t tree;
@@ -1472,7 +1472,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
     v_size[0] = -100;
     ostc_attr_cacheprep_setup(&cp, 1, key_array, (void **)val_array, v_size);
 
-    err = gop_sync_exec(os_open_object(ostc->os_child, creds, fname, OS_MODE_READ_IMMEDIATE, NULL, &fd, max_wait));
+    err = gop_sync_exec(os_open_object(ostc->os_child, creds, fname, OS_MODE_READ_IMMEDIATE, id, &fd, max_wait));
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR opening object=%s\n", path);
         return(-1);
@@ -1496,7 +1496,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
             ostc_attr_cacheprep_copy(&cp, (void **)val_array, v_size);
             if (end < (len-1)) { //** Recurse and add the next layer
                 log_printf(1, "recursing object=%s\n", path);
-                err = ostc_cache_populate_prefix(os, creds, path, end);
+                err = ostc_cache_populate_prefix(os, creds, path, end, id);
             }
         }
     }
@@ -2329,7 +2329,7 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     }
     if (status.op_status == OP_STATE_SUCCESS) return(status);
 
-    ostc_cache_populate_prefix(ma->os, ma->creds, ma->fd->fname, 0);
+    ostc_cache_populate_prefix(ma->os, ma->creds, ma->fd->fname, 0, ma->fd->id);
 
     ostc_attr_cacheprep_setup(&cp, ma->n, ma->key, ma->val, ma->v_size);
 

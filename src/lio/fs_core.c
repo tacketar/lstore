@@ -316,7 +316,7 @@ int lio_fs_realpath(lio_fs_t *fs, const char *path, char *realpath)
     int err, v_size;
 
     v_size = OS_PATH_MAX;
-    err = lio_getattr(fs->lc, fs->lc->creds, (char *)path, NULL, "os.realpath", (void **)&realpath, &v_size);
+    err = lio_getattr(fs->lc, fs->lc->creds, (char *)path, fs->id, "os.realpath", (void **)&realpath, &v_size);
     if (err != OP_STATE_SUCCESS) {
         return(-ENOATTR);
     }
@@ -1771,7 +1771,7 @@ int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, o
         return(-EACCES);
     }
 
-    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, LIO_RW_MODE, NULL, &fd, 60));
+    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, LIO_RW_MODE, fs->id, &fd, 60));
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
         FS_MON_OBJ_DESTROY_MESSAGE("EIO: open");
@@ -1844,7 +1844,7 @@ int lio_fs_utimens(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, co
     val = buf;
     v_size = strlen(buf);
 
-    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, key, (void *)val, v_size);
+    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, key, (void *)val, v_size);
     if (err != OP_STATE_SUCCESS) {
         log_printf(0, "ERROR updating stat! fname=%s\n", fname);
         return(-EBADE);
@@ -2065,7 +2065,7 @@ void lio_fs_set_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
     }
 
     //** Store them
-    err = lio_multiple_setattr_op(fs->lc, fs->lc->creds, (char *)fname, NULL, _tape_keys, (void **)val, v_size, nkeys);
+    err = lio_multiple_setattr_op(fs->lc, fs->lc->creds, (char *)fname, fs->id, _tape_keys, (void **)val, v_size, nkeys);
     if (err != OP_STATE_SUCCESS) {
         log_printf(0, "ERROR updating exnode! fname=%s\n", fname);
     }
@@ -2116,7 +2116,7 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
 
     log_printf(15, "fname=%s ftype=%d\n", fname, ftype);
     nkeys = (ftype & OS_OBJECT_SYMLINK_FLAG) ? 1 : _tape_key_size;
-    i = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, NULL, _tape_keys, (void **)val, v_size, nkeys, 0);
+    i = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _tape_keys, (void **)val, v_size, nkeys, 0);
     if (i != OP_STATE_SUCCESS) {
         log_printf(15, "Failed retrieving file info!  path=%s\n", fname);
         return;
@@ -2274,7 +2274,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         }
 
 already_have_a_lock:
-        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, NULL, attrs, (void **)val, v_size, na, 0);
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, fs->id, attrs, (void **)val, v_size, na, 0);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
             return(-ENODATA);
@@ -2354,7 +2354,7 @@ already_have_a_lock:
     if (flags != 0) { //** Got an XATTR_CREATE/XATTR_REPLACE
         v_size = 0;
         val = NULL;
-        err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void **)&val, &v_size);
+        err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)name, (void **)&val, &v_size);
         if (flags == XATTR_CREATE) {
             if (err == OP_STATE_SUCCESS) {
                 if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
@@ -2388,7 +2388,7 @@ already_have_a_lock:
             return(-EACCES);
         }
 
-        err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, (void *)fval, v_size);
+        err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)name, (void *)fval, v_size);
         if (err != OP_STATE_SUCCESS) {
             if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
@@ -2456,7 +2456,7 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
 
 already_have_a_lock:
     v_size = -1;
-    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, NULL, (char *)name, NULL, v_size);
+    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)name, NULL, v_size);
     if (err != OP_STATE_SUCCESS) {
         if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
         FS_MON_OBJ_DESTROY_MESSAGE("ENOENT");
@@ -2519,7 +2519,7 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     v_size = -fs->lc->max_attr;
     val = NULL;
-    err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, NULL, "os.link", (void **)&val, &v_size);
+    err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, "os.link", (void **)&val, &v_size);
     if (err != OP_STATE_SUCCESS) {
         buf[0] = 0;
         FS_MON_OBJ_DESTROY_MESSAGE("EIO");

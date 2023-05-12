@@ -491,7 +491,7 @@ void lio_store_and_release_adler32(lio_config_t *lc, lio_creds_t *creds, tbx_lis
 //  lio_load_file_handle_attrs - Loads the attributes for a file handle
 //***********************************************************************
 
-int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname, os_fd_t *ofd, ex_id_t *inode, char **exnode, char **data, ex_off_t *data_size)
+int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname, char *id, os_fd_t *ofd, ex_id_t *inode, char **exnode, char **data, ex_off_t *data_size)
 {
     char *myfname;
     char vino[256];
@@ -510,7 +510,7 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
     if (ofd) {
         err= lio_get_multiple_attrs_fd(lc, creds, ofd, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS);
     } else {
-        err = lio_get_multiple_attrs(lc, creds, myfname, NULL, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS, 1);
+        err = lio_get_multiple_attrs(lc, creds, myfname, id, _lio_fh_keys, (void **)val, v_size, LFH_NKEYS, 1);
     }
     if (val[LFH_KEY_EXNODE] == NULL) err = OP_STATE_FAILURE;
     if (err != OP_STATE_SUCCESS) {
@@ -1148,7 +1148,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             } else {
                 dtype = OS_OBJECT_FILE_FLAG;
             }
-            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, NULL));
+            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id));
             if (err != OP_STATE_SUCCESS) {
                 info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
                 log_printf(1, "ERROR creating file(%s)!\n", op->path);
@@ -1216,7 +1216,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     }
 
     exnode = NULL;
-    if (lio_load_file_handle_attrs(lc, op->creds, fd->path, fd->ofd, &ino, &exnode, &data, &data_size) != 0) {
+    if (lio_load_file_handle_attrs(lc, op->creds, fd->path, op->id, fd->ofd, &ino, &exnode, &data, &data_size) != 0) {
         log_printf(1, "ERROR loading attributes! fname=%s\n", op->path);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
