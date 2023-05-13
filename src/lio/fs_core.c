@@ -236,6 +236,8 @@ void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t ui
 
     ug->valid_guids = 1;
     ug->uid = uid; //** This is needed for checking for a hint
+    ug->n_gid = 1;
+    ug->gid[0] = gid;
 
     log_printf(10, "uid=%d gid=%d\n", uid, gid);
 
