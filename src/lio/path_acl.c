@@ -137,6 +137,8 @@ typedef struct {    //** Structure used for hints
     int uid_acl_last_match;
     int last_match_was_uid;
     int n_account;
+    int n_gid;
+    gid_t gid[PA_MAX_ACCOUNT];
     char *account[PA_MAX_ACCOUNT];
 } pa_hint_t;
 
@@ -279,6 +281,9 @@ void pacl_ug_hint_set(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     ug->hint_counter = hint->ts;
 
     if (ug->n_gid >= PA_MAX_ACCOUNT) ug->n_gid = PA_MAX_ACCOUNT;  //** We cap the comparisions to keep from having to malloc an array
+
+    hint->n_gid = ug->n_gid;
+    memcpy(hint->gid, ug->gid, sizeof(gid_t)*ug->n_gid);
 
     if (hint->uid != _pa_guid_unused) apr_hash_set(pa->hints_hash, &(hint->uid), sizeof(uid_t), hint);
 }
@@ -701,7 +706,7 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
     }
 
     //** No match so check the GIDs. It also returns the default perms if they work
-    check = _pacl_can_access_acl_gid_list(ctx, pa, &(hint->gid_last_match),  &(hint->gid_acl_last_match), ug->n_gid, ug->gid, mode, acl);
+    check = _pacl_can_access_acl_gid_list(ctx, pa, &(hint->gid_last_match),  &(hint->gid_acl_last_match), hint->n_gid, hint->gid, mode, acl);
     hint->prev_search.perms = *acl;
     return((check) ? 2 : exact);
 }
