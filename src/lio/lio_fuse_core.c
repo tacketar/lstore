@@ -352,10 +352,23 @@ SHADOW_CODE(
 
 lio_os_authz_local_t *_get_fuse_ug(lio_fuse_t *lfs, lio_os_authz_local_t *ug, struct fuse_context *fc)
 {
-    lio_fs_fill_os_authz_local(lfs->fs, ug, fc->uid, fc->gid);
+
+    if (lfs->fs_checks_acls == 0) {
+        ug->valid_guids = 0;
+    } else {
+        lio_fs_fill_os_authz_local(lfs->fs, ug, fc->uid, fc->gid);
+    }
     return(ug);
 }
 
+//*************************************************************************
+
+void _lfs_hint_release(lio_fuse_t *lfs, lio_os_authz_local_t *ug)
+{
+    if (lfs->fs_checks_acls == 0) return;
+
+    lio_fs_hint_release(lfs->fs, ug);
+}
 
 //*************************************************************************
 // lfs_get_context - Returns the LFS context.  If none is available it aborts
@@ -388,7 +401,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
 
     flink = NULL;
     err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sbuf, &flink, 1, lfs->no_cache_stat_if_file);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     if (err == 0) {
         if (flink) {
@@ -461,7 +474,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
     dit->lfs = lfs;
     dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(shadow_opendir(fname, dit);)
 
@@ -564,7 +577,7 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
     int err;
 
     err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, mknod(sfname, mode, rdev));
     return(err);
@@ -585,7 +598,7 @@ int lfs_chmod(const char *fname, mode_t mode)
     int err;
 
     err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, chmod(sfname, mode));
 
@@ -603,7 +616,7 @@ int lfs_mkdir(const char *fname, mode_t mode)
     int err;
 
     err = lio_fs_mkdir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, mkdir(sfname, mode));
 
@@ -621,7 +634,7 @@ int lfs_unlink(const char *fname)
     int err;
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, unlink(sfname));
 
@@ -639,7 +652,7 @@ int lfs_rmdir(const char *fname)
     int err;
 
     err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_DIR_FLAG);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, rmdir(sfname));
 
@@ -671,7 +684,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_os_authz_local_t ug;
 
     fd = lio_fs_open(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, lio_open_flags(fi->flags, 0));
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
     fi->fh = (uint64_t)fd;
 
     SHADOW_CODE(
@@ -858,7 +871,7 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
     int err;
 
     err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE_DUAL(oldname, newname, err, rename(sfname1, sfname2));
 
@@ -883,7 +896,7 @@ int lfs_truncate(const char *fname, off_t new_size)
     int err;
 
     err = lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, new_size);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, truncate(sfname, new_size));
 
@@ -922,7 +935,7 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
     SHADOW_ERROR("WARNING: UNSUPPORTED call! fname=%s\n", fname);
 
     err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, tv);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     return(err);
 }
@@ -946,7 +959,7 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
     int err;
 
     err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, list, size);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(shadow_listxattr(fname, list, size, err);)
     return(err);
@@ -968,7 +981,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     int err;
 
     err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, buf, size);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(
         char sbuf[size+1];
@@ -1007,7 +1020,7 @@ int lfs_setxattr(const char *fname, const char *name, const char *fval, size_t s
     int err;
 
     err = lio_fs_setxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, fval, size, flags);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, setxattr(sfname, name, fval, size, flags));
 
@@ -1025,7 +1038,7 @@ int lfs_removexattr(const char *fname, const char *name)
     int err;
 
     err = lio_fs_removexattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, removexattr(sfname, name));
 
@@ -1044,7 +1057,7 @@ int lfs_hardlink(const char *oldname, const char *newname)
     int err;
 
     err = lio_fs_hardlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE_DUAL(oldname, newname, err, link(sfname1, sfname2));
 
@@ -1063,7 +1076,7 @@ int lfs_readlink(const char *fname, char *buf, size_t bsize)
     char flink[OS_PATH_MAX];
 
     err = lio_fs_readlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, buf, bsize);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(
         SHADOW_MANGLE_FNAME(sfname, fname, is_shadow);
@@ -1128,7 +1141,7 @@ int lfs_symlink(const char *link, const char *newname)
     }
 
     err = lio_fs_symlink(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), link2, newname);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(
         SHADOW_MANGLE_FNAME(snewname, newname, is_shadow);
@@ -1164,7 +1177,7 @@ int lfs_statvfs(const char *fname, struct statvfs *sfs)
     SHADOW_ERROR("WARNING: UNSUPPORTED call! fname=%s\n", fname);
 
     err =  lio_fs_statvfs(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sfs);
-    lio_fs_hint_release(lfs->fs, &ug);
+    _lfs_hint_release(lfs, &ug);
     return(err);
 }
 
@@ -1181,6 +1194,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "[%s]\n", lfs->lfs_section);
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
+    fprintf(fd, "fs_checks_acls = %d  # Should only be 0 if running lio_fuse since the kernel handles ACL checking\n", lfs->fs_checks_acls);
     fprintf(fd, "no_cache_stat_if_file = %d\n", lfs->no_cache_stat_if_file);
     if (lfs->enable_flock) {
         fprintf(fd, "# flock() is ENABLED\n");
@@ -1265,6 +1279,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     //** Most of the heavylifting is done in the filesystem object
     lfs->fs = lio_fs_create(lfs->lc->ifd, section, lfs->lc, getuid(), getgid());
 log_printf(0, "lfs->fs=%p\n", lfs->fs);
+    lfs->fs_checks_acls = tbx_inip_get_integer(lfs->lc->ifd, section, "fs_checks_acls", 1);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
     lfs->no_cache_stat_if_file = tbx_inip_get_integer(lfs->lc->ifd, section, "no_cache_stat_if_file", 1);
     lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;

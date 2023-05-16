@@ -702,13 +702,13 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
     check = _pacl_can_access_acl_uid(ctx, pa, &(hint->uid_acl_last_match), ug->uid, mode, acl);
     if (check) {
         hint->prev_search.perms = *acl;
-        return((check == mode) ? 2 : exact);
+        return(check);
     }
 
     //** No match so check the GIDs. It also returns the default perms if they work
     check = _pacl_can_access_acl_gid_list(ctx, pa, &(hint->gid_last_match),  &(hint->gid_acl_last_match), hint->n_gid, hint->gid, mode, acl);
     hint->prev_search.perms = *acl;
-    return((check) ? 2 : exact);
+    return(check);
 }
 
 //**************************************************************************
@@ -959,21 +959,16 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
                 tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:r-x", uid);
             }
         }
-
-        if (primary_added == 0) { //** No primary UID so manually add one. Assumes full perms.
-            tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
-            tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
-            tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
-        }
-    } else {   //** No default user so manually add it
-        facl->mode[0] |= S_IRWXU;
-        facl->mode[1] |= S_IRUSR | S_IWUSR;
-        facl->mode[2] |= S_IRWXU;
-        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
-        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
-        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
     }
 
+    if (primary_added == 0) { //** No primary UID so manually add one. Assumes full perms.
+       facl->mode[0] |= S_IRWXU;
+       facl->mode[1] |= S_IRUSR | S_IWUSR;
+       facl->mode[2] |= S_IRWXU;
+       tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
+       tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
+       tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
+    }
 
     if (dir_pos == 0) { //** No default found so assume the worst and just give read access
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "u::r-x,g::r-x,o::---,m::r-x");

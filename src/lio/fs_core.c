@@ -169,6 +169,7 @@ struct lio_fs_t {
     int enable_osaz_secondary_gids;
     int enable_fuse_hacks;
     int enable_internal_lock_mode;     //** 0=no persistent locking, 1=Use normal R/W locks, 2=Just use R locks for tracking
+    int fs_checks_acls;                //** For LFS the kernel can do all the perm checking
     int internal_locks_max_wait;
     int user_locks_max_wait;
     int xattr_error_for_hard_errors;
@@ -197,7 +198,6 @@ struct lio_fs_t {
     regex_t rw_lock_attr_regex;
     lio_os_authz_local_t ug;
 };
-
 
 //*************************************************************************
 // fs OSAZ Wrapper routines.  Basically they just force getting the
@@ -342,6 +342,8 @@ int fs_osaz_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
     lio_os_authz_local_t dug, *ug_used;
     int err;
 
+    if (fs->fs_checks_acls == 0) return(1);
+
     //** The object shouldn't exist so make sure we can access the parent
     lio_os_path_split(path, &parent_dir, &file);
     if (file) free(file);
@@ -366,10 +368,12 @@ int fs_osaz_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
     lio_os_authz_local_t dug, *ug_used;
     int err;
 
+    if (fs->fs_checks_acls == 0) return(2);
+
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
     ug_used = _fs_get_ug(fs, ug, &dug);
-    err =osaz_object_remove(fs->osaz, fs->lc->creds, ug_used, path);
+    err = osaz_object_remove(fs->osaz, fs->lc->creds, ug_used, path);
     _fs_release_ug(fs, ug_used, &dug);
     return(err);
 }
@@ -381,6 +385,8 @@ int fs_osaz_object_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t dug, *ug_used;
     int err;
+
+    if (fs->fs_checks_acls == 0) return(2);
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
@@ -398,6 +404,8 @@ int fs_osaz_attr_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     lio_os_authz_local_t dug, *ug_used;
     int err;
 
+    if (fs->fs_checks_acls == 0) return(2);
+
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
     ug_used = _fs_get_ug(fs, ug, &dug);
@@ -413,6 +421,8 @@ int fs_osaz_attr_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     char realpath[OS_PATH_MAX];
     lio_os_authz_local_t dug, *ug_used;
     int err;
+
+    if (fs->fs_checks_acls == 0) return(2);
 
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
@@ -430,9 +440,11 @@ int fs_osaz_attr_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     lio_os_authz_local_t dug, *ug_used;
     int err;
 
+    *filter = NULL;
+    if (fs->fs_checks_acls == 0) return(2);
+
     if (lio_fs_realpath(fs, path, realpath) != 0) return(0);
 
-    *filter = NULL;
     ug_used = _fs_get_ug(fs, ug, &dug);
     err = osaz_attr_access(fs->osaz, fs->lc->creds, ug_used, path, key, mode, filter);
     _fs_release_ug(fs, ug_used, &dug);
@@ -2664,6 +2676,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
     fprintf(fd, "enable_fuse_hacks = %d\n", fs->enable_fuse_hacks);
+    fprintf(fd, "fs_checks_acls = %d  # Should only be 0 if running lio_fuse since the kernel handles ACL checking\n", fs->fs_checks_acls);
     fprintf(fd, "enable_internal_lock_mode = %d # 0=No locks, 1=Internal R/W locks, 2=Internal shared locks for tracking\n", fs->enable_internal_lock_mode);
     if (fs->enable_internal_lock_mode) fprintf(fd, "internal_locks_max_wait = %d\n", fs->internal_locks_max_wait);
     fprintf(fd, "user_locks_max_wait = %d\n", fs->user_locks_max_wait);
@@ -2705,7 +2718,6 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
 
     fs->lc = (lc) ? lc : lio_gc;
     fs->fs_section = (fs_section) ? strdup(fs_section) : strdup("fs");
-log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
 
     fs->enable_tape = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_tape", 0);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
@@ -2713,6 +2725,7 @@ log_printf(0, "fs->fs_section=%s fs=>lc=%p\n", fs->fs_section, fs->lc);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
     fs->enable_fifo = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fifo", 0);
     fs->enable_socket = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_socket", 0);
+    fs->fs_checks_acls = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "fs_checks_acls", 1);
     fs->xattr_error_for_hard_errors = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "xattr_error_for_hard_errors", 0);
     atype = tbx_inip_get_string(fd, fs->fs_section, "ug_mode", _ug_mode_string[UG_GLOBAL]);
     fs->ug_mode = UG_GLOBAL;
