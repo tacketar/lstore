@@ -1850,23 +1850,23 @@ no_args:
     *argc = nargs;
 
     if (!cfg_name) { //** Nothing explicitly passed in so try and use a default
-        if (lio_os_local_filetype("default") != 0) {  //** Local remote config
+        if (lio_os_local_filetype("default") & OS_OBJECT_FILE_FLAG) {  //** Local remote config
             cfg_name = "file://default";
-        } else if (lio_os_local_filetype("lio.cfg") != 0) {  //** Local INI file
+        } else if (lio_os_local_filetype("lio.cfg") & OS_OBJECT_FILE_FLAG) {  //** Local INI file
             cfg_name = "ini://lio.cfg";
         } else {
             home = getenv("HOME");
             snprintf(var, sizeof(var), "%s/.lio/default", home);
             snprintf(buffer, sizeof(buffer), "%s/.lio/lio.cfg", home);
-            if (lio_os_local_filetype(var) != 0) {  //* $HOME default
+            if (lio_os_local_filetype(var) & OS_OBJECT_FILE_FLAG) {  //* $HOME default
                 snprintf(buffer, sizeof(buffer), "file://%s", var);
                 cfg_name = buffer;
-            } else if (lio_os_local_filetype(var) != 0) {  //* $HOME INI file
+            } else if (lio_os_local_filetype(var) & OS_OBJECT_FILE_FLAG) {  //* $HOME INI file
                 snprintf(var, sizeof(var), "file://%s", buffer);
                 cfg_name = var;
-            } else if (lio_os_local_filetype("/etc/lio/default") != 0) {
+            } else if (lio_os_local_filetype("/etc/lio/default") & OS_OBJECT_FILE_FLAG) {
                 cfg_name = "file:///etc/lio/default";
-            } else if (lio_os_local_filetype("/etc/lio/lio.cfg") != 0) {
+            } else if (lio_os_local_filetype("/etc/lio/lio.cfg") & OS_OBJECT_FILE_FLAG) {
                 cfg_name = "file:///etc/lio/lio.cfg";
             }
         }
