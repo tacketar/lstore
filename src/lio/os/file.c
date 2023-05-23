@@ -331,7 +331,7 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id);
 char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_prefix);
 apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot);
 int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void *val, int v_size, int *atype, int append_val);
-int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath);
+int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath, int flag_missing_as_error);
 gop_op_generic_t *osfile_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void *val, int v_size);
 os_attr_iter_t *osfile_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, lio_os_regex_table_t *attr, int v_max);
 void osfile_destroy_attr_iter(os_attr_iter_t *oit);
@@ -725,6 +725,7 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 
     tbx_stack_move_to_top(fol->pending_stack);
     if (tbx_stack_get_current_ptr(fol->pending_stack) != ele) { //** I should be on top of the stack
+        log_printf(0, "ERROR stack out of sync!!!! fname=%s pending_size=%d me=%p top=%p\n", fd->object_name, tbx_stack_count(fol->pending_stack), ele, tbx_stack_get_current_ptr(fol->pending_stack));
         aborted = 1;
     }
 
@@ -738,7 +739,7 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
     //** I'm off the stack so just free my handle and update the counter
     tbx_pch_release(flock->task_pc, &task_pch);
 
-    if (aborted == 1) { //** Open was aborted. I've already removed mysewlf from the que so just return
+    if (aborted == 1) { //** Open was aborted. I've already removed myself from the que so just return
         return(1);
     }
 
@@ -1955,7 +1956,7 @@ int va_timestamp_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 
     if ((int)strlen(fullkey) > n) {  //** Normal attribute timestamp
         key = &(fullkey[n+1]);
-        n = osf_get_attr(os, creds, fd, key, val, v_size, atype, NULL, NULL);
+        n = osf_get_attr(os, creds, fd, key, val, v_size, atype, NULL, NULL, 1);
         *atype |= OS_OBJECT_VIRTUAL_FLAG;
     } else {  //** No attribute specified so just return my time
         curr_time = apr_time_sec(apr_time_now());
@@ -2041,7 +2042,7 @@ int va_append_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
 
     if ((int)strlen(fullkey) > n) {  //** Normal attribute
         key = &(fullkey[n+1]);
-        n = osf_get_attr(os, creds, fd, key, val, v_size, atype, NULL, NULL);
+        n = osf_get_attr(os, creds, fd, key, val, v_size, atype, NULL, NULL, 1);
         *atype |= OS_OBJECT_VIRTUAL_FLAG;
     } else {  //** No attribute specified so nothing to do
         *atype = OS_OBJECT_VIRTUAL_FLAG;
@@ -3100,7 +3101,7 @@ int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath,
     fd.object_name = rpath;
     fd.ftype = ftype;
 
-    n = osf_get_attr(os, creds, &fd, "system.inode", (void **)&inode, inode_len, &atype, NULL, rpath);
+    n = osf_get_attr(os, creds, &fd, "system.inode", (void **)&inode, inode_len, &atype, NULL, rpath, 1);
     return(n);
 }
 
@@ -4150,7 +4151,7 @@ try_again:
 
             v_size = -osf->max_copy;
             val = NULL;
-            err = osf_get_attr(op->os, op->creds, op->fd_src, op->key_src[i], &val, &v_size, &atype, &ug, op->fd_src->realpath);
+            err = osf_get_attr(op->os, op->creds, op->fd_src, op->key_src[i], &val, &v_size, &atype, &ug, op->fd_src->realpath, 1);
             osaz_attr_filter_apply(osf->osaz, op->key_src[i], OS_MODE_READ_IMMEDIATE, &val, &v_size, filter);
             if (err == 0) {
                 err = osf_set_attr(op->os, op->creds, op->fd_dest, op->key_dest[i], val, v_size, &atype, 0);
@@ -4415,7 +4416,7 @@ gop_op_generic_t *osfile_move_attr(lio_object_service_fn_t *os, lio_creds_t *cre
 // osf_get_attr - Gets the attribute given the name and base directory
 //***********************************************************************
 
-int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath)
+int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath, int flag_missing_as_error)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     lio_os_virtual_attr_t *va;
@@ -4464,14 +4465,16 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     if (n != 0) {
         if (*v_size < 0) *val = NULL;
         *v_size = -1;
-        return(1);
+        err = 1;
+        goto done;
     }
 
     fd = tbx_io_fopen(fname, "r");
     if (fd == NULL) {
         if (*v_size < 0) *val = NULL;
         *v_size = -1;
-        return(1);
+        err = 1;
+        goto done;
     }
 
     if (*v_size < 0) { //** Need to determine the size
@@ -4482,7 +4485,8 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
            *v_size = 0;
             *val = NULL;
             tbx_io_fclose(fd);
-            return((n<0) ? 1 : 0);
+            err = (n<0) ? 1 : 0;
+            goto done;
         } else {
             *v_size = (n > (-*v_size)) ? -*v_size : n;
             bsize = *v_size + 1;
@@ -4502,11 +4506,12 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     tbx_io_fclose(fd);
 
 done:
-    osaz_attr_filter_apply(osf->osaz, attr, OS_MODE_READ_BLOCKING, val, v_size, filter);
+    if ((*v_size) > 0) {
+        osaz_attr_filter_apply(osf->osaz, attr, OS_MODE_READ_BLOCKING, val, v_size, filter);
+        log_printf(15, "PTR val=%p *val=%s\n", val, (char *)(*val));
+    }
 
-    log_printf(15, "PTR val=%p *val=%s\n", val, (char *)(*val));
-
-    return(err);
+    return((flag_missing_as_error == 1) ? err : 0);
 }
 
 //***********************************************************************
@@ -4527,7 +4532,7 @@ gop_op_status_t osf_get_ma_links(void *arg, int id, int first_link)
 
     err = 0;
     for (i=0; i<op->n; i++) {
-        err += osf_get_attr(op->os, op->creds, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, NULL, op->fd->realpath);
+        err += osf_get_attr(op->os, op->creds, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, NULL, op->fd->realpath, 0);
         if (op->v_size[i] > 0) {
             log_printf(15, "PTR i=%d key=%s val=%s v_size=%d\n", i, op->key[i], (char *)op->val[i], op->v_size[i]);
         } else {
@@ -4562,7 +4567,7 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id)
     for (i=0; i<op->n; i++) {
         v_start[i] = op->v_size[i];
         atype = 0;
-        err += osf_get_attr(op->os, op->creds, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, op->ug, op->fd->realpath);
+        err += osf_get_attr(op->os, op->creds, op->fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, op->ug, op->fd->realpath, 0);
         if (op->v_size[i] != 0) {
             log_printf(15, "PTR i=%d key=%s val=%s v_size=%d atype=%d err=%d\n", i, op->key[i], (char *)op->val[i], op->v_size[i], atype, err);
         } else {
@@ -4839,7 +4844,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
             n = (rex->regex_entry[i].fixed == 1) ? strcmp(rex->regex_entry[i].expression, va->attribute) : regexec(&(rex->regex_entry[i].compiled), va->attribute, 0, NULL, 0);
             if (n == 0) { //** got a match
                 n = it->v_max;
-                if (osf_get_attr(it->fd->os, it->creds, it->fd, va->attribute, val, &n, &atype, NULL, rp) == 0) {
+                if (osf_get_attr(it->fd->os, it->creds, it->fd, va->attribute, val, &n, &atype, NULL, rp, 1) == 0) {
                     *v_size = n;
                     *key = strdup(va->attribute);
                     return(0);
@@ -4864,7 +4869,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
 
             if (n == 0) { //** got a match
                 n = it->v_max;
-                if (osf_get_attr(it->fd->os, it->creds, it->fd, entry->d_name, val, &n, &atype, NULL, rp) == 0) {
+                if (osf_get_attr(it->fd->os, it->creds, it->fd, entry->d_name, val, &n, &atype, NULL, rp, 1) == 0) {
                     *v_size = n;
                     *key = strdup(entry->d_name);
                     log_printf(15, "key=%s val=%s\n", *key, (char *)(*val));
@@ -5306,7 +5311,6 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     gop_op_status_t status;
 
     log_printf(15, "Attempting to open object=%s\n", op->path);
-
     *op->fd = NULL;
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->path);
     ftype = lio_os_local_filetype(fname);
@@ -5335,6 +5339,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
     err = full_object_lock(FOL_OS, osf->os_lock, fd, fd->mode, op->max_wait);  //** Do a full lock if needed
+
     log_printf(15, "full_object_lock=%d fname=%s uuid=" LU " max_wait=%d fd=%p fd->fol=%p\n", err, fd->object_name, fd->uuid, op->max_wait, fd, fd->fol);
     if (err != 0) {  //** Either a timeout or abort occured
         *(op->fd) = NULL;
