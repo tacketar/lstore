@@ -250,6 +250,8 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
     double dt;
     ex_off_t t1, t2;
 
+    in_flight = 0;
+
     status = gop_success_status;
     if (op->n_iov <=0) return(status);
 
@@ -381,6 +383,8 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
     apr_time_t now;
     double dt;
     ex_off_t t1, t2;
+
+    in_flight = 0;
 
     if ((fd->mode & LIO_WRITE_MODE) == 0) { _op_set_status(status, OP_STATE_FAILURE, -EINVAL); return(gop_failure_status); }
     if (op->n_iov <=0) return(gop_success_status);

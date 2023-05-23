@@ -1033,6 +1033,7 @@ int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight)
     apr_thread_mutex_lock(fh->lock);
     if (rw_mode == 0) {
         if (fh->data_size == -1) { //** Kick out the data is in in the segment
+            fh->in_flight += 1;
             apr_thread_mutex_unlock(fh->lock);
             return(OP_STATE_RETRY);   //** Nothing to do so return
         }
@@ -1046,6 +1047,7 @@ int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight)
 
     //** See which tier the data sits in
     if (fh->data_size == -1) {  //**Stored in the segment
+        fh->in_flight += 1;
         apr_thread_mutex_unlock(fh->lock);
         return(OP_STATE_RETRY);   //** Nothing to do so return
     }
@@ -1071,6 +1073,8 @@ int lio_tier_check_and_handle(lio_rw_op_t *op, int rw_mode, int *in_flight)
         *in_flight = 0;
         return(OP_STATE_SUCCESS);
     }
+
+    fh->in_flight += *in_flight;
     apr_thread_mutex_unlock(fh->lock);
     return(OP_STATE_RETRY);
 }
@@ -1207,7 +1211,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         if (do_lock & LIO_ILOCK_MODE) { //** Normal R/W internal locks
             ilock_mode = (rw_mode == LIO_READ_MODE) ? OS_MODE_READ_BLOCKING : OS_MODE_WRITE_BLOCKING;
         } else {
-            ilock_mode = LIO_READ_MODE;  //** TRacking mode just acquires a global read lock
+            ilock_mode = OS_MODE_READ_BLOCKING;  //** Tracking mode just acquires a global read lock
         }
         err = gop_sync_exec(os_open_object(lc->os, fd->creds, fd->path, ilock_mode, op->id, &(fd->ofd), op->max_wait));
         if (err != OP_STATE_SUCCESS) {
