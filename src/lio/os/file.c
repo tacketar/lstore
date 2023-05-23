@@ -3969,7 +3969,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_mk_mv_rm_t rm;
-    int ftype, dtype;
+    int ftype, dtype, rename_errno;
     int n_locks = 0;
     int max_locks = 1024;
     int ilock_table[max_locks];
@@ -3984,9 +3984,14 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     int err;
     gop_op_status_t status;
 
-    if ((osaz_object_remove(osf->osaz, creds, NULL,  _osf_realpath(os, src_path, srpath, 1)) == 0) ||
-            (osaz_object_create(osf->osaz, creds, NULL, _osf_realpath(os, dest_path, drpath, 0)) == 0)) return(gop_failure_status);
+    rename_errno = 0;
 
+    if ((osaz_object_remove(osf->osaz, creds, NULL,  _osf_realpath(os, src_path, srpath, 1)) == 0) ||
+            (osaz_object_create(osf->osaz, creds, NULL, _osf_realpath(os, dest_path, drpath, 0)) == 0)) {
+        status = gop_failure_status;
+        status.error_code = EACCES;
+        return(gop_failure_status);
+    }
     ftype = 0;  //** Init it to make the compiler happy on the warn
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
@@ -4002,7 +4007,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     dtype = lio_os_local_filetype(dfname);
     if (dtype != 0) {  //** Recursively call our selves and move the dest out of the way
        tbx_random_get_bytes(&ui, sizeof(ui));  //** Make the random name
-       snprintf(dfname2, OS_PATH_MAX, "%s_dmv_%u", dest_path, ui);
+       snprintf(dfname2, OS_PATH_MAX, "%s_mv_%u", dest_path, ui);
        status = osf_move_object(os, creds, dest_path, dfname2, id, 0);
        err = status.op_status;
        if (status.op_status != OP_STATE_SUCCESS) goto fail;
@@ -4014,6 +4019,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     //** Attempt to move the main file entry
     err = rename(sfname, dfname);  //** Move the file/dir
+    if (err) rename_errno = errno;
     log_printf(15, "sfname=%s dfname=%s err=%d\n", sfname, dfname, err);
 
     if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) && (err==0)) { //** File move
@@ -4030,6 +4036,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
         log_printf(15, "ATTR sfname=%s dfname=%s\n", sfname, dfname);
         err = rename(sfname, dfname);  //** Move the attribute directory
         if (err != 0) { //** Got to undo the main file/dir entry if the attr rename fails
+            rename_errno = errno;
             snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
             snprintf(dfname, OS_PATH_MAX, "%s%s", osf->file_path, dest_path);
             rename(dfname, sfname);
@@ -4066,7 +4073,13 @@ fail:
         if (etext2) free(etext2);
     }
 
-    return((err == 0) ? gop_success_status : gop_failure_status);
+    if (!err) {
+        status = gop_success_status;
+    } else {
+        status = gop_failure_status;
+        status.error_code = rename_errno;
+    }
+    return(status);
 }
 
 
