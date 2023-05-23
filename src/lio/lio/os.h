@@ -162,6 +162,8 @@ LIO_API int os_user_locking_tests(char *prefix);
 // Preprocessor constants
 #define OS_PATH_MAX  32768    // ** Max path length
 
+#define OS_SL_OOB_MAGIC      "_^SL^_" // ** Magic prefix to allow out of LFS symlinks
+#define OS_SL_OOB_MAGIC_LEN  6
 
 #define OS_FSCK_MANUAL    0   // ** Manual resolution via fsck_resolve() or user control
 #define OS_FSCK_REMOVE    1   // ** Removes the problem object

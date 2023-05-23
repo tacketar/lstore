@@ -405,7 +405,11 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
 
     if (err == 0) {
         if (flink) {
-            if (flink[0] == '/') { sbuf->st_size += lfs->mount_point_len; }
+            if (flink[0] == '/') {
+                sbuf->st_size += lfs->mount_point_len;
+            } else if (strncmp(flink, OS_SL_OOB_MAGIC, OS_SL_OOB_MAGIC_LEN) == 0) {
+                sbuf->st_size -= OS_SL_OOB_MAGIC_LEN;
+            }
             free(flink);
         }
     }
@@ -1109,6 +1113,9 @@ int lfs_readlink(const char *fname, char *buf, size_t bsize)
             n = snprintf(flink, OS_PATH_MAX, "%s%s", lfs->mount_point, buf);
             memcpy(buf, flink, n+1);
         }
+    } else if (strncmp(buf, OS_SL_OOB_MAGIC, OS_SL_OOB_MAGIC_LEN) == 0) {
+        strcpy(flink, buf + OS_SL_OOB_MAGIC_LEN);
+        strcpy(buf, flink);
     }
 
     return(0);
@@ -1123,6 +1130,7 @@ int lfs_symlink(const char *link, const char *newname)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     const char *link2;
+    char abslink[OS_PATH_MAX];
     int err;
 
     log_printf(1, "link=%s newname=%s\n", link, newname);
@@ -1134,9 +1142,9 @@ int lfs_symlink(const char *link, const char *newname)
     if (link[0] == '/') { //** Got an abs symlink
         if (strncmp(link, lfs->mount_point, lfs->mount_point_len) == 0) { //** abs symlink w/in LFS
             link2 = &(link[lfs->mount_point_len]);
-        } else {
-            log_printf(1, "Oops!  symlink outside LFS mount not supported!  link=%s newname=%s\n", link, newname);
-            return(-EFAULT);
+        } else {  //** It's out of bounds of LFS so need to munge it to let FS know
+            snprintf(abslink, sizeof(abslink)-1, "%s%s", OS_SL_OOB_MAGIC, link); abslink[sizeof(abslink)-1] = '\0';
+            link2 = abslink;
         }
     }
 
