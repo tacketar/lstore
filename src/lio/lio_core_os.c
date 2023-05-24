@@ -814,7 +814,7 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
     lio_mk_mv_rm_t *op = (lio_mk_mv_rm_t *)arg;
     lio_mk_mv_rm_t rm;
     char *dtmp = NULL;
-    gop_op_status_t status;
+    gop_op_status_t status, s2;
     int stype, dtype, n;
     unsigned int ui;
 
@@ -842,8 +842,8 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
         n = strlen(op->dest_path);
         tbx_type_malloc(dtmp, char, n + 100);
         dtmp[n+99] = '\0';
-        tbx_random_get_bytes(&ui, sizeof(ui));  //** MAke the random name
-        snprintf(dtmp, n+100, "%s.mv-%ud", op->dest_path, ui);
+        tbx_random_get_bytes(&ui, sizeof(ui));  //** Make the random name
+        snprintf(dtmp, n+100, "%s.mv-%u", op->dest_path, ui);
         status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->dest_path, dtmp));
         if (status.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
             free(dtmp);
@@ -855,13 +855,19 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
     status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->src_path, op->dest_path));
 
     //** Now clean up
-    if (status.op_status == OP_STATE_SUCCESS) { //** All is good so just remove the original dest if needed
-        if (dtmp != NULL) {
+    if (dtmp) {  //** If this exists we had to move an object out of the way
+        if (status.op_status == OP_STATE_SUCCESS) {  //** All is good so just remove the original
             rm = *op; rm.src_path = dtmp;
             status = lio_remove_object_fn(&rm, id);
-            free(dtmp);
+        } else {  //** A problem occurred so move the object back
+            s2 = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, dtmp, op->dest_path));
+            if (s2.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
+                log_printf(0, "ERROR: Failed to move file back!!! dtmp=%s dest_path=%s error_code=%d\n", dtmp, op->dest_path, s2.error_code);
+            }
         }
     }
+
+    if (dtmp) free(dtmp);
 
     return(status);
 }
