@@ -78,7 +78,7 @@ gop_op_status_t mv_fn(void *arg, int id)
         snprintf(dname, OS_PATH_MAX, "%s/%s", mv->dest_tuple.path, &(src_fname[slot][prefix_len+1]));
         gop = lio_move_object_gop(mv->src_tuple.lc, mv->src_tuple.creds, src_fname[slot], dname);
         gop_set_myid(gop, slot);
-        log_printf(0, "gid=%d i=%d sname=%s dname=%s\n", gop_id(gop), slot, src_fname[slot], dname);
+        log_printf(1, "gid=%d i=%d sname=%s dname=%s\n", gop_id(gop), slot, src_fname[slot], dname);
         gop_opque_add(q, gop);
 
         count++;
@@ -106,6 +106,7 @@ gop_op_status_t mv_fn(void *arg, int id)
 
     while ((gop = opque_waitany(q)) != NULL) {
         slot = gop_get_myid(gop);
+        status = gop_get_status(gop);
         log_printf(15, "slot=%d fname=%s\n", slot, src_fname[slot]);
         if (status.op_status != OP_STATE_SUCCESS) {
             nerr++;
@@ -234,15 +235,14 @@ int main(int argc, char **argv)
                 fprintf(stderr, "ERROR renaming %s to %s!\n", mv->src_tuple.path, dtuple.path);
                 return_code = EINVAL;
             }
-            
+
             //** Cleanup
             lio_path_release(&mv->src_tuple);
             lio_os_regex_table_destroy(mv->regex);
             free(mv);
-            
+
             //** Kick out if needed
             if (err != OP_STATE_SUCCESS)    goto finished;
-            
         } else {
             gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, mv_fn, mv, NULL, 1);
             gop_set_private(gop, mv);
