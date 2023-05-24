@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string.h>
+#include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <tbx/append_printf.h>
 #include <tbx/apr_wrapper.h>
@@ -346,6 +347,8 @@ void osfile_destroy_object_iter(os_object_iter_t *it);
 gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id);
 int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, void *val, int v_size);
 char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int ftype);
+int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth);
+int safe_remove(lio_object_service_fn_t *os, const char *path);
 
 //*************************************************************
 // osaz_attr_filter_apply - Applies any OSAZ filter required on the attr
@@ -364,6 +367,174 @@ void osaz_attr_filter_apply(lio_os_authz_t *osa, char *key, int mode, void **val
     *len = len_out;
     return;
 }
+
+//*************************************************************
+// _copy_file - Copies the file, ie attribute.
+//*************************************************************
+
+int count = 0;
+
+int _copy_file(lio_object_service_fn_t *os, const char *spath, const char *dpath)
+{
+    int infd, outfd, err, n;
+
+    infd = tbx_io_open(spath, O_RDONLY);
+    if (infd < 0) {
+        err = errno;
+        log_printf(0, "ERROR: open spath=%s errno=%d\n", spath, err);
+        return(err);
+    }
+
+    outfd = tbx_io_open(dpath, O_WRONLY|O_CREAT);
+    if (outfd < 0) {
+        err = errno;
+        log_printf(0, "ERROR: open dpath=%s errno=%d\n", dpath, err);
+        close(infd);
+        return(err);
+    }
+
+    n = 1;
+    while (n > 0) {
+        n = sendfile(outfd, infd, NULL, 1024*1024);
+        if ((n == -1) && (errno == EAGAIN)) n = 1;  //**Got an EAGAIN so retry
+    }
+    err = errno;
+
+    tbx_io_close(infd);
+    tbx_io_close(outfd);
+    if (n < 0) {
+        log_printf(0, "ERROR: sendfile dpath=%s errno=%d\n", dpath, err);
+        return(err);
+    }
+
+    return(0);
+}
+
+//*************************************************************
+// _copy_symlink - Copies the symlink
+//*************************************************************
+
+int _copy_symlink(lio_object_service_fn_t *os, const char *spath, const char *dpath)
+{
+    char slink[OS_PATH_MAX];
+    int n, err;
+
+    n = tbx_io_readlink(spath, slink, OS_PATH_MAX);
+    if (n == -1) {
+        err = errno;
+        log_printf(0, "ERROR: readlink. src=%s errno=%d\n", spath, errno);
+        return(err);
+    }
+    slink[n] = '\0';
+
+    err = tbx_io_symlink(slink, dpath);
+    if (err) {
+       err = errno;
+       log_printf(0, "ERROR: symlink. slink=%s dpath=%s errno=%d\n", slink, dpath, errno);
+       return(err);
+    }
+
+    return(0);
+}
+
+//*************************************************************
+// rename_dir - Rename a directory which crosses file systems
+//*************************************************************
+
+int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
+{
+    int err;
+    DIR *dirfd;
+    int ftype;
+    char fname[OS_PATH_MAX];
+    char dname[OS_PATH_MAX];
+    struct dirent *entry;
+
+    err = 0;
+
+    //** 1st make the dest directory
+    err = tbx_io_mkdir(dobj, DIR_PERMS);
+    if (err != 0) {
+        err = errno;
+        log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", sobj, dobj, errno);
+        return(err);
+    }
+
+    //** Now copy all the files
+    dirfd = tbx_io_opendir(sobj);
+    if (dirfd == NULL) {
+        err = errno;
+        log_printf(0, "ERROR: Failed opendir on src. src=%s dest=%s errno=%d\n", sobj, dobj, errno);
+        tbx_io_remove(dobj);
+    }
+
+    //** No iterate over all the objects
+    while ((entry = tbx_io_readdir(dirfd)) != NULL) {
+        if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) continue;
+        snprintf(fname, OS_PATH_MAX, "%s/%s", sobj, entry->d_name);
+        snprintf(dname, OS_PATH_MAX, "%s/%s", dobj, entry->d_name);
+        ftype = lio_os_local_filetype(fname);
+        if (ftype & OS_OBJECT_SYMLINK_FLAG) {  //** Symlink
+            err = _copy_symlink(os, fname, dname);
+            if (err) {
+                log_printf(0, "ERROR: _copy_symlink. src=%s dest=%s errno=%d\n", fname, dname, err);
+                goto cleanup;
+            }
+        } else if (ftype & OS_OBJECT_FILE_FLAG) { //** Normal file
+            err = _copy_file(os, fname, dname);
+            if (err) {
+                log_printf(0, "ERROR: _copy_file. src=%s dest=%s errno=%d\n", fname, dname, err);
+                goto cleanup;
+            }
+        } else {  //** Not handled
+
+        }
+    }
+
+    //** Everything was good so remove the source
+    tbx_io_closedir(dirfd);
+    osf_purge_dir(os, sobj, 0);
+    safe_remove(os, sobj);
+
+    return(0);
+
+cleanup:    //** This is where we jump to to cleanup a failed rename
+    tbx_io_closedir(dirfd);
+    osf_purge_dir(os, dobj, 0);
+    safe_remove(os, dobj);
+    return(err);
+}
+
+
+//*************************************************************
+// rename_object - Renames the object. It will do file copying if needed
+//*************************************************************
+
+int rename_object(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
+{
+    int err, ftype;
+
+    //** See if we get lucky and we're on the same shard
+    err = tbx_io_rename(sobj, dobj);
+    if (err == 0) return(0);
+
+    //** Ok we got an error now check if we can handle it or we pass it back on
+    err = errno;
+    if (err != EXDEV) return(err);  //** We can only handle between shard rename errors
+
+    //** We have to manually copy all the objects
+    ftype = lio_os_local_filetype(sobj);
+    if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory
+        err = rename_dir(os, sobj, dobj);
+        if (err == 0) { //**No issues so remove the source
+            osf_purge_dir(os, sobj, 1);
+            safe_remove(os, sobj);
+        }
+    }
+
+    return(err);
+}
+
 
 
 //*************************************************************
@@ -2163,7 +2334,7 @@ void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd)
 //     is not "/".
 //***********************************************************************
 
-int safe_remove(lio_object_service_fn_t *os, char *path)
+int safe_remove(lio_object_service_fn_t *os, const char *path)
 {
     if (strlen(path) > SAFE_MIN_LEN) {
         return(remove(path));
@@ -2880,7 +3051,7 @@ void *piter_attr_thread(apr_thread_t *th, void *arg)
 //     purge subdirs based o nteh recursion depth
 //***********************************************************************
 
-int osf_purge_dir(lio_object_service_fn_t *os, char *path, int depth)
+int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
 {
     int ftype;
     char fname[OS_PATH_MAX];
@@ -3758,7 +3929,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
     sattr = object_attr_dir(os, osf->file_path, src_path, OS_OBJECT_FILE_FLAG);
 
     //** Move the src attr dir to the hardlink location
-    i = rename(sattr, hattr);
+    i = rename_object(os, sattr, hattr);
     log_printf(0, "rename(%s,%s)=%d\n", sattr, hattr, i);
 
     if (i != 0) {
@@ -3782,7 +3953,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
 
 
     //** Move the source to the hardlink proxy
-    i = rename(sfname, fullname);
+    i = rename_object(os, sfname, fullname);
     log_printf(5, "rename(%s,%s)=%d\n", sfname, fullname, i);
     if (i != 0) {
         log_printf(0, "rename(%s,%s) FAILED!\n", sfname, fullname);
@@ -4018,7 +4189,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     ftype = lio_os_local_filetype(sfname);
 
     //** Attempt to move the main file entry
-    err = rename(sfname, dfname);  //** Move the file/dir
+    err = rename_object(os, sfname, dfname);  //** Move the file/dir
     if (err) rename_errno = errno;
     log_printf(15, "sfname=%s dfname=%s err=%d\n", sfname, dfname, err);
 
@@ -4034,12 +4205,12 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
         free(base);
 
         log_printf(15, "ATTR sfname=%s dfname=%s\n", sfname, dfname);
-        err = rename(sfname, dfname);  //** Move the attribute directory
+        err = rename_object(os, sfname, dfname);  //** Move the attribute directory
         if (err != 0) { //** Got to undo the main file/dir entry if the attr rename fails
             rename_errno = errno;
             snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
             snprintf(dfname, OS_PATH_MAX, "%s%s", osf->file_path, dest_path);
-            rename(dfname, sfname);
+            rename_object(os, dfname, sfname);
         }
     }
 
@@ -4363,7 +4534,7 @@ gop_op_status_t osfile_move_multiple_attrs_fn(void *arg, int id)
             } else {
                 snprintf(sfname, OS_PATH_MAX, "%s/%s", op->fd->attr_dir, op->key_old[i]);
                 snprintf(dfname, OS_PATH_MAX, "%s/%s", op->fd->attr_dir, op->key_new[i]);
-                err = rename(sfname, dfname);
+                err = rename_object(op->os, sfname, dfname);
             }
 
             if (err != 0) {
