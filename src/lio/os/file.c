@@ -378,14 +378,14 @@ int _copy_file(lio_object_service_fn_t *os, const char *spath, const char *dpath
 {
     int infd, outfd, err, n;
 
-    infd = tbx_io_open(spath, O_RDONLY);
+    infd = tbx_io_open(spath, O_RDONLY, FILE_PERMS);
     if (infd < 0) {
         err = errno;
         log_printf(0, "ERROR: open spath=%s errno=%d\n", spath, err);
         return(err);
     }
 
-    outfd = tbx_io_open(dpath, O_WRONLY|O_CREAT);
+    outfd = tbx_io_open(dpath, O_WRONLY|O_CREAT, FILE_PERMS);
     if (outfd < 0) {
         err = errno;
         log_printf(0, "ERROR: open dpath=%s errno=%d\n", dpath, err);
@@ -3223,13 +3223,34 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
         if ((ftype & OS_OBJECT_HARDLINK_FLAG) == 0) {
             osf_purge_dir(os, fattr, 0);
         }
-        remove(fattr);
+        safe_remove(os, fattr);
         free(dir);
         free(base);
 
         if (hard_inode != NULL) {  //** Remove the hard inode as well
+            //** See if we have a sharded inode. If so we need to remove the shard hardlink
+            lio_os_path_split(hard_inode, &dir, &base);
+            snprintf(fattr, OS_PATH_MAX, "%s/%s/%s%s", dir, FILE_ATTR_PREFIX, FILE_ATTR_PREFIX, base);
+            atype = lio_os_local_filetype(fattr);
+            n = -1;
+            if (atype & OS_OBJECT_SYMLINK_FLAG) { //** It's a symlink so get the link for removal
+                n = tbx_io_readlink(fattr, alink, OS_PATH_MAX);
+                if (n > 0) {
+                    alink[n] = '\0';
+                } else {
+                    log_printf(0, "ERROR: hardlink readlink. fname=%s hard=%s errno=%d\n", path, hard_inode, errno);
+                }
+            }
+            free(dir);
+            free(base);
+
             err = osf_object_remove(os, hard_inode);
             free(hard_inode);
+
+            if (n > 0) { //** Remove the shard hardlink directory
+                osf_purge_dir(os, alink, 0);
+                safe_remove(os, alink);
+            }
             return(err);
         }
     } else if (ftype & OS_OBJECT_DIR_FLAG) {  //** A directory
@@ -3688,7 +3709,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     struct stat sbuf;
     FILE *fd;
-    int err, mod;
+    int err, mod, part;
     dev_t dev = 0;
     char *dir, *base;
     char fname[OS_PATH_MAX];
@@ -3766,7 +3787,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
             //** Make the shard directory
             mod = sbuf.st_ino % osf->n_shard_prefix;
-            snprintf(sattr, OS_PATH_MAX, "%s/%d/" LU, osf->shard_prefix[mod], mod, sbuf.st_ino);
+            part = sbuf.st_ino % osf->shard_splits;
+            snprintf(sattr, OS_PATH_MAX, "%s/%d/" LU, osf->shard_prefix[mod], part, sbuf.st_ino);
             err = mkdir(sattr, DIR_PERMS);
             if (err != 0) {
                 log_printf(0, "Error creating object shard attr directory! path=%s full=%s\n", op->src_path, sattr);
@@ -3912,63 +3934,98 @@ gop_op_generic_t *osfile_symlink_object(lio_object_service_fn_t *os, lio_creds_t
 int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int slot, i;
+    int slot, i, n, err;
     ex_id_t id;
     char *sattr, *hattr;
-    char fullname[OS_PATH_MAX], sfname[OS_PATH_MAX];
+    char fullname[OS_PATH_MAX], sfname[OS_PATH_MAX], shattr[OS_PATH_MAX];
 
-    //** IF the src is a symlink we need to get that
+    err = 0;
 
     //** Pick a hardlink location
     id = 0;
     tbx_random_get_bytes(&id, sizeof(id));
-    slot = tbx_atomic_counter(&(osf->hardlink_count)) % osf->hardlink_dir_size;
+    slot = id % osf->hardlink_dir_size;
     snprintf(fullname, OS_PATH_MAX, "%s/%d/" XIDT, osf->hardlink_path, slot, id);
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
     hattr = object_attr_dir(os, "", fullname, OS_OBJECT_FILE_FLAG);
     sattr = object_attr_dir(os, osf->file_path, src_path, OS_OBJECT_FILE_FLAG);
 
-    //** Move the src attr dir to the hardlink location
-    i = rename_object(os, sattr, hattr);
-    log_printf(0, "rename(%s,%s)=%d\n", sattr, hattr, i);
 
-    if (i != 0) {
-        log_printf(0, "rename(%s,%s) FAILED!\n", sattr, hattr);
+    //** Move the src attr dir to the hardlink location
+    if (osf->shard_enable) {  //** If sharding make the attr directory on the shard
+        i = id % osf->n_shard_prefix;
+        n = id % osf->shard_splits;
+        snprintf(shattr, OS_PATH_MAX, "%s/%d/hardlink/" XIDT, osf->shard_prefix[i], n, id);
+        err = rename_object(os, sattr, shattr);  //** Move the attr dir to the shard
+    } else {
+        err = rename_object(os, sattr, hattr);  //** move the attr dir
+    }
+
+    if (err != 0) {
+        log_printf(0, "rename_object(%s,%s) FAILED err=%d!\n", sattr, hattr, err);
         free(hattr);
         free(sattr);
-        return(1);
+        return(err);
+    }
+
+    if (osf->shard_enable) {  //** If sharding we need to add the hardlink->shard attr directory
+        err = tbx_io_symlink(shattr, hattr);
+        if (err != 0) {
+            err = errno;
+            rename_object(os, shattr, sattr);  //** Move the attr dir back
+            log_printf(0, "symlink(%s,%s) FAILED err=%d!\n", shattr, hattr, err);
+            free(hattr);
+            free(sattr);
+            return(err);
+        }
     }
 
     //** Link the src attr dir with the hardlink
-    i = symlink(hattr, sattr);
-    log_printf(0, "symlink(%s,%s)=%d!\n", hattr, sattr, i);
-    if (i != 0) {
-        log_printf(5, "symlink(%s,%s) FAILED!\n", hattr, sattr);
-        free(hattr);
-        free(sattr);
-        return(1);
+    err = tbx_io_symlink(hattr, sattr);
+    if (err != 0) {
+        err = errno;
+        log_printf(0, "symlink(%s,%s) FAILED err=%d!\n", hattr, sattr, errno);
+        goto failed_1;
     }
-    free(hattr);
-    free(sattr);
-
 
     //** Move the source to the hardlink proxy
-    i = rename_object(os, sfname, fullname);
-    log_printf(5, "rename(%s,%s)=%d\n", sfname, fullname, i);
-    if (i != 0) {
-        log_printf(0, "rename(%s,%s) FAILED!\n", sfname, fullname);
-        return(1);
+    err = rename_object(os, sfname, fullname);
+    if (err != 0) {
+        log_printf(0, "rename_object(%s,%s) FAILED! err=%d\n", sfname, fullname, err);
+        goto failed_2;
     }
 
     //** Link the src file to the hardlink proxy
-    i = link(fullname, sfname);
-    log_printf(5, "link(%s,%s)=%d\n", fullname, sfname, i);
-    if (i != 0) {
-        log_printf(0, "link(%s,%s) FAILED!\n", fullname, sfname);
-        return(1);
+    err = link(fullname, sfname);
+    if (err != 0) {
+        err = errno;
+        log_printf(0, "link(%s,%s)=%d FAILED!\n", fullname, sfname, err);
+        goto failed_3;
     }
 
-    return(0);
+    free(hattr);
+    free(sattr);
+
+    return(0);   //** Success so return
+
+    //** Everything below is to undo a failed hardlink
+failed_3:
+    rename_object(os, fullname, sfname);
+
+failed_2:
+    safe_remove(os, sattr);
+
+failed_1:
+    if (osf->shard_enable) {   //** Move the hard attr directory back to the source
+        safe_remove(os, hattr);
+        rename_object(os, shattr, sattr);
+    } else {
+        rename_object(os, hattr, sattr);
+    }
+
+    free(hattr);
+    free(sattr);
+    return(err);
 }
 
 
@@ -6555,6 +6612,16 @@ next:
                     err = mkdir(pname, DIR_PERMS);
                     if (err != 0) {
                         log_printf(0, "ERROR creating shard_prefix split directory! full=%s\n", pname);
+                        os_destroy(os);
+                        os = NULL;
+                        return(NULL);
+                    }
+                }
+                snprintf(pname, OS_PATH_MAX, "%s/%d/hardlink", osf->shard_prefix[i], j);
+                if (lio_os_local_filetype(pname) == 0) {
+                    err = mkdir(pname, DIR_PERMS);
+                    if (err != 0) {
+                        log_printf(0, "ERROR creating shard_prefix hardlink split directory! full=%s\n", pname);
                         os_destroy(os);
                         os = NULL;
                         return(NULL);

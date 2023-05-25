@@ -53,7 +53,9 @@ int osf_store_val(void *src, int src_size, void **dest, int *v_size);
 #define FILE_ATTR_PREFIX "_^FA^_"
 #define FILE_ATTR_PREFIX_LEN 6
 
-#define DIR_PERMS S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH
+#define DIR_PERMS  S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH
+#define FILE_PERMS S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH
+
 #define OSF_LOCK_CHKSUM CHKSUM_MD5
 #define OSF_LOCK_CHKSUM_SIZE MD5_DIGEST_LENGTH
 
