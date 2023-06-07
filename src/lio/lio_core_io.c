@@ -515,7 +515,8 @@ int lio_load_file_handle_attrs(lio_config_t *lc, lio_creds_t *creds, char *fname
     if (val[LFH_KEY_EXNODE] == NULL) err = OP_STATE_FAILURE;
     if (err != OP_STATE_SUCCESS) {
         log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-        if (val[1] != NULL) free(val[1]);
+        if (val[LFH_KEY_EXNODE] != NULL) free(val[LFH_KEY_EXNODE]);
+        if (val[LFH_KEY_DATA] != NULL) free(val[LFH_KEY_DATA]);
         *exnode = *data = NULL;
         *data_size = 0;
         return(-1);
@@ -938,13 +939,18 @@ int _lio_adjust_segment_snap(lio_fd_t *fd)
 //     Tier based on the new size.  The files size itself is not adjusted.
 //     The new_size is justused to determine which tier the data should
 //     be located.
+//
+//  Return - If the data is shuffled it returns 1 otherwise 0 and always
+//     sets teh modified flag on the FH.
 //*************************************************************************
 
-void lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
+int lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
 {
     lio_file_handle_t *fh = fd->fh;
-    int err;
+    int err, changed;
     ex_off_t used;
+
+    changed = 0;
 
     if (do_lock) apr_thread_mutex_lock(fh->lock);
     if (new_size > fh->lc->small_files_in_metadata_max_size) {  //** Needs to be in the segment tier
@@ -955,6 +961,7 @@ void lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
                 //** copy the data to the segment
                 err = _lio_adjust_segment_snap(fd);
                 if (err == OP_STATE_SUCCESS) {
+                    changed = 1;
                     tbx_atomic_set(fh->modified, 1);  //** Flag it as modified
                     _metadata_free(fh);
                 }
@@ -967,6 +974,7 @@ void lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
                 //** Get the data from the segment
                 err = _lio_adjust_data_snap(fd, new_size, &used);
                 if (err == OP_STATE_SUCCESS) {
+                    changed = 1;
                     tbx_atomic_set(fh->modified, 1);  //** Flag it as modified
                     fh->max_data_allocated = new_size;
                     fh->data_size = used;
@@ -981,7 +989,7 @@ void lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
     if (do_lock) apr_thread_mutex_unlock(fh->lock);
 
 
-    return;
+    return(changed);
 }
 
 //*************************************************************************
@@ -1233,6 +1241,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         *op->fd = NULL;
         free(op->path);
         if (data) free(data);
+        if (exnode) free(exnode);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         return(status);
     }
@@ -1247,6 +1256,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             *op->fd = NULL;
             free(op->path);
             if (data) free(data);
+            if (exnode) free(exnode);
             _op_set_status(status, OP_STATE_FAILURE, -EIO);
             notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
             return(status);
@@ -1460,7 +1470,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     lio_segment_errors_t serr;
     ex_off_t final_size;
     apr_time_t now;
-    int n, modified, ftype;
+    int n, modified, ftype, tier_change;
     double dt;
 
     log_printf(1, "path=%s fname=%s ino=" XIDT " modified=" AIT " count=%d remove_on_close=%d\n", fd->path, fd->fh->fname, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count, fd->fh->remove_on_close);
@@ -1513,7 +1523,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     log_printf(5, "starting update process fname=%s modified=%d\n", fd->path, modified);
 
     //** See if we need to change tiers
-    lio_adjust_data_tier(fd, final_size, 0);
+    tier_change = lio_adjust_data_tier(fd, final_size, 0);
+    if (tier_change) modified = 1;  //** If so flag things as changed so it gets updated
 
     //** Ok no one has the file opened so teardown the segment/exnode
     //** IF not modified just tear down and clean up
@@ -1536,11 +1547,12 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
             }
         }
 
+        apr_thread_mutex_unlock(fd->fh->lock);  //** Release the fh->lock since are hoping to kick out
+
         //** Check again that no one else has opened the file
         lio_lock(lc);
         fh->ref_count--;  //** Remove ourselves and destroy fh within the lock
         if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
-            apr_thread_mutex_unlock(fd->fh->lock);
             lio_unlock(lc);
             goto finished;
         }
@@ -1560,16 +1572,14 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
             fh->wq_ctx = NULL;
         }
 
+        //** Dump the write table. We're not on the list and no one is referencing us so no need to lock it
         if (fh->write_table != NULL) {
-            apr_thread_mutex_lock(fd->fh->lock);
             lio_store_and_release_adler32(lc, fd->creds, fh->write_table, fd->ofd, fd->fh->fname);
-            apr_thread_mutex_unlock(fd->fh->lock);
         }
         if (fh->remove_on_close == 1) status = gop_sync_exec_status(lio_remove_gop(lc, fd->creds, fd->fh->fname, NULL, ftype));
         if (fh->fname) free(fh->fname);
         if (fh->data) free(fh->data);
         if (fh->stream) free(fh->stream);
-        apr_thread_mutex_unlock(fd->fh->lock);
         apr_thread_cond_destroy(fh->cond);
         apr_pool_destroy(fh->mpool);
         free(fh);
@@ -1595,12 +1605,14 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     dt /= APR_USEC_PER_SEC;
     log_printf(1, "ATTR_UPDATE fname=%s dt=%lf\n", fd->path, dt);
 
+    //** Release the FH lock now since it's not needed. Anyhow these locks should be acquired in the order: lio_lock->fh_lock
+    apr_thread_mutex_unlock(fd->fh->lock);
+
     lio_lock(lc);  //** MAke sure no one else has opened the file while we were trying to close
     log_printf(1, "fname=%s ref_count=%d\n", fd->path, fh->ref_count);
 
     fh->ref_count--;  //** Ready to tear down so go ahead and decrement and destroy the fh inside the lock if Ok
     if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
-        apr_thread_mutex_unlock(fd->fh->lock);
         lio_unlock(lc);
         goto finished;
     }
@@ -1632,7 +1644,6 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     if (fh->fname) free(fh->fname);
     if (fh->data) free(fh->data);
     if (fh->stream) free(fh->stream);
-    apr_thread_mutex_unlock(fd->fh->lock);
     apr_thread_cond_destroy(fh->cond);
     apr_pool_destroy(fh->mpool);
     free(fh);
@@ -1969,6 +1980,7 @@ gop_op_generic_t *lio_write_gop(lio_fd_t *fd, char *buf, ex_off_t size, off_t of
 
     tbx_tbuf_single(op->buffer, size, buf);
     offset = (off < 0) ? fd->curr_offset : off;
+    if (fd->mode & LIO_APPEND_MODE) { offset = lio_size_fh(fd->fh); }
     ex_iovec_single(op->iov, offset, size);
     return(fd->write_gop(op));
 }
