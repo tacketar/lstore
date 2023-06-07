@@ -180,14 +180,6 @@ try_again:
         }
     }
 
-    //** See if we hit a stray '@' if so flag an error
-    for (j=i+1; j<n; j++) {
-        if (startpath[j] == '@') {
-            ptype = -1;
-            goto kick_out;
-        }
-    }
-
     if ((found == -1) && (uri == 0)) {
         if (startpath[k] == '/') {  //** Didn't find anything else to to parse
             if (path) {
