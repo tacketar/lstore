@@ -43,6 +43,9 @@
 #include <sys/types.h>
 #include <sys/acl.h>
 
+#include <openssl/md5.h>
+#include <tbx/chksum.h>
+
 #include <apr_hash.h>
 #include <apr_network_io.h>
 #include <apr_pools.h>
@@ -458,7 +461,6 @@ int fs_osaz_attr_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 
 int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val, int *v_size, char **symlink, int stat_symlink, int get_lock)
 {
-    fs_open_file_t *fop;
     char *slink;
     char rpath[OS_PATH_MAX];
     int ftype, i;
@@ -505,14 +507,8 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (ftype & OS_OBJECT_DIR_FLAG) return(ftype);  //** No need to update the size on a directory
     if (stat_symlink && (ftype & OS_OBJECT_SYMLINK_FLAG)) return(ftype);  //** No need to update the size if they don't want it
 
-    //** Normal file so see if it's open
-    ino = stat->st_ino;
-    if (get_lock == 1) fs_lock(fs);
-    fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
-    if (fop != NULL) {  //** The file is open so need to override the size
-        lio_update_stat_open_file_size(fs->lc, fop->sid, stat, 1);
-    }
-    if (get_lock == 1) fs_unlock(fs);
+    //** Normal file so see if it's open and if so update the size
+    lio_update_stat_open_file_size(fs->lc, stat->st_ino, stat, 1);
 
     return(ftype);
 }
@@ -1080,11 +1076,11 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     }
 
     //** Ok we can access the file if we made it here
-    gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->internal_locks_max_wait));
+    gop_op_status_t status = gop_sync_exec_status(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->internal_locks_max_wait));
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
     if (fd == NULL) {
-        log_printf(0, "Failed opening file!  path=%s\n", fname);
-        FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO: open failed");
+        log_printf(0, "Failed opening file!  path=%s errno=%d\n", fname, status.error_code);
+        FS_MON_OBJ_DESTROY_MESSAGE("EREMOTEIO: open failed errno=%d", status.error_code);
         errno = EREMOTEIO;
         return(NULL);  //EREMOTEIO
     }
