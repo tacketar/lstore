@@ -2101,6 +2101,8 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
                     pload[pload_count].data = np->curr_data;
                     pload_index[pload_count] = *n_pages;
                     pload_count++;
+                } else {  //** We are growing the file and not a full page so blank it
+                    memset(np->curr_data->ptr, 0, s->page_size);
                 }
             }
 
