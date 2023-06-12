@@ -1190,6 +1190,98 @@ int lfs_statvfs(const char *fname, struct statvfs *sfs)
 }
 
 //*************************************************************************
+// lio_fuse_cap_fn - Dumps the fuse CAP info
+//*************************************************************************
+
+#define IS_CAP(cap, var) (((cap) & (var)) ? 1 : 0)
+#define CAP_MANGLE(cap, conn) IS_CAP(cap, conn->capable), IS_CAP(cap, conn->want)
+#define CAP_PRINTF(fd, cap, conn) fprintf(fd, "#" #cap " : %d - %d\n", CAP_MANGLE(cap, conn)) \
+
+void lio_fuse_cap_info(void *arg, FILE *fd)
+{
+    lio_fuse_t *lfs = arg;
+
+    fprintf(fd, "#FUSE version: %d.%d\n", lfs->conn->proto_major, lfs->conn->proto_minor);
+    fprintf(fd, "#FUSE max_read = %d # 0 == no limit.  Must be specified on the command line, -o max_read=<nn> and on the connection\n\n", lfs->conn->max_read);
+
+    fprintf(fd, "#---- FUSE Caps -- capable - want -------\n");
+#ifdef FUSE_CAP_ASYNC_READ
+    CAP_PRINTF(fd, FUSE_CAP_ASYNC_READ, lfs->conn);
+#endif
+#ifdef FUSE_CAP_POSIX_LOCKS
+    CAP_PRINTF(fd, FUSE_CAP_POSIX_LOCKS, lfs->conn);
+#endif
+#ifdef FUSE_CAP_ATOMIC_O_TRUNC
+    CAP_PRINTF(fd, FUSE_CAP_ATOMIC_O_TRUNC, lfs->conn);
+#endif
+#ifdef FUSE_CAP_EXPORT_SUPPORT
+    CAP_PRINTF(fd, FUSE_CAP_EXPORT_SUPPORT, lfs->conn);
+#endif
+#ifdef FUSE_CAP_DONT_MASK
+    CAP_PRINTF(fd, FUSE_CAP_DONT_MASK, lfs->conn);
+#endif
+#ifdef FUSE_CAP_SPLICE_WRITE
+    CAP_PRINTF(fd, FUSE_CAP_SPLICE_WRITE, lfs->conn);
+#endif
+#ifdef FUSE_CAP_SPLICE_MOVE
+    CAP_PRINTF(fd, FUSE_CAP_SPLICE_MOVE, lfs->conn);
+#endif
+#ifdef FUSE_CAP_SPLICE_READ
+    CAP_PRINTF(fd, FUSE_CAP_SPLICE_READ, lfs->conn);
+#endif
+#ifdef FUSE_CAP_FLOCK_LOCKS
+    CAP_PRINTF(fd, FUSE_CAP_FLOCK_LOCKS, lfs->conn);
+#endif
+#ifdef FUSE_CAP_IOCTL_DIR
+    CAP_PRINTF(fd, FUSE_CAP_IOCTL_DIR, lfs->conn);
+#endif
+#ifdef FUSE_CAP_AUTO_INVAL_DATA
+    CAP_PRINTF(fd, FUSE_CAP_AUTO_INVAL_DATA, lfs->conn);
+#endif
+#ifdef FUSE_CAP_READDIRPLUS
+    CAP_PRINTF(fd, FUSE_CAP_READDIRPLUS, lfs->conn);
+#endif
+#ifdef FUSE_CAP_READDIRPLUS_AUTO
+    CAP_PRINTF(fd, FUSE_CAP_READDIRPLUS_AUTO, lfs->conn);
+#endif
+#ifdef FUSE_CAP_ASYNC_DIO
+    CAP_PRINTF(fd, FUSE_CAP_ASYNC_DIO, lfs->conn);
+#endif
+#ifdef FUSE_CAP_WRITEBACK_CACHE
+    CAP_PRINTF(fd, FUSE_CAP_WRITEBACK_CACHE, lfs->conn);
+#endif
+#ifdef FUSE_CAP_NO_OPEN_SUPPORT
+    CAP_PRINTF(fd, FUSE_CAP_NO_OPEN_SUPPORT, lfs->conn);
+#endif
+#ifdef FUSE_CAP_PARALLEL_DIROPS
+    CAP_PRINTF(fd, FUSE_CAP_PARALLEL_DIROPS, lfs->conn);
+#endif
+#ifdef FUSE_CAP_POSIX_ACL
+    CAP_PRINTF(fd, FUSE_CAP_POSIX_ACL, lfs->conn);
+#endif
+#ifdef FUSE_CAP_HANDLE_KILLPRIV
+    CAP_PRINTF(fd, FUSE_CAP_HANDLE_KILLPRIV, lfs->conn);
+#endif
+#ifdef FUSE_CAP_CACHE_SYMLINKS
+    CAP_PRINTF(fd, FUSE_CAP_CACHE_SYMLINKS, lfs->conn);
+#endif
+#ifdef FUSE_CAP_NO_OPENDIR_SUPPORT
+    CAP_PRINTF(fd, FUSE_CAP_NO_OPENDIR_SUPPORT, lfs->conn);
+#endif
+#ifdef FUSE_CAP_EXPLICIT_INVAL_DATA
+    CAP_PRINTF(fd, FUSE_CAP_EXPLICIT_INVAL_DATA, lfs->conn);
+#endif
+#ifdef FUSE_CAP_EXPIRE_ONLY
+    CAP_PRINTF(fd, FUSE_CAP_EXPIRE_ONLY, lfs->conn);
+#endif
+#ifdef FUSE_IOCTL_COMPAT
+    CAP_PRINTF(fd, FUSE_IOCTL_COMPAT, lfs->conn);
+#endif
+    fprintf(fd, "\n");
+
+}
+
+//*************************************************************************
 // lio_fuse_info_fn - Signal handler to dump info
 //*************************************************************************
 
@@ -1216,7 +1308,12 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "max_readahead = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_readahead, ppbuf));
     fprintf(fd, "max_background = %d\n", lfs->conn->max_background);
     fprintf(fd, "congestion_threshold = %d\n", lfs->conn->congestion_threshold);
+#ifdef FUSE_CAP_WRITEBACK_CACHE
+    fprintf(fd, "enable_writeback_cache = %d\n", IS_CAP(FUSE_CAP_WRITEBACK_CACHE, lfs->conn->want));
+#endif
     fprintf(fd, "\n");
+
+    lio_fuse_cap_info(arg, fd);
 }
 
 //*************************************************************************
@@ -1292,9 +1389,13 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->no_cache_stat_if_file = tbx_inip_get_integer(lfs->lc->ifd, section, "no_cache_stat_if_file", 1);
     lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;
 
+#ifdef FUSE_CAP_WRITEBACK_CACHE
+    n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 1);
+    if (n == 1)
+    conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
+#endif
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
-        conn->capable |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
         conn->want |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
     }
 #endif
