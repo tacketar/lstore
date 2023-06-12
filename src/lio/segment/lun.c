@@ -181,11 +181,15 @@ void _slun_perform_remap(lio_segment_t *seg)
 // slun_row_size_check - Checks the size of eack block in the row.
 //***********************************************************************
 
-int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, apr_time_t *dt, int n_devices, int force_repair, int timeout)
+int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, apr_time_t *dt, int n_devices, int force_repair, int timeout, tbx_log_fd_t *fd)
 {
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
-    int i, n_size, n_missing;
+    int used;
+    int bufsize = 100 + 8*n_devices;
+    char info[bufsize];
+    int i, n_size, n_missing, n_mm;
     int retry[n_devices];
+    int block_size[n_devices];
     data_probe_t *probe[n_devices];
     gop_opque_t *q;
     gop_op_generic_t *gop, *gop2;
@@ -194,6 +198,8 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
     q = gop_opque_new();
 
     memset(retry, 0, sizeof(int)*n_devices);
+    memset(block_size, 0, sizeof(int)*n_devices); n_mm = 0;
+
     start_time = apr_time_now();
     for (i=0; i<n_devices; i++) {
         probe[i] = ds_probe_create(b->block[i].data->ds);
@@ -230,8 +236,8 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
         ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_MAX_SIZE, &psize, sizeof(psize));
         ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_CURR_SIZE, &csize, sizeof(csize));
         seg_size = b->block[i].cap_offset + b->block_len;
-        log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d rcap=%s  size=" XOT " should be block_len=" XOT "\n", segment_id(seg),
-                   b->seg_offset, i, (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), psize, b->block_len);
+        log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d start_block_status=%d rcap=%s  size=" XOT " should be block_len=" XOT " curr_size=" XOT " seg_size=" XOT "\n", segment_id(seg),
+                   b->seg_offset, i, block_status[i], (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), psize, b->block_len, csize, seg_size);
         if (psize < seg_size) {
             if (psize == 0) {  //** Can't access the allocation
                 block_status[i] = 1;
@@ -243,10 +249,25 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
                 block_status[i] = 2;
                 n_size++;
             }
-        } else if (csize != b->block[i].data->size) {   //** Used size isn't right so trigger it to be padded
-            block_status[i] = 2;
-            n_size++;
+        } else if (psize == seg_size) { //** Correct size.  If bigger we ignore since someone else may be doing something else
+            if (b->block[i].data->max_size > psize) {   //** Max size is bigger than the alloc so internally truncate it
+                block_size[i] += 2;
+                b->block[i].data->max_size = psize;
+                n_mm++;
+            }
+            if (b->block[i].data->size > csize) {   //** Used size is bigger than the alloc so internally truncate it
+                block_size[i] += 3;
+                b->block[i].data->size = csize;
+                n_mm++;
+            }
         }
+    }
+
+    if ((n_mm) && fd) {
+        used = 0;
+        tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_size_check (curr!=exnode) :", segment_id(seg));
+        for (i=0; i < s->n_devices; i++) tbx_append_printf(info, &used, bufsize, " %d", block_size[i]);
+        info_printf(fd, 1, "%s\n", info);
     }
 
     if (n_size > 0) {
@@ -591,7 +612,7 @@ gop_op_status_t _seglun_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_s
             b->row_len = dsize * s->n_devices;
             b->seg_end = b->seg_offset + b->row_len - 1;
             for (i=0; i<s->n_devices; i++) block_status[i] = 0;
-            slun_row_size_check(seg, da, b, block_status, NULL, s->n_devices, 1, timeout);
+            slun_row_size_check(seg, da, b, block_status, NULL, s->n_devices, 1, timeout, NULL);
 
             //** Check if we had an error on the size
             berr = 0;
@@ -1913,7 +1934,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
             info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
         }
 
-        nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout);  //** Doesn't modify the block structure
+        nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout, si->fd);  //** Doesn't modify the block structure
         used = 0;
         tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_size_check:", segment_id(si->seg));
         for (i=0; i < s->n_devices; i++) {
