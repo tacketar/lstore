@@ -1390,9 +1390,8 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;
 
 #ifdef FUSE_CAP_WRITEBACK_CACHE
-    n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 1);
-    if (n == 1)
-    conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
+    n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 0);
+    if (n == 1) conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
 #endif
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
