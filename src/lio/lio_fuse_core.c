@@ -1391,11 +1391,23 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 0);
-    if (n == 1) conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
+    if (n == 1) {
+        if (conn->capable & FUSE_CAP_WRITEBACK_CACHE) {
+            conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
+        } else {
+            log_printf(0, "WARNING: FUSE_CAP_WRITEBACK_CACHE not supported by the kernel but requested!\n");
+            fprintf(stderr, "WARNING: FUSE_CAP_WRITEBACK_CACHE not supported by the kernel but requested!\n");
+        }
+    }
 #endif
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
-        conn->want |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
+        if (conn->capable & FUSE_CAP_POSIX_ACL) {
+            conn->want |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
+        } else {
+            log_printf(0, "WARNING: FUSE_CAP_POSIX_ACL not supported by the kernel but requested!\n");
+            fprintf(stderr, "WARNING: FUSE_CAP_POSIX_ACL not supported by the kernel but requested!\n");
+        }
     }
 #endif
 
