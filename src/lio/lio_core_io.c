@@ -2601,6 +2601,7 @@ gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufs
 gop_op_status_t lio_file_copy_op(void *arg, int id)
 {
     lio_cp_file_t *cp = (lio_cp_file_t *)arg;
+    char rp_src[PATH_MAX], rp_dest[PATH_MAX];
     gop_op_status_t status, close_status;
     FILE *sffd, *dffd;
     lio_fd_t *slfd, *dlfd;
@@ -2653,7 +2654,14 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
             if (dffd) tbx_dio_init(dffd);
 
-            if ((sffd == NULL) || (dffd == NULL)) { //** Got an error
+            //** Check if the src and dest are the same if so kick out
+            if (realpath(cp->src_tuple.path, rp_src) == NULL) rp_src[0] = '\0';
+            if (realpath(cp->dest_tuple.path, rp_dest) == NULL) rp_dest[0] = '\0';
+
+            if (strcmp(rp_src, rp_dest) == 0) {  //** Src/dest are the same
+                info_printf(lio_ifd, 0, "ERROR: Source and destination are the same! src=%s dest=%s\n", cp->src_tuple.path, cp->dest_tuple.path);
+                status = gop_failure_status;
+            } else if ((sffd == NULL) || (dffd == NULL)) { //** Got an error
                 if (sffd == NULL) info_printf(lio_ifd, 0, "ERROR: Failed opening source file!  path=%s\n", cp->src_tuple.path);
                 if (dffd == NULL) info_printf(lio_ifd, 0, "ERROR: Failed opening destination file!  path=%s\n", cp->dest_tuple.path);
                 status = gop_failure_status;
@@ -2711,7 +2719,14 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
         already_exists = lio_exists(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path); //** Track if the file was already there for cleanup
         gop_sync_exec(lio_open_gop(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, LIO_READ_MODE, NULL, &slfd, 60));
         gop_sync_exec(lio_open_gop(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path, lio_fopen_flags("w"), NULL, &dlfd, 60));
-        if ((dlfd == NULL) || (slfd == NULL)) { //** Got an error
+
+        if (lio_realpath(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, rp_src) != 0) rp_src[0] = '\0';
+        if (lio_realpath(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path, rp_dest) != 0) rp_dest[0] = '\0';
+
+        if (strcmp(rp_src, rp_dest) == 0) {  //** Src/dest are the same
+            info_printf(lio_ifd, 0, "ERROR: Source and destination are the same! src=%s dest=%s\n", cp->src_tuple.path, cp->dest_tuple.path);
+            status = gop_failure_status;
+        } else if ((dlfd == NULL) || (slfd == NULL)) { //** Got an error
             if (slfd == NULL) info_printf(lio_ifd, 0, "ERROR: Failed opening source file!  path=%s\n", cp->src_tuple.path);
             if (dlfd == NULL) info_printf(lio_ifd, 0, "ERROR: Failed opening destination file!  path=%s\n", cp->dest_tuple.path);
             status = gop_failure_status;
