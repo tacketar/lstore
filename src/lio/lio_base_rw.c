@@ -97,8 +97,15 @@ int stream_read(lio_rw_op_t *op)
     for (i=0; i<op->n_iov; i++) {
         tbx_monitor_obj_message(&fd->fh->mo, "stream_read: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
 
-        if (iov[i].len > stream->max_size) goto failure; //** Kick out if request is bigger than the stream buf
         pend = iov[i].offset + iov[i].len - 1;
+        if (iov[i].len > stream->max_size) { //** Kick out if request is bigger than the stream buf
+            //** See if the streambuf overlaps with the request
+            if ((stream->is_dirty) && (iov[i].offset <= stream->offset_end) && (pend >= stream->offset)) {
+                _stream_flush(fd);  //** Overlaps with a dirty stream buffer so flush before kicking out
+            }
+            goto failure;
+        }
+
         if ((iov[i].offset >= stream->offset) && (pend <= stream->offset_end)) { //** Full overlap
             dn = iov[i].offset - stream->offset;
             tbx_tbuf_copy(&(stream->tbuf), dn, buffer, boff, iov[i].len, 1);
@@ -106,7 +113,7 @@ int stream_read(lio_rw_op_t *op)
             //** See if we can copy anything from the existing buffer
             len = iov[i].len;
             dm = 0;
-            if ((iov[i].offset >= stream->offset) && (iov[i].offset < stream->offset_end)) { //** partial
+            if ((iov[i].offset >= stream->offset) && (iov[i].offset <= stream->offset_end)) { //** partial
                 dn = iov[i].offset - stream->offset;
                 dm = stream->offset_end - iov[i].offset + 1;
                 if (dm) tbx_tbuf_copy(&(stream->tbuf), dn, buffer, boff, dm, 1);
@@ -122,7 +129,7 @@ int stream_read(lio_rw_op_t *op)
             stream->used = stream->offset_end - stream->offset + 1;
             siov.offset = iov[i].offset + dm;
             siov.len = stream->used;
-tbx_monitor_obj_message(&fd->fh->mo, "stream_read: i=%d offset=" XOT " len=" XOT " GOP_SYNC_EXEC", i, iov[i].offset, iov[i].len);
+            tbx_monitor_obj_message(&fd->fh->mo, "stream_read: i=%d offset=" XOT " len=" XOT " GOP_SYNC_EXEC", i, iov[i].offset, iov[i].len);
             if (gop_sync_exec(segment_read(fd->fh->seg, lc->da, op->rw_hints, 1, &siov, &(stream->tbuf), 0, lc->timeout)) != OP_STATE_SUCCESS) goto failure;
             tbx_tbuf_copy(&(stream->tbuf), 0, buffer, boff+dm, len, 1);
         }
@@ -158,13 +165,9 @@ int stream_write(lio_rw_op_t *op)
         tbx_monitor_obj_message(&fd->fh->mo, "stream_write: i=%d offset=" XOT " len=" XOT, i, iov[i].offset, iov[i].len);
         pend = iov[i].offset + iov[i].len - 1;
         if (iov[i].len > stream->max_size) { //** Kick out if request is bigger than the stream buf
-            if (stream->is_dirty == 0) goto failure;  //** If not dirty kick out
-
             //** See if we need to flush due to a partial overlap
-            if (((iov[i].offset <= stream->offset) && (pend >= stream->offset)) ||  //**lo-side overlap
-                ((iov[i].offset <= stream->offset_end) && (pend >= stream->offset_end)) || //** Hi side overlap
-                ((iov[i].offset >= stream->offset) && (pend <= stream->offset_end))) { //** Full overlap
-                _stream_flush(fd);
+            if ((stream->is_dirty) && (iov[i].offset <= stream->offset_end) && (pend >= stream->offset)) {
+                _stream_flush(fd);  //** Overlaps with a dirty stream buffer so flush before kicking out
             }
             goto failure;   //** Now we can kick out since we flushed the data if needed.
         }
