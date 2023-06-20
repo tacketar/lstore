@@ -264,6 +264,8 @@ struct lio_config_t {
     ex_off_t readahead;
     ex_off_t readahead_trigger;
     ex_off_t stream_buffer_max_size;
+    ex_off_t stream_buffer_min_size;
+    ex_off_t stream_buffer_total_size;
     ex_off_t small_files_in_metadata_max_size;
     ex_off_t uuid;
     int calc_adler32;

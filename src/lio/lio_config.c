@@ -88,6 +88,8 @@ lio_config_t lio_default_options = {
     .readahead = 0,
     .readahead_trigger = 0,
     .stream_buffer_max_size = 0,
+    .stream_buffer_min_size = 0,
+    .stream_buffer_total_size = 0,
     .small_files_in_metadata_max_size = 0,
     .tpc_unlimited_count = 300,
     .tpc_max_recursion = 10,
@@ -189,6 +191,8 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "readahead = %s\n", tbx_stk_pretty_print_int_with_scale(lio->readahead, text));
     fprintf(fd, "readahead_trigger = %s\n", tbx_stk_pretty_print_int_with_scale(lio->readahead_trigger, text));
     fprintf(fd, "stream_buffer_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_max_size, text));
+    fprintf(fd, "stream_buffer_min_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_min_size, text));
+    fprintf(fd, "stream_buffer_total_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_total_size, text));
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
     fprintf(fd, "tpc_unlimited = %d\n", lio->tpc_unlimited_count);
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
@@ -1217,6 +1221,8 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->readahead = tbx_inip_get_integer(lio->ifd, section, "readahead", lio_default_options.readahead);
     lio->readahead_trigger = tbx_inip_get_integer(lio->ifd, section, "readahead_trigger", lio_default_options.readahead_trigger);
     lio->stream_buffer_max_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_max_size", lio_default_options.stream_buffer_max_size);
+    lio->stream_buffer_min_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_min_size", lio_default_options.stream_buffer_min_size);
+    lio->stream_buffer_total_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_total_size", lio_default_options.stream_buffer_total_size);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
     lio->special_file_prefix = tbx_inip_get_string(lio->ifd, section, "special_file_prefix", lio_default_options.special_file_prefix);
 

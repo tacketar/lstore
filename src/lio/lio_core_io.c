@@ -1133,7 +1133,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     lio_fd_t *fd;
     char *exnode, *data;
     ex_id_t ino;
-    ex_off_t data_size, fsize;
+    ex_off_t data_size, fsize, bsize, n;
     lio_exnode_exchange_t *exp;
     gop_op_status_t status;
     int dtype, err, exec_flag, is_special, rw_mode, do_lock, ilock_mode;
@@ -1359,13 +1359,20 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     tbx_monitor_obj_reference_chain(&(fh->mo));
 
     if ((lc->stream_buffer_max_size > 0) && (fh->is_special == 0)) {  //** See if we are enabling a stream buffeer
-        int n = sizeof(stream_buf_t) + lc->stream_buffer_max_size;
+        //** Determine the buffer size based on the current load.  The total size is not really a cap but a tuning parameter
+        n = tbx_list_key_count(lc->open_index);
+        bsize = lc->stream_buffer_max_size;
+        if ((lc->stream_buffer_total_size > 0) && ((lc->stream_buffer_max_size * n) > lc->stream_buffer_total_size)) {
+            bsize = lc->stream_buffer_total_size / n;
+            if (bsize < lc->stream_buffer_min_size) bsize = lc->stream_buffer_min_size;
+        }
+        n = sizeof(stream_buf_t) + bsize;
         fh->stream = malloc(n);
         memset(fh->stream, 0, n);
         fh->stream->offset = 0;
         fh->stream->offset_end = -1;
         fh->stream->used = 0;
-        fh->stream->max_size = lc->stream_buffer_max_size;
+        fh->stream->max_size = bsize;
         tbx_tbuf_single(&(fh->stream->tbuf), fh->stream->max_size, fh->stream->buf);
     }
 
