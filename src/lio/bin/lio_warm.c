@@ -514,9 +514,8 @@ void *setattr_thread(apr_thread_t *th, void *data)
     int running_max = 1000;
     int n_max = 1000;
     char *fname[n_max];
-    char *etext, *fn;
+    char *fn;
 
-    etext = NULL;
     opque_start_execution(q);
 
     running = 0;
@@ -545,7 +544,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
             }
 
             running++;
-            gop = lio_setattr_gop(lio_gc, lio_gc->creds, fname[i], NULL, "os.timestamp.system.warm", (void *)etext, 0);
+            gop = lio_setattr_gop(lio_gc, lio_gc->creds, fname[i], NULL, "os.timestamp.system.warm", (void *)lio_gc->host_id, lio_gc->host_id_len);
             gop_set_private(gop, fname[i]);
             gop_opque_add(q, gop);
         }

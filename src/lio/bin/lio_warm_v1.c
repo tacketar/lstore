@@ -229,9 +229,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
     mod = w->inode % n_partitions;
     warm_put_inode(results->p[mod]->inode, w->inode, state, nfailed, w->tuple.path);
 
-    etext = NULL;
-    i = 0;
-    if (do_setattr) lio_setattr(lio_gc, w->tuple.creds, w->tuple.path, NULL, "os.timestamp.system.warm", (void *)etext, i);
+    if (do_setattr) lio_setattr(lio_gc, w->tuple.creds, w->tuple.path, NULL, "os.timestamp.system.warm", (void *)w->tuple.lc->host_id, w->tuple.lc->host_id_len);
 
     gop_opque_free(q, OP_DESTROY);
 

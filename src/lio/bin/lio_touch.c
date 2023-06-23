@@ -53,7 +53,7 @@ gop_op_status_t touch_fn(void *arg, int id)
 
     ftype = lio_exists(tuple->lc, tuple->creds, tuple->path);
     if (ftype > 0) { //** The file exists so just update the modified attribute
-        err = gop_sync_exec(lio_setattr_gop(tuple->lc, tuple->creds, tuple->path, NULL, "os.timestamp.system.modify_data", NULL, 0));
+        err = gop_sync_exec(lio_setattr_gop(tuple->lc, tuple->creds, tuple->path, NULL, "os.timestamp.system.modify_data", tuple->lc->host_id, tuple->lc->host_id_len));
         if (err != OP_STATE_SUCCESS) {
             status.op_status = OP_STATE_FAILURE;
             status.error_code = 1;

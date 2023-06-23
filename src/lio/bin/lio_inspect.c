@@ -891,8 +891,8 @@ gop_op_status_t inspect_task(void *arg, int id)
         val[0] = NULL;
         v_size[0] = 0;
         keys[0] = "os.timestamp.system.inspect";
-        val[1] = NULL;
-        v_size[1] = -1;
+        val[1] = w->tuple.lc->host_id;
+        v_size[1] = w->tuple.lc->host_id_len;
         keys[1] = "system.inspect_errors";  //** Remove the system.*_errors
         val[2] = NULL;
         v_size[2] = -1;
@@ -940,8 +940,8 @@ gop_op_status_t inspect_task(void *arg, int id)
         lio_exnode_exchange_destroy(exp_out);
     } else {
         n = 1;
-        val[0] = NULL;
-        v_size[0] = 0;
+        val[0] = w->tuple.lc->host_id;
+        v_size[0] = w->tuple.lc->host_id_len;
         keys[0] = "os.timestamp.system.inspect";
         if (status.error_code & (INSPECT_RESULT_SOFT_ERROR|INSPECT_RESULT_HARD_ERROR)) {
             keys[1] = "system.inspect_errors";
