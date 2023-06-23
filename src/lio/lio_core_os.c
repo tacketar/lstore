@@ -285,28 +285,21 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     char *val[_n_lio_create_keys];
     gop_op_status_t status;
     int v_size[_n_lio_create_keys];
-    int err;
+    int err, ll;
     int ex_key = 5;
 
     status = gop_success_status;
 
+    ll = 0;
     val[ex_key] = NULL;
 
     log_printf(15, "START op->ex=%p !!!!!!!!!\n fname=%s\n",  op->ex, op->src_path);
 
     //** Sanity check the type is supported
     if (op->type & OS_OBJECT_UNSUPPORTED_FLAG) {
-        log_printf(15, "ERROR Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
+        log_printf(ll, "ERROR Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
         status = gop_failure_status;
-        goto fail_bad;
-    }
-
-    //** Make the base object
-    err = gop_sync_exec(os_create_object(op->lc->os, op->creds, op->src_path, op->type, op->id));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR creating object fname=%s\n", op->src_path);
-        status = gop_failure_status;
-        goto fail_bad;
+        goto fail;
     }
 
     //** Get the parent exnode to dup
@@ -316,7 +309,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
 
         err = gop_sync_exec(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(15, "ERROR opening parent=%s\n", dir);
+            log_printf(ll, "ERROR opening parent=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -326,7 +319,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         v_size[0] = -op->lc->max_attr;
         err = gop_sync_exec(os_get_attr(op->lc->os, op->creds, fd, "system.exnode", (void **)&(val[ex_key]), &(v_size[0])));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(15, "ERROR opening parent=%s\n", dir);
+            log_printf(ll, "ERROR getting parent exnode parent=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -335,7 +328,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         //** Close the parent
         err = gop_sync_exec(os_close_object(op->lc->os, fd));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(15, "ERROR closing parent fname=%s\n", dir);
+            log_printf(ll, "ERROR closing parent fname=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -363,7 +356,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         exp = lio_exnode_exchange_text_parse(val[ex_key]);
         ex = lio_exnode_create();
         if (lio_exnode_deserialize(ex, exp, op->lc->ess_nocache) != 0) {
-            log_printf(15, "ERROR parsing parent exnode src_path=%s\n", op->src_path);
+            log_printf(ll, "ERROR parsing parent exnode src_path=%s\n", op->src_path);
             status = gop_failure_status;
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
@@ -374,7 +367,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         //** Execute the clone operation
         err = gop_sync_exec(lio_exnode_clone_gop(op->lc->tpc_unlimited, ex, op->lc->da, &cex, NULL, CLONE_STRUCTURE, op->lc->timeout));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(15, "ERROR cloning parent src_path=%s\n", op->src_path);
+            log_printf(ll, "ERROR cloning parent src_path=%s\n", op->src_path);
             status = gop_failure_status;
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
@@ -394,21 +387,18 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     }
 
 
-    //** Open the object so I can add the required attributes
-    err = gop_sync_exec(os_open_object(op->lc->os, op->creds, op->src_path, OS_MODE_WRITE_IMMEDIATE, op->id, &fd, op->lc->timeout));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR opening object fname=%s\n", op->src_path);
-        status = gop_failure_status;
-        goto fail;
-    }
-
     //** Now add the required attributes
     val[0] = an_cred_get_id(op->creds, &v_size[0]);
-    val[1] = op->id;
-    v_size[1] = (op->id == NULL) ? 0 : strlen(op->id);
-    val[2] = op->id;
+    if (op->id) {
+        val[1] = op->id;
+        v_size[1] = strlen(op->id);
+    } else {
+        val[1] = op->lc->host_id;
+        v_size[1] = op->lc->host_id_len;
+    }
+    val[2] = val[1];
     v_size[2] = v_size[1];
-    val[3] = op->id;
+    val[3] = val[1];
     v_size[3] = v_size[1];
     ino = 0;
     generate_ex_id(&ino);
@@ -422,24 +412,14 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     log_printf(15, "NEW ino=%s exnode=%s\n", val[4], val[ex_key]);
     tbx_log_flush();
 
-    err = gop_sync_exec(os_set_multiple_attrs(op->lc->os, op->creds, fd, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
+    //** Make the object with attrs
+    err = gop_sync_exec(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR setting default attr fname=%s\n", op->src_path);
-        status = gop_failure_status;
-    }
-
-
-    //** Close the file
-    err = gop_sync_exec(os_close_object(op->lc->os, fd));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR closing object fname=%s\n", op->src_path);
+        log_printf(ll, "ERROR creating object fname=%s\n", op->src_path);
         status = gop_failure_status;
     }
 
 fail:
-    if (status.op_status != OP_STATE_SUCCESS) gop_sync_exec(os_remove_object(op->lc->os, op->creds, op->src_path));
-
-fail_bad:
     if (val[ex_key] != NULL) free(val[ex_key]);
 
     return(status);
@@ -1110,28 +1090,10 @@ gop_op_generic_t *lio_get_multiple_attrs_fd_gop(lio_config_t *lc, lio_creds_t *c
 
 int lio_get_multiple_attrs(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n_keys, int no_cache_attrs_if_file)
 {
-    int err, serr;
-    os_fd_t *fd;
-
-    err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE|no_cache_attrs_if_file, id, &fd, lc->timeout));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR opening object=%s\n", path);
-        return(err);
-    }
+    int err;
 
     //** IF the attribute doesn't exist *val == NULL an *v_size = 0
-    serr = gop_sync_exec(os_get_multiple_attrs(lc->os, creds, fd, key, val, v_size, n_keys));
-
-    //** Close the parent
-    err = gop_sync_exec(os_close_object(lc->os, fd));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR closing object=%s\n", path);
-    }
-
-    if (serr != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR getting attributes object=%s\n", path);
-        err = OP_STATE_FAILURE;
-    }
+    err = gop_sync_exec(os_get_multiple_attrs_immediate(lc->os, creds, (char *)path, key, val, v_size, n_keys));
 
     return(err);
 }
@@ -1301,26 +1263,11 @@ gop_op_generic_t *lio_getattr_gop(lio_config_t *lc, lio_creds_t *creds, const ch
 
 int lio_multiple_setattr_op_real(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id, char **key, void **val, int *v_size, int n)
 {
-    int err, serr;
-    os_fd_t *fd;
+    int err;
 
-    err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE, id, &fd, lc->timeout));
+    err = gop_sync_exec(os_set_multiple_attrs_immediate(lc->os, creds, (char *)path, key, val, v_size, n));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR opening object=%s\n", path);
-        return(err);
-    }
-
-    serr = gop_sync_exec(os_set_multiple_attrs(lc->os, creds, fd, key, val, v_size, n));
-
-    //** Close the parent
-    err = gop_sync_exec(os_close_object(lc->os, fd));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR closing object=%s\n", path);
-    }
-
-    if (serr != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR setting attributes object=%s\n", path);
-        err = OP_STATE_FAILURE;
     }
 
     return(err);

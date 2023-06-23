@@ -154,6 +154,7 @@ typedef struct {
     lio_object_service_fn_t *os;
     osfile_fd_t *fd;
     lio_creds_t *creds;
+    char *path;
     char *realpath;
     lio_os_authz_local_t  *ug;
     char **key;
@@ -285,6 +286,10 @@ typedef struct {
     lio_creds_t *creds;
     char *src_path;
     char *dest_path;
+    char **key;
+    void **val;
+    int *v_size;
+    int n_keys;
     char *id;
     int type;
 } osfile_mk_mv_rm_t;
@@ -3712,13 +3717,23 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     int err, mod, part;
     dev_t dev = 0;
     char *dir, *base;
+    char *etext1, *etext2;
     char fname[OS_PATH_MAX];
     char fattr[OS_PATH_MAX];
     char sattr[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
     apr_thread_mutex_t *lock;
+    gop_op_status_t status, op_status;
+    osfile_attr_op_t op_attr;
+    osfile_open_op_t op_open;
+    osfile_fd_t *osfd;
+
+    status = gop_failure_status;
 
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rpath, 0)) == 0)  return(gop_failure_status);
+
+    etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
+    etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
@@ -3736,14 +3751,16 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             }
             if (err == -1) {
                 osf_obj_unlock(lock);
-                return(gop_failure_status);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- mknod failed fname=%s\n", op->type, etext1, etext2, fname);
+                goto failure;
             }
             tbx_io_close(err);
         } else {
             fd = tbx_io_fopen(fname, "w");
             if (fd == NULL) {
                 osf_obj_unlock(lock);
-                return(gop_failure_status);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- fopen failed fname=%s\n", op->type, etext1, etext2, fname);
+                goto failure;
             }
             tbx_io_fclose(fd);
         }
@@ -3762,21 +3779,18 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             free(dir);
             free(base);
             osf_obj_unlock(lock);
-            return(gop_failure_status);
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making fattr dir fattr=%s\n", op->type, etext1, etext2, fattr);
+            goto failure;
         } else {
             free(dir);
             free(base);
         }
-        char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
-        char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
-        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
-        if (etext1) free(etext1);
-        if (etext2) free(etext2);
     } else {  //** Directory object
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
             osf_obj_unlock(lock);
-            return(gop_failure_status);
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s\n", op->type, etext1, etext2, fname);
+            goto failure;
         }
 
         //** Also need to make the attributes directory
@@ -3794,7 +3808,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 log_printf(0, "Error creating object shard attr directory! path=%s full=%s\n", op->src_path, sattr);
                 safe_remove(op->os, fname);
                 osf_obj_unlock(lock);
-                return(gop_failure_status);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir sattr=%s\n", op->type, etext1, etext2, sattr);
+                goto failure;
             }
 
             //** And symlink it in
@@ -3804,7 +3819,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 safe_remove(op->os, fname);
                 safe_remove(op->os, sattr);
                 osf_obj_unlock(lock);
-                return(gop_failure_status);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir symlink sattr=%s fattr=%s\n", op->type, etext1, etext2, sattr, fattr);
+                goto failure;
             }
         } else {
             err = mkdir(fattr, DIR_PERMS);
@@ -3812,21 +3828,76 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
                 safe_remove(op->os, fname);
                 osf_obj_unlock(lock);
-                return(gop_failure_status);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory fattr dir fattr=%s\n", op->type, etext1, etext2, fattr);
+                goto failure;
             }
         }
-        char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', rpath);
-        char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
-        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
-        if (etext1) free(etext1);
-        if (etext2) free(etext2);
-
     }
 
     osf_obj_unlock(lock);
 
+    if (op->n_keys == 0) goto success;        //** Kick out if no attrs to set.
+
+    status = gop_success_status;
+
+    //** Now set the attrs
+    memset(&op_open, 0, sizeof(op_open));
+    op_open.os = op->os;
+    op_open.creds = op->creds;
+    op_open.path = strdup(op->src_path);
+    op_open.realpath = rpath;
+    op_open.id = op->id;
+    op_open.fd = &osfd;
+    op_open.mode = OS_MODE_READ_IMMEDIATE;
+    op_open.uuid = 0;
+    tbx_random_get_bytes(&(op_open.uuid), sizeof(op_open.uuid));
+    op_open.max_wait = 0;
+
+    op_status = osfile_open_object_fn(&op_open, 0);
+    if (op_status.op_status != OP_STATE_SUCCESS) {
+        status.op_status = OP_STATE_FAILURE;
+        status.error_code = op->n_keys;
+        notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed\n", op->type, etext1, etext2);
+    } else {
+        memset(&op_attr, 0, sizeof(op_attr));
+        op_attr.os = op->os;
+        op_attr.creds = op->creds;
+        op_attr.fd = osfd;
+        op_attr.key = op->key;
+        op_attr.val = op->val;
+        op_attr.v_size = op->v_size;
+        op_attr.n = op->n_keys;
+
+        op_status = osf_set_multiple_attr_fn(&op_attr, 0);
+        if (op_status.op_status != OP_STATE_SUCCESS) {
+            status.op_status = OP_STATE_FAILURE;
+            status.error_code = op->n_keys;
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- setattr failed n_keys=%d\n", op->type, etext1, etext2, op->n_keys);
+        }
+
+        op_open.cfd = osfd;
+        osfile_close_object_fn((void *)&op_open, 0);  //** Got to close it as well
+    }
+
+    if (status.op_status != OP_STATE_SUCCESS) { //** Got an error so clean up
+        err = osf_object_remove(op->os, fname);
+        goto failure;
+    }
+
+success:
+    notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
+    if (etext1) free(etext1);
+    if (etext2) free(etext2);
+
     return(gop_success_status);
+
+failure:
+    if (etext1) free(etext1);
+    if (etext2) free(etext2);
+
+    return(status);
 }
+
 
 //***********************************************************************
 // osfile_create_object - Creates an object
@@ -3844,6 +3915,30 @@ gop_op_generic_t *osfile_create_object(lio_object_service_fn_t *os, lio_creds_t 
     op->src_path = strdup(path);
     op->type = type;
     op->id = (id != NULL) ? strdup(id) : NULL;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_create_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
+}
+
+//***********************************************************************
+// osfile_create_object_with_attrs - Creates an object with default attrs
+//***********************************************************************
+
+gop_op_generic_t *osfile_create_object_with_attrs(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type, char *id, char **key, void **val, int *v_size, int n)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_mk_mv_rm_t *op;
+
+    tbx_type_malloc_clear(op, osfile_mk_mv_rm_t, 1);
+
+    op->os = os;
+    op->creds = creds;
+    op->src_path = strdup(path);
+    op->type = type;
+    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->key = key;
+    op->val = val;
+    op->v_size = v_size;
+    op->n_keys = n;
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_create_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -4891,6 +4986,113 @@ gop_op_generic_t *osfile_get_multiple_attrs(lio_object_service_fn_t *os, lio_cre
 }
 
 //***********************************************************************
+// osf_get_multiple_attr_immediate_fn - Does the actual attribute retrieval in immediate mode
+//***********************************************************************
+
+gop_op_status_t osf_get_multiple_attr_immediate_fn(void *arg, int id)
+{
+    osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    int err, i, j, atype, v_start[op->n], oops;
+    gop_op_status_t status;
+    osfile_open_op_t op_open;
+    osfile_fd_t *fd;
+    char rpath[OS_PATH_MAX];
+    gop_op_status_t op_status;
+
+    status = gop_success_status;
+
+    fd = NULL;
+
+    //** Open the object
+    memset(&op_open, 0, sizeof(op_open));
+    op_open.os = op->os;
+    op_open.creds = op->creds;
+    op_open.path = strdup(op->path);
+    _osf_realpath(op->os, op->path, rpath, 0);
+    op_open.realpath = rpath;
+    op_open.id = strdup(an_cred_get_descriptive_id(op->creds, NULL));
+    op_open.fd = &fd;
+    op_open.mode = OS_MODE_READ_IMMEDIATE;
+    op_open.uuid = 0;
+    tbx_random_get_bytes(&(op_open.uuid), sizeof(op_open.uuid));
+    op_open.max_wait = 0;
+
+    op_status = osfile_open_object_fn(&op_open, 0);
+    if (op_status.op_status != OP_STATE_SUCCESS) {
+        status = op_status;
+        notify_printf(osf->olog, 1, op->creds, "ERROR: GETATTR(%s, %s) -- open failed\n", op->path, rpath);
+        return(status);
+    }
+
+    osf_internal_fd_lock(op->os, fd);
+
+    err = 0;
+    oops = 0;
+    for (i=0; i<op->n; i++) {
+        v_start[i] = op->v_size[i];
+        atype = 0;
+        err += osf_get_attr(op->os, op->creds, fd, op->key[i], (void **)&(op->val[i]), &(op->v_size[i]), &atype, op->ug, fd->realpath, 0);
+        if (op->v_size[i] != 0) {
+            log_printf(15, "PTR i=%d key=%s val=%s v_size=%d atype=%d err=%d\n", i, op->key[i], (char *)op->val[i], op->v_size[i], atype, err);
+        } else {
+            log_printf(15, "PTR i=%d key=%s val=NULL v_size=%d atype=%d err=%d\n", i, op->key[i], op->v_size[i], atype, err);
+        }
+        if ((atype & OS_OBJECT_SYMLINK_FLAG) > 0) {
+            oops=1;
+            break;
+        }
+    }
+
+    osf_internal_fd_unlock(op->os, fd);
+
+    if (oops == 1) { //** Multi object locking required
+        for (j=0; j<=i; j++) {  //** Clean up any data allocated
+            if (v_start[i] < 0) {
+                if (op->val[i] != NULL) {
+                    free(op->val[i]);
+                    op->val[i] = NULL;
+                }
+            }
+            op->v_size[i] = v_start[i];
+        }
+
+        op->fd = fd;
+        status = osf_get_ma_links(arg, id, i);
+    }
+
+    //** Close the file
+    op_open.cfd = fd;
+    osfile_close_object_fn((void *)&op_open, 0);  //** Got to close it as well
+
+    return(status);
+}
+
+//***********************************************************************
+// osfile_get_multiple_attrs_immediate - Retreives multiple object attribute in immediate mode
+//   If *v_size < 0 then space is allocated up to a max of abs(v_size)
+//   and upon return *v_size contains the bytes loaded
+//***********************************************************************
+
+gop_op_generic_t *osfile_get_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_attr_op_t *op;
+
+    tbx_type_malloc_clear(op, osfile_attr_op_t, 1);
+
+    op->os = os;
+    op->creds = creds;
+    op->path = path;
+    op->key = key;
+    op->val = val;
+    op->v_size= v_size;
+    op->n = n;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_immediate_fn, (void *)op, free, 1));
+}
+
+//***********************************************************************
 // lowlevel_set_attr - Lowlevel routione to set an attribute without cred checks
 //     Designed for use with timestamps or other auto touched fields
 //***********************************************************************
@@ -5060,6 +5262,92 @@ gop_op_generic_t *osfile_set_multiple_attrs(lio_object_service_fn_t *os, lio_cre
     op->n = n;
 
     return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_fn, (void *)op, free, 1));
+}
+
+
+//***********************************************************************
+// osf_set_multiple_attr_immediate_fn - Does the actual attribute setting for the quick setattr
+//***********************************************************************
+
+gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
+{
+    osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
+    int err, i, atype, n_locks;
+    apr_thread_mutex_t *lock_table[op->n+1];
+    gop_op_status_t status;
+    osfile_fd_t *fd;
+    osfile_open_op_t op_open;
+    char rpath[OS_PATH_MAX];
+    gop_op_status_t op_status;
+
+    status = gop_success_status;
+
+    fd = NULL;
+
+    //** Open the object
+    memset(&op_open, 0, sizeof(op_open));
+    op_open.os = op->os;
+    op_open.creds = op->creds;
+    op_open.path = strdup(op->path);
+    _osf_realpath(op->os, op->path, rpath, 0);
+    op_open.realpath = rpath;
+    op_open.id = strdup(an_cred_get_descriptive_id(op->creds, NULL));
+    op_open.fd = &fd;
+    op_open.mode = OS_MODE_WRITE_IMMEDIATE;
+    op_open.uuid = 0;
+    tbx_random_get_bytes(&(op_open.uuid), sizeof(op_open.uuid));
+    op_open.max_wait = 0;
+
+    op_status = osfile_open_object_fn(&op_open, 0);
+    if (op_status.op_status != OP_STATE_SUCCESS) {
+        status = op_status;
+        notify_printf(osf->olog, 1, op->creds, "ERROR: SETATTR(%s, %s) -- open failed\n", op->path, rpath);
+        return(status);
+    }
+
+    //** Set the attributes
+    osf_multi_attr_lock(op->os, op->creds, fd, op->key, op->n, 0, lock_table, &n_locks);
+
+    err = 0;
+    for (i=0; i<op->n; i++) {
+        err += osf_set_attr(op->os, op->creds, fd, op->key[i], op->val[i], op->v_size[i], &atype, 0);
+    }
+
+    os_log_warm_if_needed(osf->olog, op->creds, fd->realpath, fd->ftype, op->n, op->key, op->v_size);
+
+    osf_multi_unlock(lock_table, n_locks);
+
+    //** Close the file
+    op_open.cfd = fd;
+    osfile_close_object_fn((void *)&op_open, 0);  //** Got to close it as well
+
+    if (err != 0) status = gop_failure_status;
+
+    return(status);
+}
+
+//***********************************************************************
+// osfile_set_multiple_attrs_immediate - Sets multiple object attributes for a quick setattr
+//   If val[i] == NULL for the attribute is deleted
+//***********************************************************************
+
+gop_op_generic_t *osfile_set_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_attr_op_t *op;
+
+    tbx_type_malloc(op, osfile_attr_op_t, 1);
+
+    op->os = os;
+    op->creds = creds;
+    op->path = path;
+    op->key = key;
+    op->val = val;
+    op->v_size = v_size;
+    op->n = n;
+
+    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_immediate_fn, (void *)op, free, 1));
 }
 
 //***********************************************************************
@@ -6510,6 +6798,7 @@ next:
     os->realpath = osfile_realpath;
     os->exec_modify = osfile_object_exec_modify;
     os->create_object = osfile_create_object;
+    os->create_object_with_attrs = osfile_create_object_with_attrs;
     os->remove_object = osfile_remove_object;
     os->remove_regex_object = osfile_remove_regex_object;
     os->abort_remove_regex_object = osfile_abort_remove_regex_object;
@@ -6530,7 +6819,9 @@ next:
     os->symlink_attr = osfile_symlink_attr;
     os->copy_attr = osfile_copy_attr;
     os->get_multiple_attrs = osfile_get_multiple_attrs;
+    os->get_multiple_attrs_immediate = osfile_get_multiple_attrs_immediate;
     os->set_multiple_attrs = osfile_set_multiple_attrs;
+    os->set_multiple_attrs_immediate = osfile_set_multiple_attrs_immediate;
     os->copy_multiple_attrs = osfile_copy_multiple_attrs;
     os->symlink_multiple_attrs = osfile_symlink_multiple_attrs;
     os->move_attr = osfile_move_attr;

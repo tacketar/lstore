@@ -585,6 +585,150 @@ void osrs_create_object_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "END\n");
 }
 
+
+//***********************************************************************
+// osrs_create_object_wth_attrs_cb - Processes the create object with attrs command
+//***********************************************************************
+
+void osrs_create_object_with_attrs_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    gop_mq_frame_t *fid, *fname, *fcred, *f, *fdata;
+    char *name;
+    char *id;
+    unsigned char *data;
+    lio_creds_t *creds;
+    int fsize, nbytes;
+    mq_msg_t *msg, *response;
+    gop_op_status_t status;
+    int64_t ftype;
+    char **key;
+    char **val;
+    int *v_size;
+    int bpos, i;
+    int64_t n_keys, v;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command.
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fcred = mq_msg_pop(msg);  //** This has the creds
+    creds = osrs_get_creds(os, fcred);
+
+    fname = mq_msg_pop(msg);  //** This has the filename
+    gop_mq_get_frame(fname, (void **)&name, &fsize);
+
+    f = mq_msg_pop(msg);  //** This has the Object type
+    gop_mq_get_frame(f, (void **)&data, &nbytes);
+    tbx_zigzag_decode(data, nbytes, &ftype);
+    gop_mq_frame_destroy(f);
+
+    f = mq_msg_pop(msg);  //** This has the ID used for the create attribute
+    gop_mq_get_frame(f, (void **)&id, &nbytes);
+
+    //** Parse the attr list
+    fdata = mq_msg_pop(msg);  //** attr list to set
+    gop_mq_get_frame(fdata, (void **)&data, &fsize);
+
+    key = NULL;
+    v_size = NULL;
+    val = NULL;
+    n_keys = 0;
+
+    bpos = 0;
+    i = tbx_zigzag_decode(&(data[bpos]), fsize, &n_keys);
+    if (i<0) goto fail;
+    bpos += i;
+    fsize -= i;
+
+    log_printf(5, "n_keys=" I64T "\n", n_keys);
+    tbx_type_malloc_clear(key, char *, n_keys);
+    tbx_type_malloc_clear(val, char *, n_keys);
+    tbx_type_malloc(v_size, int, n_keys);
+
+    for (i=0; i<n_keys; i++) {
+        nbytes = tbx_zigzag_decode(&(data[bpos]), fsize, &v);
+        log_printf(5, "i=%d klen=" XOT " bpos=%d\n", i, v, bpos);
+
+        if ((nbytes<0) || (v<=0)) goto fail;
+        bpos += nbytes;
+        fsize -= nbytes;
+
+        tbx_type_malloc(key[i], char, v+1);
+        if (v > fsize) goto fail;
+        memcpy(key[i], &(data[bpos]), v);
+        key[i][v] = 0;
+        bpos += v;
+        fsize -= nbytes;
+        log_printf(5, "i=%d key=%s bpos=%d\n", i, key[i], bpos);
+
+        nbytes = tbx_zigzag_decode(&(data[bpos]), fsize, &v);
+        log_printf(5, "i=%d klen=" XOT " bpos=%d\n", i, v, bpos);
+
+        if (nbytes<0) goto fail;
+        bpos += nbytes;
+        fsize -= nbytes;
+
+        v_size[i] = v;
+        if (v > 0) {
+            tbx_type_malloc(val[i], char, v+1);
+            if (v > fsize) goto fail;
+            memcpy(val[i], &(data[bpos]), v);
+            val[i][v] = 0;
+            bpos += v;
+            fsize -= nbytes;
+        } else {
+            val[i] = NULL;
+        }
+        log_printf(5, "i=%d val=%s bpos=%d\n", i, val[i], bpos);
+
+        log_printf(5, "i=%d v_size=%d bpos=%d\n", i, v_size[i], bpos);
+    }
+
+    if (creds != NULL) {
+        status = gop_sync_exec_status(os_create_object_with_attrs(osrs->os_child, creds, name, ftype, id, key, (void **)val, v_size, n_keys));
+//        if (id != NULL) free(id);
+    } else {
+        status = gop_failure_status;
+    }
+
+fail:
+    osrs_release_creds(os, creds);
+
+    gop_mq_frame_destroy(fname);
+    gop_mq_frame_destroy(fcred);
+    gop_mq_frame_destroy(f);
+    gop_mq_frame_destroy(fdata);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    if (key) {
+        for (i=0; i<n_keys; i++) if (key[i]) free(key[i]);
+        free(key);
+    }
+
+    if (val) {
+        for (i=0; i<n_keys; i++) if (val[i]) free(val[i]);
+        free(val);
+    }
+
+    if (v_size) free(v_size);
+
+    log_printf(5, "END\n");
+}
+
 //***********************************************************************
 // osrs_remove_object_cb - Processes the object remove command
 //***********************************************************************
@@ -1404,18 +1548,17 @@ void osrs_abort_lock_user_object_cb(void *arg, gop_mq_task_t *task)
 }
 
 //***********************************************************************
-// osrs_get_mult_attr_cb - Retrieves object attributes
+// osrs_get_mult_attr_fn - Retrieves object attributes
 //***********************************************************************
 
-void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
+void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
 {
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     gop_mq_frame_t *fid, *fuid, *fcred, *fdata, *ffd, *hid;
     lio_creds_t *creds;
-    char *id;
+    char *id, *path;
     unsigned char *data;
-    gop_op_generic_t *gop;
     int fsize, bpos, len, id_size, i;
     int64_t max_stream, timeout, n, v, nbytes;
     mq_msg_t *msg;
@@ -1452,9 +1595,12 @@ void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
     //** Get the fd handle
     ffd = mq_msg_pop(msg);  //** Host/user ID
     gop_mq_get_frame(ffd, (void **)&data, &len);
-    fd_key = *(intptr_t *)data;
-
-    log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", fd_key, len);
+    if (is_immediate) {
+        path = (char *)data;
+        if (path[len] != 0) path[len] = 0;  //** Make sure it's NULL terminated
+    } else {
+        fd_key = *(intptr_t *)data;
+    }
 
     fdata = mq_msg_pop(msg);  //** attr list
     gop_mq_get_frame(fdata, (void **)&data, &fsize);
@@ -1462,9 +1608,11 @@ void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key, len, id, id_size);
 
     //** Now check if the handle is valid
-    if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
-        log_printf(5, "Invalid handle!\n");
-        goto fail_fd;
+    if (!is_immediate) {
+        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
+            log_printf(5, "Invalid handle!\n");
+            goto fail_fd;
+        }
     }
 
     //** Parse the attr list
@@ -1516,10 +1664,11 @@ void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
 
     //** Execute the get attribute call
     if (creds != NULL) {
-        gop = os_get_multiple_attrs(osrs->os_child, creds, fd, key, val, v_size, n);
-        gop_waitall(gop);
-        status = gop_get_status(gop);
-        gop_free(gop, OP_DESTROY);
+        if (is_immediate) {
+            status = gop_sync_exec_status(os_get_multiple_attrs_immediate(osrs->os_child, creds, path, key, (void **)val, v_size, n));
+        } else {
+            status = gop_sync_exec_status(os_get_multiple_attrs(osrs->os_child, creds, fd, key, (void **)val, v_size, n));
+        }
     } else {
         status = gop_failure_status;
     }
@@ -1585,22 +1734,43 @@ fail:
 }
 
 //***********************************************************************
-// osrs_set_mult_attr_cb - Sets the given object attributes
+// osrs_get_mult_attr_cb - Retrieves object attributes
 //***********************************************************************
 
-void osrs_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
+void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
 {
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+
+    osrs_get_mult_attr_fn(os, task, 0);
+}
+
+//***********************************************************************
+// osrs_get_mult_attr_immediate_cb - Retrieves object attributes in immediate mode
+//***********************************************************************
+
+void osrs_get_mult_attr_immediate_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+
+    osrs_get_mult_attr_fn(os, task, 1);
+}
+
+//***********************************************************************
+// osrs_set_mult_attr_fn - Sets the given object attributes
+//***********************************************************************
+
+void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int is_immediate)
+{
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     gop_mq_frame_t *fid, *fuid, *fcred, *fdata, *ffd;
     lio_creds_t *creds;
     char *id;
     unsigned char *data;
-    gop_op_generic_t *gop;
     int fsize, bpos, len, id_size, i;
     int64_t timeout, n, v, nbytes;
     mq_msg_t *msg, *response;
     gop_op_status_t status;
+    char *path;
     char **key;
     char **val;
     int *v_size;
@@ -1627,12 +1797,15 @@ void osrs_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
     fuid = mq_msg_pop(msg);  //** Host/user ID
     gop_mq_get_frame(fuid, (void **)&id, &id_size);
 
-    //** Get the fd handle
+    //** Get the fd handle or the fname depending on the mode
     ffd = mq_msg_pop(msg);  //** Host/user ID
     gop_mq_get_frame(ffd, (void **)&data, &len);
-    fd_key = *(intptr_t *)data;
-
-    log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", fd_key, len);
+    if (is_immediate) {
+        path = (char *)data;
+        if (path[len] != 0) path[len] = 0;  //** Make sure it's NULL terminated
+    } else {
+        fd_key = *(intptr_t *)data;
+    }
 
     fdata = mq_msg_pop(msg);  //** attr list to set
     gop_mq_get_frame(fdata, (void **)&data, &fsize);
@@ -1640,9 +1813,11 @@ void osrs_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key, len, id, id_size);
 
     //** Now check if the handle is valid
-    if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
-        log_printf(5, "Invalid handle!\n");
-        goto fail_fd;
+    if (!is_immediate) {
+        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
+          log_printf(5, "Invalid handle!\n");
+            goto fail_fd;
+        }
     }
 
     //** Parse the attr list
@@ -1704,10 +1879,11 @@ void osrs_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
 
     //** Execute the get attribute call
     if (creds != NULL) {
-        gop = os_set_multiple_attrs(osrs->os_child, creds, fd, key, (void **)val, v_size, n);
-        gop_waitall(gop);
-        status = gop_get_status(gop);
-        gop_free(gop, OP_DESTROY);
+        if (is_immediate) {
+            status = gop_sync_exec_status(os_set_multiple_attrs_immediate(osrs->os_child, creds, path, key, (void **)val, v_size, n));
+        } else {
+            status = gop_sync_exec_status(os_set_multiple_attrs(osrs->os_child, creds, fd, key, (void **)val, v_size, n));
+        }
     } else {
         status = gop_failure_status;
     }
@@ -1744,6 +1920,29 @@ fail:
     }
 
     if (v_size) free(v_size);
+}
+
+
+//***********************************************************************
+// osrs_set_mult_attr_cb - Sets the given object attributes
+//***********************************************************************
+
+void osrs_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+
+    osrs_set_mult_attr_fn(os, task, 0);
+}
+
+//***********************************************************************
+// osrs_set_mult_attr_immediate_cb - Sets the given object attributes
+//***********************************************************************
+
+void osrs_set_mult_attr_immediate_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+
+    osrs_set_mult_attr_fn(os, task, 1);
 }
 
 
@@ -3419,6 +3618,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     gop_mq_command_set(ctable, OSR_REALPATH_KEY, OSR_REALPATH_SIZE, os, osrs_realpath_cb);
     gop_mq_command_set(ctable, OSR_OBJECT_EXEC_MODIFY_KEY, OSR_OBJECT_EXEC_MODIFY_SIZE, os, osrs_object_exec_modify_cb);
     gop_mq_command_set(ctable, OSR_CREATE_OBJECT_KEY, OSR_CREATE_OBJECT_SIZE, os, osrs_create_object_cb);
+    gop_mq_command_set(ctable, OSR_CREATE_OBJECT_WITH_ATTRS_KEY, OSR_CREATE_OBJECT_WITH_ATTRS_SIZE, os, osrs_create_object_with_attrs_cb);
     gop_mq_command_set(ctable, OSR_REMOVE_OBJECT_KEY, OSR_REMOVE_OBJECT_SIZE, os, osrs_remove_object_cb);
     gop_mq_command_set(ctable, OSR_REMOVE_REGEX_OBJECT_KEY, OSR_REMOVE_REGEX_OBJECT_SIZE, os, osrs_remove_regex_object_cb);
     gop_mq_command_set(ctable, OSR_ABORT_REMOVE_REGEX_OBJECT_KEY, OSR_ABORT_REMOVE_REGEX_OBJECT_SIZE, os, osrs_abort_remove_regex_object_cb);
@@ -3433,7 +3633,9 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     gop_mq_command_set(ctable, OSR_REGEX_SET_MULT_ATTR_KEY, OSR_REGEX_SET_MULT_ATTR_SIZE, os, osrs_regex_set_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_ABORT_REGEX_SET_MULT_ATTR_KEY, OSR_ABORT_REGEX_SET_MULT_ATTR_SIZE, os, osrs_abort_regex_set_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_GET_MULTIPLE_ATTR_KEY, OSR_GET_MULTIPLE_ATTR_SIZE, os, osrs_get_mult_attr_cb);
+    gop_mq_command_set(ctable, OSR_GET_MULTIPLE_ATTR_IMMEDIATE_KEY, OSR_GET_MULTIPLE_ATTR_IMMEDIATE_SIZE, os, osrs_get_mult_attr_immediate_cb);
     gop_mq_command_set(ctable, OSR_SET_MULTIPLE_ATTR_KEY, OSR_SET_MULTIPLE_ATTR_SIZE, os, osrs_set_mult_attr_cb);
+    gop_mq_command_set(ctable, OSR_SET_MULTIPLE_ATTR_IMMEDIATE_KEY, OSR_SET_MULTIPLE_ATTR_IMMEDIATE_SIZE, os, osrs_set_mult_attr_immediate_cb);
     gop_mq_command_set(ctable, OSR_COPY_MULTIPLE_ATTR_KEY, OSR_COPY_MULTIPLE_ATTR_SIZE, os, osrs_copy_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_MOVE_MULTIPLE_ATTR_KEY, OSR_MOVE_MULTIPLE_ATTR_SIZE, os, osrs_move_mult_attr_cb);
     gop_mq_command_set(ctable, OSR_SYMLINK_MULTIPLE_ATTR_KEY, OSR_SYMLINK_MULTIPLE_ATTR_SIZE, os, osrs_symlink_mult_attr_cb);

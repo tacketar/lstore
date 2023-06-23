@@ -1142,6 +1142,8 @@ void lio_destroy_nl(lio_config_t *lio)
         free(lio->monitor_fname);
     }
 
+    if (lio->host_id) free(lio->host_id);
+
     apr_thread_mutex_destroy(lio->lock);
     apr_pool_destroy(lio->mpool);
 
@@ -1324,6 +1326,8 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT, on);
     char *host_id = gop_generate_host_id(NULL, NULL, 60, -1);
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID, host_id);
+    lio->host_id = strdup(host_id);
+    lio->host_id_len = strlen(host_id);
 
     //** check if we're running as a server
     portal = NULL;

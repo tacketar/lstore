@@ -148,6 +148,7 @@ typedef struct {
     lio_creds_t *creds;
     ostc_fd_t *fd;
     ostc_fd_t *fd_dest;
+    char *path;
     char **src_path;
     char **key;
     char **key_dest;
@@ -158,6 +159,7 @@ typedef struct {
     int *v_size;
     int v_tmp;
     int n;
+    int is_immediate;
 } ostc_mult_attr_t;
 
 typedef struct {
@@ -167,6 +169,10 @@ typedef struct {
     char *dest_path;
     int ftype;
     char *id;
+    char **key;
+    void **val;
+    int *v_size;
+    int n_keys;
 } ostc_object_op_t;
 
 typedef struct {
@@ -1809,6 +1815,51 @@ gop_op_generic_t *ostc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_fn, (void *)op, free, 1));
 }
 
+
+//***********************************************************************
+
+gop_op_status_t ostc_create_object_with_attrs_fn(void *arg, int tid)
+{
+    ostc_object_op_t *op = (ostc_object_op_t *)arg;
+    ostc_priv_t *ostc = (ostc_priv_t *)op->os->priv;
+    gop_op_status_t status;
+
+    //** We don't try and cache anything in case of a failure.  A subsequent open call will properly populate the cache.
+    status = gop_sync_exec_status(os_create_object_with_attrs(ostc->os_child, op->creds, op->src_path, op->ftype, op->id, op->key, op->val, op->v_size, op->n_keys));
+
+    if (status.op_status != OP_STATE_SUCCESS) return(status); //** Failed so kick out
+
+    //** If we made it here it was successful so try and update the parent os.link_count
+    if (op->ftype & OS_OBJECT_DIR_FLAG) {
+        OSTC_LOCK(ostc);
+        _ostc_update_link_count(op->os, op->src_path, 1);
+        OSTC_UNLOCK(ostc);
+    }
+    return(status);
+}
+
+//***********************************************************************
+// ostc_create_object_with_attrs - Creates an object with attrs
+//***********************************************************************
+
+gop_op_generic_t *ostc_create_object_with_attrs(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type, char *id, char **key, void **val, int *v_size, int n_keys)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    ostc_object_op_t *op;
+
+    tbx_type_malloc_clear(op, ostc_object_op_t, 1);
+    op->os = os;
+    op->creds = creds;
+    op->src_path = path;
+    op->ftype = type;
+    op->id = id;
+    op->key = key;
+    op->val = val;
+    op->v_size = v_size;
+    op->n_keys = n_keys;
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_with_attrs_fn, (void *)op, free, 1));
+}
+
 //***********************************************************************
 // ostc_symlink_object_fn - Handles the actual object symlink
 //***********************************************************************
@@ -2309,10 +2360,23 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     ostc_cacheprep_t cp;
     ostc_base_object_info_t base;
     int err;
+    char *fname, *id;
+    int mflags;
 
-    //** 1st see if we can satisfy everything from cache
-    if ((ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE) == 0) {
-        status = ostc_cache_fetch(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
+    //** Set up the vars needed
+    if (ma->is_immediate) {
+        fname = ma->path;
+        id = an_cred_get_descriptive_id(ma->creds, NULL);
+        mflags = OS_MODE_READ_IMMEDIATE;
+    } else {
+        fname = ma->fd->fname;
+        id = ma->fd->id;
+        mflags = ma->fd->mflags;
+    }
+
+    //** See if we can satisfy everything from cache
+    if ((mflags & OS_MODE_NO_CACHE_INFO_IF_FILE) == 0) {
+        status = ostc_cache_fetch(ma->os, fname, ma->key, ma->val, ma->v_size, ma->n);
     } else {
         status = gop_failure_status;
     }
@@ -2323,28 +2387,33 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
     //if (status.op_status == OP_STATE_SUCCESS) get_attrs_sanity_check(ma);
 
     if (status.op_status == OP_STATE_SUCCESS) {
-        log_printf(10, "ATTR_CACHE_HIT: fname=%s key[0]=%s n_keys=%d no_cache_if_file_flag=%d\n", ma->fd->fname, ma->key[0], ma->n, (ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
+        log_printf(10, "ATTR_CACHE_HIT: fname=%s key[0]=%s n_keys=%d no_cache_if_file_flag=%d\n", fname, ma->key[0], ma->n, (mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
     } else {
-        log_printf(10, "ATTR_CACHE_MISS fname=%s key[0]=%s n_keys=%d no_cache_flig_if_file_flag=%d\n", ma->fd->fname, ma->key[0], ma->n, (ma->fd->mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
+        log_printf(10, "ATTR_CACHE_MISS fname=%s key[0]=%s n_keys=%d no_cache_flig_if_file_flag=%d\n", fname, ma->key[0], ma->n, (mflags & OS_MODE_NO_CACHE_INFO_IF_FILE));
     }
     if (status.op_status == OP_STATE_SUCCESS) return(status);
 
-    ostc_cache_populate_prefix(ma->os, ma->creds, ma->fd->fname, 0, ma->fd->id);
+    ostc_cache_populate_prefix(ma->os, ma->creds, fname, 0, id);
 
     ostc_attr_cacheprep_setup(&cp, ma->n, ma->key, ma->val, ma->v_size);
 
-    if (ma->fd->fd_child == NULL) {
-        status = ostc_delayed_open_object(ma->os, ma->fd);
-        if (status.op_status == OP_STATE_FAILURE) goto failed;
+    if (ma->is_immediate) {
+        status = gop_sync_exec_status(os_get_multiple_attrs_immediate(ostc->os_child, ma->creds, fname, cp.key, cp.val, cp.v_size, cp.n_keys_total));
+    } else {
+        if (ma->fd->fd_child == NULL) {
+            status = ostc_delayed_open_object(ma->os, ma->fd);
+            if (status.op_status == OP_STATE_FAILURE) goto failed;
+        }
+
+        status = gop_sync_exec_status(os_get_multiple_attrs(ostc->os_child, ma->creds, ma->fd->fd_child, cp.key, cp.val, cp.v_size, cp.n_keys_total));
     }
 
-    status = gop_sync_exec_status(os_get_multiple_attrs(ostc->os_child, ma->creds, ma->fd->fd_child, cp.key, cp.val, cp.v_size, cp.n_keys_total));
 
     //** Store them in the cache on success
     if (status.op_status == OP_STATE_SUCCESS) {
         base = ostc_attr_cacheprep_info_process(&cp, &err);
         if (err == OP_STATE_SUCCESS) {
-            ostc_cache_process_attrs(ma->os, ma->fd->fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
+            ostc_cache_process_attrs(ma->os, fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
             ostc_attr_cacheprep_copy(&cp, ma->val, ma->v_size);
         } else {
             status.op_status = OP_STATE_FAILURE;
@@ -2355,6 +2424,30 @@ failed:
     ostc_attr_cacheprep_destroy(&cp);
 
     return(status);
+}
+
+//***********************************************************************
+// ostc_get_multiple_attrs - Retreives multiple object attribute
+//   If *v_size < 0 then space is allocated up to a max of abs(v_size)
+//   and upon return *v_size contains the bytes loaded
+//***********************************************************************
+
+gop_op_generic_t *ostc_get_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    ostc_mult_attr_t *ma;
+
+    tbx_type_malloc_clear(ma, ostc_mult_attr_t, 1);
+    ma->os = os;
+    ma->path = path;
+    ma->creds = creds;
+    ma->key = key;
+    ma->val = val;
+    ma->v_size = v_size;
+    ma->n = n;
+    ma->is_immediate = 1;
+
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
 }
 
 //***********************************************************************
@@ -2376,6 +2469,7 @@ gop_op_generic_t *ostc_get_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->val = val;
     ma->v_size = v_size;
     ma->n = n;
+    ma->is_immediate = 0;
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
 }
@@ -2400,6 +2494,7 @@ gop_op_generic_t *ostc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->val = val;
     ma->v_size = v_size;
     ma->n = 1;
+    ma->is_immediate = 0;
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
 }
@@ -2414,12 +2509,16 @@ gop_op_status_t ostc_set_attrs_fn(void *arg, int tid)
     ostc_priv_t *ostc = (ostc_priv_t *)ma->os->priv;
     gop_op_status_t status;
 
-    if (ma->fd->fd_child == NULL) {
-        status = ostc_delayed_open_object(ma->os, ma->fd);
-        if (status.op_status == OP_STATE_FAILURE) return(status);
-    }
+    if (ma->is_immediate) {
+        status = gop_sync_exec_status(os_set_multiple_attrs_immediate(ostc->os_child, ma->creds, ma->path, ma->key, ma->val, ma->v_size, ma->n));
+    } else {
+        if (ma->fd->fd_child == NULL) {
+            status = ostc_delayed_open_object(ma->os, ma->fd);
+            if (status.op_status == OP_STATE_FAILURE) return(status);
+        }
 
-    status = gop_sync_exec_status(os_set_multiple_attrs(ostc->os_child, ma->creds, ma->fd->fd_child, ma->key, ma->val, ma->v_size, ma->n));
+        status = gop_sync_exec_status(os_set_multiple_attrs(ostc->os_child, ma->creds, ma->fd->fd_child, ma->key, ma->val, ma->v_size, ma->n));
+    }
 
     //** Failed just return
     if (status.op_status != OP_STATE_SUCCESS) return(status);
@@ -2428,6 +2527,29 @@ gop_op_status_t ostc_set_attrs_fn(void *arg, int tid)
     ostc_cache_update_attrs(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
 
     return(status);
+}
+
+//***********************************************************************
+// ostc_set_multiple_attrs_immeidate - Sets multiple object attributes for a quick setting
+//   If val[i] == NULL for the attribute is deleted
+//***********************************************************************
+
+gop_op_generic_t *ostc_set_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    ostc_mult_attr_t *ma;
+
+    tbx_type_malloc_clear(ma, ostc_mult_attr_t, 1);
+    ma->os = os;
+    ma->path = path;
+    ma->creds = creds;
+    ma->key = key;
+    ma->val = val;
+    ma->v_size = v_size;
+    ma->n = n;
+    ma->is_immediate = 1;
+
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
 }
 
 //***********************************************************************
@@ -2448,6 +2570,7 @@ gop_op_generic_t *ostc_set_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->val = val;
     ma->v_size = v_size;
     ma->n = n;
+    ma->is_immediate = 0;
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
 }
@@ -2474,6 +2597,7 @@ gop_op_generic_t *ostc_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->v_size = &(ma->v_tmp);
     ma->v_tmp = v_size;
     ma->n = 1;
+    ma->is_immediate = 0;
 
     return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
 }
@@ -3117,6 +3241,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     os->realpath = ostc_realpath;
     os->exec_modify = ostc_object_exec_modify;
     os->create_object = ostc_create_object;
+    os->create_object_with_attrs = ostc_create_object_with_attrs;
     os->remove_object = ostc_remove_object;
     os->remove_regex_object = ostc_remove_regex_object;
     os->abort_remove_regex_object = ostc_abort_remove_regex_object;
@@ -3137,7 +3262,9 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     os->symlink_attr = ostc_symlink_attr;
     os->copy_attr = ostc_copy_attr;
     os->get_multiple_attrs = ostc_get_multiple_attrs;
+    os->get_multiple_attrs_immediate = ostc_get_multiple_attrs_immediate;
     os->set_multiple_attrs = ostc_set_multiple_attrs;
+    os->set_multiple_attrs_immediate = ostc_set_multiple_attrs_immediate;
     os->copy_multiple_attrs = ostc_copy_multiple_attrs;
     os->symlink_multiple_attrs = ostc_symlink_multiple_attrs;
     os->move_attr = ostc_move_attr;

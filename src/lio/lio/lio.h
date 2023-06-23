@@ -241,6 +241,7 @@ struct lio_config_t {
     notify_t *notify;
     apr_thread_mutex_t *lock;
     apr_pool_t *mpool;
+    char *host_id;
     char *monitor_fname;
     char *obj_name;
     char *server_address;
@@ -268,6 +269,7 @@ struct lio_config_t {
     ex_off_t stream_buffer_total_size;
     ex_off_t small_files_in_metadata_max_size;
     ex_off_t uuid;
+    int host_id_len;
     int calc_adler32;
     int monitor_enable;
     int timeout;

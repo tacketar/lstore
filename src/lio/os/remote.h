@@ -44,6 +44,8 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 #define OSR_REALPATH_SIZE          11
 #define OSR_CREATE_OBJECT_KEY      "os_create_object"
 #define OSR_CREATE_OBJECT_SIZE     16
+#define OSR_CREATE_OBJECT_WITH_ATTRS_KEY  "os_create_object_with_attrs"
+#define OSR_CREATE_OBJECT_WITH_ATTRS_SIZE  27
 #define OSR_OBJECT_EXEC_MODIFY_KEY "os_object_exec_modify"
 #define OSR_OBJECT_EXEC_MODIFY_SIZE  21
 #define OSR_REMOVE_OBJECT_KEY      "os_remove_object"
@@ -74,8 +76,12 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 #define OSR_ABORT_REGEX_SET_MULT_ATTR_SIZE 30
 #define OSR_GET_MULTIPLE_ATTR_KEY  "os_get_mult"
 #define OSR_GET_MULTIPLE_ATTR_SIZE 11
+#define OSR_GET_MULTIPLE_ATTR_IMMEDIATE_KEY  "os_get_mult_im"
+#define OSR_GET_MULTIPLE_ATTR_IMMEDIATE_SIZE 14
 #define OSR_SET_MULTIPLE_ATTR_KEY  "os_set_mult"
 #define OSR_SET_MULTIPLE_ATTR_SIZE 11
+#define OSR_SET_MULTIPLE_ATTR_IMMEDIATE_KEY  "os_set_mult_im"
+#define OSR_SET_MULTIPLE_ATTR_IMMEDIATE_SIZE 14
 #define OSR_COPY_MULTIPLE_ATTR_KEY  "os_copy_mult"
 #define OSR_COPY_MULTIPLE_ATTR_SIZE 12
 #define OSR_MOVE_MULTIPLE_ATTR_KEY  "os_move_mult"

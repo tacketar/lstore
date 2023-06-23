@@ -388,8 +388,8 @@ int lio_update_exnode_attrs_full(lio_fd_t *fd, lio_segment_errors_t *serr, int a
     v_size[1] = strlen(val[1]);
 
     //** And update the modify timestamp
-    val[2] = NULL;
-    v_size[2] = 0;
+    val[2] = fd->fh->lc->host_id;
+    v_size[2] = fd->fh->lc->host_id_len;
 
     n = err_index;
     n += lio_encode_error_counts(serr, &(key[n]), &(val[n]), ebuf, &(v_size[n]), 0);

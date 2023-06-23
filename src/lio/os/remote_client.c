@@ -134,6 +134,7 @@ typedef struct {
     lio_object_service_fn_t *os;
     os_fd_t *fd;
     os_fd_t *fd_dest;
+    char *path;
     char **src_path;
     char **key;
     char **key_dest;
@@ -485,10 +486,10 @@ gop_op_status_t osrc_regex_object_set_multiple_attrs_func(void *arg, int id)
     gop_mq_msg_append_mem(msg, OSR_REGEX_SET_MULT_ATTR_KEY, OSR_REGEX_SET_MULT_ATTR_SIZE, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     osrc_add_creds(op->os, op->creds, msg);
-    if (op->id != NULL) {
-        gop_mq_msg_append_mem(msg, op->id, strlen(op->id), MQF_MSG_KEEP_DATA);
+    if (op->id == NULL) {
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     } else {
-        gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(msg, op->id, strlen(op->id)+1, MQF_MSG_KEEP_DATA);
     }
 
     bufsize = 4096;
@@ -848,10 +849,76 @@ gop_op_generic_t *osrc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     gop_mq_msg_append_frame(msg, gop_mq_frame_new(sent, n, MQF_MSG_AUTO_FREE));
 
     if (id == NULL) {
-        gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     } else {
         gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
     }
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
+
+    log_printf(5, "END\n");
+
+    return(gop);
+}
+
+
+//***********************************************************************
+// osrc_create_object_with_attrs - Creates an object with initial attrs
+//***********************************************************************
+
+gop_op_generic_t *osrc_create_object_with_attrs(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, int type, char *id, char **key, void **val, int *v_size, int n_keys)
+{
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
+    mq_msg_t *msg;
+    gop_op_generic_t *gop;
+    unsigned char buffer[10], *sent;
+    char *data;
+    int i, bpos, len, nmax, n;
+
+    log_printf(5, "START fname=%s\n", path);
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
+    gop_mq_msg_append_mem(msg, OSR_CREATE_OBJECT_WITH_ATTRS_KEY, OSR_CREATE_OBJECT_WITH_ATTRS_SIZE, MQF_MSG_KEEP_DATA);
+    osrc_add_creds(os, creds, msg);
+    gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
+
+    n = tbx_zigzag_encode(type, buffer);
+    tbx_type_malloc(sent, unsigned char, n);
+    memcpy(sent, buffer, n);
+    gop_mq_msg_append_frame(msg, gop_mq_frame_new(sent, n, MQF_MSG_AUTO_FREE));
+
+    if (id == NULL) {
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
+    } else {
+        gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
+    }
+
+    //** Form the attribute frame
+    nmax = 8;  //** Add just a little extra
+    for (i=0; i<n_keys; i++) {
+        nmax += strlen(key[i]) + 4 + v_size[i] + 4;
+    }
+    tbx_type_malloc(data, char, nmax);
+    bpos = 0;
+    bpos += tbx_zigzag_encode(n_keys, (unsigned char *)&(data[bpos]));
+    for (i=0; i<n_keys; i++) {
+        len = strlen(key[i]);
+        bpos += tbx_zigzag_encode(len, (unsigned char *)&(data[bpos]));
+        memcpy(&(data[bpos]), key[i], len);
+        bpos += len;
+
+        bpos += tbx_zigzag_encode(v_size[i], (unsigned char *)&(data[bpos]));
+        if (v_size[i] > 0) {
+            memcpy(&(data[bpos]), val[i], v_size[i]);
+            bpos += v_size[i];
+        }
+    }
+    gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
+
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
@@ -883,7 +950,7 @@ gop_op_generic_t *osrc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
     gop_mq_msg_append_mem(msg, src_path, strlen(src_path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, dest_path, strlen(dest_path)+1, MQF_MSG_KEEP_DATA);
     if (id == NULL) {
-        gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     } else {
         gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
     }
@@ -918,7 +985,7 @@ gop_op_generic_t *osrc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
     gop_mq_msg_append_mem(msg, src_path, strlen(src_path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, dest_path, strlen(dest_path)+1, MQF_MSG_KEEP_DATA);
     if (id == NULL) {
-        gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     } else {
         gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
     }
@@ -1370,7 +1437,7 @@ fail:
 //   and upon return *v_size contains the bytes loaded
 //***********************************************************************
 
-gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc_mult_attr_t *ma, lio_creds_t *creds)
+gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc_mult_attr_t *ma, lio_creds_t *creds, int is_immediate)
 {
     lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
     osrc_object_fd_t *ofd = (osrc_object_fd_t *)ma->fd;
@@ -1383,13 +1450,21 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     //** Form the message
     msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
-    gop_mq_msg_append_mem(msg, OSR_GET_MULTIPLE_ATTR_KEY, OSR_GET_MULTIPLE_ATTR_SIZE, MQF_MSG_KEEP_DATA);
+    if (is_immediate) {
+        gop_mq_msg_append_mem(msg, OSR_GET_MULTIPLE_ATTR_IMMEDIATE_KEY, OSR_GET_MULTIPLE_ATTR_IMMEDIATE_SIZE, MQF_MSG_KEEP_DATA);
+    } else {
+        gop_mq_msg_append_mem(msg, OSR_GET_MULTIPLE_ATTR_KEY, OSR_GET_MULTIPLE_ATTR_SIZE, MQF_MSG_KEEP_DATA);
+    }
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     osrc_add_creds(os, creds, msg);
 
     //** Form the heartbeat and handle frames
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
-    gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
+    if (is_immediate) {
+        gop_mq_msg_append_mem(msg, ma->path, strlen(ma->path)+1, MQF_MSG_KEEP_DATA);
+    } else {
+        gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
+    }
 
     //** Form the attribute frame
     nmax = 12;  //** Add just a little extra
@@ -1421,6 +1496,27 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 }
 
 //***********************************************************************
+// osrc_get_multiple_attrs_immediate - Retreives multiple object attribute
+//   If *v_size < 0 then space is allocated up to a max of abs(v_size)
+//   and upon return *v_size contains the bytes loaded
+//***********************************************************************
+
+gop_op_generic_t *osrc_get_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    osrc_mult_attr_t *ma;
+
+    tbx_type_malloc_clear(ma, osrc_mult_attr_t, 1);
+    ma->os = os;
+    ma->key = key;
+    ma->val = val;
+    ma->v_size = v_size;
+    ma->n = n;
+    ma->path = path;
+
+    return(osrc_get_mult_attrs_internal(os, ma, creds, 1));
+}
+
+//***********************************************************************
 // osrc_get_multiple_attrs - Retreives multiple object attribute
 //   If *v_size < 0 then space is allocated up to a max of abs(v_size)
 //   and upon return *v_size contains the bytes loaded
@@ -1438,7 +1534,7 @@ gop_op_generic_t *osrc_get_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->v_size = v_size;
     ma->n = n;
 
-    return(osrc_get_mult_attrs_internal(os, ma, creds));
+    return(osrc_get_mult_attrs_internal(os, ma, creds, 0));
 }
 
 //***********************************************************************
@@ -1460,7 +1556,7 @@ gop_op_generic_t *osrc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->v_size = v_size;
     ma->n = 1;
 
-    return(osrc_get_mult_attrs_internal(os, ma, creds));
+    return(osrc_get_mult_attrs_internal(os, ma, creds, 0));
 }
 
 
@@ -1468,7 +1564,7 @@ gop_op_generic_t *osrc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
 // osrc_set_mult_attrs_internal - Sets multiple object attributes
 //***********************************************************************
 
-gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc_mult_attr_t *ma, lio_creds_t *creds)
+gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc_mult_attr_t *ma, lio_creds_t *creds, int is_immediate)
 {
     lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
     osrc_object_fd_t *ofd = (osrc_object_fd_t *)ma->fd;
@@ -1481,12 +1577,20 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     //** Form the message
     msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
-    gop_mq_msg_append_mem(msg, OSR_SET_MULTIPLE_ATTR_KEY, OSR_SET_MULTIPLE_ATTR_SIZE, MQF_MSG_KEEP_DATA);
+    if (is_immediate) {
+        gop_mq_msg_append_mem(msg, OSR_SET_MULTIPLE_ATTR_IMMEDIATE_KEY, OSR_SET_MULTIPLE_ATTR_IMMEDIATE_SIZE, MQF_MSG_KEEP_DATA);
+    } else {
+        gop_mq_msg_append_mem(msg, OSR_SET_MULTIPLE_ATTR_KEY, OSR_SET_MULTIPLE_ATTR_SIZE, MQF_MSG_KEEP_DATA);
+    }
     osrc_add_creds(os, creds, msg);
 
     //** Form the heartbeat and handle frames
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
-    gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
+    if (is_immediate) {
+        gop_mq_msg_append_mem(msg, ma->path, strlen(ma->path)+1, MQF_MSG_KEEP_DATA);
+    } else {
+        gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
+    }
 
     //** Form the attribute frame
     nmax = 8;  //** Add just a little extra
@@ -1524,6 +1628,26 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 }
 
 //***********************************************************************
+// osrc_set_multiple_attrs_immediate - Sets multiple object attributes
+//   If val[i] == NULL for the attribute is deleted
+//***********************************************************************
+
+gop_op_generic_t *osrc_set_multiple_attrs_immediate(lio_object_service_fn_t *os, lio_creds_t *creds, char *path, char **key, void **val, int *v_size, int n)
+{
+    osrc_mult_attr_t *ma;
+
+    tbx_type_malloc_clear(ma, osrc_mult_attr_t, 1);
+    ma->os = os;
+    ma->path = path;
+    ma->key = key;
+    ma->val = val;
+    ma->v_size = v_size;
+    ma->n = n;
+
+    return(osrc_set_mult_attrs_internal(os, ma, creds, 1));
+}
+
+//***********************************************************************
 // osrc_set_multiple_attrs - Sets multiple object attributes
 //   If val[i] == NULL for the attribute is deleted
 //***********************************************************************
@@ -1540,7 +1664,7 @@ gop_op_generic_t *osrc_set_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->v_size = v_size;
     ma->n = n;
 
-    return(osrc_set_mult_attrs_internal(os, ma, creds));
+    return(osrc_set_mult_attrs_internal(os, ma, creds, 0));
 }
 
 
@@ -1565,7 +1689,7 @@ gop_op_generic_t *osrc_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->n = 1;
 
 
-    return(osrc_set_mult_attrs_internal(os, ma, creds));
+    return(osrc_set_mult_attrs_internal(os, ma, creds, 0));
 }
 
 
@@ -2213,12 +2337,11 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     msg = gop_mq_make_exec_core_msg(osrc->remote_host, 1);
     gop_mq_msg_append_mem(msg, OSR_OPEN_OBJECT_KEY, OSR_OPEN_OBJECT_SIZE, MQF_MSG_KEEP_DATA);
     osrc_add_creds(os, creds, msg);
-    if (id != NULL) {
-        gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
+    if (id == NULL) {
+        gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     } else {
-        gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
     }
-
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
 
     //** Same for the mode
@@ -2711,6 +2834,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     os->realpath = osrc_realpath;
     os->exec_modify = osrc_object_exec_modify;
     os->create_object = osrc_create_object;
+    os->create_object_with_attrs = osrc_create_object_with_attrs;
     os->remove_object = osrc_remove_object;
     os->remove_regex_object = osrc_remove_regex_object;
     os->abort_remove_regex_object = osrc_abort_remove_regex_object;
@@ -2733,7 +2857,9 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     os->symlink_attr = osrc_symlink_attr;
     os->copy_attr = osrc_copy_attr;
     os->get_multiple_attrs = osrc_get_multiple_attrs;
+    os->get_multiple_attrs_immediate = osrc_get_multiple_attrs_immediate;
     os->set_multiple_attrs = osrc_set_multiple_attrs;
+    os->set_multiple_attrs_immediate = osrc_set_multiple_attrs_immediate;
     os->copy_multiple_attrs = osrc_copy_multiple_attrs;
     os->symlink_multiple_attrs = osrc_symlink_multiple_attrs;
     os->move_attr = osrc_move_attr;
