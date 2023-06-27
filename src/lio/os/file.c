@@ -3846,7 +3846,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     op_open.creds = op->creds;
     op_open.path = strdup(op->src_path);
     op_open.realpath = rpath;
-    op_open.id = op->id;
+    op_open.id = (op->id) ? strdup(op->id) : NULL;  //** The close will destroy the ID
     op_open.fd = &osfd;
     op_open.mode = OS_MODE_READ_IMMEDIATE;
     op_open.uuid = 0;
@@ -3966,6 +3966,8 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     dop.src_path = op->dest_path;
     dop.type = OS_OBJECT_FILE_FLAG | OS_OBJECT_SYMLINK_FLAG;
     dop.id = op->id;
+    dop.n_keys = 0;
+
     status = osfile_create_object_fn(&dop, id);
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(15, "Failed creating the dest object: %s\n", op->dest_path);
@@ -3993,6 +3995,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
     if (etext1) free(etext1);
     if (etext2) free(etext2);
+
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
 
