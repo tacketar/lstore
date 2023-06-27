@@ -1577,6 +1577,9 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
     key = NULL;
     val = NULL;
     v_size = NULL;
+    path = NULL;
+    fd = NULL;
+    fd_key = 0;
 
     //** Parse the command.
     msg = task->msg;
@@ -1604,8 +1607,6 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
 
     fdata = mq_msg_pop(msg);  //** attr list
     gop_mq_get_frame(fdata, (void **)&data, &fsize);
-
-    log_printf(5, "PTR key=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key, len, id, id_size);
 
     //** Now check if the handle is valid
     if (!is_immediate) {
@@ -1782,6 +1783,9 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
     key = NULL;
     val = NULL;
     v_size = NULL;
+    path = NULL;
+    fd = NULL;
+    fd_key = 0;
     status = gop_failure_status;
 
     //** Parse the command.
@@ -1809,8 +1813,6 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
 
     fdata = mq_msg_pop(msg);  //** attr list to set
     gop_mq_get_frame(fdata, (void **)&data, &fsize);
-
-    log_printf(5, "PTR key=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key, len, id, id_size);
 
     //** Now check if the handle is valid
     if (!is_immediate) {
