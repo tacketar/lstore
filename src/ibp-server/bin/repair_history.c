@@ -31,6 +31,7 @@
 #include "ibp_ClientLib.h"
 #include "ibp_server.h"
 #include <tbx/log.h>
+#include <tbx/constructor.h>
 #include <tbx/fmttypes.h>
 #include "subnet.h"
 #include "ibp_time.h"
@@ -53,16 +54,15 @@ int main(int argc, char **argv)
     osd_fd_t *afd;
     osd_t *dev;
 
-//printf("sizeof(Allocation_t)=" LU " ALLOC_HEADER=%d\n", sizeof(Allocation_t), ALLOC_HEADER);
-
     if (argc < 2) {
         printf("repair_history [-d debug_level] rid_file\n");
         printf("      -d debug_level  Sets the debug level.  Default is 0.\n");
         printf("\n");
         return (0);
     }
+
     //** Initialize APR for use
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
     tbx_set_log_level(0);
 
     i = 1;

@@ -30,6 +30,7 @@
 #include "allocation.h"
 #include "ibp_ClientLib.h"
 #include "ibp_server.h"
+#include <tbx/constructor.h>
 #include <tbx/log.h>
 #include <tbx/fmttypes.h>
 #include "subnet.h"
@@ -69,8 +70,6 @@ int main(int argc, char **argv)
     osd_fd_t *afd;
     osd_t *dev;
 
-//printf("sizeof(Allocation_t)=" LU " ALLOC_HEADER=%d\n", sizeof(Allocation_t), ALLOC_HEADER);
-
     if (argc < 2) {
         printf
         ("read_alloc [-d debug_level] [--print_blocks] [--file fname data_offset len] rid_file\n");
@@ -87,7 +86,7 @@ int main(int argc, char **argv)
         return (0);
     }
     //** Initialize APR for use
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
     tbx_set_log_level(0);
 
     i = 1;
@@ -96,7 +95,6 @@ int main(int argc, char **argv)
     len = 0;
     ndata = 0;
     print_blocks = 0;
-//printf("argc=%d i=%d\n", argc,i);
     do {
         start_option = i;
         if (strcmp("--file", argv[i]) == 0) {
@@ -107,7 +105,6 @@ int main(int argc, char **argv)
             i++;
             len = atoi(argv[i]);
             i++;
-//printf("fname=%s offset=%d len=%d\n", fname, offset, len);
         } else if (strcmp("--print_blocks", argv[i]) == 0) {
             i++;
             print_blocks = 1;
@@ -121,8 +118,6 @@ int main(int argc, char **argv)
 
     afile = argv[i];
     i++;
-//log_printf(0, "read_alloc: afile=%s i=%d\n", afile, i);
-
 
     //** Read the Allocation ***
     dev = osd_mount_fs("loopback", 10, 256, 1000);   //** Mount the file via loopback
@@ -160,7 +155,6 @@ int main(int argc, char **argv)
         if ((n % bs) > 0)
             nblocks++;
 
-//nblocks = 1;
         n = nblocks / MAX_SIZE;
         if ((nblocks % MAX_SIZE) != 0)
             n++;
@@ -213,8 +207,6 @@ int main(int argc, char **argv)
         ndata = len;
         while (ndata > 0) {
             npos = (bufsize > ndata) ? ndata : bufsize;
-//memset(buffer, 0, bufsize);
-//printf("read_alloc: fpos=" I64T "\n", fpos);
             err = osd_read(dev, afd, fpos, npos, buffer);
             if (err != npos) {
                 printf("read_alloc:  Error reading at fpos=" I64T " len=" I64T "  error=%d\n",

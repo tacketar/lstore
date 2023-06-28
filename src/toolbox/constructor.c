@@ -14,6 +14,7 @@
    limitations under the License.
 */
 
+#include <stdio.h>
 #include <dlfcn.h>
 #include <apr_errno.h>
 #include <apr_general.h>
@@ -21,6 +22,7 @@
 #include <tbx/io.h>
 
 #include "tbx/constructor_wrapper.h"
+#include "tbx/constructor.h"
 
 void _log_init();
 
@@ -47,6 +49,9 @@ static void tbx_construct_fn() {
 
     _log_init();
 }
+
+//** This is a dummy routine to trigger loading the constructor when using a static library
+void tbx_construct_fn_static() { return; }
 
 static void tbx_destruct_fn() {
     apr_terminate();

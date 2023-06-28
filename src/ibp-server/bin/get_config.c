@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <tbx/constructor.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/log.h>
@@ -71,7 +72,7 @@ int main(int argc, char **argv)
 
     sprintf(cmd, "1 94 %d\n", timeout); // IBP_ST_VERSION command
 
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     tbx_dnsc_startup_sized(10);
 

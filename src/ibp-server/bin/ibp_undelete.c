@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <tbx/constructor.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/log.h>
@@ -83,7 +84,7 @@ int main(int argc, char **argv)
 
     sprintf(buffer, "1 96 %s %d %s %d %d\n", rid, trash_type, trash_id, duration, timeout);     // IBP_INTERNAL_UNDELETE command
 
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     tbx_dnsc_startup_sized(10);
 

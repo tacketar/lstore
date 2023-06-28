@@ -32,6 +32,7 @@
 #include <tbx/siginfo.h>
 #include <tbx/type_malloc.h>
 #include <tbx/lio_monitor.h>
+#include <tbx/constructor.h>
 #include "lock_alloc.h"
 #include "activity_log.h"
 
@@ -774,7 +775,7 @@ int main(int argc, const char **argv)
     apr_thread_t *rid_check_thread;
     apr_status_t dummy;
 
-    assert_result(apr_initialize(), APR_SUCCESS);
+    tbx_construct_fn_static();
     assert_result(apr_pool_create(&global_pool, NULL), APR_SUCCESS);
     tbx_random_startup();
 

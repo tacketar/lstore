@@ -18,15 +18,8 @@
 #include <time.h>
 #include "ibp_server.h"
 #include "activity_log.h"
+#include <tbx/constructor.h>
 #include <tbx/log.h>
-
-//** Dummy routine and variable
-int print_config(char *buffer, int *used, int nbytes, Config_t *cfg)
-{
-    return (0);
-}
-
-Config_t *global_config;
 
 //*************************************************************************
 //*************************************************************************
@@ -39,7 +32,7 @@ int main(int argc, char **argv)
     alog_file_header_t ah;
     char start_time[256], end_time[256];
 
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     _alog_init_constants();
 

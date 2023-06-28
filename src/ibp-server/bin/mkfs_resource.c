@@ -18,6 +18,7 @@
 #include "resource.h"
 #include <stdio.h>
 #include <assert.h>
+#include <tbx/constructor.h>
 
 //***********************************************************************************
 //***********************************************************************************
@@ -46,7 +47,7 @@ int main(int argc, const char **argv)
     if (argc > 6) nbytes = 1024 * 1024 * atoll(argv[6]);
 
     n_partitions = atoll(argv[5]);
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     if (ibp_str2rid((char *) argv[1], &rid) != 0) {
         printf("Invalid RID format!  RID=%s\n", argv[1]);

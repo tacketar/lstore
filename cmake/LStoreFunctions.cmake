@@ -15,7 +15,11 @@ macro(lstore_project_common LSTORE_PROJECT_NAME)
     set(LSTORE_PROJECT_OBJS ${LSTORE_PROJECT_OBJS} ${LSTORE_PROJECT_NAME}_version.c)
 
     # Build library
-    add_library(${LSTORE_PROJECT_NAME} ${LSTORE_PROJECT_OBJS})
+    if (BUILD_SHARED_LIBS)
+        add_library(${LSTORE_PROJECT_NAME} ${LSTORE_PROJECT_OBJS})
+    else()
+        add_library(${LSTORE_PROJECT_NAME} STATIC ${LSTORE_PROJECT_OBJS})
+    endif()
 
     # Use the project version as the version for each library (for now at least)
     set(LSTORE_LIBRARY_VERSION_MAJOR ${LSTORE_VERSION_MAJOR})

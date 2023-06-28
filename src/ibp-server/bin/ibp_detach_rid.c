@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <tbx/constructor.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/log.h>
@@ -71,9 +72,7 @@ int main(int argc, char **argv)
     slen = strlen(msg);
     sprintf(buffer, "1 92 %s %d %d %d %s\n", rid, delay, timeout, slen, msg);   // IBP_INTERNAL_RID_UMOUNT command
 
-//printf("argc=%d i=%d command=%s\n", argc, i, buffer);
-//return(0);
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     tbx_dnsc_startup_sized(10);
 

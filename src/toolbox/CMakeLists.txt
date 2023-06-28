@@ -65,6 +65,7 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/atomic_counter.h
     tbx/chksum.h
     tbx/constructor_wrapper.h
+    tbx/constructor.h
     tbx/direct_io.h
     tbx/dns_cache.h
     tbx/fork_helper.h

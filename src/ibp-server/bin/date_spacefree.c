@@ -30,6 +30,7 @@
 #include "allocation.h"
 #include "ibp_ClientLib.h"
 #include "ibp_server.h"
+#include <tbx/constructor.h>
 #include <tbx/network.h>
 #include <tbx/net_sock.h>
 #include <tbx/log.h>
@@ -81,7 +82,7 @@ int main(int argc, char **argv)
         return (0);
     }
 
-    assert(apr_initialize() == APR_SUCCESS);
+    tbx_construct_fn_static();
 
     base_unit = 1024 * 1024;
     units = base_unit;

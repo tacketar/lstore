@@ -39,6 +39,7 @@
 #include <string.h>
 #include <string.h>
 #include <tbx/assert_result.h>
+#include <tbx/constructor.h>
 #include <tbx/iniparse.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
@@ -1692,6 +1693,9 @@ int lio_init(int *argc, char ***argvp)
     }
 
     argv = *argvp;
+
+    //** This is a dummy routine to trigger loading the TBX constructor in case we are using a static library
+    tbx_construct_fn_static();
 
     //** Setup the info signal handler.  We'll reset the name after we've got a lio_gc
     tbx_siginfo_install(NULL, SIGUSR1);
