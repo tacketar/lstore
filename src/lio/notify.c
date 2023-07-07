@@ -116,8 +116,12 @@ void notify_printf(notify_t *nlog, int do_lock, lio_creds_t *creds, const char *
     if (nlog->fd == NULL) goto failed;
 
     //** Add the header
-    uid = (char *)an_cred_get_descriptive_id(creds, &len);
-    if (!uid) uid = "(null)";
+    if (creds) {
+        uid = (char *)an_cred_get_descriptive_id(creds, &len);
+        if (!uid) uid = "(null)";
+    } else {
+        uid ="(null)";
+    }
     asctime_r(&tm_now, date);
     date[strlen(date)-1] = '\0';  //** Peel of the return
     fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
