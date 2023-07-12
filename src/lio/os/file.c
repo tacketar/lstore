@@ -448,7 +448,8 @@ int _copy_symlink(lio_object_service_fn_t *os, const char *spath, const char *dp
 
 int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
 {
-    int err;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int err, err_cnt;
     DIR *dirfd;
     int ftype;
     char fname[OS_PATH_MAX];
@@ -461,7 +462,8 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
     err = tbx_io_mkdir(dobj, DIR_PERMS);
     if (err != 0) {
         err = errno;
-        log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", sobj, dobj, errno);
+        log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", sobj, dobj, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error reating rename dest dir errno=%d\n", sobj, dobj, err);
         return(err);
     }
 
@@ -470,6 +472,7 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
     if (dirfd == NULL) {
         err = errno;
         log_printf(0, "ERROR: Failed opendir on src. src=%s dest=%s errno=%d\n", sobj, dobj, errno);
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) Failed opendir on source errno=%d\n", sobj, dobj, err);
         tbx_io_remove(dobj);
     }
 
@@ -483,30 +486,35 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
             err = _copy_symlink(os, fname, dname);
             if (err) {
                 log_printf(0, "ERROR: _copy_symlink. src=%s dest=%s errno=%d\n", fname, dname, err);
+                notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) _copy_symlink errno=%d\n", sobj, dobj, err);
                 goto cleanup;
             }
         } else if (ftype & OS_OBJECT_FILE_FLAG) { //** Normal file
             err = _copy_file(os, fname, dname);
             if (err) {
                 log_printf(0, "ERROR: _copy_file. src=%s dest=%s errno=%d\n", fname, dname, err);
+                notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) _copy_file errno=%d\n", sobj, dobj, err);
                 goto cleanup;
             }
-        } else {  //** Not handled
-
         }
     }
 
     //** Everything was good so remove the source
     tbx_io_closedir(dirfd);
-    osf_purge_dir(os, sobj, 0);
-    safe_remove(os, sobj);
-
-    return(0);
+    err_cnt = osf_purge_dir(os, sobj, 0);
+    err_cnt += safe_remove(os, sobj);
+    if (err_cnt) {
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error removing source.\n", sobj, dobj);
+    }
+    return(err_cnt);
 
 cleanup:    //** This is where we jump to to cleanup a failed rename
     tbx_io_closedir(dirfd);
-    osf_purge_dir(os, dobj, 0);
-    safe_remove(os, dobj);
+    err_cnt = osf_purge_dir(os, dobj, 0);
+    err_cnt += safe_remove(os, dobj);
+    if (err_cnt) {
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error with cleanup of failed rename op\n", sobj, dobj);
+    }
     return(err);
 }
 
@@ -517,7 +525,8 @@ cleanup:    //** This is where we jump to to cleanup a failed rename
 
 int rename_object(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
 {
-    int err, ftype;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int err, err_cnt, ftype;
 
     //** See if we get lucky and we're on the same shard
     err = tbx_io_rename(sobj, dobj);
@@ -525,15 +534,25 @@ int rename_object(lio_object_service_fn_t *os, const char *sobj, const char *dob
 
     //** Ok we got an error now check if we can handle it or we pass it back on
     err = errno;
-    if (err != EXDEV) return(err);  //** We can only handle between shard rename errors
+    if (err != EXDEV) {
+        log_printf(0, "ERROR: RENAME_OBJECT(%s, %s) unhandled errno=%d\n", sobj, dobj, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_OBJECT(%s, %s) unhandled errno=%d\n", sobj, dobj, err);
+        return(err);  //** We can only handle between shard rename errors
+    }
 
     //** We have to manually copy all the objects
+    err_cnt = 0;
     ftype = lio_os_local_filetype(sobj);
     if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory
         err = rename_dir(os, sobj, dobj);
         if (err == 0) { //**No issues so remove the source
-            osf_purge_dir(os, sobj, 1);
-            safe_remove(os, sobj);
+            err_cnt += osf_purge_dir(os, sobj, 1);
+            err_cnt += safe_remove(os, sobj);
+            if (err_cnt) {
+                log_printf(0, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
+                notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
+                err = -1;
+            }
         }
     }
 
@@ -2341,12 +2360,23 @@ void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd)
 
 int safe_remove(lio_object_service_fn_t *os, const char *path)
 {
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int err;
+
     if (strlen(path) > SAFE_MIN_LEN) {
-        return(remove(path));
+        err = remove(path);
+        if (err == -1) {
+            int eno = errno;
+            notify_printf(osf->olog, 1, NULL, "ERROR: SAFE_REMOVE(%s) remove() errno=%d\n", path, eno);
+            log_printf(0, " ERROR with remove()! path=%s errno=%d \n", path, eno);
+            err = 1;
+        }
+        return(err);
     }
 
+    notify_printf(osf->olog, 1, NULL, "ERROR: SAFE_REMOVE(%s) safe_len=%d\n", path, SAFE_MIN_LEN);
     log_printf(0, " ERROR with remove! path=%s safe_len=%d \n", path, SAFE_MIN_LEN);
-    return(-1234);
+    return(1234);
 }
 
 //***********************************************************************
@@ -3058,31 +3088,49 @@ void *piter_attr_thread(apr_thread_t *th, void *arg)
 
 int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
 {
-    int ftype;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int ftype, err, err_cnt, eno;
     char fname[OS_PATH_MAX];
     DIR *d;
     struct dirent *entry;
 
+    err = 0;
+    err_cnt = 0;
     d = opendir(path);
-    if (d == NULL) return(1);
+    if (d == NULL) {
+        eno = errno;
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed on fname=%s errno=%d\n", path, depth, fname, eno);
+        log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed on fname=%s errno=%d\n", path, depth, fname, eno);
+        return(1);
+    }
 
     while ((entry = readdir(d)) != NULL) {
         if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) continue;
         snprintf(fname, OS_PATH_MAX, "%s/%s", path, entry->d_name);
         ftype = lio_os_local_filetype(fname);
         if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) {
-            safe_remove(os, fname);
+            err = safe_remove(os, fname);
+            if (err != 0) {
+                err_cnt++;
+                notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d safe_remove failed on fname=%s ftype=%d\n", path, depth, fname, ftype);
+                log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d safe_remove failed on fname=%s ftype=%d\n", path, depth, fname, ftype);
+            }
         } else if (ftype & OS_OBJECT_DIR_FLAG) {
             if (depth > 0) {
-                osf_purge_dir(os, fname, depth-1);
-                safe_remove(os, fname);
+                err_cnt += osf_purge_dir(os, fname, depth-1);
+                err = safe_remove(os, fname);
+                if (err != 0) {
+                    err_cnt++;
+                    notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d safe_remove failed on dir=%s ftype=%d. Should be empty\n", path, depth, fname, ftype);
+                    log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d safe_remove failed on dir=%s ftype=%d. Should be empty\n", path, depth, fname, ftype);
+                }
             }
         }
     }
 
     closedir(d);
 
-    return(0);
+    return(err_cnt);
 }
 
 //***********************************************************************
@@ -3200,7 +3248,8 @@ gop_op_generic_t *osfile_object_exec_modify(lio_object_service_fn_t *os, lio_cre
 
 int osf_object_remove(lio_object_service_fn_t *os, char *path)
 {
-    int ftype, atype, err, n;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int ftype, atype, n, err_cnt;
     char *dir, *base, *hard_inode;
     struct stat s;
     char fattr[OS_PATH_MAX];
@@ -3208,10 +3257,11 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
 
     ftype = lio_os_local_filetype(path);
     hard_inode = NULL;
+    err_cnt = 0;
 
     log_printf(15, "ftype=%d path=%s\n", ftype, path);
 
-    //** It's a file or the proxy is missing so assume it's a file and remoe the FA directoory
+    //** It's a file or the proxy is missing so assume it's a file and remove the FA directoory
     if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_HARDLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) || (ftype == 0)) {
         log_printf(15, "file or link removal\n");
         if (ftype & OS_OBJECT_HARDLINK_FLAG) {  //** If this is the last hardlink we need to remove the hardlink inode as well
@@ -3228,7 +3278,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
         if ((ftype & OS_OBJECT_HARDLINK_FLAG) == 0) {
             osf_purge_dir(os, fattr, 0);
         }
-        safe_remove(os, fattr);
+        err_cnt += safe_remove(os, fattr);
         free(dir);
         free(base);
 
@@ -3239,24 +3289,26 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
             atype = lio_os_local_filetype(fattr);
             n = -1;
             if (atype & OS_OBJECT_SYMLINK_FLAG) { //** It's a symlink so get the link for removal
+                alink[0] = '\0';
                 n = tbx_io_readlink(fattr, alink, OS_PATH_MAX);
                 if (n > 0) {
                     alink[n] = '\0';
                 } else {
+                    notify_printf(osf->olog, 1, NULL, "ERROR: OSF_REMOVE_OBJECT error reading hardlink attr dir readlink(%s)=%d ftype=%d path=%s\n", fattr, errno, ftype, path);
                     log_printf(0, "ERROR: hardlink readlink. fname=%s hard=%s errno=%d\n", path, hard_inode, errno);
                 }
             }
             free(dir);
             free(base);
 
-            err = osf_object_remove(os, hard_inode);
+            err_cnt += osf_object_remove(os, hard_inode);
             free(hard_inode);
 
             if (n > 0) { //** Remove the shard hardlink directory
-                osf_purge_dir(os, alink, 0);
-                safe_remove(os, alink);
+                err_cnt += osf_purge_dir(os, alink, 0);
+                err_cnt += safe_remove(os, alink);
             }
-            return(err);
+            return(err_cnt);
         }
     } else if (ftype & OS_OBJECT_DIR_FLAG) {  //** A directory
         log_printf(15, "dir removal\n");
@@ -3267,22 +3319,22 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
         if (atype & OS_OBJECT_SYMLINK_FLAG) {
             n = readlink(fattr, alink, OS_PATH_MAX);
             if (n == -1) {
+                err_cnt++;
+                notify_printf(osf->olog, 1, NULL, "ERROR: REMOVE(%d, %s) -- readlink error=%d fattr=%s\n", ftype, path, errno, fattr);
                 log_printf(0, "ERROR: failed to remove shard attr dir=%s\n", fattr);
             } else {
-                osf_purge_dir(os, alink, 1);
+                err_cnt += osf_purge_dir(os, alink, 1);
+                err_cnt += safe_remove(os, alink);
             }
-            osf_purge_dir(os, alink, 0);  //** Removes all the files AFTER the shard since the attr dir is a symlink it will get lopped off
-            safe_remove(os, alink);
         } else {
-            osf_purge_dir(os, path, 0);  //** Removes all the files
-            osf_purge_dir(os, fattr, 1); //** And the attr directory
+            err_cnt += osf_purge_dir(os, path, 0);  //** Removes all the files
+            err_cnt += osf_purge_dir(os, fattr, 1); //** And the attr directory
         }
-        safe_remove(os, fattr);
-        safe_remove(os, path);
+        err_cnt += safe_remove(os, fattr);
+        err_cnt += safe_remove(os, path);
     }
 
-    return(0);
-
+    return(err_cnt);
 }
 
 //***********************************************************************
@@ -3343,11 +3395,13 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
         status = (osf_object_remove(op->os, fname) == 0) ? gop_success_status : gop_failure_status;
     }
 
+    char *etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', ((ftype & OS_OBJECT_SYMLINK_FLAG) ? op->src_path : rp));
     if (status.op_status == OP_STATE_SUCCESS) {
-        char *etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', ((ftype & OS_OBJECT_SYMLINK_FLAG) ? op->src_path : rp));
         notify_printf(osf->olog, 1, op->creds, "REMOVE(%d, %s, %s)\n", ftype, etext, inode);
-        if (etext) free(etext);
+    } else {
+        notify_printf(osf->olog, 1, op->creds, "ERROR: REMOVE(%d, %s, %s)\n", ftype, etext, inode);
     }
+    if (etext) free(etext);
 
     osf_obj_unlock(lock);
 
@@ -3712,9 +3766,11 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 {
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-    struct stat sbuf;
+//    struct stat sbuf;
     FILE *fd;
-    int err, mod, part;
+    ex_id_t xid;
+    int err, mod, part, err_cnt, eno;
+    int m_key_max = 20;
     dev_t dev = 0;
     char *dir, *base;
     char *etext1, *etext2;
@@ -3722,12 +3778,16 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     char fattr[OS_PATH_MAX];
     char sattr[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
+    char *mkey[m_key_max];
+    void *mval[m_key_max];
+    int mv_size[m_key_max];
     apr_thread_mutex_t *lock;
     gop_op_status_t status, op_status;
     osfile_attr_op_t op_attr;
     osfile_open_op_t op_open;
     osfile_fd_t *osfd;
 
+    err_cnt = 0;
     status = gop_failure_status;
 
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rpath, 0)) == 0)  return(gop_failure_status);
@@ -3774,12 +3834,13 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         snprintf(fattr, OS_PATH_MAX, "%s/%s/%s%s", dir, FILE_ATTR_PREFIX, FILE_ATTR_PREFIX, base);
         err = mkdir(fattr, DIR_PERMS);
         if (err != 0) {
+            eno = errno;
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making fattr dir fattr=%s errno=%d\n", op->type, etext1, etext2, fattr, eno);
             log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
-            safe_remove(op->os, fname);
+            err_cnt += safe_remove(op->os, fname);
             free(dir);
             free(base);
             osf_obj_unlock(lock);
-            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making fattr dir fattr=%s\n", op->type, etext1, etext2, fattr);
             goto failure;
         } else {
             free(dir);
@@ -3788,47 +3849,50 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     } else {  //** Directory object
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
+            eno = errno;
             osf_obj_unlock(lock);
-            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s\n", op->type, etext1, etext2, fname);
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
             goto failure;
         }
 
         //** Also need to make the attributes directory
         snprintf(fattr, OS_PATH_MAX, "%s/%s", fname, FILE_ATTR_PREFIX);
         if (osf->shard_enable) {
-            //** Use the ino of the directory as a random number
-            stat(fname, &sbuf);
+            //** Make the shard directory using a random number
+            tbx_random_get_bytes(&xid, sizeof(xid));
+            mod = xid % osf->n_shard_prefix;
+            part = xid % osf->shard_splits;
+            snprintf(sattr, OS_PATH_MAX, "%s/%d/" XIDT, osf->shard_prefix[mod], part, xid);
 
-            //** Make the shard directory
-            mod = sbuf.st_ino % osf->n_shard_prefix;
-            part = sbuf.st_ino % osf->shard_splits;
-            snprintf(sattr, OS_PATH_MAX, "%s/%d/" LU, osf->shard_prefix[mod], part, sbuf.st_ino);
             err = mkdir(sattr, DIR_PERMS);
             if (err != 0) {
-                log_printf(0, "Error creating object shard attr directory! path=%s full=%s\n", op->src_path, sattr);
-                safe_remove(op->os, fname);
+                eno = errno;
+                log_printf(0, "Error creating object shard attr directory! path=%s full=%s errno=%d\n", op->src_path, sattr, eno);
+                err_cnt += safe_remove(op->os, fname);
                 osf_obj_unlock(lock);
-                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir sattr=%s\n", op->type, etext1, etext2, sattr);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir sattr=%s errno=%d\n", op->type, etext1, etext2, sattr, eno);
                 goto failure;
             }
 
             //** And symlink it in
             err = symlink(sattr, fattr);
             if (err != 0) {
-                log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
-                safe_remove(op->os, fname);
-                safe_remove(op->os, sattr);
+                eno = errno;
+                log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
+                err_cnt += safe_remove(op->os, fname);
+                err_cnt += safe_remove(op->os, sattr);
                 osf_obj_unlock(lock);
-                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir symlink sattr=%s fattr=%s\n", op->type, etext1, etext2, sattr, fattr);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir symlink sattr=%s fattr=%s errno=%d\n", op->type, etext1, etext2, sattr, fattr, eno);
                 goto failure;
             }
         } else {
             err = mkdir(fattr, DIR_PERMS);
             if (err != 0) {
-                log_printf(0, "Error creating object attr directory! path=%s full=%s\n", op->src_path, fattr);
-                safe_remove(op->os, fname);
+                eno = errno;
+                log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
+                err_cnt += safe_remove(op->os, fname);
                 osf_obj_unlock(lock);
-                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory fattr dir fattr=%s\n", op->type, etext1, etext2, fattr);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory fattr dir fattr=%s errno=%d\n", op->type, etext1, etext2, fattr, eno);
                 goto failure;
             }
         }
@@ -3863,10 +3927,29 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         op_attr.os = op->os;
         op_attr.creds = op->creds;
         op_attr.fd = osfd;
-        op_attr.key = op->key;
-        op_attr.val = op->val;
-        op_attr.v_size = op->v_size;
-        op_attr.n = op->n_keys;
+
+        if (op->n_keys < m_key_max) {   //** For help tracking errors we add an attribute with the original fname if we have space
+            //** Copy the original arrays
+            memcpy(mkey, op->key, sizeof(char *) * op->n_keys);
+            memcpy(mval, op->val, sizeof(void *) * op->n_keys);
+            memcpy(mv_size, op->v_size, sizeof(int) * op->n_keys);
+
+            //** And add in our additional one
+            mkey[op->n_keys] = "system.create_realpath";
+            mval[op->n_keys] = (void *)rpath;
+            mv_size[op->n_keys] = strlen(rpath);
+
+            //** Lastly set the ptrs
+            op_attr.key = mkey;
+            op_attr.val = mval;
+            op_attr.v_size = mv_size;
+            op_attr.n = op->n_keys + 1;
+        } else {
+            op_attr.key = op->key;
+            op_attr.val = op->val;
+            op_attr.v_size = op->v_size;
+            op_attr.n = op->n_keys;
+        }
 
         op_status = osf_set_multiple_attr_fn(&op_attr, 0);
         if (op_status.op_status != OP_STATE_SUCCESS) {
@@ -3885,7 +3968,11 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     }
 
 success:
-    notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
+    if (op->n_keys > 0) {
+        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s) with_attrs\n", op->type, etext1, etext2);
+    } else {
+        notify_printf(osf->olog, 1, op->creds, "CREATE(%d, %s, %s)\n", op->type, etext1, etext2);
+    }
     if (etext1) free(etext1);
     if (etext2) free(etext2);
 
@@ -3956,9 +4043,12 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
-    int err;
+    int err, eno;
 
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
+
+    char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
+    char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
 
     //** Create the object like normal
     dop.os = op->os;
@@ -3971,6 +4061,9 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     status = osfile_create_object_fn(&dop, id);
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(15, "Failed creating the dest object: %s\n", op->dest_path);
+        notify_printf(osf->olog, 1, op->creds, "ERROR: SYMLINK(%s, %s) osfile_create_object_fn error\n", etext1, etext2);
+        if (etext1) free(etext1);
+        if (etext2) free(etext2);
         return(gop_failure_status);
     }
 
@@ -3985,14 +4078,18 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
 
     log_printf(15, "sfname=%s dfname=%s\n", sfname, dfname);
     err = safe_remove(op->os, dfname);
-    if (err != 0) log_printf(15, "Failed removing dest place holder %s  err=%d\n", dfname, err);
-
+    if (err != 0) {
+        log_printf(15, "Failed removing dest place holder %s  err=%d\n", dfname, err);
+        notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
+    }
     err = symlink(sfname, dfname);
-    if (err != 0) log_printf(15, "Failed making symlink %s -> %s  err=%d\n", sfname, dfname, err);
-
-    char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
-    char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
-    notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
+    if (err != 0) {
+        eno = errno;
+        log_printf(15, "Failed making symlink %s -> %s  err=%d\n", sfname, dfname, eno);
+        notify_printf(osf->olog, 1, op->creds, "ERROR: SYMLINK(%s, %s) errno=%d\n", etext1, etext2, errno);
+    } else {
+        notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
+    }
     if (etext1) free(etext1);
     if (etext2) free(etext2);
 
@@ -4061,6 +4158,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
 
     if (err != 0) {
         log_printf(0, "rename_object(%s,%s) FAILED err=%d!\n", sattr, hattr, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_FILE2HARDLINK src_path=%s sattr=%s hattr=%s\n", src_path, sattr, hattr);
         free(hattr);
         free(sattr);
         return(err);
@@ -4070,6 +4168,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
         err = tbx_io_symlink(shattr, hattr);
         if (err != 0) {
             err = errno;
+            notify_printf(osf->olog, 1, NULL, "ERROR: OSF_FILE2HARDLINK src_path=%s error making hardlink->shard attr directory symlink shattr=%s hattr=%s\n", src_path, shattr, hattr);
             rename_object(os, shattr, sattr);  //** Move the attr dir back
             log_printf(0, "symlink(%s,%s) FAILED err=%d!\n", shattr, hattr, err);
             free(hattr);
@@ -4083,6 +4182,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
     if (err != 0) {
         err = errno;
         log_printf(0, "symlink(%s,%s) FAILED err=%d!\n", hattr, sattr, errno);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_FILE2HARDLINK src_path=%s error  making hardlink to attr symlink sattr=%s hattr=%s\n", src_path, sattr, hattr);
         goto failed_1;
     }
 
@@ -4090,6 +4190,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
     err = rename_object(os, sfname, fullname);
     if (err != 0) {
         log_printf(0, "rename_object(%s,%s) FAILED! err=%d\n", sfname, fullname, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_FILE2HARDLINK src_path=%s error  failed moving the src to the hardlink proxy sfname=%s fullname=%s\n", src_path, sfname, fullname);
         goto failed_2;
     }
 
@@ -4098,6 +4199,7 @@ int osf_file2hardlink(lio_object_service_fn_t *os, char *src_path)
     if (err != 0) {
         err = errno;
         log_printf(0, "link(%s,%s)=%d FAILED!\n", fullname, sfname, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_FILE2HARDLINK src_path=%s error with link(%s, %s)=%d\n", src_path, sfname, fullname, err);
         goto failed_3;
     }
 
@@ -4192,6 +4294,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     ftype = lio_os_local_filetype(sfname);
     if (ftype == 0) {
         log_printf(15, "ERROR source file missing sfname=%s dfname=%s\n", op->src_path, op->dest_path);
+        notify_printf(osf->olog, 1, op->creds, "ERROR: OSFILE_HARDLINK_OBJECT_FN src_path=%s is missing.\n", op->src_path);
         return(gop_failure_status);
     }
 
@@ -4200,6 +4303,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
         err = osf_file2hardlink(op->os, op->src_path);
         if (err != 0) {
             log_printf(15, "ERROR converting source file to a hard link sfname=%s\n", op->src_path);
+            notify_printf(osf->olog, 1, op->creds, "ERROR: OSFILE_HARDLINK_OBJECT_FN osf_file2hardlink error src=%s dest=%s\n", op->src_path, op->dest_path);
             return(gop_failure_status);
         }
 
@@ -4210,6 +4314,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     link_path = resolve_hardlink(op->os, op->src_path, 1);
     if (link_path == NULL) {
         log_printf(15, "ERROR resolving src hard link sfname=%s dfname=%s\n", op->src_path, op->dest_path);
+        notify_printf(osf->olog, 1, op->creds, "ERROR: OSFILE_HARDLINK_OBJECT_FN error resolving the hardlink path src=%s dest=%s\n", op->src_path, op->dest_path);
         free(link_path);
         return(gop_failure_status);
     }
@@ -4232,6 +4337,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
 
     //** Hardlink the proxy
     if (link(link_path, dfname) != 0) {
+        notify_printf(osf->olog, 1, op->creds, "ERROR: OSFILE_HARDLINK_OBJECT_FN error with making hardlink proxy -- link(%s,%s)=%d src=%s dest=%s\n", link_path, dfname, errno, op->src_path, op->dest_path);
         log_printf(15, "ERROR making proxy hardlink link_path=%s sfname=%s dfname=%s\n", link_path, op->src_path, dfname);
         status = gop_failure_status;
         goto finished;
@@ -4241,6 +4347,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     sapath = object_attr_dir(op->os, "", link_path, OS_OBJECT_FILE_FLAG);
     dapath = object_attr_dir(op->os, osf->file_path, op->dest_path, OS_OBJECT_FILE_FLAG);
     if (symlink(sapath, dapath) != 0) {
+        notify_printf(osf->olog, 1, op->creds, "ERROR: OSFILE_HARDLINK_OBJECT_FN error with making attr symlink -- symlink(%s,%s)=%d src=%s dest=%s\n", sapath, dapath, errno, op->src_path, op->dest_path);
         unlink(dfname);
         free(sapath);
         free(dapath);
@@ -4252,6 +4359,12 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     free(dapath);
 
     status = gop_success_status;
+
+    char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
+    char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
+    notify_printf(osf->olog, 1, op->creds, "HARDLINK(%s, %s)\n", etext1, etext2);
+    if (etext1) free(etext1);
+    if (etext2) free(etext2);
 
 finished:
     apr_thread_mutex_unlock(hlock);
@@ -4345,7 +4458,11 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     //** Attempt to move the main file entry
     err = rename_object(os, sfname, dfname);  //** Move the file/dir
-    if (err) rename_errno = errno;
+    if (err) {
+        rename_errno = errno;
+        notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the namespace entry sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, src_path, dest_path);
+    }
+
     log_printf(15, "sfname=%s dfname=%s err=%d\n", sfname, dfname, err);
 
     if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) && (err==0)) { //** File move
@@ -4363,6 +4480,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
         err = rename_object(os, sfname, dfname);  //** Move the attribute directory
         if (err != 0) { //** Got to undo the main file/dir entry if the attr rename fails
             rename_errno = errno;
+            notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the attrtibute dir sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, src_path, dest_path);
             snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
             snprintf(dfname, OS_PATH_MAX, "%s%s", osf->file_path, dest_path);
             rename_object(os, dfname, sfname);
@@ -5102,12 +5220,15 @@ gop_op_generic_t *osfile_get_multiple_attrs_immediate(lio_object_service_fn_t *o
 
 int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, void *val, int v_size)
 {
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     FILE *fd;
     char fname[OS_PATH_MAX];
 
     snprintf(fname, OS_PATH_MAX, "%s/%s", attr_dir, attr);
     if (v_size < 0) { //** Want to remove the attribute
-        safe_remove(os, fname);
+        if (safe_remove(os, fname) != 0) {
+            notify_printf(osf->olog, 1, NULL, "ERROR: LOWLEVEL_SET_ATTR Failed removing attribute attr=%s attr_dir=%s\n", attr, attr_dir);
+        }
     } else {
         fd = tbx_io_fopen(fname, "w");
         if (fd == NULL) return(-1);
@@ -5158,19 +5279,24 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     if (v_size == -2) { //** Want to remove the attribute from the object ignoring if it's a symlink
         if (osaz_attr_remove(osf->osaz, creds, NULL, ofd->realpath, attr) == 0) return(1);
         snprintf(fname, OS_PATH_MAX, "%s/%s", ofd->attr_dir, attr);
-        safe_remove(os, fname);
+        if (safe_remove(os, fname) != 0) {
+            notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR v2 Failed removing attribute attr_dir=%s\n", fname);
+        }
         return(0);
     }
 
     n = osf_resolve_attr_path(os, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
     if (n != 0) {
         log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, ofd->object_name, attr);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", ofd->object_name, attr, atype);
         return(1);
     }
 
     if ( v_size == -1) {  //** Want to delete the attribute target following the symlinks
         if (osaz_attr_remove(osf->osaz, creds, NULL, ofd->realpath, attr) == 0) return(1);
-        safe_remove(os, fname);
+        if (safe_remove(os, fname) != 0) {
+            notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR v1 Failed removing attribute attr_dir=%s\n", fname);
+        }
         return(0);
     }
 
@@ -6884,12 +7010,38 @@ next:
                 os = NULL;
                 return(NULL);
             }
+        }
 
-            //** Also need to make the attributes directory
-            snprintf(pattr, OS_PATH_MAX, "%s/%s", pname, FILE_ATTR_PREFIX);
+        //** Check the attribute directory exists
+        snprintf(pattr, OS_PATH_MAX, "%s/%s", pname, FILE_ATTR_PREFIX);
+        if (lio_os_local_filetype(pattr) == 0) {
             err = mkdir(pattr, DIR_PERMS);
             if (err != 0) {
-                log_printf(0, "Error creating object attr directory! full=%s\n", pattr);
+                log_printf(0, "Error creating hardlink object attr directory! full=%s\n", pattr);
+                os_destroy(os);
+                os = NULL;
+                return(NULL);
+            }
+        }
+
+        //** Check that the orphaned hardlinks exist
+        snprintf(pattr, OS_PATH_MAX, "%s/orphaned", pname);
+        if (lio_os_local_filetype(pattr) == 0) {
+            err = mkdir(pattr, DIR_PERMS);
+            if (err != 0) {
+                log_printf(0, "Error creating orphaned hardlinks directory! full=%s\n", pattr);
+                os_destroy(os);
+                os = NULL;
+                return(NULL);
+            }
+        }
+
+        //** Check that the orphaned hardlinks exist
+        snprintf(pattr, OS_PATH_MAX, "%s/broken", pname);
+        if (lio_os_local_filetype(pattr) == 0) {
+            err = mkdir(pattr, DIR_PERMS);
+            if (err != 0) {
+                log_printf(0, "Error creating broken hardlinks directory! full=%s\n", pattr);
                 os_destroy(os);
                 os = NULL;
                 return(NULL);
@@ -6916,6 +7068,28 @@ next:
                     err = mkdir(pname, DIR_PERMS);
                     if (err != 0) {
                         log_printf(0, "ERROR creating shard_prefix hardlink split directory! full=%s\n", pname);
+                        os_destroy(os);
+                        os = NULL;
+                        return(NULL);
+                    }
+                }
+
+                //** And also make the "orphaned" directories
+                snprintf(pname, OS_PATH_MAX, "%s/%d/orphaned", osf->shard_prefix[i], j);
+                if (lio_os_local_filetype(pname) == 0) {
+                    err = mkdir(pname, DIR_PERMS);
+                    if (err != 0) {
+                        log_printf(0, "ERROR creating shard_prefix split orphaned directory! full=%s\n", pname);
+                        os_destroy(os);
+                        os = NULL;
+                        return(NULL);
+                    }
+                }
+                snprintf(pname, OS_PATH_MAX, "%s/%d/hardlink/orphaned", osf->shard_prefix[i], j);
+                if (lio_os_local_filetype(pname) == 0) {
+                    err = mkdir(pname, DIR_PERMS);
+                    if (err != 0) {
+                        log_printf(0, "ERROR creating shard_prefix hardlink split orphaned directory! full=%s\n", pname);
                         os_destroy(os);
                         os = NULL;
                         return(NULL);
