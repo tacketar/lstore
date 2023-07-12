@@ -1853,10 +1853,11 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
     lio_exnode_exchange_t *exp;
     lio_exnode_t *ex, *cex;
     lio_segment_t *seg;
-    int do_clone;
+    int do_clone, exnode_retry;
     lio_fsck_repair_t ex_mode;
     ex_index = 2;
     state = 0;
+    exnode_retry = 1;
 
     srepair = exnode_mode & LIO_FSCK_SIZE_REPAIR;
     ex_mode = (srepair > 0) ? exnode_mode - LIO_FSCK_SIZE_REPAIR : exnode_mode;
@@ -1930,6 +1931,7 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
     }
 
     //** Check if we have an exnode
+exnode_again:
     do_clone = 0;
     index = 2;
     vs = v_size[index];
@@ -1979,8 +1981,19 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
     if (lio_exnode_deserialize(ex, exp, lc->ess_nocache) != 0) {
         log_printf(15, "ERROR parsing parent exnode path=%s\n", path);
         state |= LIO_FSCK_MISSING_EXNODE;
-        exp->text.text = NULL;
-        goto finished;
+        lio_exnode_destroy(ex);
+        lio_exnode_exchange_destroy(exp);
+
+        //** See if we give it another pass
+        if (exnode_retry == 1) {
+            exnode_retry = 0;
+            val[ex_index] = NULL;
+            v_size[ex_index] = 0;
+            goto exnode_again;
+        }
+
+        log_printf(15, "fname=%s state=%d\n", path, state);
+        return(state);
     }
     exp->text.text = NULL;
 
