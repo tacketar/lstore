@@ -8,11 +8,20 @@ if [ ! -e ${OSFILE_CFG} ]; then
     echo "If it's in a different location please edit this script, $0"
     echo "It should define 2 environment variables:"
     echo "  NAMESPACE_PREFIX - Path to the OSFile root directory.  Same as the 'base_path' in the osfile config section for the server."
-    echo "  SHARD_PREFIXES   - A bash ARRAY of all the shard prefixes. All the 'shard_prefix' declarations in the osfile config section."
     exit 1
 fi
 
 source ${OSFILE_CFG}
+
+#Make sure the paths all exist
+if [ "${NAMESPACE_PREFIX}" == "" ]; then
+    echo "ERROR: NAMESPACE_PREFIX is missing! Same as the 'base_path' in the osfile config section for the server."
+    exit 1
+fi
+if [ ! -e ${NAMESPACE_PREFIX} ]; then
+    echo "ERROR: NAMESPACE_PREFIX points to ${NAMESPACE_PREFIX} but doesn't exist! Same as the 'base_path' in the osfile config section for the server."
+    exit 1
+fi
 
 WORK_DIR=/tmp/fsck-hardlinks
 TO_ORPHANED=${DIR}/to-orphaned.sh

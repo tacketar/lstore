@@ -17,6 +17,28 @@ fi
 
 source ${OSFILE_CFG}
 
+#Make sure the paths all exist
+if [ "${NAMESPACE_PREFIX}" == "" ]; then
+    echo "ERROR: NAMESPACE_PREFIX is missing! Same as the 'base_path' in the osfile config section for the server."
+    exit 1
+fi
+if [ ! -e ${NAMESPACE_PREFIX} ]; then
+    echo "ERROR: NAMESPACE_PREFIX points to ${NAMESPACE_PREFIX} but doesn't exist! Same as the 'base_path' in the osfile config section for the server."
+    exit 1
+fi
+
+if [ "${#SHARD_PREFIXES[@]}" == "0" ]; then
+    echo "ERROR: SHARD_PREFIXES bash array is missing! All the 'shard_prefix' declarations in the osfile config section."
+    exit 1
+fi
+for shard in ${SHARD_PREFIXES[@]}; do
+    if [ ! -e ${shard} ]; then
+        echo "Shard missing: ${shard}"
+        exit 1
+    fi
+done
+
+# Now seet up the output files
 DEDUP=dedup.sh
 RM=/usr/bin/rm
 
