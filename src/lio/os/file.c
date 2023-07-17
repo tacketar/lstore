@@ -463,7 +463,7 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
     if (err != 0) {
         err = errno;
         log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", sobj, dobj, err);
-        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error reating rename dest dir errno=%d\n", sobj, dobj, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error creating rename dest dir errno=%d\n", sobj, dobj, err);
         return(err);
     }
 
@@ -526,7 +526,7 @@ cleanup:    //** This is where we jump to to cleanup a failed rename
 int rename_object(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int err, err_cnt, ftype;
+    int err, ftype;
 
     //** See if we get lucky and we're on the same shard
     err = tbx_io_rename(sobj, dobj);
@@ -541,18 +541,12 @@ int rename_object(lio_object_service_fn_t *os, const char *sobj, const char *dob
     }
 
     //** We have to manually copy all the objects
-    err_cnt = 0;
     ftype = lio_os_local_filetype(sobj);
     if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory
         err = rename_dir(os, sobj, dobj);
-        if (err == 0) { //**No issues so remove the source
-            err_cnt += osf_purge_dir(os, sobj, 1);
-            err_cnt += safe_remove(os, sobj);
-            if (err_cnt) {
-                log_printf(0, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
-                notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
-                err = -1;
-            }
+        if (err != 0) {
+            log_printf(0, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
+            notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_OBJECT(%s, %s) error removing the source dir for a rename across devices\n", sobj, dobj);
         }
     }
 
@@ -2361,12 +2355,13 @@ void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd)
 int safe_remove(lio_object_service_fn_t *os, const char *path)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int err;
+    int err, eno;
 
     if (strlen(path) > SAFE_MIN_LEN) {
         err = remove(path);
         if (err == -1) {
-            int eno = errno;
+            eno = errno;
+            if (eno == ENOENT) { return(0); }  //**Object doesn't exist. Probably an attr removal that never existed
             notify_printf(osf->olog, 1, NULL, "ERROR: SAFE_REMOVE(%s) remove() errno=%d\n", path, eno);
             log_printf(0, " ERROR with remove()! path=%s errno=%d \n", path, eno);
             err = 1;
@@ -4480,7 +4475,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
         err = rename_object(os, sfname, dfname);  //** Move the attribute directory
         if (err != 0) { //** Got to undo the main file/dir entry if the attr rename fails
             rename_errno = errno;
-            notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the attrtibute dir sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, src_path, dest_path);
+            notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the attrtibute dir sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, ftype, src_path, dest_path);
             snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
             snprintf(dfname, OS_PATH_MAX, "%s%s", osf->file_path, dest_path);
             rename_object(os, dfname, sfname);
@@ -5624,8 +5619,10 @@ int osfile_next_object_serial(os_object_iter_t *oit, char **fname, int *prefix_l
                 op.realpath = it->realpath;
                 tbx_random_get_bytes(&(op.uuid), sizeof(op.uuid));
                 status = osfile_open_object_fn(&op, 0);
-                if (status.op_status != OP_STATE_SUCCESS) return(-1);
-
+                if (status.op_status != OP_STATE_SUCCESS) {
+                    free(*fname); *fname = NULL;
+                    return(-1);
+                }
                 log_printf(15, "after object open it->rp=%s\n", it->realpath);
                 ait = osfile_create_attr_iter(it->os, it->creds, it->fd, it->attr, it->v_max);
                 *(it->it_attr) = ait;
@@ -5645,7 +5642,10 @@ int osfile_next_object_serial(os_object_iter_t *oit, char **fname, int *prefix_l
             op.realpath = it->realpath;
             tbx_random_get_bytes(&(op.uuid), sizeof(op.uuid));
             status = osfile_open_object_fn(&op, 0);
-            if (status.op_status != OP_STATE_SUCCESS) return(-1);
+            if (status.op_status != OP_STATE_SUCCESS) {
+                free(*fname); *fname = NULL;
+                return(-1);
+            }
 
             aop.os = it->os;
             aop.creds = it->creds;
@@ -5973,11 +5973,13 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->path);
     ftype = lio_os_local_filetype(fname);
     if (ftype <= 0) {
+        free(op->path);
         return(gop_failure_status);
     }
 
     rp = (op->realpath) ? op->realpath : _osf_realpath(op->os, op->path, rpath, 1);
     if (osaz_object_access(osf->osaz, op->creds, op->ug, rp, op->mode) == 0)  {
+        free(op->path);
         return(gop_failure_status);
     }
 
@@ -6003,6 +6005,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         *(op->fd) = NULL;
         free(fd->attr_dir);
         free(fd);
+        free(op->path);
         status = gop_failure_status;
         return(status);
     } else {
