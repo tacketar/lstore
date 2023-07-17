@@ -5974,12 +5974,14 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     ftype = lio_os_local_filetype(fname);
     if (ftype <= 0) {
         free(op->path);
+        op->path = NULL;  //** Make sure it's not accidentally freed twice
         return(gop_failure_status);
     }
 
     rp = (op->realpath) ? op->realpath : _osf_realpath(op->os, op->path, rpath, 1);
     if (osaz_object_access(osf->osaz, op->creds, op->ug, rp, op->mode) == 0)  {
         free(op->path);
+        op->path = NULL;  //** Make sure it's not accidentally freed twice
         return(gop_failure_status);
     }
 
@@ -6006,6 +6008,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         free(fd->attr_dir);
         free(fd);
         free(op->path);
+        op->path = NULL;  //** Make sure it's not accidentally freed twice
         status = gop_failure_status;
         return(status);
     } else {
