@@ -2081,6 +2081,11 @@ gop_op_status_t lio_fsck_gop_fn(void *arg, int id)
         return(status);
     }
 
+    if (op->ftype & OS_OBJECT_BROKEN_LINK_FLAG) {  //** IF we have a broken symlink kick out
+        info_printf(lio_ifd, 1, "Skipping broken symlink: %s\n", op->path);
+        return(gop_success_status);
+    }
+
     if (op->full == 0) {
         log_printf(15, "fname=%s getting attrs\n", op->path);
         tbx_log_flush();
