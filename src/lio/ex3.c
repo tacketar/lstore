@@ -509,6 +509,51 @@ int lio_exnode_deserialize(lio_exnode_t *ex, lio_exnode_exchange_t *exp, lio_ser
     return(-1);
 }
 
+//*************************************************************************
+// lio_exnode_data_blocks_check - Does some quick checks about the data blocks
+//*************************************************************************
+
+int lio_exnode_exchange_data_blocks_check(lio_exnode_exchange_t *exp, int scan_all_data_blocks, int *n_blocks, int *n_read, int *n_write, int *n_manage)
+{
+    tbx_inip_group_t *g;
+    tbx_inip_element_t *ele;
+    tbx_inip_file_t *fd;
+    char *key;
+
+    *n_blocks = *n_read = *n_write = *n_manage = 0;
+    if (exp->type != EX_TEXT) return(-1);
+
+    fd = exp->text.fd;
+
+    g = tbx_inip_group_first(fd);
+    while (g) {
+        if (strncmp("block-", tbx_inip_group_get(g), 6) == 0) { //** Got a data block
+            //** Cycle through looking for the tags to count
+            (*n_blocks)++;
+            ele = tbx_inip_ele_first(g);
+            while (ele) {
+                key = tbx_inip_ele_get_key(ele);
+                if (strcmp(key, "read_cap") == 0) {
+                    (*n_read)++;
+                } else if (strcmp(key, "write_cap") == 0) {
+                    (*n_write)++;
+                } else if (strcmp(key, "manage_cap") == 0) {
+                    (*n_manage)++;
+                }
+
+                ele = tbx_inip_ele_next(ele);
+            }
+
+            if (scan_all_data_blocks == 0) return(0);  //** Kick out if only doing a quick check
+        }
+
+        g = tbx_inip_group_next(g);
+    }
+
+    return(0);
+}
+
+
 
 //*************************************************************************
 //  lio_exnode_serialize_text - Exports a text based exnode

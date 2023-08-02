@@ -50,6 +50,7 @@ LIO_API void lio_exnode_default_set(lio_exnode_t *ex, lio_segment_t *seg);
 LIO_API int lio_exnode_deserialize(lio_exnode_t *ex, lio_exnode_exchange_t *exp, lio_service_manager_t *ess);
 LIO_API void lio_exnode_destroy(lio_exnode_t *ex);
 LIO_API lio_exnode_exchange_t *lio_exnode_exchange_create(int type);
+LIO_API int lio_exnode_exchange_data_blocks_check(lio_exnode_exchange_t *exp, int scan_all_data_blocks, int *n_blocks, int *n_read, int *n_write, int *n_manage);
 LIO_API void lio_exnode_exchange_destroy(lio_exnode_exchange_t *exp);
 LIO_API lio_exnode_exchange_t *lio_exnode_exchange_load_file(char *fname);
 LIO_API lio_exnode_exchange_t *lio_exnode_exchange_text_parse(char *text);
@@ -142,6 +143,7 @@ struct lio_inspect_args_t {
     int log_skip_base;          //** A log segment should go ahead and inspect it's base if 0
     int n_dev_rows;
     int dev_row_replaced[128];
+    apr_time_t expiration;      //** If non-zero then throw an error if the expiration is sthorter than this time.
 };
 
 struct lio_exnode_text_t {

@@ -181,20 +181,21 @@ void _slun_perform_remap(lio_segment_t *seg)
 // slun_row_size_check - Checks the size of eack block in the row.
 //***********************************************************************
 
-int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, apr_time_t *dt, int n_devices, int force_repair, int timeout, tbx_log_fd_t *fd)
+int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, int *block_status, apr_time_t *block_expiration, apr_time_t *dt, int n_devices, int force_repair, apr_time_t expiration_check, int timeout, tbx_log_fd_t *fd)
 {
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
     int used;
     int bufsize = 100 + 8*n_devices;
     char info[bufsize];
-    int i, n_size, n_missing, n_mm;
+    int i, n_size, n_missing, n_mm, n_expiration;
     int retry[n_devices];
     int block_size[n_devices];
     data_probe_t *probe[n_devices];
     gop_opque_t *q;
     gop_op_generic_t *gop, *gop2;
-    ex_off_t psize, seg_size, csize;
-    apr_time_t start_time;
+    ex_off_t psize, seg_size, csize, dt_expire;
+    apr_time_t start_time, expiration;
+    char *cap;
     q = gop_opque_new();
 
     memset(retry, 0, sizeof(int)*n_devices);
@@ -203,7 +204,12 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
     start_time = apr_time_now();
     for (i=0; i<n_devices; i++) {
         probe[i] = ds_probe_create(b->block[i].data->ds);
-        gop = ds_probe(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), probe[i], timeout);
+        cap = ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE);
+        if (cap) {
+            gop = ds_probe(b->block[i].data->ds, da, cap, probe[i], timeout);
+         } else {
+            gop = gop_dummy(gop_failure_status);
+         }
         gop_set_myid(gop, i);
         gop_opque_add(q, gop);
     }
@@ -218,7 +224,12 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
             if (retry[i] <= s->max_retry) {  //** Try again
                 sleep(5*retry[i]);  //**Quick ans simple backoff method. The 1st retry is immediate.
                 retry[i]++;
-                gop2 = ds_probe(b->block[i].data->ds, da, ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE), probe[i], timeout);
+                cap = ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_MANAGE);
+                if (cap) {
+                    gop2 = ds_probe(b->block[i].data->ds, da, cap, probe[i], timeout);
+                 } else {
+                    gop2 = gop_dummy(gop_failure_status);
+                 }
                 gop_set_myid(gop2, i);
                 gop_opque_add(q, gop2);
             }
@@ -231,10 +242,14 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
     q = gop_opque_new();
     n_missing = 0;
     n_size = 0;
+    n_expiration = 0;
     for (i=0; i<n_devices; i++) {
         //** Verify the max_size >= cap_offset+len
         ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_MAX_SIZE, &psize, sizeof(psize));
         ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_CURR_SIZE, &csize, sizeof(csize));
+        ds_get_probe(b->block[i].data->ds, probe[i], DS_PROBE_DURATION, &dt_expire, sizeof(csize));
+        expiration = (dt_expire > 0) ? apr_time_from_sec(dt_expire) - apr_time_now() : 0;
+        if (block_expiration) block_expiration[i] = expiration;
         seg_size = b->block[i].cap_offset + b->block_len;
         log_printf(10, "seg=" XIDT " seg_offset=" XOT " i=%d start_block_status=%d rcap=%s  size=" XOT " should be block_len=" XOT " curr_size=" XOT " seg_size=" XOT "\n", segment_id(seg),
                    b->seg_offset, i, block_status[i], (char *)ds_get_cap(b->block[i].data->ds, b->block[i].data->cap, DS_CAP_READ), psize, b->block_len, csize, seg_size);
@@ -259,6 +274,13 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
                 block_size[i] += 3;
                 b->block[i].data->size = csize;
                 n_mm++;
+            }
+        }
+
+        if ((block_status[i] == 0) && (expiration_check > 0)) { //**Otherwise good block and we have a valid expiration to check
+            if (expiration < expiration_check) {
+                block_status[i] = 16;
+                n_expiration++;
             }
         }
     }
@@ -297,7 +319,7 @@ int slun_row_size_check(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, in
 
     for (i=0; i<n_devices; i++) ds_probe_destroy(b->block[i].data->ds, probe[i]);
 
-    return(n_size+n_missing);
+    return(n_size+n_missing+n_expiration);
 }
 
 //***********************************************************************
@@ -612,7 +634,7 @@ gop_op_status_t _seglun_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_s
             b->row_len = dsize * s->n_devices;
             b->seg_end = b->seg_offset + b->row_len - 1;
             for (i=0; i<s->n_devices; i++) block_status[i] = 0;
-            slun_row_size_check(seg, da, b, block_status, NULL, s->n_devices, 1, timeout, NULL);
+            slun_row_size_check(seg, da, b, block_status, NULL, NULL, s->n_devices, 1, 0, timeout, NULL);
 
             //** Check if we had an error on the size
             berr = 0;
@@ -1880,6 +1902,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     lio_inspect_args_t args;
     lio_inspect_args_t args_blank;
     apr_time_t dt[s->n_devices];
+    apr_time_t block_expiration[s->n_devices];
     char pp[128];
 
     args = *(si->args);
@@ -1921,6 +1944,7 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         drow++;
         for (i=0; i < s->n_devices; i++) {
             block_status[i] = 0;
+            block_expiration[i] = 0;
             block[i].data = b->block[i].data;
             block[i].cap_offset = b->block[i].cap_offset;
             block[i].block_len = b->block_len;
@@ -1930,11 +1954,15 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
         estripe = b->seg_end / s->stripe_size;
         info_printf(si->fd, 1, XIDT ": Checking row: (" XOT ", " XOT ", " XOT ")   Stripe: (" XOT ", " XOT ")\n", segment_id(si->seg), b->seg_offset, b->seg_end, b->row_len, sstripe, estripe);
 
+        nlost = slun_row_size_check(si->seg, si->da, b, block_status, block_expiration, dt, s->n_devices, force_repair, si->args->expiration, si->timeout, si->fd);  //** Doesn't modify the block structure
         for (i=0; i < s->n_devices; i++) {
-            info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ));
+            if (block_status[i] == 16) {
+                info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s expiration=%s (EXPIRATION_ERROR)\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ), tbx_stk_pretty_print_time(block_expiration[i], 1, pp));
+            } else {
+                info_printf(si->fd, 3, XIDT ":     dev=%i rcap=%s expiration=%s\n", segment_id(si->seg), i, (char *)ds_get_cap(s->ds, block[i].data->cap, DS_CAP_READ), tbx_stk_pretty_print_time(block_expiration[i], 1, pp));
+            }
         }
 
-        nlost = slun_row_size_check(si->seg, si->da, b, block_status, dt, s->n_devices, force_repair, si->timeout, si->fd);  //** Doesn't modify the block structure
         used = 0;
         tbx_append_printf(info, &used, bufsize, XIDT ":     slun_row_size_check:", segment_id(si->seg));
         for (i=0; i < s->n_devices; i++) {

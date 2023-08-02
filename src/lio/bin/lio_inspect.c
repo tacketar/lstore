@@ -116,6 +116,8 @@ rs_query_t *query;
 lio_path_tuple_t *tuple_list;
 char **argv_list = NULL;
 int error_only_check = 0;
+int count_all_data_blocks = 0;
+apr_time_t expiration = 0;
 
 apr_thread_mutex_t *rid_lock = NULL;
 apr_hash_t *rid_changes = NULL;
@@ -753,6 +755,7 @@ gop_op_status_t inspect_task(void *arg, int id)
     lio_segment_errors_t serr;
     int v_size[7], n, repair_mode;
     int whattodo, count, err;
+    int n_blocks, n_read, n_write, n_manage;
     tbx_inip_file_t *ifd;
     lio_inspect_args_t args;
 
@@ -831,11 +834,6 @@ gop_op_status_t inspect_task(void *arg, int id)
         goto finished;
     }
 
-//  printf("Initial exnode=====================================\n");
-//  printf("%s", exp->text);
-//  printf("===================================================\n");
-
-
     //** Get the default view to use
     seg = lio_exnode_default_get(ex);
     if (seg == NULL) {
@@ -846,6 +844,14 @@ gop_op_status_t inspect_task(void *arg, int id)
 
     info_printf(lfd, 1, XIDT ":MAP: Inspecting file %s\n", segment_id(seg), w->tuple.path);
 
+    if (lio_exnode_exchange_data_blocks_check(exp, count_all_data_blocks, &n_blocks, &n_read, &n_write, &n_manage) != 0) {
+        info_printf(lfd, 1, XIDT ":WARNING: Unable to parse blocks!\n", segment_id(seg));
+    }
+    if (n_manage == 0) {
+        info_printf(lfd, 1, XIDT ": Data blocks --- total:%d read:%d write:%d manage:%d (ERROR: Missing MANAGE caps!)\n", segment_id(seg), n_blocks, n_read, n_write, n_manage);
+    } else {
+        info_printf(lfd, 1, XIDT ": Data blocks --- total:%d read:%d write:%d manage:%d\n", segment_id(seg), n_blocks, n_read, n_write, n_manage);
+    }
     log_printf(15, "whattodo=%d\n", whattodo);
     //** Execute the inspection operation
     memset(&args, 0, sizeof(args));
@@ -854,6 +860,7 @@ gop_op_status_t inspect_task(void *arg, int id)
     args.query = query;
     args.qs = gop_opque_new();
     args.qf = gop_opque_new();
+    args.expiration = expiration;
     gop = segment_inspect(seg, lio_gc->da, lfd, whattodo, bufsize, &args, lio_gc->timeout);
     if (gop == NULL) {
         printf("File not found.\n");
@@ -1093,7 +1100,7 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("lio_inspect LIO_COMMON_OPTIONS [-rd recurse_depth] [-b bufsize] [-es] [-eh] [-ew] [-rerr] [-werr] [-h | -hi][-f] [-s] [-r]\n");
+        printf("lio_inspect LIO_COMMON_OPTIONS [-rd recurse_depth] [-b bufsize] [-es] [-eh] [-ew] [-rerr] [-werr] [-h | -hi][-f] [-s] [-r] [-check_expiration dt] [ -count_blocks]\n");
         printf("            [-pc pool.cfg] [-pp iter] [-rebalance [auto|key]] [-q extra_query] [-bl key value] [-p] -o inspect_opt [LIO_PATH_OPTIONS | -]\n");
         lio_print_options(stdout);
         lio_print_path_options(stdout);
@@ -1107,10 +1114,13 @@ int main(int argc, char **argv)
         printf("    -r                 - Use reconstruction for all repairs. Even for data placement issues.\n");
         printf("                         Not always successful.The default is to use depot-to-depot copies if possible.\n");
         printf("                         This can lead to drive hotspots if migrating data from a failing drive\n");
+        printf("    -check_expiration dt - Check the expiration as well and throw an error ir the expiration is less than dt\n");
+        printf("                         The format for dt is XXdXXhXXmXXs where XX is a valid number for days, hours, minutes, and seconds.\n");
+        printf("    -count_blocks      - Count all the data blocks and return stats on them. Otherwise it just checks the 1st block found.\n");
         printf("    -pc pool_cfg       - Load a pool config file for use in rebalancing data across resources.\n");
         printf("    -pp iter           - Print the resulting RID pools every *iter* iteratations\n");
         printf("    -pcheck iter n|p|np - How often to check for pool convergence and the convergence criteria.  Default is %d iterations\n", check_iter);
-        printf("                       The convergence criteria corresponds to exiting when all negative (n) RIDs have converged or positive (p), or both (np).\n");
+        printf("                         The convergence criteria corresponds to exiting when all negative (n) RIDs have converged or positive (p), or both (np).\n");
         printf("    -rebalance auto|key tol - Don't use a config file instead just rebalance using pools created using the given key and tolerance.\n");
         printf("                         If the key=auto then a single pool is creted using all resources.\n");
         printf("    -h                 - Print pools using base 1000\n");
@@ -1144,6 +1154,7 @@ int main(int argc, char **argv)
         printf("       2   Incorrect Size\n");
         printf("       4   Encountered a read error\n");
         printf("       8   Encountered a write error\n");
+        printf("      16   Expiration error\n");
         printf("    -101   Didn't find enough RIDs for the request\n");
         printf("    -102   The fixed RID failed to match the request\n");
         printf("    -103   The fixed RID couldn't be located in the RID table\n");
@@ -1225,6 +1236,13 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-r") == 0) { //** Force reconstruction
             i++;
             global_whattodo |= INSPECT_FORCE_RECONSTRUCTION;
+        } else if (strcmp(argv[i], "-check_expiration") == 0) { //** Check the expiration
+            i++;
+            expiration = tbx_stk_string_get_time(argv[i]);
+            i++;
+        } else if (strcmp(argv[i], "-count_blocks") == 0) { //** Count all the blocks
+            i++;
+            count_all_data_blocks = 1;
         } else if (strcmp(argv[i], "-x") == 0) { //** Kick out if an unrecoverable error is detected
             i++;
             global_whattodo |= INSPECT_FAIL_ON_ERROR;
