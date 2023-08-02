@@ -746,17 +746,22 @@ gop_op_status_t allocate_command(gop_op_generic_t *gop, tbx_ns_t *ns)
     char buffer[1024];
     gop_op_status_t err;
     ibp_op_alloc_t *cmd = &(op->ops.alloc_op);
+    int duration;
 
     log_printf(10, "allocate_command: cs_type=%d\n", cmd->disk_chksum_type);
+
+    //** If the duration is less than the current time we assume it's already a delta and not an absolute value.
+    //** NOTE: This is in sec and NOT APR time!
+    duration = (cmd->duration < time(NULL)) ? cmd->duration : cmd->duration - time(NULL);
 
     if (cmd->disk_chksum_type == CHKSUM_DEFAULT) {  //** Normal allocation
         snprintf(buffer, sizeof(buffer), "%d %d %s %d %d %d " I64T " %d\n",
                  IBPv040, IBP_ALLOCATE, cmd->depot->rid.name, cmd->attr->reliability, cmd->attr->type,
-                 cmd->duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
+                 duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
     } else if ((tbx_chksum_type_valid(cmd->disk_chksum_type) == 1) || (cmd->disk_chksum_type == CHKSUM_NONE)) {
         snprintf(buffer, sizeof(buffer), "%d %d %d " I64T " %s %d %d %d " I64T " %d\n",
                  IBPv040, IBP_ALLOCATE_CHKSUM, cmd->disk_chksum_type, cmd->disk_blocksize, cmd->depot->rid.name, cmd->attr->reliability, cmd->attr->type,
-                 cmd->duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
+                 duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
     } else {
         log_printf(10, "allocate_command: Invalid chksum type! type=%d ns=%d\n", cmd->disk_chksum_type, tbx_ns_getid(ns));
         _op_set_status(err, OP_STATE_FAILURE, IBP_E_CHKSUM_TYPE);
@@ -779,15 +784,20 @@ gop_op_status_t split_allocate_command(gop_op_generic_t *gop, tbx_ns_t *ns)
     char buffer[1024];
     gop_op_status_t err;
     ibp_op_alloc_t *cmd = &(op->ops.alloc_op);
+    int duration;
+
+    //** If the duration is less than the current time we assume it's already a delta and not an absolute value.
+    //** NOTE: This is in sec and NOT APR time!
+    duration = (cmd->duration < time(NULL)) ? cmd->duration : cmd->duration - time(NULL);
 
     if (cmd->disk_chksum_type == CHKSUM_DEFAULT) {  //** Normal split allocation
         snprintf(buffer, sizeof(buffer), "%d %d %s %s %d %d %d " I64T " %d\n",
                  IBPv040, IBP_SPLIT_ALLOCATE, cmd->key, cmd->typekey, cmd->attr->reliability, cmd->attr->type,
-                 cmd->duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
+                 duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
     } else if ((tbx_chksum_type_valid(cmd->disk_chksum_type) == 1) || (cmd->disk_chksum_type == CHKSUM_NONE)) {
         snprintf(buffer, sizeof(buffer), "%d %d %d " I64T " %s %s %d %d %d " I64T " %d\n",
                  IBPv040, IBP_SPLIT_ALLOCATE_CHKSUM, cmd->disk_chksum_type, cmd->disk_blocksize, cmd->key, cmd->typekey, cmd->attr->reliability, cmd->attr->type,
-                 cmd->duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
+                 duration, cmd->size, (int)apr_time_sec(gop->op->cmd.timeout));
     } else {
         log_printf(10, "split_allocate_command: Invalid chksum type! type=%d ns=%d\n", cmd->disk_chksum_type, tbx_ns_getid(ns));
         _op_set_status(err, OP_STATE_FAILURE, IBP_E_CHKSUM_TYPE);
@@ -912,9 +922,14 @@ gop_op_status_t proxy_allocate_command(gop_op_generic_t *gop, tbx_ns_t *ns)
     char buffer[1024];
     gop_op_status_t err;
     ibp_op_alloc_t *cmd = &(op->ops.alloc_op);
+    int duration;
+
+    //** If the duration is less than the current time we assume it's already a delta and not an absolute value.
+    //** NOTE: This is in sec and NOT APR time!
+    duration = (cmd->duration < time(NULL)) ? cmd->duration : cmd->duration - time(NULL);
 
     snprintf(buffer, sizeof(buffer), "%d %d %s %s " I64T " " I64T " %d %d\n",
-             IBPv040, IBP_PROXY_ALLOCATE, cmd->key, cmd->typekey, cmd->offset, cmd->size, cmd->duration, (int)apr_time_sec(gop->op->cmd.timeout));
+             IBPv040, IBP_PROXY_ALLOCATE, cmd->key, cmd->typekey, cmd->offset, cmd->size, duration, (int)apr_time_sec(gop->op->cmd.timeout));
 
     tbx_ns_chksum_write_clear(ns);
 
@@ -1000,8 +1015,9 @@ gop_op_status_t modify_alloc_command(gop_op_generic_t *gop, tbx_ns_t *ns)
 
     cmd = &(op->ops.mod_alloc_op);
 
-    atime = cmd->duration - time(NULL); //** This is in sec NOT APR time
-    if (atime < 0) atime = cmd->duration;
+    //** If the duration is less than the current time we assume it's already a delta and not an absolute value.
+    //** NOTE: This is in sec and NOT APR time!
+    atime = (cmd->duration < time(NULL)) ? cmd->duration : cmd->duration - time(NULL);
 
     snprintf(buffer, sizeof(buffer), "%d %d %s %s %d %d " I64T " %d %d %d\n",
              IBPv040, IBP_MANAGE, cmd->key, cmd->typekey, IBP_CHNG, IBP_MANAGECAP, cmd->size, atime,
@@ -1027,8 +1043,9 @@ gop_op_status_t proxy_modify_alloc_command(gop_op_generic_t *gop, tbx_ns_t *ns)
 
     cmd = &(op->ops.mod_alloc_op);
 
-    atime = cmd->duration - time(NULL); //** This is in sec NOT APR time
-    if (atime < 0) atime = cmd->duration;
+    //** If the duration is less than the current time we assume it's already a delta and not an absolute value.
+    //** NOTE: This is in sec and NOT APR time!
+    atime = (cmd->duration < time(NULL)) ? cmd->duration : cmd->duration - time(NULL);
 
     snprintf(buffer, sizeof(buffer), "%d %d %s %s %d " I64T " " I64T " %d %s %s %d\n",
              IBPv040, IBP_PROXY_MANAGE, cmd->key, cmd->typekey, IBP_CHNG, cmd->offset,  cmd->size, atime,

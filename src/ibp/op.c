@@ -593,10 +593,7 @@ gop_op_generic_t *ibp_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp_off_t
     cmd->caps = caps;
     cmd->depot = depot;
     cmd->attr = attr;
-
-    cmd->duration = cmd->attr->duration - time(NULL);  //** This is in sec NOT APR time
-    if (cmd->duration < 0) cmd->duration = cmd->attr->duration;
-
+    cmd->duration = cmd->attr->duration; //** The determination of a relative vs absolute duration is made in the send command call
     cmd->size = size;
     cmd->disk_chksum_type = disk_cs_type;
     cmd->disk_blocksize = disk_blocksize;
@@ -632,10 +629,7 @@ gop_op_generic_t *ibp_split_alloc_gop(ibp_context_t *ic, ibp_cap_t *mcap, ibp_ca
     cmd = &(op->ops.alloc_op);
     cmd->caps = caps;
     cmd->attr = attr;
-
-    cmd->duration = cmd->attr->duration - time(NULL);  //** This is in sec NOT APR time
-    if (cmd->duration < 0) cmd->duration = cmd->attr->duration;
-
+    cmd->duration = cmd->attr->duration; //** The determination of a relative vs absolute duration is made in the send command call
     cmd->size = size;
     cmd->disk_chksum_type = disk_cs_type;
     cmd->disk_blocksize = disk_blocksize;
@@ -735,13 +729,7 @@ gop_op_generic_t *ibp_proxy_alloc_gop(ibp_context_t *ic, ibp_capset_t *caps, ibp
 
     cmd->offset = offset;
     cmd->size = size;
-    if (duration == 0) {
-        cmd->duration = 0;
-    } else {
-        cmd->duration = duration - time(NULL); //** This is in sec NOT APR time
-    }
-
-
+    cmd->duration = duration; //** The determination of a relative vs absolute duration is made in the send command call
     cmd->caps = caps;
 
     gop->op->cmd.send_command = proxy_allocate_command;
@@ -840,7 +828,7 @@ gop_op_generic_t *ibp_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, ibp_of
 
     cmd->cap = cap;
     cmd->size = size;
-    cmd->duration = duration;
+    cmd->duration = duration;    //** The determination of a relative vs absolute duration is made in the send command call
     cmd->reliability = reliability;
 
     gop->op->cmd.send_command = modify_alloc_command;
@@ -875,7 +863,7 @@ gop_op_generic_t *ibp_proxy_modify_alloc_gop(ibp_context_t *ic, ibp_cap_t *cap, 
     cmd->cap = cap;
     cmd->offset = offset;
     cmd->size = size;
-    cmd->duration = duration;
+    cmd->duration = duration; //** The determination of a relative vs absolute duration is made in the send command call
 
     gop->op->cmd.send_command = proxy_modify_alloc_command;
     gop->op->cmd.send_phase = NULL;
