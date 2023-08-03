@@ -3917,6 +3917,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     op_status = osfile_open_object_fn(&op_open, 0);
     if (op_status.op_status != OP_STATE_SUCCESS) {
+        if (op_open.id) free(op_open.id);
         status.op_status = OP_STATE_FAILURE;
         status.error_code = op->n_keys;
         notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed\n", op->type, etext1, etext2);
@@ -5139,6 +5140,7 @@ gop_op_status_t osf_get_multiple_attr_immediate_fn(void *arg, int id)
 
     op_status = osfile_open_object_fn(&op_open, 0);
     if (op_status.op_status != OP_STATE_SUCCESS) {
+        if (op_open.id) free(op_open.id);
         status = op_status;
         notify_printf(osf->olog, 1, op->creds, "ERROR: GETATTR(%s, %s) -- open failed\n", op->path, rpath);
         return(status);
@@ -5428,6 +5430,7 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
 
     op_status = osfile_open_object_fn(&op_open, 0);
     if (op_status.op_status != OP_STATE_SUCCESS) {
+        if (op_open.id) free(op_open.id);
         status = op_status;
         notify_printf(osf->olog, 1, op->creds, "ERROR: SETATTR(%s, %s) -- open failed\n", op->path, rpath);
         return(status);
