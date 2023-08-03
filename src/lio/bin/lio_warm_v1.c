@@ -173,7 +173,11 @@ gop_op_status_t gen_warm_task(void *arg, int id)
             wrid->nbytes += w->cap[w->n].nbytes;
 
             //** Get the manage cap
-            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", "");
+            etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "manage_cap", NULL);
+            if (etext == NULL) {
+                info_printf(lio_ifd, 1, "MISSING_MCAP_ERROR: fname=%s block=%s\n", w->tuple.path,  tbx_inip_group_get(g));
+                goto next;
+            }
             w->cap[w->n].cap = tbx_stk_unescape_text('\\', etext);
             free(etext);
 
@@ -191,6 +195,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
                 }
             }
         }
+next:
         g = tbx_inip_group_next(g);
     }
 
