@@ -61,8 +61,6 @@ char *lio_os_glob2regex(const char *glob)
     reg[j] = '^';
     j++;
 
-//log_printf(15, "glob=%s\n", glob);
-
     switch (glob[0]) {
     case ('.') :
         reg[j] = '\\';
@@ -583,7 +581,6 @@ int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat
             }
         } else {
             ftype |= OS_OBJECT_FILE_FLAG|OS_OBJECT_BROKEN_LINK_FLAG;  //** Broken link so flag it as a file anyhow
-
         }
     } else {
         log_printf(1, "lstat error!  fname=%s errno=%d\n", path, errno);
