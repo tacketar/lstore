@@ -1563,9 +1563,9 @@ void lio_print_path_options(FILE *fd)
 void lio_print_object_type_options(FILE *fd, int obj_type_default)
 {
     fprintf(fd, "    -t  object_types   - Types of objects to list or traverse. Bitwise OR of:\n");
-    fprintf(fd, "                             1=Files, 2=Directories, 4=symlink, 8=hardlink,\n");
-    fprintf(fd, "                             16=broken link, 32=executable, 64=virtual attribute, 128=Follow symlinks\n");
-    fprintf(fd, "                             256=socket, 512=fifo\n");
+    fprintf(fd, "                             %d=Files, %d=Directories, %d=symlink, %d=hardlink,\n", OS_OBJECT_FILE_FLAG, OS_OBJECT_DIR_FLAG, OS_OBJECT_SYMLINK_FLAG, OS_OBJECT_HARDLINK_FLAG);
+    fprintf(fd, "                             %d=broken link, %d=executable, %d=virtual attribute, %d=Follow symlinks\n", OS_OBJECT_BROKEN_LINK_FLAG, OS_OBJECT_EXEC_FLAG, OS_OBJECT_VIRTUAL_FLAG, OS_OBJECT_FOLLOW_SYMLINK_FLAG);
+    fprintf(fd, "                             %d=socket, %d=fifo %d=No broken links %d=No symlinks\n", OS_OBJECT_SOCKET_FLAG, OS_OBJECT_FIFO_FLAG, OS_OBJECT_NO_BROKEN_LINK_FLAG, OS_OBJECT_NO_SYMLINK_FLAG);
     fprintf(fd, "                             Default is %d.\n", obj_type_default);
 }
 

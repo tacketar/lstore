@@ -253,6 +253,7 @@ typedef struct {
     int prev_match_prefix;
     int mode;
     int object_types;
+    int skip_object_types;
     int finished;
 } osf_object_iter_t;
 
@@ -2634,8 +2635,10 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                 }
                             }
 
-                            //** See if we have a match: either it's a file or a symlink to a file or dir we don't recurse into
-                            if ((i & (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0)) || (can_access == 1)) {
+                            //** See if we have a match: either it's a file or a symlink to a file or dir we don't recurse into or we explicitly skip it
+                            if ((i & it->skip_object_types) && ((it->table->n-1) <= it->curr_level)) {  //* We skip it if off the fixed list
+                                ;   //** Nothing to do
+                            } else if ((i & (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) || ((i & OS_OBJECT_DIR_FLAG) && (do_recurse == 0)) || (can_access == 1)) {
                                 if ((i & it->object_types) > 0) {
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
                                     if (rmatch == 0) { //** IF a match return
@@ -5762,6 +5765,11 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
         apr_pool_create(&it->mpool, NULL);
         it->symlink_loop = apr_hash_make(it->mpool);
     }
+
+    //** See if we need to filter out some objects
+    if (object_types & OS_OBJECT_NO_SYMLINK_FLAG) it->skip_object_types |= OS_OBJECT_SYMLINK_FLAG;
+    if (object_types & OS_OBJECT_NO_BROKEN_LINK_FLAG) it->skip_object_types |= OS_OBJECT_BROKEN_LINK_FLAG;
+
     tbx_type_malloc_clear(it->level_info, osf_obj_level_t, it->table->n);
     for (i=0; i<it->table->n; i++) {
         itl = &(it->level_info[i]);

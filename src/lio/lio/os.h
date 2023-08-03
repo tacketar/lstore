@@ -58,6 +58,8 @@ enum lio_object_type_t {
     OS_OBJECT_FIFO           =  9,  // ** FIFO device
     OS_OBJECT_BLOCK          = 10,  // ** Block device -- UNSUPPORTED
     OS_OBJECT_CHAR           = 11,  // ** Character device -- UNSUPPORTED
+    OS_OBJECT_NO_BROKEN_LINK = 12,  // ** Skip broken links
+    OS_OBJECT_NO_SYMLINK     = 13   // ** Ignore symlinks
 };
 typedef enum lio_object_type_t lio_object_type_t;
 
@@ -71,10 +73,12 @@ enum lio_object_type_flag_t {
     OS_OBJECT_VIRTUAL_FLAG        = (1 << OS_OBJECT_VIRTUAL),
     OS_OBJECT_FOLLOW_SYMLINK_FLAG = (1 << OS_OBJECT_FOLLOW_SYMLINK),
     OS_OBJECT_SOCKET_FLAG         = (1 << OS_OBJECT_SOCKET),
+    OS_OBJECT_FIFO_FLAG           = (1 << OS_OBJECT_FIFO),
     OS_OBJECT_BLOCK_FLAG          = (1 << OS_OBJECT_BLOCK),
     OS_OBJECT_CHAR_FLAG           = (1 << OS_OBJECT_CHAR),
-    OS_OBJECT_FIFO_FLAG           = (1 << OS_OBJECT_FIFO),
-    OS_OBJECT_ANY_FLAG            = (0x37F),                      //  ** All the supported types excluding FOLLOW_SYMLINK
+    OS_OBJECT_NO_BROKEN_LINK_FLAG = (1 << OS_OBJECT_NO_BROKEN_LINK),
+    OS_OBJECT_NO_SYMLINK_FLAG     = (1 << OS_OBJECT_NO_SYMLINK),
+    OS_OBJECT_ANY_FLAG            = (0x37F),                      //  ** All the supported types excluding FOLLOW_SYMLINK, NO_SYMLINK, and NO_BORKEN_LINK
     OS_OBJECT_ANYFILE_FLAG        = (OS_OBJECT_FILE_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG),  // ** All the "file" type objects
     OS_OBJECT_UNSUPPORTED_FLAG    = (OS_OBJECT_BLOCK_FLAG|OS_OBJECT_CHAR_FLAG)  // ** All the unsupported object types
 };
