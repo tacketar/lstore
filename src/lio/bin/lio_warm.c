@@ -828,14 +828,14 @@ int main(int argc, char **argv)
         free(path);  //** No longer needed.  lio_path_resolve will strdup
 
         v_size[0] = v_size[1] = -tuple.lc->max_attr; v_size[2] = -tuple.lc->max_attr;
-        it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
+        it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG|OS_OBJECT_NO_SYMLINK_FLAG|OS_OBJECT_NO_BROKEN_LINK_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
         if (it == NULL) {
             info_printf(lio_ifd, 0, "ERROR: Failed with object_iter creation\n");
             goto finished;
         }
 
         while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
-            if ((ftype & OS_OBJECT_SYMLINK) || (v_size[0] == -1)) { //** We skip symlinked files and files missing exnodes
+            if (v_size[0] == -1) { //** Missing exnode
                 info_printf(lio_ifd, 0, "MISSING_EXNODE_ERROR for file %s\n", fname);
                 missing_err++;
                 free(fname);
