@@ -1202,7 +1202,9 @@ void lio_fuse_cap_info(void *arg, FILE *fd)
     lio_fuse_t *lfs = arg;
 
     fprintf(fd, "#FUSE version: %d.%d\n", lfs->conn->proto_major, lfs->conn->proto_minor);
+#ifdef HAS_FUSE3
     fprintf(fd, "#FUSE max_read = %d # 0 == no limit.  Must be specified on the command line, -o max_read=<nn> and on the connection\n\n", lfs->conn->max_read);
+#endif
 
     fprintf(fd, "#---- FUSE Caps -- capable - want -------\n");
 #ifdef FUSE_CAP_ASYNC_READ
