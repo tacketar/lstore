@@ -1600,7 +1600,7 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
     gop_mq_get_frame(ffd, (void **)&data, &len);
     if (is_immediate) {
         path = (char *)data;
-        if (path[len] != 0) path[len] = 0;  //** Make sure it's NULL terminated
+        if (path[len-1] != 0) path[len-1] = 0;  //** Make sure it's NULL terminated
     } else {
         fd_key = *(intptr_t *)data;
     }
@@ -1806,7 +1806,7 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
     gop_mq_get_frame(ffd, (void **)&data, &len);
     if (is_immediate) {
         path = (char *)data;
-        if (path[len] != 0) path[len] = 0;  //** Make sure it's NULL terminated
+        if (path[len-1] != 0) path[len-1] = 0;  //** Make sure it's NULL terminated
     } else {
         fd_key = *(intptr_t *)data;
     }
