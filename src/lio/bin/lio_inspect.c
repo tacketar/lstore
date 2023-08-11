@@ -1473,6 +1473,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 err = EINVAL;
                 free(path);
+                lio_path_release(&tuple);
                 continue;
             }
             lio_path_wildcard_auto_append(&tuple);
@@ -1480,6 +1481,7 @@ int main(int argc, char **argv)
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
                 free(path);
+                lio_path_release(&tuple);
                 continue;
             }
             free(path);
