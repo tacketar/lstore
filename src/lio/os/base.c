@@ -245,8 +245,8 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
             log_printf(15, "   i=%d glob=%s  regex=%s\n", i, frag, table->regex_entry[i].expression);
             err = regcomp(&(table->regex_entry[i].compiled), table->regex_entry[i].expression, REG_NOSUB|REG_EXTENDED);
             if (err != 0) {
-                lio_os_regex_table_destroy(table);
                 log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d\n", table->regex_entry[i].expression, err);
+                lio_os_regex_table_destroy(table);
                 free(p2);
                 return(NULL);
             }
