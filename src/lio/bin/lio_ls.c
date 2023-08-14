@@ -38,10 +38,6 @@
 #include <lio/lio.h>
 #include <lio/os.h>
 
-//#define OSAZ_MAX_ATTR 5 // This may need to be increased if he OSAZ needs more fields.  The case is caught and exited
-//#define USED_ATTR 5
-//#define MAX_ATTR (OSAZ_MAX_ATTR + USED_ATTR)
-
 #define MAX_ATTR 5
 
 typedef struct {
@@ -55,8 +51,6 @@ typedef struct {
 } ls_entry_t;
 
 int base = 1;
-//int n_osaz_attr = 0;
-//int n_attrs_fetched;
 lio_path_tuple_t tuple;
 
 //*************************************************************************
@@ -244,10 +238,17 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 free(path);
                 return_code = EINVAL;
+                lio_path_release(&tuple);
                 continue;
             }
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
+            if (!rp_single) {  //** Got a bad path
+                info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
+                free(path);
+                lio_path_release(&tuple);
+                continue;
+            }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }

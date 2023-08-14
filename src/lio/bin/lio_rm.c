@@ -124,13 +124,19 @@ int main(int argc, char **argv)
         loop++;
         path_list[i] = path;
         flist[i] = lio_path_resolve(lio_gc->auto_translate, path_list[i]);
-        if (flist[i].is_lio < 0) {                                                                                                                                                   
+        if (flist[i].is_lio < 0) {
             fprintf(stderr, "Unable to parse path: %s\n", path_list[i]);
             free(path);
             return_code = EINVAL;
+            lio_path_release(&(flist[i]));
             continue;
         }
         rpath[i] = lio_os_path_glob2regex(flist[i].path);
+        if (!rpath[i]) {  //** Got a bad path
+           info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", flist[i].path);
+           lio_path_release(&(flist[i]));
+           continue;
+        }
         gop = lio_remove_regex_gop(flist[i].lc, flist[i].creds, rpath[i], NULL, obj_types, recurse_depth, lio_parallel_task_count);
         gop_set_myid(gop, i);
         log_printf(0, "gid=%d i=%d fname=%s\n", gop_id(gop), i, flist[i].path);

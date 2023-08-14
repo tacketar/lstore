@@ -86,6 +86,7 @@ int main(int argc, char **argv)
         if (tuple->is_lio < 0) {
             fprintf(stderr, "Unable to parse path: %s\n", path);
             free(path);
+            lio_path_release(tuple);
             free(tuple);
             return_code = EINVAL;
             continue;

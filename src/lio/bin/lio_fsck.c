@@ -175,6 +175,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "Unable to resolve path: %s\n", path);
             free(path);
             return_code = EINVAL;
+            lio_path_release(&tuple);
             continue;
         }
         free(path);

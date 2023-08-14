@@ -188,6 +188,7 @@ int main(int argc, char **argv)
             lio_path_local_make_absolute(&cp->src_tuple);
         } else if (cp->src_tuple.is_lio < 0) {   //** Can't parse path so skip
             fprintf(stderr, "Unable to parse source path: %s\n", path);
+            lio_path_release(&cp->src_tuple);
             free(path);
             free(cp);
             goto finished;

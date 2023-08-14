@@ -321,11 +321,17 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 err = EINVAL;
                 free(path);
+                lio_path_release(&tuple);
                 continue;
             }
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
             free(path);
+            if (!rp_single) {  //** Got a bad path
+                info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", tuple.path);
+                lio_path_release(&tuple);
+                continue;
+            }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }

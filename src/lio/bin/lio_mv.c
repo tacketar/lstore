@@ -212,6 +212,7 @@ int main(int argc, char **argv)
         if (mv->src_tuple.is_lio < 0) {
             fprintf(stderr, "Unable to parse path: %s\n", path);
             return_code = EINVAL;
+            lio_path_release(&mv->src_tuple);
             free(path);
             free(mv);
             goto finished;

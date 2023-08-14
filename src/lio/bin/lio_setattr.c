@@ -197,10 +197,16 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 return_code = EINVAL;
                 free(path);
-                    continue;
+                lio_path_release(&tuple);
+                continue;
             }
             free(path);
             rp_single = lio_os_path_glob2regex(tuple.path);
+            if (!rp_single) {  //** Got a bad path
+                info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", tuple.path);
+                lio_path_release(&tuple);
+                continue;
+            }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
