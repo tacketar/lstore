@@ -214,7 +214,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     tbx_inip_file_t *fd;
     int n;
     char account_section[128];
-    char *account, *psk, *etext, *text;
+    char *account, *psk, *etext, *text, *user;
 
     //** Check the perms
     if (stat(psk_name, &st) != 0) {
@@ -262,6 +262,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     }
     snprintf(account_section, sizeof(account_section)-1, "account-%s", account); account_section[sizeof(account_section)-1] = '\0';
 
+    user = tbx_inip_get_string(fd, account_section, "user", account);
     etext = tbx_inip_get_string(fd, account_section, "key", NULL);
     tbx_inip_destroy(fd);
     if (!etext) {
@@ -282,12 +283,13 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     free(etext); free(text);
 
     //** Set the default ID's
-    cred_default_set_ids(c, account);
+    cred_default_set_ids(c, user);
 
     //** Do the validation with the server
     psk_exchange(an, c, psk);
 
     free(account);
+    free(user);
     memset(psk, 0, n); free(psk);  //** Clear the key before freeing it
 
     return(0);
