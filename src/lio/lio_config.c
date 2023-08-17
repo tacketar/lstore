@@ -717,13 +717,14 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
         goto finished;
     }
 
-    //** See if we have a path.  If we don't then blow away what we got above and assume it's all a path
     if (!fname) {
-        fname = strdup(lpath);
+        memset(&tuple, 0, sizeof(tuple));
         is_lio = 0;
-        strncpy(uri, lio_gc->obj_name, sizeof(uri));
-        uri[sizeof(uri)-1] = '\0';
-    } else if ((lio_gc) && (!pp_mq) && (!pp_host) && (!pp_cfg) && (!pp_section) && (pp_port == 0)) { //** Check if we just have defaults if so use the global context
+        fprintf(stderr, "lio_path_resolve_base:  ERROR: fname=NULL lpath=%s\n", lpath);
+        goto finished;
+    }
+
+    if ((lio_gc) && (!pp_mq) && (!pp_host) && (!pp_cfg) && (!pp_section) && (pp_port == 0)) { //** Check if we just have defaults if so use the global context
         strncpy(uri, lio_gc->obj_name, sizeof(uri)-1);
         uri[sizeof(uri)-1] = '\0';
     } else {
@@ -849,6 +850,11 @@ lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple)
     char path[OS_PATH_MAX];
     lio_path_tuple_t tuple;
     int do_convert, prefix_len, i;
+
+    if (ltuple->path == NULL) {
+        fprintf(stderr, "lio_path_auto_fuse_convert: ERROR: Missing path!\n");
+        return(*ltuple);
+    }
 
     //** Convert if to an absolute path
     lio_path_local_make_absolute(ltuple);

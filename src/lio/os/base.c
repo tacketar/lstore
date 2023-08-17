@@ -200,7 +200,13 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
 {
     lio_os_regex_table_t *table;
     char *bstate, *p2, *frag, *f2;
-    int i, j, n, fin, err;
+    int i, j, n, fin, err, rerr;
+    char regex_error[1024];
+
+    if (path == NULL) {
+        fprintf(stderr, "lio_os_path_glob2regex: ERROR! Mising path!\n");
+        return(NULL);
+    }
 
     p2 = strdup(path);
 
@@ -245,7 +251,9 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
             log_printf(15, "   i=%d glob=%s  regex=%s\n", i, frag, table->regex_entry[i].expression);
             err = regcomp(&(table->regex_entry[i].compiled), table->regex_entry[i].expression, REG_NOSUB|REG_EXTENDED);
             if (err != 0) {
-                log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d\n", table->regex_entry[i].expression, err);
+                regex_error[0] = 0;
+                rerr = regerror(err, &(table->regex_entry[i].compiled), regex_error, sizeof(regex_error));
+                log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d rerr=%d regerror=%s\n", table->regex_entry[i].expression, err, rerr, regex_error);
                 lio_os_regex_table_destroy(table);
                 free(p2);
                 return(NULL);
