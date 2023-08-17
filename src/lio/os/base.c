@@ -158,22 +158,17 @@ int lio_os_globregex_parse(regex_t *regex, const char *text)
 }
 
 //***********************************************************************
-// check_for_glob - Returns 1 if a glob char acter exists in the string
+// check_for_glob - Returns 1 if a glob character exists in the string
+//   NOTE: If we have an escap characer, '\', we consider the string to
+//         have a glob character and just let regcomp do the unescaping.
 //***********************************************************************
 
 int check_for_glob(char *glob)
 {
-    int i;
+    char *ptr;
 
-    if ((glob[0] == '*') || (glob[0] == '?') || (glob[0] == '[')) return(1);
-
-    i = 1;
-    while (glob[i] != 0) {
-        if ((glob[i] == '*') || (glob[i] == '?') || (glob[i] == '[')) {
-            if (glob[i-1] != '\\') return(1);
-        }
-
-        i++;
+    for (ptr = glob; *ptr != 0; ptr++) {
+        if ((*ptr == '*') || (*ptr == '?') || (*ptr == '[') || (*ptr == ']') | (*ptr == '\\')) return(1);
     }
 
     return(0);
