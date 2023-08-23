@@ -28,6 +28,7 @@ extern "C" {
 
 // Functions
 TBX_API char *tbx_stk_argv2format(char *arg);
+TBX_API char *tbx_stk_unescape_strndup(char escape_char, char *data, int len);
 TBX_API char *tbx_stk_escape_strchr(char escape_char, char *data, char match);
 TBX_API char *tbx_stk_escape_string_token(char *str,
                                             const char *delims,

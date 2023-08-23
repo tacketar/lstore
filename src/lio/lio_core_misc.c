@@ -82,6 +82,42 @@ next:
     return(shortcut);
 }
 
+//***********************************************************************
+// scan_special - Returns the 1st occurence of the special character
+//***********************************************************************
+
+char *scan_special(char special, char *string, char escape)
+{
+    int i;
+
+    for (i=0; string[i] != 0; i++) {
+        if (string[i] == special) {
+            if (i>0) {
+                if (string[i-1] == escape) continue;
+            }
+            return(string + i);
+        }
+    }
+
+    return(NULL);
+}
+
+//***********************************************************************
+// is_special - returns 1 if the character matches and hasn't been escaped
+//***********************************************************************
+
+int is_special(char special, char *string, int offset, char escape)
+{
+    if (string[offset] == special) {
+        if (offset > 0) {
+            if (string[offset-1] == escape) return(0);
+        }
+
+        return(1);
+    }
+
+    return(0);
+}
 
 //***********************************************************************
 //  lio_parse_path - Parses a path of the form:
@@ -104,10 +140,10 @@ next:
 //    -1 if the path can't be parsed.  Usually :@ or some perm
 //***********************************************************************
 
-int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path)
+int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path, int path_is_literal)
 {
-    int i, j, k, found, found2, n, ptype, uri, m, s;
-    char *dummy, *shortcut;
+    int i, j, k, found, found2, n, ptype, uri, m, s, uri_type, got_at, got_mq;
+    char *dummy, *shortcut, *c1, *c2;
     char label[2048];
     char *startpath;
 
@@ -116,46 +152,70 @@ int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int
 
 try_again:
     n = strlen(startpath);
+    uri_type = 0;
+    got_at = 0;
+    got_mq = 0;
 
     if (strncasecmp(startpath, "file://", 7) == 0) { //** Straight file
         k = 7;
         ptype = 0;
+        uri_type = 1;
         goto handle_path;
     }
 
     //** Check for the "lstore://" prefix and skipp if there
-    k = (strncasecmp(startpath, "lstore://", 9) == 0) ?  9 : 0;
-    uri = k;   //** Note we have an official URI prefix
-    ptype = (k == 0) ? 0 : 1;
+    if (strncasecmp(startpath, "lstore://", 9) == 0) {
+        k = 9;
+        uri = k;   //** Note we have an official URI prefix
+        uri_type = 2;
+        ptype = 1;
+    } else {
+        k = 0;
+        uri = 0;
+        ptype = 0;
+    }
 
     //printf("URI=%s len=%d uri=%d\n", startpath, n, uri);
 
     if (k<n) {
-        if (startpath[k] == '/') goto handle_path;  //** Just a path
+        if (is_special('/', startpath, k, '\\')) goto handle_path;  //** Just a path
     }
 
+    if (uri_type == 0) {  //** Unknown URI which means any @ has to come before a :
+        c1 = scan_special('@', startpath + k, '\\');
+        if (c1) {
+            c2 = scan_special(':', startpath + k, '\\');
+            if (c2) {
+                if (c1 > c2) {
+                    ptype = -1;
+                    goto kick_out;
+                }
+            }
+        }
+    }
     //** check for the '@'
     found = -1;
     for (i=k; i<n; i++) {
-        if (startpath[i] == '@') {
+        if (is_special('@', startpath, i, '\\')) {
             found = i+1;
             ptype = 1;
+            got_at = 1;
 
             if ((i>k) && (user)) {  //** Got a valid user
                 if (*user == NULL) {
                     if (!shortcut) {  //** Only copy over the user if it's empty if handling a shortcut
                         free(*user);
-                        *user = strndup(startpath+k, i-k);
+                        *user = tbx_stk_unescape_strndup('\\', startpath+k, i-k);
                     }
                 }
             }
-            if (startpath[found] == '@') { //** See if we got a shortcut
+            if (is_special('@', startpath, found, '\\')) { //** See if we got a shortcut
                 found++;
                 label[0] = '\0';
                 for (j=found; j<n; j++) {
-                    if (startpath[j] == ':') break;
+                    if (is_special(':', startpath, j, '\\')) break;
                 }
-                if (startpath[j] != ':') j++;
+                if (is_special(':', startpath, j, '\\')) j++;
                 memcpy(label, startpath + found, j-found);
                 label[j-found] = '\0';
                 shortcut = lio_get_shortcut(label);
@@ -171,7 +231,7 @@ try_again:
                 }
             }
             break;
-        } else if ((startpath[i] == '|') || (startpath[i] == ':')) { //** Got an MQ name
+        } else if ((is_special('|', startpath, i, '\\')) || (is_special(':', startpath, i, '\\'))) { //** Got an MQ name
             if (found == -1) {
                 found = uri;
                 ptype = 1;
@@ -181,7 +241,7 @@ try_again:
     }
 
     if ((found == -1) && (uri == 0)) {
-        if (startpath[k] == '/') {  //** Didn't find anything else to to parse
+        if (is_special('/', startpath, k, '\\')) { //** Didn't find anything else to to parse
             if (path) {
                 if (*path) free(*path);
                 *path = strdup(startpath + k);
@@ -197,13 +257,14 @@ try_again:
     found = -1;
     found2 = 0;
     for (i=k; i<n; i++) {
-        if (startpath[i] == ':') {
+        if (is_special(':', startpath, i, '\\')) {
             found = i;
             break;
-        } else if (startpath[i] == '|') { //** Got an MQ name
+        } else if (is_special('|', startpath, i, '\\')) {  //** Got an MQ name
+            got_mq = 1;
             if ((i>k) && (mq_name)) {
                 if (*mq_name) free(*mq_name);
-                *mq_name = strndup(startpath + k, i-k);
+                *mq_name = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;  //** Move the starting forward to skip the MQ name
             found2 = 1;
@@ -212,9 +273,14 @@ try_again:
 
     if (found == -1) {  //**No path.  Just a host
         if (k < n) {
-            if (host) {
-                if (*host) free(*host);
-                *host = strdup(startpath+k);
+            if ((uri_type == 2) || got_at || got_mq) {
+                if (host) {
+                    if (*host) free(*host);
+                    *host = tbx_stk_unescape_strndup('\\', startpath+k, -1);
+                }
+            } else if (uri_type == 0) {
+                ptype = 0;
+                goto handle_path;
             }
         }
         goto kick_out;
@@ -222,7 +288,7 @@ try_again:
         if (k<n) {
             if ((i>k) && (host)) {
                 if (*host) free(*host);
-                *host = strndup(startpath + k, i-k);
+                *host = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;  //** Move the starting forward to skip the MQ name
         } else if (found2) { //** We have an MQ name without a host so flag an error
@@ -231,14 +297,14 @@ try_again:
         }
     }
 
-    if (startpath[k] == '/') goto handle_path;
+    if (is_special('/', startpath, k, '\\')) goto handle_path;
 
     //** Now check if we have a port
     found = 0;
     for (i=k; i<n; i++) {
         if (startpath[i] == ':') {
             if (i>k) {
-                dummy = strndup(startpath + k, i-k);
+                dummy = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
                 found2 = atoi(dummy);
                 free(dummy);
                 if (found2 > 0) {  //** Got a valid port
@@ -252,7 +318,7 @@ try_again:
     }
 
     if (!found) { //** See if we have a port or a path for the end
-        if (startpath[k] == '/') goto handle_path;
+        if (is_special('/', startpath, k, '\\')) goto handle_path;
         found2 = atoi(startpath+k);
         if (found2 > 0) {
            if (port) *port = found2;
@@ -260,15 +326,15 @@ try_again:
         }
     }
 
-    if (startpath[k] == '/') goto handle_path;
+    if (is_special('/', startpath, k, '\\')) goto handle_path;
 
     //** check if we have a config name
     found = 0;
     for (i=k; i<n; i++) {
-        if (startpath[i] == ':') {
+        if (is_special(':', startpath, i, '\\')) {
             if ((i>k) && (cfg)) {
                 if (*cfg) free(*cfg);
-                *cfg = strndup(startpath + k, i-k);
+                *cfg = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             found = 1;
             k = i+1;
@@ -276,22 +342,27 @@ try_again:
         }
     }
 
-    if (startpath[k] == '/') goto handle_path;
+    if (is_special('/', startpath, k, '\\')) goto handle_path;
 
     if (!found) { //** At the end and we don't have a path so it's a cfg
         if ((i>k) && (cfg)) {
             if (*cfg) free(*cfg);
-            *cfg = strndup(startpath + k, i-k);
+            *cfg = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
+            if (strcmp(*cfg, "@") == 0) {  //** Malformed path
+                free(*cfg);
+                *cfg = NULL;
+                ptype = -1;
+            }
         }
         goto kick_out;
     }
 
     //** check if we have a section
     for (i=k; i<n; i++) {
-        if (startpath[i] == ':') {
+        if (is_special(':', startpath, i, '\\')) {
             if ((i>k) && (section)) {
                 if (*section) free(*section);
-                *section = strndup(startpath + k, i-k);
+                *section = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;
             break;
@@ -303,7 +374,7 @@ handle_path:
     //** Anythng else is the path
     if ((k<n) && (path)) {
         if (*path) free(*path);
-        *path = strdup(startpath + k);
+        *path = (path_is_literal == 0) ? tbx_stk_unescape_strndup('\\', startpath + k, -1) : strdup(startpath + k);
     }
 
 kick_out:
@@ -377,14 +448,14 @@ int strcmp_null(const char *s1, const char *s2)
 //  parse_check - Does the error checking and printing
 //***********************************************************************
 
-int parse_path_check(char *uri, char *user, char *mq_name, char *host, int port, char *cfg, char *section, char *path, int err)
+int parse_path_check(char *uri, char *user, char *mq_name, char *host, int port, char *cfg, char *section, char *path, int path_is_literal, int err)
 {
     int err2, port2, ret;
     char *user2, *mq_name2, *host2, *cfg2, *section2, *path2;
 
     port2 = -1;
     user2 = mq_name2 = host2 = cfg2 = section2 = path2 = NULL;
-    err2 = lio_parse_path(uri, &user2, &mq_name2, &host2, &port2, &cfg2, &section2, &path2);
+    err2 = lio_parse_path(uri, &user2, &mq_name2, &host2, &port2, &cfg2, &section2, &path2, path_is_literal);
 
     printf("uri=%s err=%d\n", uri, err2);
 
@@ -411,37 +482,42 @@ int lio_parse_path_test()
     int err;
 
     err = 0;
-    err += parse_path_check("lstore://user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 1);
-    err += parse_path_check("user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 1);
-    err += parse_path_check("user@host.vampire:1234:cfg:section:/my/path", "user", NULL, "host.vampire", 1234, "cfg", "section", "/my/path", 1);
-    err += parse_path_check("user@host.vampire:cfg:section:/my/path", "user", NULL, "host.vampire", -1, "cfg", "section", "/my/path", 1);
-    err += parse_path_check("user@host.vampire:/my/path", "user", NULL, "host.vampire", -1, NULL, NULL, "/my/path", 1);
-    err += parse_path_check("user@host.vampire:1234", "user", NULL, "host.vampire", 1234, NULL, NULL, NULL, 1);
-    err += parse_path_check("user@host.vampire:cfg:", "user", NULL, "host.vampire", -1, "cfg", NULL, NULL, 1);
-    err += parse_path_check("user@host.vampire:cfg:section:", "user", NULL, "host.vampire", -1, "cfg", "section", NULL, 1);
-    err += parse_path_check("user@host.vampire::section:", "user", NULL, "host.vampire", -1, NULL, "section", NULL, 1);
-    err += parse_path_check("user@host.vampire:::", "user", NULL, "host.vampire", -1, NULL, NULL, NULL, 1);
-    err += parse_path_check("user@host.vampire:::/my/path", "user", NULL, "host.vampire", -1, NULL, NULL, "/my/path", 1);
-    err += parse_path_check("user@host.vampire:1234:/my/path", "user", NULL, "host.vampire", 1234, NULL, NULL, "/my/path", 1);
-    err += parse_path_check("user@host.vampire", "user", NULL, "host.vampire", -1, NULL, NULL, NULL, 1);
-    err += parse_path_check("MQ|host.vampire:cfg", NULL, "MQ", "host.vampire", -1, "cfg", NULL, NULL, 1);
-    err += parse_path_check("MQ|host.vampire", NULL, "MQ", "host.vampire", -1, NULL, NULL, NULL, 1);
-    err += parse_path_check("host.vampire", NULL, NULL, "host.vampire", -1, NULL, NULL, NULL, 1);
-    err += parse_path_check("host.vampire:1234", NULL, NULL, "host.vampire", 1234, NULL, NULL, NULL, 1);
-    err += parse_path_check("host.vampire:cfg", NULL, NULL, "host.vampire", -1, "cfg",  NULL, NULL, 1);
-    err += parse_path_check("host.vampire:cfg:/my/path", NULL, NULL, "host.vampire", -1, "cfg", NULL, "/my/path", 1);
-    err += parse_path_check("host.vampire:/my/path", NULL, NULL, "host.vampire", -1, NULL, NULL, "/my/path", 1);
-    err += parse_path_check("host.vampire:/", NULL, NULL, "host.vampire", -1, NULL, NULL, "/", 1);
-    err += parse_path_check("lstore://host.vampire", NULL, NULL, "host.vampire", -1, NULL, NULL, NULL, 1);
-    err += parse_path_check("lstore://host.vampire:cfg", NULL, NULL, "host.vampire", -1, "cfg", NULL, NULL, 1);
-    err += parse_path_check("lstore://host.vampire:1234", NULL, NULL, "host.vampire", 1234, NULL, NULL, NULL, 1);
-    err += parse_path_check("lstore://host.vampire:1234:cfg", NULL, NULL, "host.vampire", 1234, "cfg", NULL, NULL, 1);
+//goto skip;
+    err += parse_path_check("lstore://user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);
+    err += parse_path_check("user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire:1234:cfg:section:/my/path", "user", NULL, "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire:cfg:section:/my/path", "user", NULL, "host.vampire", -1, "cfg", "section", "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire:/my/path", "user", NULL, "host.vampire", -1, NULL, NULL, "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire:1234", "user", NULL, "host.vampire", 1234, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("user@host.vampire:cfg:", "user", NULL, "host.vampire", -1, "cfg", NULL, NULL, 0, 1);
+    err += parse_path_check("user@host.vampire:cfg:section:", "user", NULL, "host.vampire", -1, "cfg", "section", NULL, 0, 1);
+    err += parse_path_check("user@host.vampire::section:", "user", NULL, "host.vampire", -1, NULL, "section", NULL, 0, 1);
+    err += parse_path_check("user@host.vampire:::", "user", NULL, "host.vampire", -1, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("user@host.vampire:::/my/path", "user", NULL, "host.vampire", -1, NULL, NULL, "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire:1234:/my/path", "user", NULL, "host.vampire", 1234, NULL, NULL, "/my/path", 0, 1);
+    err += parse_path_check("user@host.vampire", "user", NULL, "host.vampire", -1, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("MQ|host.vampire:cfg", NULL, "MQ", "host.vampire", -1, "cfg", NULL, NULL, 0, 1);
+    err += parse_path_check("MQ|host.vampire", NULL, "MQ", "host.vampire", -1, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("lstore://host.vampire", NULL, NULL, "host.vampire", -1, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("lstore://host.vampire:cfg:/my/path", NULL, NULL, "host.vampire", -1, "cfg", NULL, "/my/path", 0, 1);
+    err += parse_path_check("lstore://host.vampire:/my/path", NULL, NULL, "host.vampire", -1, NULL, NULL, "/my/path", 0, 1);
+    err += parse_path_check("lstore://host.vampire:/", NULL, NULL, "host.vampire", -1, NULL, NULL, "/", 0, 1);
+    err += parse_path_check("lstore://host.vampire", NULL, NULL, "host.vampire", -1, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("lstore://host.vampire:cfg", NULL, NULL, "host.vampire", -1, "cfg", NULL, NULL, 0, 1);
+    err += parse_path_check("lstore://host.vampire:1234", NULL, NULL, "host.vampire", 1234, NULL, NULL, NULL, 0, 1);
+    err += parse_path_check("lstore://host.vampire:1234:cfg", NULL, NULL, "host.vampire", 1234, "cfg", NULL, NULL, 0, 1);
 
-    err += parse_path_check("@:/", NULL, NULL, NULL, -1, NULL, NULL, "/", 1);
-    err += parse_path_check(":@", NULL, NULL, NULL, -1, NULL, NULL, NULL, -1);
-    err += parse_path_check("@:/just/a/path", NULL, NULL, NULL, -1, NULL, NULL, "/just/a/path", 1);
-    err += parse_path_check("/just/a/path", NULL, NULL, NULL, -1, NULL, NULL, "/just/a/path", 0);
+//skip:
+    err += parse_path_check("@:/", NULL, NULL, NULL, -1, NULL, NULL, "/", 0, 1);
+    err += parse_path_check(":@", NULL, NULL, NULL, -1, NULL, NULL, NULL, 0, -1);
+    err += parse_path_check("@:/just/a/path", NULL, NULL, NULL, -1, NULL, NULL, "/just/a/path", 0, 1);
+    err += parse_path_check("\\@\\:/just/a/path", NULL, NULL, NULL, -1, NULL, NULL, "@:/just/a/path", 0, 0);
+    err += parse_path_check("/just/a/path", NULL, NULL, NULL, -1, NULL, NULL, "/just/a/path", 0, 0);
+    err += parse_path_check("a/relative/path", NULL, NULL, NULL, -1, NULL, NULL, "a/relative/path", 0, 0);
+    err += parse_path_check("relative\\@\\:/path", NULL, NULL, NULL, -1, NULL, NULL, "relative@:/path", 0, 0);
+    err += parse_path_check("relative_with_\\\\*_path", NULL, NULL, NULL, -1, NULL, NULL, "relative_with_\\*_path", 0, 0);
 
+    printf("--------------\nerror count=%d\n", err);
     return(err);
 }
 

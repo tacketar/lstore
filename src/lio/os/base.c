@@ -168,7 +168,11 @@ int check_for_glob(char *glob)
     char *ptr;
 
     for (ptr = glob; *ptr != 0; ptr++) {
-        if ((*ptr == '*') || (*ptr == '?') || (*ptr == '[') || (*ptr == ']') | (*ptr == '\\')) return(1);
+        if (*ptr == '\\') {  //** Escape char acter so kip it
+            ptr++;
+        } else if ((*ptr == '*') || (*ptr == '?') || (*ptr == '[') || (*ptr == ']')) {
+            return(1);
+        }
     }
 
     return(0);
@@ -188,13 +192,13 @@ int lio_os_regex_is_fixed(lio_os_regex_table_t *regex)
 }
 
 //***********************************************************************
-// lio_os_path_glob2regex - Converts a path glob to a regex table
+// lio_os_path_glob2regex_full - Converts a path glob to a regex table
 //***********************************************************************
 
-lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
+lio_os_regex_table_t *lio_os_path_glob2regex_full(const char *path, int is_literal)
 {
     lio_os_regex_table_t *table;
-    char *bstate, *p2, *frag, *f2;
+    char *bstate, *p2, *frag, *f2, *ufrag;
     int i, j, n, fin, err, rerr;
     char regex_error[1024];
 
@@ -203,7 +207,7 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
         return(NULL);
     }
 
-    p2 = strdup(path);
+    p2 = (is_literal == 0) ? strdup(path) : tbx_stk_escape_text("\\[].*", '\\', (char *)path);
 
     //** Determine the max number of path fragments
     j = 1;
@@ -225,17 +229,19 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
     table->regex_entry[0].expression = NULL;
     while (frag[0] != 0 ) {
         if (check_for_glob(frag) == 0) {
+            ufrag = tbx_stk_unescape_strndup('\\', frag, -1);
             if (table->regex_entry[i].expression != NULL) {
                 n = strlen(table->regex_entry[i].expression);
                 table->regex_entry[i].fixed_prefix = n;
                 n = n + strlen(frag) + 2;
                 tbx_type_malloc(f2, char, n);
-                snprintf(f2, n, "%s/%s", table->regex_entry[i].expression, frag);
+                snprintf(f2, n, "%s/%s", table->regex_entry[i].expression, ufrag);
+                free(ufrag);
                 free(table->regex_entry[i].expression);
                 table->regex_entry[i].expression = f2;
             } else {
                 table->regex_entry[i].fixed_prefix = 0;
-                table->regex_entry[i].expression = strdup(frag);
+                table->regex_entry[i].expression = ufrag;
             }
 
             table->regex_entry[i].fixed = 1;
@@ -269,6 +275,15 @@ lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
     }
     free(p2);
     return(table);
+}
+
+//***********************************************************************
+// lio_os_path_glob2regex - Converts a path glob to a regex table
+//***********************************************************************
+
+lio_os_regex_table_t *lio_os_path_glob2regex(const char *path)
+{
+    return(lio_os_path_glob2regex_full(path, lio_gc->path_is_literal));
 }
 
 //***********************************************************************

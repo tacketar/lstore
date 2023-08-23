@@ -3014,7 +3014,7 @@ void load_prefix_table(int argc, char **argv, lio_fs_t *fs_default)
 
                 //** We need to parse it for the user and section to use
                 user = section = NULL;
-                if (lio_parse_path(argv[i], &user, NULL, NULL, NULL, NULL, &section, NULL) == -1) {
+                if (lio_parse_path(argv[i], &user, NULL, NULL, NULL, NULL, &section, NULL, 1) == -1) {
                     fprintf(stderr, "ERROR: lio_parse_path error! arg=%s\n", argv[i]);
                     exit(-1);
                 }

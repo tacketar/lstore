@@ -256,6 +256,41 @@ char *tbx_stk_unescape_text(char escape_char, char *data)
     return(str);
 }
 
+//***********************************************************************
+//  unescape_strndup - Duplicates a string up to the len characters removing escape sequences
+//     Specify len = -1 to dup the whole string
+//***********************************************************************
+
+char *tbx_stk_unescape_strndup(char escape_char, char *data, int len)
+{
+    char *str;
+    int ndata, i, j;
+
+    ndata = len;
+    if (len == -1) ndata = strlen(data);
+    tbx_type_malloc_clear(str, char, ndata + 1);
+
+    j = 0;
+    i = 0;
+    while ((j<ndata) && (data[j] != '\0')) {
+        if (escape_char == data[j]) {
+            j++;
+            if (j<ndata) {
+                str[i] = data[j];
+                j++;
+            }
+        } else {
+            str[i] = data[j];
+            j++;
+        }
+
+        i++;
+    }
+
+    str[i] = '\0';
+    return(str);
+}
+
 
 //***********************************************************************
 // split_token_into_number_and_scale - Splits the token into

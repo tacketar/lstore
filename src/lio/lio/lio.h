@@ -53,7 +53,7 @@ struct stat;
 LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name);
 LIO_API void lio_destroy(lio_config_t *lio);
 LIO_API tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts);
-LIO_API int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path);
+LIO_API int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path, int path_is_literal);
 
 LIO_API gop_op_generic_t *lio_abort_regex_object_set_multiple_attrs_gop(lio_config_t *lc, gop_op_generic_t *gop);
 LIO_API gop_op_generic_t *lio_symlink_object_gop(lio_config_t *lc, lio_creds_t *creds, char *src_path, char *dest_path, char *id);
@@ -152,6 +152,7 @@ LIO_API void lio_path_release(lio_path_tuple_t *tuple);
 LIO_API lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname);
 LIO_API lio_path_tuple_t lio_path_resolve(int auto_fuse_convert, char *lpath);
 LIO_API lio_path_tuple_t lio_path_resolve_base(char *lpath);
+LIO_API lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal);
 LIO_API int lio_path_wildcard_auto_append(lio_path_tuple_t *tuple);
 LIO_API void lio_print_options(FILE *fd);
 LIO_API void lio_print_path_options(FILE *fd);
@@ -269,6 +270,7 @@ struct lio_config_t {
     ex_off_t stream_buffer_total_size;
     ex_off_t small_files_in_metadata_max_size;
     ex_off_t uuid;
+    int path_is_literal;
     int host_id_len;
     int calc_adler32;
     int monitor_enable;

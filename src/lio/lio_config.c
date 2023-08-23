@@ -92,6 +92,7 @@ lio_config_t lio_default_options = {
     .stream_buffer_min_size = 0,
     .stream_buffer_total_size = 0,
     .small_files_in_metadata_max_size = 0,
+    .path_is_literal = 0,
     .tpc_unlimited_count = 300,
     .tpc_max_recursion = 10,
     .tpc_cache_count = 100,
@@ -692,7 +693,7 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
 //      containing the cred, lc, and path
 //***************************************************************
 
-lio_path_tuple_t lio_path_resolve_base(char *lpath)
+lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
 {
     char *userid, *pp_section, *fname, *pp_mq, *pp_host, *pp_cfg, *config, *obj_name;
     void *cred_args[2];
@@ -711,7 +712,7 @@ lio_path_tuple_t lio_path_resolve_base(char *lpath)
     pp_cfg = NULL;
     pp_section = NULL;
     fname = NULL;
-    is_lio = lio_parse_path(lpath, &userid, &pp_mq, &pp_host, &pp_port, &pp_cfg, &pp_section, &fname);
+    is_lio = lio_parse_path(lpath, &userid, &pp_mq, &pp_host, &pp_port, &pp_cfg, &pp_section, &fname, path_is_literal);
     if (is_lio == -1) { //** Can't parse the path
         memset(&tuple, 0, sizeof(tuple));
         goto finished;
@@ -840,12 +841,17 @@ finished:
     return(tuple);
 }
 
+lio_path_tuple_t lio_path_resolve_base(char *lpath)
+{
+    return(lio_path_resolve_base_full(lpath, lio_gc->path_is_literal));  //TWEAK-ME
+}
+
 //***************************************************************
 // lio_path_auto_fuse_convert - Automatically detects and converts
 //    local paths sitting on a LFS mount
 //***************************************************************
 
-lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple)
+lio_path_tuple_t lio_path_auto_fuse_convert_full(lio_path_tuple_t *ltuple, int path_is_literal)
 {
     char path[OS_PATH_MAX];
     lio_path_tuple_t tuple;
@@ -878,7 +884,7 @@ lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple)
             if (do_convert == 1) {
                 log_printf(5, "auto convert\n");
                 log_printf(5, "auto convert path=%s\n", path);
-                tuple = lio_path_resolve_base(path);
+                tuple = lio_path_resolve_base_full(path, path_is_literal);
                 lio_path_release(ltuple);
                 break;  //** Found a match so kick out
             }
@@ -889,22 +895,36 @@ lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple)
 }
 
 //***************************************************************
+
+lio_path_tuple_t lio_path_auto_fuse_convert(lio_path_tuple_t *ltuple)
+{
+    return(lio_path_auto_fuse_convert_full(ltuple, lio_gc->path_is_literal)); //**TWEAK-ME
+}
+
+//***************************************************************
 //  lio_path_resolve - Returns a  path tuple object
 //      containing the cred, lc, and path
 //***************************************************************
 
-lio_path_tuple_t lio_path_resolve(int auto_fuse_convert, char *lpath)
+lio_path_tuple_t lio_path_resolve_full(int auto_fuse_convert, char *lpath, int path_is_literal)
 {
     lio_path_tuple_t tuple;
 
-    tuple = lio_path_resolve_base(lpath);
+    tuple = lio_path_resolve_base_full(lpath, path_is_literal);
 
     log_printf(5, "auto_fuse_convert=%d\n", auto_fuse_convert);
     if ((tuple.is_lio == 0) && (auto_fuse_convert > 0)) {
-        return(lio_path_auto_fuse_convert(&tuple));
+        return(lio_path_auto_fuse_convert_full(&tuple, path_is_literal));
     }
 
     return(tuple);
+}
+
+//***************************************************************
+
+lio_path_tuple_t lio_path_resolve(int auto_fuse_convert, char *lpath)
+{
+    return(lio_path_resolve_full(auto_fuse_convert, lpath, lio_gc->path_is_literal)); //**TWEAK-ME
 }
 
 //***************************************************************
@@ -1005,6 +1025,7 @@ void lio_print_options(FILE *fd)
     fprintf(fd, "       -it N              - Print information messages of level N or greater. Thread ID header is used\n");
     fprintf(fd, "       -if N              - Print information messages of level N or greater. Full header is used\n");
     fprintf(fd, "       -ilog info_log_out - Where to send informational log output.\n");
+    fprintf(fd, "       --path-literals    - All paths are treated as literal fixed strings\n");
     fprintf(fd, "       --fcreds creds_file      - Specific file for user credentials. Must be accesssible only by the user!\n");
     fprintf(fd, "                                  Can also be set via the environment variable %s\n", LIO_ENV_KEY_FILE);
     fprintf(fd, "       --print-config           - Print the parsed config with hints applied but not substitutions.\n");
@@ -1259,6 +1280,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         add_service(lio->ess, ESS_RUNNING, "blacklist", lio->blacklist);
     }
 
+    lio->path_is_literal = tbx_inip_get_integer(lio->ifd, section, "path_is_literal", lio_default_options.path_is_literal);
     cores = tbx_inip_get_integer(lio->ifd, section, "tpc_unlimited", lio_default_options.tpc_unlimited_count);
     lio->tpc_unlimited_count = cores;
     max_recursion = tbx_inip_get_integer(lio->ifd, section, "tpc_max_recursion", lio_default_options.tpc_max_recursion);
@@ -1670,7 +1692,7 @@ int env2args(char *env, int *argc, char ***eargv)
 //char **t2 = NULL;
 int lio_init(int *argc, char ***argvp)
 {
-    int i, j, k, ll, ll_override, neargs, nargs, auto_mode, ifll, if_mode, print_config;
+    int i, j, k, ll, ll_override, neargs, nargs, auto_mode, ifll, if_mode, print_config, path_is_literal;
     time_t ts;
     FILE *fd;
     tbx_inip_file_t *ifd;
@@ -1764,6 +1786,7 @@ int lio_init(int *argc, char ***argvp)
     if_mode = INFO_HEADER_NONE;
     info_fname = NULL;
     auto_mode = -1;
+    path_is_literal = 0;
 
     //** Load the hints if we have any
     hints = tbx_stack_new();
@@ -1819,6 +1842,9 @@ int lio_init(int *argc, char ***argvp)
             i++;
             section_name = argv[i];
             i++;
+        } else if (strcmp(argv[i], "--path-literals") == 0) { //** All paths are assumed to be fixed literal strings
+            i++;
+            path_is_literal = 1;
         } else if (strcmp(argv[i], "--print-config") == 0) { //** Print the parsed config file
             i++;
             print_config |= 1;
@@ -1974,10 +2000,13 @@ no_args:
 
     tbx_mlog_load(ifd, out_override, ll_override);
     lio_gc = lio_create(ifd, section_name, userid, obj_name, name);
+
     if (!lio_gc) {
         log_printf(-1, "Failed to create lio context.\n");
         return 1;
     }
+
+    if (path_is_literal) lio_gc->path_is_literal = path_is_literal;  //** See if the user specified literal paths
 
     if (print_config & 4) {
         fprintf(stdout, "--------------------- Dumping running LStore configuration --------------------\n");
