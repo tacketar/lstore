@@ -243,7 +243,7 @@ int main(int argc, char **argv)
                 } else if (dtype & OS_OBJECT_DIR_FLAG) {
                     status = lio_path_copy_op(cp, 0);
                 } else {
-                    fprintf(stderr, "Source and destination files have incompatible types.\n");
+                    fprintf(stderr, "Source and destination files have incompatible types. sflag=%d dflag=%d\n", sflag, dflag);
                     return_code = EINVAL;
                     goto finished;
                 }
