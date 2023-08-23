@@ -425,7 +425,7 @@ int _copy_symlink(lio_object_service_fn_t *os, const char *spath, const char *dp
     char slink[OS_PATH_MAX];
     int n, err;
 
-    n = tbx_io_readlink(spath, slink, OS_PATH_MAX);
+    n = tbx_io_readlink(spath, slink, OS_PATH_MAX-1);
     if (n == -1) {
         err = errno;
         log_printf(0, "ERROR: readlink. src=%s errno=%d\n", spath, errno);
@@ -3288,7 +3288,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
             n = -1;
             if (atype & OS_OBJECT_SYMLINK_FLAG) { //** It's a symlink so get the link for removal
                 alink[0] = '\0';
-                n = tbx_io_readlink(fattr, alink, OS_PATH_MAX);
+                n = tbx_io_readlink(fattr, alink, OS_PATH_MAX-1);
                 if (n > 0) {
                     alink[n] = '\0';
                 } else {
@@ -3315,12 +3315,13 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
         //** See if we have a shard.  If so we need to remove it
         atype = lio_os_local_filetype(fattr);
         if (atype & OS_OBJECT_SYMLINK_FLAG) {
-            n = readlink(fattr, alink, OS_PATH_MAX);
+            n = readlink(fattr, alink, OS_PATH_MAX-1);
             if (n == -1) {
                 err_cnt++;
                 notify_printf(osf->olog, 1, NULL, "ERROR: REMOVE(%d, %s) -- readlink error=%d fattr=%s\n", ftype, path, errno, fattr);
                 log_printf(0, "ERROR: failed to remove shard attr dir=%s\n", fattr);
             } else {
+                alink[n] = '\0';
                 err_cnt += osf_purge_dir(os, alink, 1);
                 err_cnt += safe_remove(os, alink);
             }
