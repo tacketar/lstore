@@ -31,6 +31,7 @@ typedef struct notify_iter_s notify_iter_t;
 // Functions
 LIO_API void notify_print_running_config(notify_t *nlog, FILE *fd, int print_section_heading);
 LIO_API void notify_printf(notify_t *nlog, int do_lock, lio_creds_t *creds, const char *fmt, ...);
+LIO_API void notify_monitor_printf(notify_t *nlog, int do_lock, lio_creds_t *creds, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...);
 LIO_API notify_t *notify_create(tbx_inip_file_t *ifd, const char *text, char *section);
 LIO_API void notify_destroy(notify_t *nlog);
 

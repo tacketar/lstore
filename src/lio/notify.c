@@ -137,6 +137,53 @@ failed:
     if (do_lock) apr_thread_mutex_unlock(nlog->lock);
 }
 
+//***********************************************************************
+// notify_monitor_printf - Logs an operation
+//***********************************************************************
+
+void notify_monitor_printf(notify_t *nlog, int do_lock, lio_creds_t *creds, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...)
+{
+    va_list args;
+    char date[128], *uid;
+    int len;
+    time_t now;
+    struct tm tm_now;
+
+    if (nlog->fname == NULL) return;
+
+    if (do_lock) apr_thread_mutex_lock(nlog->lock);
+
+    notify_open_check(nlog, &now, &tm_now);
+    if (nlog->fd == NULL) goto failed;
+
+    //** Add the header
+    if (creds) {
+        uid = (char *)an_cred_get_descriptive_id(creds, &len);
+        if (!uid) uid = "(null)";
+    } else {
+        uid ="(null)";
+    }
+    asctime_r(&tm_now, date);
+    date[strlen(date)-1] = '\0';  //** Peel of the return
+    fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
+
+    //** Print the monitor bits
+    fprintf(nlog->fd, mfmt, id, label);
+
+    //** Print the error text
+    va_start(args, efmt);
+    vfprintf(nlog->fd, efmt, args);
+    va_end(args);
+
+    //** The monitor error mess age doesn't have a return so we have to manually add it.
+    fprintf(nlog->fd, "\n");
+
+    fflush(nlog->fd);
+
+failed:
+    if (do_lock) apr_thread_mutex_unlock(nlog->lock);
+}
+
 
 //***********************************************************************
 // notify_print_running_config - Dumps the running notify config
