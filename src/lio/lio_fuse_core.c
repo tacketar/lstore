@@ -1096,6 +1096,7 @@ int lfs_readlink(const char *fname, char *buf, size_t bsize)
             } else if (serr != err) {
                 SHADOW_ERROR("fname=%s size mismatch lsize=%d ssize=%d\n", fname, err, serr);
             } else if (serr > 0) {
+                sbuf[serr] = '\0';
                 if ((buf[0] == '/') && (sbuf[0] == '/')) { //** Absolute paths
                     if (strcmp(buf, sbuf + strlen(SHADOW_MOUNT_PREFIX)) != 0) { SHADOW_ERROR("fname=%s link mismatch llink=%s slink=%s\n", fname, buf, sbuf); }
                 } else if (strcmp(buf, sbuf) != 0) {
