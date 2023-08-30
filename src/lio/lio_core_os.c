@@ -297,7 +297,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
 
     //** Sanity check the type is supported
     if (op->type & OS_OBJECT_UNSUPPORTED_FLAG) {
-        log_printf(ll, "ERROR Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
+        log_printf(ll, "ERROR: Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
         status = gop_failure_status;
         goto fail;
     }
@@ -309,7 +310,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
 
         err = gop_sync_exec(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(ll, "ERROR opening parent=%s\n", dir);
+            log_printf(ll, "ERROR: opening parent=%s\n", dir);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - opening parent=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -319,7 +321,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         v_size[0] = -op->lc->max_attr;
         err = gop_sync_exec(os_get_attr(op->lc->os, op->creds, fd, "system.exnode", (void **)&(val[ex_key]), &(v_size[0])));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(ll, "ERROR getting parent exnode parent=%s\n", dir);
+            log_printf(ll, "ERROR: getting parent exnode parent=%s\n", dir);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn  - getting parent exnode parent=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -328,7 +331,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         //** Close the parent
         err = gop_sync_exec(os_close_object(op->lc->os, fd));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(ll, "ERROR closing parent fname=%s\n", dir);
+            log_printf(ll, "ERROR: closing parent fname=%s\n", dir);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - closing parent fname=%s\n", dir);
             free(dir);
             status = gop_failure_status;
             goto fail;
@@ -340,7 +344,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     }
 
     if (val[ex_key] == NULL) { //** Oops no valid exnode!
-        log_printf(0, "ERROR No valid exnode could be located.  fname=%s\n", op->src_path);
+        log_printf(0, "ERROR: No valid exnode could be located.  fname=%s\n", op->src_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - No valid exnode could be located.  fname=%s\n", op->src_path);
         status = gop_failure_status;
         goto fail;
     }
@@ -356,7 +361,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         exp = lio_exnode_exchange_text_parse(val[ex_key]);
         ex = lio_exnode_create();
         if (lio_exnode_deserialize(ex, exp, op->lc->ess_nocache) != 0) {
-            log_printf(ll, "ERROR parsing parent exnode src_path=%s\n", op->src_path);
+            log_printf(ll, "ERROR: parsing parent exnode src_path=%s\n", op->src_path);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - parsing parent exnode src_path=%s\n", op->src_path);
             status = gop_failure_status;
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
@@ -367,7 +373,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         //** Execute the clone operation
         err = gop_sync_exec(lio_exnode_clone_gop(op->lc->tpc_unlimited, ex, op->lc->da, &cex, NULL, CLONE_STRUCTURE, op->lc->timeout));
         if (err != OP_STATE_SUCCESS) {
-            log_printf(ll, "ERROR cloning parent src_path=%s\n", op->src_path);
+            log_printf(ll, "ERROR: cloning parent src_path=%s\n", op->src_path);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - cloning parent src_path=%s\n", op->src_path);
             status = gop_failure_status;
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
@@ -415,7 +422,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     //** Make the object with attrs
     err = gop_sync_exec(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(ll, "ERROR creating object fname=%s\n", op->src_path);
+        log_printf(ll, "ERROR: creating object fname=%s\n", op->src_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - creating object fname=%s\n", op->src_path);
         status = gop_failure_status;
     }
 
@@ -466,6 +474,7 @@ gop_op_status_t lio_mkpath_fn(void *arg, int id)
     np_regex = tbx_normalize_check_make();  //** Make the regex for seeing if we need to simplify the path
     if (tbx_path_is_normalized(np_regex, op->src_path) == 0) { //** Got to normalize it first
         if (tbx_normalize_path(op->src_path, fullpath) == NULL) {
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_mkpath_fn - tbx_normalize_path error! path=%s\n", op->src_path);
             status = gop_failure_status;
             goto finished;
         }
@@ -490,6 +499,7 @@ gop_op_status_t lio_mkpath_fn(void *arg, int id)
                 status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, OS_OBJECT_DIR_FLAG, op->id, op->ex));
                 if (status.op_status != OP_STATE_SUCCESS) {
                     log_printf(1, "ERROR: src_path=%s failed creating partial path=%s\n", op->src_path, fullpath);
+                    notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_mkpath_fn - src_path=%s failed creating partial path=%s\n", op->src_path, fullpath);
                     goto finished;
                 }
             }
@@ -551,7 +561,8 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         lio_get_multiple_attrs(op->lc, op->creds, op->src_path, op->id, hkeys, (void **)val, vs, 2, 1);
 
         if (val[0] == NULL) {
-            log_printf(15, "Missing link count for fname=%s\n", op->src_path);
+            log_printf(15, "ERROR: Missing link count for fname=%s\n", op->src_path);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: Missing link count for fname=%s\n", op->src_path);
             if (val[1] != NULL) free(val[1]);
             return(gop_failure_status);
         }
@@ -595,6 +606,7 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
     if (err != OP_STATE_SUCCESS) {
         if ((op->ex == NULL) && (ex_data != NULL)) free(ex_data);  //** Fee the exnode we just fetched if needed
         log_printf(0, "ERROR: removing file: %s err=%d\n", op->src_path, err);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: removing file: %s err=%d\n", op->src_path, err);
         status = gop_failure_status;
         return(status);
     }
@@ -608,11 +620,13 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         exp = lio_exnode_exchange_text_parse(ex_data);
         ex = lio_exnode_create();
         if (lio_exnode_deserialize(ex, exp, op->lc->ess) != 0) {
-            log_printf(15, "ERROR removing data for object fname=%s\n", op->src_path);
+            log_printf(15, "ERROR: Failed deserializing the exnode for for removal! object fname=%s\n", op->src_path);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: Failed deserializing the exnode for for removal! object fname=%s\n", op->src_path);
         } else {  //** Execute the remove operation since we have a good exnode
             err = gop_sync_exec(exnode_remove_gop(op->lc->tpc_unlimited, ex, op->lc->da, op->lc->timeout));
             if (err != OP_STATE_SUCCESS) {
-                log_printf(15, "ERROR removing data for object fname=%s\n", op->src_path);
+                log_printf(15, "ERROR: removing data for object fname=%s\n", op->src_path);
+                notify_printf(op->lc->notify, 1, op->creds, "SOFT_ERROR: removing data for object fname=%s. Probably a down RID/depot\n", op->src_path);
             }
         }
 
@@ -666,6 +680,7 @@ gop_op_status_t lio_remove_regex_object_fn(void *arg, int id)
     it = os_create_object_iter_alist(op->lc->os, op->creds, op->rpath, op->robj, op->obj_types, op->recurse_depth, key, (void **)&ex, v_size, 1);
     if (it == NULL) {
         log_printf(0, "ERROR: Failed with object_iter creation\n");
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_remove_regex_object_fn - Failed with object_iter creation. rpath=%s\n", op->rpath);
         return(gop_failure_status);
     }
 
@@ -690,7 +705,8 @@ gop_op_status_t lio_remove_regex_object_fn(void *arg, int id)
             gop = opque_waitany(q);
             status2 = gop_get_status(gop);
             if (status2.op_status != OP_STATE_SUCCESS) {
-                printf("Failed with gid=%d\n", gop_id(gop));
+                log_printf(1, "ERROR: Failed with gid=%d\n", gop_id(gop));
+                notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_remove_regex_fn - Failed with gid=%d\n", gop_id(gop));
                 nfailed++;
             }
             gop_free(gop, OP_DESTROY);
@@ -826,6 +842,7 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
         snprintf(dtmp, n+100, "%s.mv-%u", op->dest_path, ui);
         status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->dest_path, dtmp));
         if (status.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_move_object_fn - Esiting object in dest and temp move failed. old=%s temp=%s\n", op->dest_path, dtmp);
             free(dtmp);
             return(status);
         }
@@ -843,6 +860,7 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
             s2 = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, dtmp, op->dest_path));
             if (s2.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
                 log_printf(0, "ERROR: Failed to move file back!!! dtmp=%s dest_path=%s error_code=%d\n", dtmp, op->dest_path, s2.error_code);
+                notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_move_object_fn - Failed to move file back!!! dtmp=%s dest_path=%s error_code=%d\n", dtmp, op->dest_path, s2.error_code);
             }
         }
     }
@@ -897,7 +915,8 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
         err = gop_sync_exec(os_hardlink_object(op->lc->os, op->creds, op->src_path, op->dest_path, op->id));
     }
     if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR linking base object sfname=%s dfname=%s\n", op->src_path, op->dest_path);
+        log_printf(15, "ERROR: linking base object sfname=%s dfname=%s\n", op->src_path, op->dest_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_link_object_fn - linking base object sfname=%s dfname=%s\n", op->src_path, op->dest_path);
         status = gop_failure_status;
         goto finished;
     }
@@ -913,7 +932,8 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     gop_opque_add(q, os_open_object(op->lc->os, op->creds, op->dest_path, OS_MODE_READ_IMMEDIATE, op->id, &dfd, op->lc->timeout));
     err = opque_waitall(q);
     if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR opening src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
+        log_printf(15, "ERROR: opening src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_link_object_fn - opening src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
         status = gop_failure_status;
         goto open_fail;
     }
@@ -941,7 +961,8 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
     //** Wait for everything to complete
     err = opque_waitall(q);
     if (err != OP_STATE_SUCCESS) {
-        log_printf(15, "ERROR with attr link or owner set src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
+        log_printf(15, "ERROR: with attr link or owner set src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: with attr link or owner set src(%s) or dest(%s) file\n", op->src_path, op->dest_path);
         status = gop_failure_status;
         goto open_fail;
     }
@@ -1072,6 +1093,7 @@ int lio_get_multiple_attrs_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd,
 
     if (serr != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR getting attributes\n");
+        notify_printf(lc->notify, 1, creds, "ERROR: lio_get_multiple_Attrs_fd - getting attributes\n");
     }
 
     return(serr);
@@ -1109,7 +1131,8 @@ int lio_get_multiple_attrs_lock(lio_config_t *lc, lio_creds_t *creds, const char
 
     err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE|lock_flags, id, &fd, lc->timeout));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR opening object=%s\n", path);
+        log_printf(1, "ERROR: opening object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: lio_get_multiple_attrs_lock - opening object=%s\n", path);
         return(err);
     }
 
@@ -1119,11 +1142,13 @@ int lio_get_multiple_attrs_lock(lio_config_t *lc, lio_creds_t *creds, const char
     //** Close the parent
     err = gop_sync_exec(os_close_object(lc->os, fd));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR closing object=%s\n", path);
+        log_printf(1, "ERROR: closing object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: closing object=%s\n", path);
     }
 
     if (serr != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR getting attributes object=%s\n", path);
+        log_printf(1, "ERROR: getting attributes object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: getting attributes object=%s\n", path);
         err = OP_STATE_FAILURE;
     }
 
@@ -1176,7 +1201,8 @@ int lio_getattr_fd(lio_config_t *lc, lio_creds_t *creds, os_fd_t *fd, char *key,
     err = gop_sync_exec(os_get_attr(lc->os, creds, fd, key, val, v_size));
 
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR getting attribute!\n");
+        log_printf(1, "ERROR: getting attribute!\n");
+        notify_printf(lc->notify, 1, creds, "ERROR: lio_getattr_fd - getting attribute!\n");
     }
 
     return(err);
@@ -1204,7 +1230,8 @@ int lio_getattr(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id
 
     err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE, id, &fd, lc->timeout));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR opening object=%s\n", path);
+        log_printf(1, "ERROR: opening object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: opening object=%s\n", path);
         return(err);
     }
 
@@ -1214,11 +1241,13 @@ int lio_getattr(lio_config_t *lc, lio_creds_t *creds, const char *path, char *id
     //** Close the parent
     err = gop_sync_exec(os_close_object(lc->os, fd));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR closing object=%s\n", path);
+        log_printf(1, "ERROR: closing object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: closing object=%s\n", path);
     }
 
     if (serr != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR getting attribute object=%s\n", path);
+        log_printf(1, "ERROR: getting attribute object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: getting attribute object=%s\n", path);
         err = OP_STATE_FAILURE;
     }
 
@@ -1267,7 +1296,8 @@ int lio_multiple_setattr_op_real(lio_config_t *lc, lio_creds_t *creds, const cha
 
     err = gop_sync_exec(os_set_multiple_attrs_immediate(lc->os, creds, (char *)path, key, val, v_size, n));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR setting attributes object=%s\n", path);
+        log_printf(1, "ERROR: setting attributes object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: lio_multiple_setattr_op_real - setting attributes object=%s\n", path);
     }
 
     return(err);
@@ -1301,6 +1331,10 @@ gop_op_status_t lio_multiple_setattr_op_fn(void *arg, int id)
     err = lio_multiple_setattr_op(op->lc, op->creds, op->path, op->id, op->mkeys, op->mvals, op->mv_size, op->n_keys);
     status.error_code = err;
     status.op_status = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
+    if (err != 0) {
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_multiple_setattr_op_fn - fname=%s n_keys=%s\n", op->path, op->n_keys);
+    }
+
     return(status);
 }
 
@@ -1334,7 +1368,8 @@ int lio_setattr_real(lio_config_t *lc, lio_creds_t *creds, const char *path, cha
 
     err = gop_sync_exec(os_open_object(lc->os, creds, (char *)path, OS_MODE_READ_IMMEDIATE, id, &fd, lc->timeout));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR opening object=%s\n", path);
+        log_printf(1, "ERROR: opening object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: lio_setattr_real - opening object=%s\n", path);
         return(err);
     }
 
@@ -1343,11 +1378,13 @@ int lio_setattr_real(lio_config_t *lc, lio_creds_t *creds, const char *path, cha
     //** Close the parent
     err = gop_sync_exec(os_close_object(lc->os, fd));
     if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR closing object=%s\n", path);
+        log_printf(1, "ERROR: closing object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: closing object=%s\n", path);
     }
 
     if (serr != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR setting attribute object=%s\n", path);
+        log_printf(1, "ERROR: setting attribute object=%s\n", path);
+        notify_printf(lc->notify, 1, creds, "ERROR: setting attribute object=%s\n", path);
         err = OP_STATE_FAILURE;
     }
 
