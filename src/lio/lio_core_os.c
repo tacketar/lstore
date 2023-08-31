@@ -428,6 +428,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     }
 
 fail:
+    notify_printf(op->lc->notify, 1, op->creds, "LIO_CREATE_OBJECT_FN: fname=%s ftype=%d  status=%d error_code=%d\n", op->src_path, op->type, status.op_status, status.error_code);
+
     if (val[ex_key] != NULL) free(val[ex_key]);
 
     return(status);
@@ -636,6 +638,8 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         lio_exnode_destroy(ex);
     }
 
+    notify_printf(op->lc->notify, 1, op->creds, "LIO_REMOVE_OBJECT_FN: fname=%s ftype=%d status=%d error_code=%d\n", op->src_path, op->type, status.op_status, status.error_code);
+
     return(status);
 }
 
@@ -841,6 +845,8 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
         tbx_random_get_bytes(&ui, sizeof(ui));  //** Make the random name
         snprintf(dtmp, n+100, "%s.mv-%u", op->dest_path, ui);
         status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->dest_path, dtmp));
+        notify_printf(op->lc->notify, 1, op->creds, "LIO_MOVE_OBJECT_FN: temp move -- interim=%s interim_new=%s  status=%d error_code=%d\n", op->dest_path, dtmp, status.op_status, status.error_code);
+
         if (status.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_move_object_fn - Esiting object in dest and temp move failed. old=%s temp=%s\n", op->dest_path, dtmp);
             free(dtmp);
@@ -850,6 +856,8 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
 
     //** If we made it here the dest file or directory is safely stashed so we can do the rename
     status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->src_path, op->dest_path));
+
+    notify_printf(op->lc->notify, 1, op->creds, "LIO_MOVE_OBJECT_FN: old=%s new=%s status=%d error_code=%d\n", op->src_path, op->dest_path, status.op_status, status.error_code);
 
     //** Now clean up
     if (dtmp) {  //** If this exists we had to move an object out of the way
@@ -976,6 +984,8 @@ open_fail:
     gop_opque_free(q, OP_DESTROY);
 
 finished:
+    notify_printf(op->lc->notify, 1, op->creds, "LIO_LINK_OBJECT_FN: src=%s dest=%s  symlink=%d  status=%d error_code=%d\n", op->src_path, op->dest_path, op->type, status.op_status, status.error_code);
+
     return(status);
 
 }
