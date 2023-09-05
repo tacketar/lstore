@@ -1464,6 +1464,7 @@ int osf_match_fobj_lock_try(lio_object_service_fn_t *os, const char *rp_src, con
     //** And the lock table's
     apr_thread_mutex_lock(osf->os_lock->fobj_lock);
     apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
+    apr_thread_mutex_unlock(osf->open_fd_lock);
 
     return(n);
 }
