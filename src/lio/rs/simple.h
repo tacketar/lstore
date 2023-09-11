@@ -60,6 +60,7 @@ struct lio_rs_simple_priv_t {
     char *section;
     tbx_list_t *rid_table;
     lio_rss_rid_entry_t **random_array;
+    int *shuffle;
     lio_data_service_fn_t *ds;
     lio_service_manager_t *ess;
     data_attr_t *da;
@@ -77,6 +78,7 @@ struct lio_rs_simple_priv_t {
     char *fname;
     uint64_t min_free;
     int n_rids;
+    int n_shuffles;
     int shutdown;
     int dynamic_mapping;
     int unique_rids;

@@ -220,6 +220,8 @@ gop_op_generic_t *rs_simple_request(lio_resource_service_fn_t *arg, data_attr_t 
     lio_rss_rid_entry_t *rse;
     lio_rsq_base_ele_t *q;
     int slot, rnd_off, i, j, k, i_unique, i_pickone, found, err_cnt, loop, loop_end, avg_full_skip, full_skip_retry;
+    int rnd_shuffle, rnd_shuffle_off, sslot;
+    int *shuffle;
     int state, *a, *b, *op_state, unique_size;
     tbx_stack_t *stack;
 
@@ -276,6 +278,9 @@ disable_too_full:
         loop_end = 1;
         query_local = NULL;
         rnd_off = tbx_random_get_int64(0, rss->n_rids-1);
+        rnd_shuffle = tbx_random_get_int64(0, rss->n_shuffles-1);
+        rnd_shuffle_off = tbx_random_get_int64(0, rss->n_rids-1);
+        shuffle = rss->shuffle + rnd_shuffle*rss->n_rids;
 
         if (hints_list != NULL) {
             query_local = (lio_rsq_base_t *)hints_list[i].local_rsq;
@@ -300,6 +305,8 @@ disable_too_full:
                     continue;   //** Skip the check
                 }
                 rnd_off = rse->slot;
+                rnd_shuffle_off = 0;
+                shuffle = rss->shuffle;
             }
         }
 
@@ -314,7 +321,8 @@ disable_too_full:
         }
 
         for (j=0; j<rss->n_rids; j++) {
-            slot = (rnd_off+j) % rss->n_rids;
+            sslot = (rnd_shuffle_off + j) % rss->n_rids;
+            slot = (shuffle[sslot] + rnd_off) % rss->n_rids;
             rse = rss->random_array[slot];
             if (pick_from != NULL) {
                 rid_change = apr_hash_get(pick_from, rse->rid_key, APR_HASH_KEY_STRING);
@@ -933,6 +941,41 @@ void *rss_check_thread(apr_thread_t *th, void *data)
 }
 
 //***********************************************************************
+// _rs_generate_shuffles - Generates the shuffles and stores them
+//***********************************************************************
+
+void _rs_generate_shuffle(int n_shuffles, int n_rids, int *shuffle)
+{
+    int i, j, k, rnd;
+    int *s;
+    uint64_t *rnd_vals;
+    double dn;
+
+    tbx_type_malloc(rnd_vals, uint64_t, n_rids);
+
+    for (i=0; i<n_shuffles; i++) {
+        s = shuffle + i*n_rids;
+
+        tbx_random_get_bytes(rnd_vals, sizeof(uint64_t)*n_rids);
+
+        //** Init the slots
+        for (j=0; j<n_rids; j++) s[j] = j;
+        if (i==0) continue;  //* the initial shuffle is not done
+
+        //** Now do the shuffle
+        for (j=1; j<n_rids; j++) {
+            dn = (1.0 * rnd_vals[j]) / (UINT64_MAX + 1.0);
+            rnd = j + (n_rids-1 - j) * dn;
+            k = s[rnd];
+            s[rnd] = s[j-1];
+            s[j-1] = k;
+        }
+    }
+
+    free(rnd_vals);
+}
+
+//***********************************************************************
 // _rs_simple_load - Loads the config file
 //   NOTE:  No locking is performed!
 //***********************************************************************
@@ -998,6 +1041,10 @@ int _rs_simple_load(lio_resource_service_fn_t *res, char *fname)
         rss->avg_fraction = space_used / total_space; //** Update the avg used
         global_avg = rss->over_avg_fraction + rss->avg_fraction;
 
+        //** Generate the random shuffles
+        tbx_type_malloc_clear(rss->shuffle, int, rss->n_rids*rss->n_shuffles);
+        _rs_generate_shuffle(rss->n_shuffles, rss->n_rids, rss->shuffle);
+
         log_printf(2, "over_avg_fraction=%lf avg_fraction=%lf global_avg=%lf used=%lf total=%lf\n", rss->over_avg_fraction, rss->avg_fraction, rss->avg_fraction, space_used, total_space);
         tbx_type_malloc_clear(rss->random_array, lio_rss_rid_entry_t *, rss->n_rids);
         it = tbx_list_iter_search(rss->rid_table, (tbx_list_key_t *)NULL, 0);
@@ -1037,6 +1084,7 @@ int _rs_simple_refresh(lio_resource_service_fn_t *rs)
     struct stat sbuf;
     tbx_list_t *old_table;
     lio_rss_rid_entry_t **old_random;
+    int *old_shuffle;
     int err, old_n_rids;
 
     if (stat(rss->fname, &sbuf) != 0) {
@@ -1050,18 +1098,21 @@ int _rs_simple_refresh(lio_resource_service_fn_t *rs)
         old_n_rids = rss->n_rids;    //** Preserve the old info in case of an error
         old_table = rss->rid_table;
         old_random = rss->random_array;
+        old_shuffle = rss->shuffle;
 
         err = _rs_simple_load(rs, rss->fname);  //** Load the new file
         if (err == 0) {
             rss->modify_time = sbuf.st_mtime;
             if (old_table != NULL) tbx_list_destroy(old_table);
             if (old_random != NULL) free(old_random);
+            if (old_shuffle != NULL) free(old_shuffle);
             _rss_make_check_table(rs);  //** and make the new inquiry table
             apr_thread_cond_signal(rss->cond);  //** Notify the check thread that we made a change
         } else {
             rss->n_rids = old_n_rids;
             rss->rid_table = old_table;
             rss->random_array = old_random;
+            rss->shuffle = old_shuffle;
         }
         return(err);
     }
@@ -1128,6 +1179,7 @@ void rs_simple_destroy(lio_resource_service_fn_t *rs)
     if (rss->rid_table != NULL) tbx_list_destroy(rss->rid_table);
 
     free(rss->random_array);
+    free(rss->shuffle);
     free(rss->fname);
     free(rss->section);
     free(rss);
@@ -1158,6 +1210,8 @@ lio_resource_service_fn_t *rs_simple_create(void *arg, tbx_inip_file_t *kf, char
     apr_thread_cond_create(&(rss->cond), rss->mpool);
     rss->rid_mapping = apr_hash_make(rss->mpool);
     rss->mapping_updates = apr_hash_make(rss->mpool);
+
+    rss->n_shuffles = 20;  //** This is hardcoded.. but just in case it's here if we want to vary it
 
     rss->ess = ess;
     rss->ds = lio_lookup_service(ess, ESS_RUNNING, ESS_DS);
