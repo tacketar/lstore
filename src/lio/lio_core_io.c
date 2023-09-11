@@ -1521,7 +1521,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
         dt /= APR_USEC_PER_SEC;
         log_printf(1, "TRUNCATE fname=%s dt=%lf\n", fd->path, dt);
         now = apr_time_now();
-        gop_sync_exec(lio_flush_full_gop(fd, 0, -1, 0));
+        gop_sync_exec(lio_flush_full_gop(fd, 0, -2, 0));  //** The -2 means wait for any pending background flushes to complete
         dt = apr_time_now() - now;
         dt /= APR_USEC_PER_SEC;
         log_printf(1, "FLUSH fname=%s dt=%lf\n", fd->path, dt);

@@ -3496,6 +3496,24 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     return(gop);
 }
 
+//*******************************************************************************
+// cache_flush_pending_wait - Waits until any background pending flussh tasks complete
+//*******************************************************************************
+
+void cache_flush_pending_wait(lio_segment_t *seg, int do_lock)
+{
+    lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
+
+    if (do_lock) segment_lock(seg);
+    while (s->flushing_count != 0) {
+        log_printf(5, "seg=" XIDT " waiting for a flush to complete flushing_count=%d\n", segment_id(seg), s->flushing_count);
+        segment_unlock(seg);
+        usleep(10000);
+        segment_lock(seg);
+    }
+    if (do_lock) segment_unlock(seg);
+
+}
 
 //*******************************************************************************
 // cache_flush_range_gop - Flushes the given segment's byte range to disk
@@ -3512,7 +3530,7 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
     tbx_stack_t stack;
     dio_range_lock_t drng;
     lio_cache_range_t *curr, *r;
-    int progress, full_flush;
+    int progress, full_flush, wait_pending;
     int mode, err;
     ex_off_t lo, hi, hi_got;
     double dt;
@@ -3528,13 +3546,19 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
     tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop: offset=" XOT " len=" XOT " size=" XOT, cop->iov_single.offset, cop->iov_single.len, segment_size(cop->seg));
     tbx_log_flush();
 
-    full_flush = 0;
-    if ((cop->iov_single.offset == 0) && (cop->iov_single.len == -1)) { //** Got a full flush so see is another flush is in progress
+    full_flush = wait_pending = 0;
+    if ((cop->iov_single.offset == 0) && ((cop->iov_single.len == -1) || cop->iov_single.len == -2)) { //** Got a full flush so see is another flush is in progress
+        if (cop->iov_single.len == -2) {
+            wait_pending = 1;
+            cop->iov_single.len = -1;
+        }
+
         segment_lock(cop->seg);
         if (s->full_flush_in_progress) {
             s->flushing_count--;
             segment_unlock(cop->seg);
 tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress. Kicking out");
+            if (wait_pending) cache_flush_pending_wait(cop->seg, 1);
             return(gop_success_status);
         }
         s->full_flush_in_progress++;
@@ -3661,6 +3685,9 @@ finished:
 if (full_flush == 1) tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress=COMPLETE");
     segment_unlock(cop->seg);
 
+    //** See if we wait for background flushes to complete
+    if (wait_pending) cache_flush_pending_wait(cop->seg, 1);
+
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
     log_printf(15, "END seg=" XIDT " lo=" XOT " hi=" XOT " flush_id=" XOT " total_pages=%d status=%d dt=%lf\n", sid, lo, hi, flush_id[2], total_pages, err, dt);
@@ -3684,7 +3711,11 @@ gop_op_generic_t *cache_flush_range_gop(lio_segment_t *seg, data_attr_t *da, ex_
     cop->rw_hints = NULL;
     cop->iov = &(cop->iov_single);
     cop->iov_single.offset = lo;
-    cop->iov_single.len = (hi == -1) ? -1 : hi - lo + 1;
+    if ((hi == -1) || (hi == -2)) {
+        cop->iov_single.len = hi;
+    } else {
+        cop->iov_single.len = hi - lo + 1;
+    }
     cop->rw_mode = CACHE_READ;
     cop->boff = 0;
     cop->buf = NULL;
@@ -4329,14 +4360,7 @@ void segcache_destroy(tbx_ref_t *ref)
         cache_unlock(s->c);
 
         //** And make sure all the flushing tasks are complete
-        segment_lock(seg);
-        while (s->flushing_count != 0) {
-            log_printf(5, "seg=" XIDT " waiting for a flush to complete flushing_count=%d\n", segment_id(seg), s->flushing_count);
-            segment_unlock(seg);
-            usleep(10000);
-            segment_lock(seg);
-        }
-        segment_unlock(seg);
+        cache_flush_pending_wait(seg, 1);
 
         //** and drop the cache pages
         cache_page_drop(seg, 0, XOT_MAX);
