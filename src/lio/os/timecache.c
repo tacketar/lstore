@@ -2524,7 +2524,7 @@ gop_op_status_t ostc_set_attrs_fn(void *arg, int tid)
     if (status.op_status != OP_STATE_SUCCESS) return(status);
 
     //** Update the cache on the keys we know about
-    ostc_cache_update_attrs(ma->os, ma->fd->fname, ma->key, ma->val, ma->v_size, ma->n);
+    ostc_cache_update_attrs(ma->os, ((ma->fd) ? ma->fd->fname : ma->path), ma->key, ma->val, ma->v_size, ma->n);
 
     return(status);
 }
