@@ -50,6 +50,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
@@ -172,6 +173,11 @@ typedef struct {
     int state;
     SHADOW_CODE(shadow_dir_t *sdir;)
 } lfs_dir_iter_t;
+
+typedef struct {
+    char *original;
+    char *mapping;
+} lfs_pending_delete_t;
 
 lio_file_handle_t *_lio_get_file_handle(lio_config_t *lc, ex_id_t vid);
 
@@ -389,6 +395,164 @@ lio_fuse_t *lfs_get_context()
 }
 
 //*************************************************************************
+// lfs_pending_delete_destroy - Cleanup the pending delete files.
+//      NOTE: We don't try and clean up any dangling mappings.  They can be done
+//            manually external to LFS as needed at any time.
+//*************************************************************************
+
+void lfs_pending_delete_destroy(lio_fuse_t *lfs)
+{
+    lfs_pending_delete_t *map;
+    apr_ssize_t hlen;
+    apr_hash_index_t *hi;
+
+    apr_thread_mutex_lock(lfs->lock);
+    for (hi=apr_hash_first(NULL, lfs->pending_delete_table); hi != NULL; hi = apr_hash_next(hi)) {
+       apr_hash_this(hi, NULL, &hlen, (void **)&map);
+       apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, NULL);
+       free(map->original);
+       free(map->mapping);
+       free(map);
+    }
+    apr_thread_mutex_unlock(lfs->lock);
+
+    if (lfs->pending_delete_prefix) free(lfs->pending_delete_prefix);
+}
+
+//*************************************************************************
+// lfs_pending_delete_mapping_get - Returns the pending delete file's temporary location
+//     If the file isn't in a pending delete state it just returns the orignal path.
+//     If it is remapped the path returned should be freed by the calling routine
+//*************************************************************************
+
+char *lfs_pending_delete_mapping_get(lio_fuse_t *lfs, const char *path)
+{
+    lfs_pending_delete_t *map;
+    char *mpath;
+
+    //** See if there is anything to do
+    if (tbx_atomic_get(lfs->n_pending_delete) == 0) return((char *)path);
+
+    apr_thread_mutex_lock(lfs->lock);
+    if (apr_hash_count(lfs->pending_delete_table) == 0) {
+        apr_thread_mutex_unlock(lfs->lock);
+        return((char *)path);
+    }
+
+    map = apr_hash_get(lfs->pending_delete_table, path, APR_HASH_KEY_STRING);
+    if (map) {
+        mpath = strdup(map->mapping);
+    } else {
+        mpath = (char *)path;
+    }
+    apr_thread_mutex_unlock(lfs->lock);
+
+    return(mpath);
+}
+
+//*************************************************************************
+// lfs_pending_delete_mapping_remove - Removes the path from the pending delete table
+//*************************************************************************
+
+void lfs_pending_delete_mapping_remove(lio_fuse_t *lfs, const char *path)
+{
+    lfs_pending_delete_t *map;
+
+    apr_thread_mutex_lock(lfs->lock);
+
+    map = apr_hash_get(lfs->pending_delete_table, path, APR_HASH_KEY_STRING);
+    if (map) {
+        //** Remove mappings in both directions
+        apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, NULL);
+        apr_hash_set(lfs->pending_delete_table, map->mapping, APR_HASH_KEY_STRING, NULL);
+        if (map->original) free(map->original);
+        if (map->mapping) free(map->mapping);
+        free(map);
+    }
+
+    //** Update the count
+    tbx_atomic_set(lfs->n_pending_delete, apr_hash_count(lfs->pending_delete_table));
+
+    apr_thread_mutex_unlock(lfs->lock);
+}
+
+//*************************************************************************
+// lfs_pending_delete_mapping_add - Adds the path to the pending delete table
+//    and moves the file
+//*************************************************************************
+
+int lfs_pending_delete_mapping_add(lio_fuse_t *lfs, const char *path, const char *mapping)
+{
+    lfs_pending_delete_t *map;
+
+    apr_thread_mutex_lock(lfs->lock);
+
+    map = apr_hash_get(lfs->pending_delete_table, path, APR_HASH_KEY_STRING);
+    if (map) {
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: lfs_pending_delete_mapping_add -- Mapping already exists: current.path=%s current.mapping=%s  new.path=%s new.mapping=%s\n", map->original, map->mapping, path, mapping);
+        apr_thread_mutex_unlock(lfs->lock);
+        return(1);
+    }
+
+    tbx_type_malloc(map, lfs_pending_delete_t, 1);
+
+    //** We add both forward and reverse mappings because FUSE will give up ifthe parent director is removed
+    map->original = strdup(path);
+    map->mapping = strdup(mapping);
+    apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, map);
+    apr_hash_set(lfs->pending_delete_table, map->mapping, APR_HASH_KEY_STRING, map);
+
+    //** Update the count
+    tbx_atomic_set(lfs->n_pending_delete, apr_hash_count(lfs->pending_delete_table));
+
+    apr_thread_mutex_unlock(lfs->lock);
+
+    return(0);
+}
+
+//*************************************************************************
+//  lfs_pending_delete_relocate_object - Relocates the .fuse_hidden object
+//*************************************************************************
+
+int lfs_pending_delete_relocate_object(lio_fuse_t *lfs, const char *oldname, const char *newname)
+{
+    char mapping[OS_PATH_MAX];
+    uint32_t n;
+    int err = 0;
+
+    //** Make the mapping name
+    tbx_random_get_bytes(&n, sizeof(n));
+    snprintf(mapping, OS_PATH_MAX-1, "%s/" TT ".%u.%s", lfs->pending_delete_prefix, time(NULL), n, lfs->id);
+    mapping[OS_PATH_MAX-1] = '\0';
+
+    //** Do the move
+    err = lio_fs_rename(lfs->fs , NULL, oldname, mapping);
+    if (err != 0) return(err);
+
+    //** Update the mapping table
+    err = lfs_pending_delete_mapping_add(lfs, newname, mapping);
+
+    return(err);
+}
+
+//*************************************************************************
+// lfs_pending_delete_remove_object - Does the actual removal of the pending delete
+//   The original path is where FUSE thinks the file resides and the mapping is where
+//   it was stored
+//*************************************************************************
+
+int lfs_pending_delete_remove_object(lio_fuse_t *lfs, const char *original, char *mapping)
+{
+    int err;
+
+    err = lio_fs_object_remove(lfs->fs, NULL, mapping, OS_OBJECT_FILE_FLAG);
+
+    lfs_pending_delete_mapping_remove(lfs, original);
+
+    return(err);
+}
+
+//*************************************************************************
 // lfs_stat - Does a stat on the file/dir
 //*************************************************************************
 
@@ -398,9 +562,12 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
     lio_os_authz_local_t ug;
     int err;
     char *flink;
+    char *mpath;
+
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
 
     flink = NULL;
-    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, sbuf, &flink, 1, lfs->no_cache_stat_if_file);
+    err = lio_fs_stat(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, sbuf, &flink, 1, lfs->no_cache_stat_if_file);
     _lfs_hint_release(lfs, &ug);
 
     if (err == 0) {
@@ -423,6 +590,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
         }
     )
 
+    if (mpath != fname) free(mpath);
     return(err);
 }
 
@@ -474,6 +642,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     lfs_dir_iter_t *dit;
     lio_os_authz_local_t ug;
 
+fprintf(stderr, "opendir: fname=%s\n", fname);
 
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
     dit->lfs = lfs;
@@ -600,12 +769,15 @@ int lfs_chmod(const char *fname, mode_t mode)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
 
-    err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode);
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+    err = lio_fs_chmod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, mode);
     _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, chmod(sfname, mode));
 
+    if (mpath != fname) free(mpath);
     return(err);
 }
 
@@ -636,9 +808,16 @@ int lfs_unlink(const char *fname)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
 
-    err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
-    _lfs_hint_release(lfs, &ug);
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+    if (mpath != fname) { //** We have a pending delete removal
+        err = lfs_pending_delete_remove_object(lfs, fname, mpath);
+        if (mpath) free(mpath);
+    } else {
+        err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
+        _lfs_hint_release(lfs, &ug);
+    }
 
     SHADOW_GENERIC_COMPARE(fname, err, unlink(sfname));
 
@@ -686,8 +865,11 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd;
     lio_os_authz_local_t ug;
+    char *mpath;
 
-    fd = lio_fs_open(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, lio_open_flags(fi->flags, 0));
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+
+    fd = lio_fs_open(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, lio_open_flags(fi->flags, 0));
     _lfs_hint_release(lfs, &ug);
     fi->fh = (uint64_t)fd;
 
@@ -714,6 +896,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
         }
     )
 
+    if (mpath != fname) free(mpath);
     if (!fd) return(-errno);  //On error lio_fs_open sets the error code in errno
     return(0);
 }
@@ -727,6 +910,15 @@ int lfs_release(const char *fname, struct fuse_file_info *fi)
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd = SHADOW_GET_FD(fi->fh);
     int err;
+
+    //** Check if we need to flag it as to remove on close by looking to see if it's in the trash LFS prefix
+    //** FUSE will abandon removing it if the parent directory is remoaved first.
+    if (strncmp(lfs->pending_delete_prefix, fd->fh->fname, lfs->pending_delete_prefix_len) == 0) {
+        if (fd->fh->fname[lfs->pending_delete_prefix_len] == '/') {
+            lio_fs_object_remove(lfs->fs, NULL, fd->fh->fname, OS_OBJECT_FILE_FLAG);
+            lfs_pending_delete_mapping_remove(lfs, fd->fh->fname);
+        }
+    }
 
     err = lio_fs_close(lfs->fs, fd);
 
@@ -873,9 +1065,16 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *cptr;
 
-    err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
-    _lfs_hint_release(lfs, &ug);
+    //** See if this is a .fuse_hidden rename
+    cptr = rindex(newname, '/');
+    if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
+        err = lfs_pending_delete_relocate_object(lfs, oldname, newname);
+    } else {
+        err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
+        _lfs_hint_release(lfs, &ug);
+    }
 
     SHADOW_GENERIC_COMPARE_DUAL(oldname, newname, err, rename(sfname1, sfname2));
 
@@ -898,12 +1097,15 @@ int lfs_truncate(const char *fname, off_t new_size)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
 
-    err = lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, new_size);
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+    err = lio_fs_truncate(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, new_size);
     _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, truncate(sfname, new_size));
 
+    if (mpath != fname) free(mpath);
     return(err);
 }
 
@@ -935,12 +1137,16 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
+
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
 
     SHADOW_ERROR("WARNING: UNSUPPORTED call! fname=%s\n", fname);
 
-    err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, tv);
+    err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, tv);
     _lfs_hint_release(lfs, &ug);
 
+    if (mpath != fname) free(mpath);
     return(err);
 }
 
@@ -961,9 +1167,12 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
 
-    err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, list, size);
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+    err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, list, size);
     _lfs_hint_release(lfs, &ug);
+    if (mpath != fname) free(mpath);
 
     SHADOW_CODE(shadow_listxattr(fname, list, size, err);)
     return(err);
@@ -983,9 +1192,14 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
+    char *mpath;
 
-    err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, name, buf, size);
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+
+    err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, name, buf, size);
     _lfs_hint_release(lfs, &ug);
+
+    if (mpath != fname) free(mpath);
 
     SHADOW_CODE(
         char sbuf[size+1];
@@ -1070,6 +1284,9 @@ int lfs_hardlink(const char *oldname, const char *newname)
 
 //*****************************************************************
 //  lfs_readlink - Reads the object symlink
+//     NOTE: This does not check if this file has been "removed" since
+//           it FUSE directly opens the target and not the symlink.
+//           This means removing the symlink is fine.
 //*****************************************************************
 
 int lfs_readlink(const char *fname, char *buf, size_t bsize)
@@ -1292,6 +1509,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 {
     lio_fuse_t *lfs = arg;
     char ppbuf[100];
+    int n;
 
     fprintf(fd, "---------------------------------- LFS config start --------------------------------------------\n");
     fprintf(fd, "[%s]\n", lfs->lfs_section);
@@ -1314,6 +1532,9 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     fprintf(fd, "enable_writeback_cache = %d\n", IS_CAP(FUSE_CAP_WRITEBACK_CACHE, lfs->conn->want));
 #endif
+    fprintf(fd, "pending_delete_prefix = %s\n", lfs->pending_delete_prefix);
+    n = tbx_atomic_get(lfs->n_pending_delete);
+    fprintf(fd, "n_pending_delete = %d\n", n);
     fprintf(fd, "\n");
 
     lio_fuse_cap_info(arg, fd);
@@ -1337,6 +1558,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     lio_fuse_t *lfs;
     char *section =  "lfs";
     ex_off_t n;
+    int err;
     lio_fuse_init_args_t *init_args;
     lio_fuse_init_args_t real_args;
 
@@ -1430,6 +1652,21 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 
     apr_pool_create(&(lfs->mpool), NULL);
 
+    //** Get the pending_delete info and set it up
+    lfs->pending_delete_prefix = tbx_inip_get_string(lfs->lc->ifd, section, "pending_delete_prefix", "/.lfs");
+    lfs->pending_delete_prefix_len = strlen(lfs->pending_delete_prefix);
+    apr_thread_mutex_create(&(lfs->lock), APR_THREAD_MUTEX_DEFAULT, lfs->mpool);
+    lfs->pending_delete_table = apr_hash_make(lfs->mpool);
+    if (lio_exists(lfs->lc, lfs->lc->creds, lfs->pending_delete_prefix) == 0) {
+        err = lio_fs_mkdir(lfs->fs, NULL, lfs->pending_delete_prefix, 0);
+        if (err != 0) {
+            fprintf(stderr, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+            log_printf(0, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+            exit(1);
+        }
+    }
+
     //** Get the default host ID for opens
     char hostname[1024];
     apr_gethostname(hostname, sizeof(hostname), lfs->mpool);
@@ -1476,7 +1713,9 @@ void lfs_destroy(void *private_data)
 
     tbx_siginfo_handler_remove(SIGUSR1, lio_fuse_info_fn, lfs);
 
-    lio_fs_destroy(lfs->fs);  //** Destryo the file system handler
+    lio_fs_destroy(lfs->fs);  //** Destroy the file system handler
+
+    lfs_pending_delete_destroy(lfs);
 
     //** Clean up everything else
     if (lfs->lfs_section) free(lfs->lfs_section);

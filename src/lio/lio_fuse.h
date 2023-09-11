@@ -54,6 +54,11 @@ struct lio_fuse_t {
     struct fuse_operations fops;
     char *id;
     char *mount_point;
+    tbx_atomic_int_t n_pending_delete;
+    int pending_delete_prefix_len;
+    char *pending_delete_prefix;
+    apr_hash_t *pending_delete_table;
+    apr_thread_mutex_t *lock;
     char *lfs_section;
     struct fuse_conn_info *conn;
     lio_fs_t *fs;
