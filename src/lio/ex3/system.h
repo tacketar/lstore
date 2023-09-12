@@ -46,7 +46,7 @@ extern "C" {
 #define ESS_ONGOING_SERVER "ongoing_server"
 #define ESS_ONGOING_HOST_ID "ongoing_host_id"
 #define ESS_SERVER_PORTAL  "server_portal"
-
+#define ESS_NOTIFY         "notify"
 #define MQ_TYPE_ZMQ "mq_zmq"
 #define MQ_AVAILABLE "mq_available"
 

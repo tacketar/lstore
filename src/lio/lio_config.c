@@ -1081,11 +1081,6 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->os_section);
 
-    if (_lc_object_destroy(lio->notify_section) <= 0) {
-        notify_destroy(lio->notify);
-    }
-    free(lio->notify_section);
-
     if (_lc_object_destroy(ESS_ONGOING_CLIENT) <= 0) {
         gop_mq_ongoing_t *on = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT);
         if (on != NULL) {  //** And also the ongoing client
@@ -1115,6 +1110,10 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->authn_section);
 
+    if (_lc_object_destroy(lio->notify_section) <= 0) {
+        notify_destroy(lio->notify);
+    }
+    free(lio->notify_section);
 
     if (lio->section_name != NULL) free(lio->section_name);
 
@@ -1391,6 +1390,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
 
         _lc_object_put(stype, lio->notify);  //** Add it to the table
     }
+    add_service(lio->ess, ESS_RUNNING, ESS_NOTIFY, lio->notify);
 
     //** Load the authentication service
     stype = tbx_inip_get_string(lio->ifd, section, "authn", lio_default_options.authn_section);
