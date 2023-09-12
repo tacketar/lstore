@@ -642,8 +642,6 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     lfs_dir_iter_t *dit;
     lio_os_authz_local_t ug;
 
-fprintf(stderr, "opendir: fname=%s\n", fname);
-
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
     dit->lfs = lfs;
     dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname);
