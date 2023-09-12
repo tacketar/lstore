@@ -271,6 +271,7 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
         pc = apr_hash_get(ap->ctx->creds, args[0], *(int *)args[1]);
         if (pc) {
             pc->count++;
+            if (tbx_log_level() > 5) { notify_printf(ap->notify, 1, NULL, "CREDS_INCR: count=%d creds_id=%s\n", pc->count, pc->c.descriptive_id); }
             c = &(pc->c);
         }
         apr_thread_mutex_unlock(ap->lock);
@@ -292,6 +293,7 @@ void apsk_cred_destroy(lio_creds_t *c)
     apr_thread_mutex_lock(ap->lock);
     pc->count--;
     if (pc->count == 0) {  //** This one is done so reap it
+        notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", pc->c.descriptive_id);
         if (pc->c.id != NULL) free(pc->c.id);
         if (pc->c.descriptive_id) free(pc->c.descriptive_id);
         tbx_stack_move_to_ptr(pc->a->creds, pc->ele);
@@ -317,6 +319,8 @@ void apsk_cred_destroy(lio_creds_t *c)
                 }
             }
         }
+    } else {
+        if (tbx_log_level() > 5) { notify_printf(ap->notify, 1, NULL, "CREDS_DECR: count=%d creds=%s\n", pc->count, pc->c.descriptive_id); }
     }
     apr_thread_mutex_unlock(ap->lock);
 
@@ -390,7 +394,10 @@ fail:
 gop_op_status_t apsk_cred_logout_fn(void *arg, int id)
 {
     lio_creds_t *c = arg;
+    psk_creds_t *pc = c->priv;
+    lio_authn_psk_server_priv_t *ap = pc->an->priv;
 
+    notify_printf(ap->notify, 1, NULL, "CREDS_LOGOUT: count=%d creds=%s\n", pc->count, c->descriptive_id);
     an_cred_destroy(c);
 
     return(gop_success_status);
@@ -445,12 +452,16 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
     //** Make the new creds
     c = apsk_login(an, id, id_len, did, did_len, encrypted, encrypted_len, nonce, nonce_len, &nonce_new, &return_packet, &return_len);
     if (c) {
+        notify_printf(ap->notify, 1, NULL, "CREDS_LOGIN: creds=%s\n", c->descriptive_id);
         status = gop_success_status;
         fhb = mq_msg_pop(msg);  //** This has the heartbeat from for tracking
         gop_mq_get_frame(fhb, (void **)&hb, &hb_len);
         gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_gop, an);
         gop_mq_frame_destroy(fhb);
     } else {
+        if (id_len == 0) id = "NULL";
+        if (did_len == 0) did = "NULL";
+        notify_printf(ap->notify, 1, NULL, "CREDS_LOGIN: ERROR: Failed login!!!  cred_id=%s cred_did=%s\n", id, did);
         gop_mq_frame_destroy(mq_msg_pop(msg));  //** This has the heartbeat from for tracking which we don't need on failure
         status = gop_failure_status;
     }
@@ -614,6 +625,9 @@ lio_authn_t *authn_psk_server_create(lio_service_manager_t *ess, tbx_inip_file_t
 
     //** Spawn the thread checking for changes
     tbx_thread_create_assert(&(ap->check_thread), NULL, psk_check_thread, (void *)an, ap->mpool);
+
+    //** Get the notify handle
+    ap->notify = lio_lookup_service(ess, ESS_RUNNING, ESS_NOTIFY); FATAL_UNLESS(ap->notify != NULL);
 
     //** Get the thread pool
     ap->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED); FATAL_UNLESS(ap->tpc != NULL);

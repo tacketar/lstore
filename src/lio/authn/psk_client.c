@@ -66,6 +66,10 @@ char *authn_psk_client_get_type(lio_creds_t *c)
 
 void authn_psk_client_cred_destroy(lio_creds_t *c)
 {
+    lio_authn_t *an = c->priv;
+    lio_authn_psk_client_priv_t *ap = an->priv;
+
+    notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", c->descriptive_id);
     if (c->handle != NULL) free(c->handle);
     if (c->id != NULL) free(c->id);
     if (c->descriptive_id != NULL) free(c->descriptive_id);
@@ -305,6 +309,7 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     char fname[PATH_MAX];
     char *home, *key_prefix, *fcreds;
     mode_t bad_mode;
+    lio_authn_psk_client_priv_t *ap = an->priv;
 
     c = cred_default_create(NULL);
     c->priv = an;
@@ -320,7 +325,7 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     fcreds = getenv(LIO_ENV_KEY_FILE);
     if (fcreds) {
         snprintf(fname, sizeof(fname)-1, "%s", fcreds); fname[sizeof(fname)-1] = '\0';
-        if (get_psk(an, c, fname, (char *)args[0], 1, bad_mode) == 0) return(c);
+        if (get_psk(an, c, fname, (char *)args[0], 1, bad_mode) == 0) goto success;
     }
 
     //** Now check for a local account
@@ -332,18 +337,23 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
         snprintf(fname, sizeof(fname)-1, "%s/.lio/accounts.psk", home); fname[sizeof(fname)-1] = '\0';
     }
 
-    if (get_psk(an, c, fname, (char *)args[0], 0, bad_mode) == 0) return(c);
+    if (get_psk(an, c, fname, (char *)args[0], 0, bad_mode) == 0) goto success;
 
     //** Now check the global location for anonymouns creds
     bad_mode = S_IWOTH|S_IXOTH|S_IWGRP|S_IXGRP|S_IXUSR;
-    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) return(c);
+    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) goto success;
 
     //** If we made it here nothing is good so try the local file again but fail this time
     bad_mode = S_IRWXO|S_IRWXG|S_IXUSR;
-    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) return(c);
+    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) goto success;
 
-    //** We will never make it here since we'll exit() on failure
+    //** We should  never make it here since we'll exit() on failure
     return(NULL);
+
+success:
+    notify_printf(ap->notify, 1, NULL, "CREDS_CREATE: creds=%s\n", c->descriptive_id);
+
+    return(c);
 }
 
 //***********************************************************************
@@ -395,6 +405,7 @@ lio_authn_t *authn_psk_client_create(lio_service_manager_t *ess, tbx_inip_file_t
     ap->remote_host_string = tbx_inip_get_string(ifd, section, "remote_address", psk_default_options.remote_host_string);
     ap->remote_host = gop_mq_string_to_address(ap->remote_host_string);
 
+    ap->notify = lio_lookup_service(ess, ESS_RUNNING, ESS_NOTIFY); FATAL_UNLESS(ap->notify != NULL);
     ap->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ); FATAL_UNLESS(ap->mqc != NULL);
     ap->ongoing = lio_lookup_service(ess, ESS_RUNNING, ESS_ONGOING_CLIENT); FATAL_UNLESS(ap->ongoing != NULL);
     ap->host_id = lio_lookup_service(ess, ESS_RUNNING, ESS_ONGOING_HOST_ID); FATAL_UNLESS(ap->host_id != NULL);

@@ -24,10 +24,10 @@
 #include <gop/mq.h>
 #include <gop/mq_ongoing.h>
 #include <lio/authn.h>
+#include <lio/notify.h>
 #include <apr_thread_cond.h>
 
 #include "authn.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -49,6 +49,7 @@ typedef struct {
     int host_id_len;
     int heartbeat;
     gop_mq_ongoing_t *ongoing;     //** Ongoing handle to reap credentials
+    notify_t *notify;
 } lio_authn_psk_client_priv_t;
 
 typedef struct {
@@ -74,6 +75,7 @@ typedef struct {
     int shutdown;
     time_t modify_time;
     gop_thread_pool_context_t *tpc;
+    notify_t *notify;
 } lio_authn_psk_server_priv_t;
 
 lio_authn_t *authn_psk_client_create(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
