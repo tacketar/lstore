@@ -24,6 +24,7 @@
 #include <apr_pools.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
+#include <execinfo.h>
 #include <gop/gop.h>
 #include <gop/mq_helpers.h>
 #include <gop/mq_ongoing.h>
@@ -37,6 +38,7 @@
 #include <string.h>
 #include <string.h>
 #include <tbx/assert_result.h>
+#include <tbx/append_printf.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
@@ -194,6 +196,8 @@ int osrc_add_creds(lio_object_service_fn_t *os, lio_creds_t *creds, mq_msg_t *ms
 gop_op_status_t osrc_response_status(void *task_arg, int tid)
 {
     gop_mq_task_t *task = (gop_mq_task_t *)task_arg;
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)task->arg;
+    lio_osrc_priv_t *osrc = (lio_osrc_priv_t *)os->priv;
     gop_op_status_t status;
 
     log_printf(5, "START\n");
@@ -203,6 +207,10 @@ gop_op_status_t osrc_response_status(void *task_arg, int tid)
 
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
+
+    if ((status.op_status == OP_STATE_FAILURE) && (status.error_code == -ENOKEY)) {
+        notify_printf(osrc->notify, 1, NULL, "ERROR: osrc_response_status -- Invalid creds!\n");
+    }
 
     return(status);
 }
@@ -234,6 +242,10 @@ gop_op_status_t osrc_response_stream_status(void *task_arg, int tid)
     log_printf(15, "op_status=%d\n", status.op_status);
     status.error_code = gop_mq_stream_read_varint(mqs, &err);
     log_printf(15, "error_code%d\n", status.error_code);
+
+    if ((status.op_status == OP_STATE_FAILURE) && (status.error_code == -ENOKEY)) {
+        notify_printf(osrc->notify, 1, NULL, "ERROR: osrc_response_stream_status -- Invalid creds!\n");
+    }
 
     gop_mq_stream_destroy(mqs);
 
@@ -427,7 +439,7 @@ gop_op_generic_t *osrc_abort_remove_regex_object(lio_object_service_fn_t *os, go
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    g = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    g = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -454,7 +466,7 @@ gop_op_generic_t *osrc_remove_object(lio_object_service_fn_t *os, lio_creds_t *c
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -682,7 +694,7 @@ gop_op_generic_t *osrc_abort_regex_object_set_multiple_attrs(lio_object_service_
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    g = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    g = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -709,7 +721,7 @@ gop_op_generic_t *osrc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:EXISTS path=%s", path);
 
     log_printf(5, "END\n");
@@ -815,7 +827,7 @@ gop_op_generic_t *osrc_object_exec_modify(lio_object_service_fn_t *os, lio_creds
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:EXEC_MODIFY path=%s", path);
 
     log_printf(5, "END\n");
@@ -856,7 +868,7 @@ gop_op_generic_t *osrc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
 
     log_printf(5, "END\n");
@@ -922,7 +934,7 @@ gop_op_generic_t *osrc_create_object_with_attrs(lio_object_service_fn_t *os, lio
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
 
     log_printf(5, "END\n");
@@ -957,7 +969,7 @@ gop_op_generic_t *osrc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:SYMLINK src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
@@ -992,7 +1004,7 @@ gop_op_generic_t *osrc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:HARDLINK src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
@@ -1022,7 +1034,7 @@ gop_op_generic_t *osrc_move_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:MOVE src_path=%s dest_path=%s", src_path, dest_path);
 
     log_printf(5, "END\n");
@@ -2390,7 +2402,7 @@ gop_op_generic_t *osrc_abort_open_object(lio_object_service_fn_t *os, gop_op_gen
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -2520,7 +2532,7 @@ gop_op_generic_t *osrc_abort_lock_user_object(lio_object_service_fn_t *os, gop_o
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     return(gop);
 }
@@ -2550,7 +2562,7 @@ gop_op_generic_t *osrc_fsck_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, NULL, NULL, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     return(gop);
 }
@@ -2824,6 +2836,9 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
 
     //** Get the thread pool to use
     osrc->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);FATAL_UNLESS(osrc->tpc != NULL);
+
+    //** Get the notify handle
+    osrc->notify = lio_lookup_service(ess, ESS_RUNNING, ESS_NOTIFY);FATAL_UNLESS(osrc->notify != NULL);
 
     //** Set up the fn ptrs
     os->type = OS_TYPE_REMOTE_CLIENT;

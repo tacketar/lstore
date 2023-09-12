@@ -61,6 +61,8 @@ typedef struct {
     int count;
 } psk_creds_t;
 
+static gop_op_status_t bad_creds_status = {.op_status = OP_STATE_FAILURE, .error_code = -ENOKEY };
+
 //***********************************************************************
 // _psk_destroy -Destroys the PSK context
 //***********************************************************************
@@ -463,7 +465,7 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         if (did_len == 0) did = "NULL";
         notify_printf(ap->notify, 1, NULL, "CREDS_LOGIN: ERROR: Failed login!!!  cred_id=%s cred_did=%s\n", id, did);
         gop_mq_frame_destroy(mq_msg_pop(msg));  //** This has the heartbeat from for tracking which we don't need on failure
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     gop_mq_frame_destroy(fid);

@@ -105,6 +105,8 @@ typedef struct {
 
 lio_object_service_fn_t *_os_global = NULL;  //** This is used for the signal
 
+static gop_op_status_t bad_creds_status = {.op_status = OP_STATE_FAILURE, .error_code = -ENOKEY };
+
 //***********************************************************************
 // osrs_print_active_table - Print the active table
 //***********************************************************************
@@ -330,7 +332,7 @@ void osrs_exists_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -384,7 +386,7 @@ void osrs_realpath_cb(void *arg, gop_mq_task_t *task)
     if (creds != NULL) {
         status = gop_sync_exec_status(os_realpath(osrs->os_child, creds, name, realpath));
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -497,7 +499,7 @@ void osrs_object_exec_modify_cb(void *arg, gop_mq_task_t *task)
     if (creds != NULL) {
         status = gop_sync_exec_status(os_object_exec_modify(osrs->os_child, creds, name, exec_mode));
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -565,7 +567,7 @@ void osrs_create_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -695,7 +697,7 @@ void osrs_create_object_with_attrs_cb(void *arg, gop_mq_task_t *task)
         status = gop_sync_exec_status(os_create_object_with_attrs(osrs->os_child, creds, name, ftype, id, key, (void **)val, v_size, n_keys));
 //        if (id != NULL) free(id);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail:
@@ -766,7 +768,7 @@ void osrs_remove_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -904,7 +906,7 @@ void osrs_remove_regex_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail:
@@ -1042,7 +1044,7 @@ void osrs_symlink_object_cb(void *arg, gop_mq_task_t *task)
         gop_free(gop, OP_DESTROY);
         if (userid != NULL) free(userid);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -1105,7 +1107,7 @@ void osrs_hardlink_object_cb(void *arg, gop_mq_task_t *task)
         gop_free(gop, OP_DESTROY);
         if (userid != NULL) free(userid);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -1164,7 +1166,7 @@ void osrs_move_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     osrs_release_creds(os, creds);
@@ -1243,7 +1245,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(ah.gop);
         gop_free(ah.gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     //** Form the response
@@ -1671,7 +1673,7 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
             status = gop_sync_exec_status(os_get_multiple_attrs(osrs->os_child, creds, fd, key, (void **)val, v_size, n));
         }
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
     //** Create the stream
@@ -1887,7 +1889,7 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
             status = gop_sync_exec_status(os_set_multiple_attrs(osrs->os_child, creds, fd, key, (void **)val, v_size, n));
         }
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail_fd:
@@ -1994,6 +1996,8 @@ void osrs_abort_regex_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
         log_printf(5, "Invalid handle!\n");
     }
     apr_thread_mutex_unlock(osrs->lock);
+
+    if (!creds) { status = bad_creds_status; }
 
     //** Form the response
     response = gop_mq_make_response_core_msg(msg, fid);
@@ -2184,7 +2188,7 @@ void osrs_regex_set_mult_attr_cb(void *arg, gop_mq_task_t *task)
         gop_waitall(spin.gop);
         status = gop_get_status(spin.gop);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail:
@@ -2352,7 +2356,7 @@ void osrs_copy_mult_attr_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail_fd:
@@ -2507,7 +2511,7 @@ void osrs_move_mult_attr_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail_fd:
@@ -2675,7 +2679,7 @@ void osrs_symlink_mult_attr_cb(void *arg, gop_mq_task_t *task)
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
-        status = gop_failure_status;
+        status = bad_creds_status;
     }
 
 fail_fd:
@@ -3438,7 +3442,7 @@ void osrs_fsck_object_cb(void *arg, gop_mq_task_t *task)
 
     log_printf(5, "err=%d\n", err);
     if ((err != 0) || (creds == NULL)) {
-        status = gop_failure_status;
+        status = (creds == NULL) ? bad_creds_status : gop_failure_status;
     } else {
         gop = os_fsck_object(osrs->os_child, creds, path, ftype, resolution);
         gop_waitall(gop);

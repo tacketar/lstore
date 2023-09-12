@@ -23,6 +23,7 @@
 
 #include <gop/mq_ongoing.h>
 #include <gop/mq.h>
+#include <lio/notify.h>
 
 #include "authn.h"
 #include "os.h"
@@ -136,6 +137,7 @@ struct lio_osrs_priv_t {
 struct lio_osrc_priv_t {
     char *section;
     char *temp_section;
+    notify_t *notify;                  //** Notify handle
     lio_object_service_fn_t *os_temp;  //** Used only for initial debugging of the client/server
     lio_object_service_fn_t *os_remote;//** Used only for initial debugging of the client/server
     apr_thread_mutex_t *lock;
