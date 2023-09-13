@@ -966,7 +966,7 @@ int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int r
         do_wait = 0;
     }
 
-    if (rw_mode & OS_MODE_READ_IMMEDIATE) return(0);
+    if (rw_mode & (OS_MODE_READ_IMMEDIATE|OS_MODE_WRITE_IMMEDIATE)) return(0);
 
     apr_thread_mutex_lock(flock->fobj_lock);
 
@@ -6017,6 +6017,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     log_printf(15, "full_object_lock=%d fname=%s uuid=" LU " max_wait=%d fd=%p fd->fol=%p\n", err, fd->object_name, fd->uuid, op->max_wait, fd, fd->fol);
     if (err != 0) {  //** Either a timeout or abort occured
+        notify_printf(osf->olog, 1, op->creds, "ERROR: osfile_open_object_fn -- failed getting lock! fname=%s mode=%d max_wait=%d\n", op->path, op->mode, op->max_wait);
         *(op->fd) = NULL;
         free(fd->attr_dir);
         free(fd);
