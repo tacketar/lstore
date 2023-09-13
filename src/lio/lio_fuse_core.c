@@ -806,7 +806,7 @@ int lfs_unlink(const char *fname)
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
     int err;
-    char *mpath;
+    char *mpath, *cptr;
 
     mpath = lfs_pending_delete_mapping_get(lfs, fname);
     if (mpath != fname) { //** We have a pending delete removal
@@ -815,6 +815,13 @@ int lfs_unlink(const char *fname)
     } else {
         err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
         _lfs_hint_release(lfs, &ug);
+        if (err != 0) { //** We have an error so let's see if it could be a race issue with a .fuse_hidden file
+            cptr = rindex(fname, '/');
+            if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
+                err = 0;   //** Probably a false positive so go ahead and clear it
+                notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "SOFT_ERROR: Most likely the .fuse_hidden file was deleted on close before FUSE tried. Ignoring. fname=%s\n", fname);
+            }
+        }
     }
 
     SHADOW_GENERIC_COMPARE(fname, err, unlink(sfname));
