@@ -157,8 +157,8 @@ struct lio_os_virtual_attr_t {
 
 int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat *stat_object);
 
-int os_log_warm_attr_check(notify_t *olog, int n_keys, char **key);
-void os_log_warm_if_needed(notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size);
+int os_log_warm_attr_check(tbx_notify_t *olog, int n_keys, char **key);
+void os_log_warm_if_needed(tbx_notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size);
 
 #ifdef __cplusplus
 }

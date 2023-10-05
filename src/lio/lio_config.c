@@ -221,7 +221,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     ds_print_running_config(lio->ds, fd, 1);
     rs_print_running_config(lio->rs, fd, 1);
     authn_print_running_config(lio->authn, fd, 1);
-    notify_print_running_config(lio->notify, fd, 1);
+    tbx_notify_print_running_config(lio->notify, fd, 1);
 
     memory_usage_dump(fd);
 }
@@ -1111,7 +1111,7 @@ void lio_destroy_nl(lio_config_t *lio)
     free(lio->authn_section);
 
     if (_lc_object_destroy(lio->notify_section) <= 0) {
-        notify_destroy(lio->notify);
+        tbx_notify_destroy(lio->notify);
     }
     free(lio->notify_section);
 
@@ -1380,7 +1380,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->notify_section = stype;
     lio->notify = _lc_object_get(stype);
     if (lio->notify == NULL) {  //** Need to load it
-        lio->notify = notify_create(lio->ifd, NULL, lio->notify_section);
+        lio->notify = tbx_notify_create(lio->ifd, NULL, lio->notify_section);
         if (lio->notify == NULL) {
             log_printf(1, "Error loading notification service!  section=%s\n", stype);
             fprintf(stderr, "Error loading notification service! section=%s\n", stype);

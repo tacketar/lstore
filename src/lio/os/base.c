@@ -623,7 +623,7 @@ int lio_os_local_filetype(const char *path)
 //      the warmer cares about it logs it.
 //***********************************************************************
 
-void os_log_warm_if_needed(notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size)
+void os_log_warm_if_needed(tbx_notify_t *olog, lio_creds_t *creds, char *fname, int ftype, int n_keys, char **key, int *v_size)
 {
     int i;
     char *etext;

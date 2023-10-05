@@ -91,7 +91,7 @@ struct lio_osfile_priv_t {
     char *section;
     char *authz_section;
     char *os_activity;
-    notify_t *olog;
+    tbx_notify_t *olog;
     gop_thread_pool_context_t *tpc;
     apr_thread_mutex_t **internal_lock;
     lio_os_authz_t *osaz;

@@ -6627,7 +6627,7 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "\n");
 
     //** Print the notification log section
-    notify_print_running_config(osf->olog, fd, 1);
+    tbx_notify_print_running_config(osf->olog, fd, 1);
 
     //** Print the AuthZ configuration
     osaz_print_running_config(osf->osaz, fd, 1);
@@ -6666,7 +6666,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     apr_pool_destroy(osf->mpool);
 
-    if (osf->olog) notify_destroy(osf->olog);
+    if (osf->olog) tbx_notify_destroy(osf->olog);
     if (osf->os_activity) free(osf->os_activity);
     if (osf->authz_section) free(osf->authz_section);
     if (osf->section) free(osf->section);
@@ -7119,7 +7119,7 @@ next:
         }
     }
     //** Make the activity log
-    osf->olog = notify_create(fd, NULL, osf->os_activity);
+    osf->olog = tbx_notify_create(fd, NULL, osf->os_activity);
 
     return(os);
 }
