@@ -27,6 +27,7 @@
 #include <apr_time.h>
 #include <lio/blacklist.h>
 #include <tbx/iniparse.h>
+#include <tbx/notify.h>
 
 #include "ex3/types.h"
 
@@ -44,6 +45,7 @@ struct lio_blacklist_t {
     apr_pool_t *mpool;
     apr_thread_mutex_t *lock;
     apr_hash_t *table;
+    tbx_notify_t *notify;
     ex_off_t  min_bandwidth;
     apr_time_t min_io_time;
     apr_time_t timeout;
@@ -53,7 +55,7 @@ void blacklist_remove_rs_added(lio_blacklist_t *bl);
 void blacklist_add(lio_blacklist_t *bl, char *rid_key, int rs_added, int do_lock);
 int blacklist_check(lio_blacklist_t *bl, char *rid_key, int do_lock);
 void blacklist_destroy(lio_blacklist_t *bl);
-lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section);
+lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section, tbx_notify_t *notify);
 
 #ifdef __cplusplus
 }

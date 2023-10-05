@@ -27,7 +27,7 @@
 
 
 //***************************************************************
-// blacklist_remove_rs_added - Removes all the RIDs blakclisted due to the RS
+// blacklist_remove_rs_added - Removes all the RIDs blacklisted due to the RS
 //***************************************************************
 
 void blacklist_remove_rs_added(lio_blacklist_t *bl)
@@ -42,6 +42,7 @@ void blacklist_remove_rs_added(lio_blacklist_t *bl)
     for (hi=apr_hash_first(NULL, bl->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&r);
         if (r->rs_added > 0) {
+            if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_RS_ADDED: rid=%s\n", r->rid);
             apr_hash_set(bl->table, r->rid, APR_HASH_KEY_STRING, NULL);
             free(r->rid);
             free(r);
@@ -63,6 +64,7 @@ void blacklist_add(lio_blacklist_t *bl, char *rid_key, int rs_added, int do_lock
     bl_rid = apr_hash_get(bl->table, rid_key, APR_HASH_KEY_STRING);
     if (bl_rid == NULL) {
         log_printf(2, "Blacklisting RID=%s\n", rid_key);
+        if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_ADD: rid=%s rs_added=%d\n", rid_key, rs_added);
         tbx_type_malloc(bl_rid, lio_blacklist_ibp_rid_t, 1);
         bl_rid->rid = strdup(rid_key);
         bl_rid->recheck_time = apr_time_now() + ((rs_added == 0) ? bl->timeout : apr_time_from_sec(7200));
@@ -92,6 +94,7 @@ int blacklist_check(lio_blacklist_t *bl, char *rid_key, int do_lock)
     if (bl_rid) {
         if (bl_rid->recheck_time < now) { //** Expired blacklist so undo it
             log_printf(5, "EXPIRED rid=%s\n", bl_rid->rid);
+            if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_EXPIRED: rid=%s\n", bl_rid->rid);
             apr_hash_set(bl->table, bl_rid->rid, APR_HASH_KEY_STRING, NULL);
             free(bl_rid->rid);
             free(bl_rid);
@@ -129,7 +132,7 @@ void blacklist_destroy(lio_blacklist_t *bl)
 // blacklist_load - Loads and creates a blacklist structure
 //***************************************************************
 
-lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section)
+lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section, tbx_notify_t *notify)
 {
     lio_blacklist_t *bl;
 
@@ -138,6 +141,7 @@ lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section)
     assert_result(apr_pool_create(&(bl->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(bl->lock), APR_THREAD_MUTEX_DEFAULT, bl->mpool);
     bl->table = apr_hash_make(bl->mpool);
+    bl->notify = notify;
 
     bl->timeout = tbx_inip_get_integer(ifd, section, "timeout", apr_time_from_sec(120));
     bl->min_bandwidth = tbx_inip_get_integer(ifd, section, "min_bandwidth", 5*1024*1024);  //** default ro 5MB

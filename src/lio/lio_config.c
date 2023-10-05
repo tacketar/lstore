@@ -1271,14 +1271,6 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     tbx_monitor_create(lio->monitor_fname);
     if (lio->monitor_enable) tbx_monitor_set_state(1);
 
-    //** Check and see if we need to enable the blacklist
-    lio->blacklist_section = tbx_inip_get_string(lio->ifd, section, "blacklist", lio_default_options.blacklist_section);
-    if (lio->blacklist_section != NULL) { //** Yup we need to parse and load those params
-        check_for_section(lio->ifd, section, "No blacklist section found!\n");
-        lio->blacklist = blacklist_load(lio->ifd, lio->blacklist_section);
-        add_service(lio->ess, ESS_RUNNING, "blacklist", lio->blacklist);
-    }
-
     lio->path_is_literal = tbx_inip_get_integer(lio->ifd, section, "path_is_literal", lio_default_options.path_is_literal);
     cores = tbx_inip_get_integer(lio->ifd, section, "tpc_unlimited", lio_default_options.tpc_unlimited_count);
     lio->tpc_unlimited_count = cores;
@@ -1391,6 +1383,14 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         _lc_object_put(stype, lio->notify);  //** Add it to the table
     }
     add_service(lio->ess, ESS_RUNNING, ESS_NOTIFY, lio->notify);
+
+    //** Check and see if we need to enable the blacklist
+    lio->blacklist_section = tbx_inip_get_string(lio->ifd, section, "blacklist", lio_default_options.blacklist_section);
+    if (lio->blacklist_section != NULL) { //** Yup we need to parse and load those params
+        check_for_section(lio->ifd, section, "No blacklist section found!\n");
+        lio->blacklist = blacklist_load(lio->ifd, lio->blacklist_section, lio->notify);
+        add_service(lio->ess, ESS_RUNNING, "blacklist", lio->blacklist);
+    }
 
     //** Load the authentication service
     stype = tbx_inip_get_string(lio->ifd, section, "authn", lio_default_options.authn_section);
