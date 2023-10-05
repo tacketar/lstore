@@ -520,7 +520,7 @@ int main(int argc, char **argv)
     char *clog_date = NULL;
     int clog_line = -1;
     int year, month, day, line;
-    notify_iter_t *ci;
+    tbx_notify_iter_t *ci;
     warm_prep_db_t *wdb;
     clog_obj_info_t *obj;
     apr_pool_t *mpool;
@@ -589,10 +589,10 @@ int main(int argc, char **argv)
     wdb = open_prep_db(db_base, DB_OPEN_EXISTS, -1);
 
     //** Filter the logs
-    ci = notify_iter_create(clog_base, year, month, day, line);
+    ci = tbx_notify_iter_create(clog_base, year, month, day, line);
     i = 0;
     last = 0;
-    while ((text = notify_iter_next(ci)) != NULL) {
+    while ((text = tbx_notify_iter_next(ci)) != NULL) {
         if (interesting_clog_entry(text, &ce)) {
             process_clog_entry(wdb, &ce, obj_hash);
             i++;
@@ -604,9 +604,9 @@ int main(int argc, char **argv)
     }
 
     //** Get the last record processed
-    notify_iter_current_time(ci, &year, &month, &day, &line);
+    tbx_notify_iter_current_time(ci, &year, &month, &day, &line);
 
-    notify_iter_destroy(ci);
+    tbx_notify_iter_destroy(ci);
 
     //** Process the entries
     process_objects(wdb, obj_hash);
