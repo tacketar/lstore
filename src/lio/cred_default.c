@@ -25,6 +25,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
 #include <tbx/type_malloc.h>
+#include <pwd.h>
 
 #include "authn.h"
 
@@ -71,15 +72,24 @@ void *cdef_get_handle(lio_creds_t *c, int *len)
 
 void cred_default_set_ids(lio_creds_t *c, char *id)
 {
-    char buffer[1024], buf2[256], buf3[512];
+    char buffer[1024], buf2[16384], buf3[512], *login;
     uint64_t pid;
-    int err;
+    uid_t uid;
+    struct passwd pwd;
+    struct passwd *r;
+
+    //** Get the login
+    uid = geteuid();
+    if (getpwuid_r(uid, &pwd, buf2, sizeof(buf2), &r) == 0) {
+        login = r->pw_name;
+    } else {
+        snprintf(buf2, sizeof(buf2), "ERROR(%d, uid=%u)", errno, uid);
+        login = buf2;
+    }
 
     pid = getpid();
-    err = getlogin_r(buf2, sizeof(buf2));
-    if (err != 0) snprintf(buf2, sizeof(buf2), "ERROR(%d)", err);
     gethostname(buf3, sizeof(buf3));
-    snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, buf2, buf3, _lio_exe_name);
+    snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, login, buf3, _lio_exe_name);
     c->descriptive_id = strdup(buffer); c->descriptive_id_len = strlen(c->descriptive_id);
     c->id = strdup(id); c->id_len = strlen(c->id);
     return;
