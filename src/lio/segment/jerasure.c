@@ -49,12 +49,14 @@
 #include <tbx/iniparse.h>
 #include <tbx/interval_skiplist.h>
 #include <tbx/log.h>
+#include <tbx/notify.h>
 #include <tbx/range_stack.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
 #include <zlib.h>
 
+#include "notify_handle.h"
 #include "blacklist.h"
 #include "ds.h"
 #include "erasure_tools.h"
@@ -1668,7 +1670,7 @@ gop_op_status_t segjerase_write_func(void *arg, int id)
     lio_segment_rw_hints_t rw_hints[sw->n_iov];
 
     gop_op_status_t status, op_status;
-    ex_off_t lo, boff, poff, len, parity_len, parity_used, curr_bytes;
+    ex_off_t lo, boff, poff, len, parity_len, plen, parity_used, curr_bytes;
     int i, j, k, n_iov, nstripes, curr_stripe, pstripe, iov_start, quick;
     int soft_error, hard_error;
     char **straddle_buffer, *straddle_ptr;
@@ -1704,7 +1706,8 @@ gop_op_status_t segjerase_write_func(void *arg, int id)
     }
 
     //** See if we can store the parity on the stack
-    char parity_ptr[(parity_len > s->max_parity_on_stack) ? 1 : parity_len];
+    plen = parity_len + s->stripe_size_with_magic;  //** Make sure and add space for a NULL page
+    char parity_ptr[(parity_len > s->max_parity_on_stack) ? 1 : plen];
     if (parity_len > s->max_parity_on_stack) {
         log_printf(1, "seg=" XIDT " PARITY location: MALLOC... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         tbx_type_malloc(parity, char, parity_len);
@@ -1726,8 +1729,6 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     straddle_ptr = NULL;
     straddle_size = -1;
     straddle_used = -1;
-
-    empty = NULL;
 
     //** Set up the blacklist structure
     if (sw->rw_hints == NULL) {
@@ -1827,6 +1828,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                 //** Make the encoding and transfer data structs
                 stripe_magic = &(magic[curr_stripe*JE_MAGIC_SIZE]);
                 poff = 0;
+                empty = NULL;
                 for (k=0; k<s->n_data_devs; k++) {
                     if (tbv.buffer[0].iov_base != NULL) {
                         if (quick == 1) {
@@ -1835,11 +1837,11 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
 	                        ptr[pstripe + k] = straddle_ptr + poff;
                         }
                     } else { //** Got an error page
-                        if (empty == NULL) {
-                            empty = &(parity[parity_len]);
-                            memset(empty, 0, s->chunk_size);
-                        }
+                        hard_error = 1;
+                        empty = &(parity[parity_len + k*s->chunk_size]);   //** This points to an unused part of the buffer
+                        memset(empty, 0, s->chunk_size);
                         //ptr[pstripe+k] = NULL;  //** Segfault for debugging QWERT
+                        if (lio_notify_handle) tbx_notify_printf(lio_notify_handle, 1, NULL, "ERROR: HARD_ERROR!!!! jerasure:segjerasre_write_func NULL ptr! seg=" XIDT " off=" XOT " delta_stripe=%d dev=%d\n", segment_id(sw->seg), lo, j, k);
                         log_printf(0, "seg=" XIDT " ERROR NULL ptr! dev=%d\n", segment_id(sw->seg), k);
                         fprintf(stderr, "seg=" XIDT " ERROR NULL ptr! dev=%d\n", segment_id(sw->seg), k);
                         ptr[pstripe + k] = empty;
@@ -1853,22 +1855,37 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                     poff += s->chunk_size;
                 }
 
-                for (k=0; k<s->n_parity_devs; k++) {
-                    ptr[pstripe + s->n_data_devs + k] =  &(parity[parity_used]);
-                    iov[n_iov].iov_base = stripe_magic;
-                    iov[n_iov].iov_len = JE_MAGIC_SIZE;
-                    n_iov++;
-                    iov[n_iov].iov_base = ptr[pstripe + s->n_data_devs + k];
-                    iov[n_iov].iov_len = s->chunk_size;
-                    n_iov++;
-                    parity_used += s->chunk_size;
+                if (!empty) {  //** Everything is good
+                    for (k=0; k<s->n_parity_devs; k++) {
+                        ptr[pstripe + s->n_data_devs + k] =  &(parity[parity_used]);
+                        iov[n_iov].iov_base = stripe_magic;
+                        iov[n_iov].iov_len = JE_MAGIC_SIZE;
+                        n_iov++;
+                        iov[n_iov].iov_base = ptr[pstripe + s->n_data_devs + k];
+                        iov[n_iov].iov_len = s->chunk_size;
+                        n_iov++;
+                        parity_used += s->chunk_size;
+                    }
+
+                    //** Encode the data
+                    s->plan->encode_block(s->plan, &(ptr[pstripe]), s->chunk_size);
+
+                    //** Calculate the magic/cksum
+                    je_cksum_calc(stripe_magic, &ptr[pstripe], s->n_devs, s->chunk_size);
+                } else { //** Got a NULL ptr so blank everything. It should show up as an unwritten page in lio_inspect
+                    for (k=0; k<s->n_parity_devs; k++) {
+                        ptr[pstripe + s->n_data_devs + k] =  &(parity[parity_used]);
+                        iov[n_iov].iov_base = stripe_magic;
+                        iov[n_iov].iov_len = JE_MAGIC_SIZE;
+                        memset(iov[n_iov].iov_base, 0, JE_MAGIC_SIZE);
+                        n_iov++;
+                        iov[n_iov].iov_base = ptr[pstripe + s->n_data_devs + k];
+                        iov[n_iov].iov_len = s->chunk_size;
+                        memset(iov[n_iov].iov_base, 0, s->chunk_size);
+                        n_iov++;
+                        parity_used += s->chunk_size;
+                    }
                 }
-
-                //** Encode the data
-                s->plan->encode_block(s->plan, &(ptr[pstripe]), s->chunk_size);
-
-                //** Calculate the magic/cksum
-                je_cksum_calc(stripe_magic, &ptr[pstripe], s->n_devs, s->chunk_size);
 
                 curr_stripe++;
                 pstripe += s->n_devs;
