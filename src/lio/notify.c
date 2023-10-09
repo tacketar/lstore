@@ -42,9 +42,12 @@
 #include <tbx/varint.h>
 #include <time.h>
 #include <unistd.h>
-#include "lio/notify.h"
+#include "notify_handle.h"
 #include "lio/os.h"
 #include "authn.h"
+
+//** This is set during config loading
+tbx_notify_t *lio_notify_handle = NULL;
 
 //***********************************************************************
 // notify_printf - Logs an operation
