@@ -42,7 +42,7 @@ void blacklist_remove_rs_added(lio_blacklist_t *bl)
     for (hi=apr_hash_first(NULL, bl->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&r);
         if (r->rs_added > 0) {
-            if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_RS_ADDED: rid=%s\n", r->rid);
+            //if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_RS_ADDED: rid=%s\n", r->rid);
             apr_hash_set(bl->table, r->rid, APR_HASH_KEY_STRING, NULL);
             free(r->rid);
             free(r);
@@ -64,7 +64,7 @@ void blacklist_add(lio_blacklist_t *bl, char *rid_key, int rs_added, int do_lock
     bl_rid = apr_hash_get(bl->table, rid_key, APR_HASH_KEY_STRING);
     if (bl_rid == NULL) {
         log_printf(2, "Blacklisting RID=%s\n", rid_key);
-        if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_ADD: rid=%s rs_added=%d\n", rid_key, rs_added);
+        if ((bl->notify) && (rs_added == 0))  tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_ADD: rid=%s rs_added=%d\n", rid_key, rs_added);
         tbx_type_malloc(bl_rid, lio_blacklist_ibp_rid_t, 1);
         bl_rid->rid = strdup(rid_key);
         bl_rid->recheck_time = apr_time_now() + ((rs_added == 0) ? bl->timeout : apr_time_from_sec(7200));
