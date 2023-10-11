@@ -1683,6 +1683,24 @@ void _cache_add_page_to_list(lio_cache_t *c, lio_cache_page_t *p, lio_page_handl
 }
 
 //*******************************************************************************
+// _cache_fix_null_page - Fixes a NULL data page from a hard read error
+//*******************************************************************************
+
+void _cache_fix_null_page(lio_cache_t *c, lio_cache_page_t *p, int page_size)
+{
+    p->curr_data = &(p->data[0]);
+    p->current_index = 0;
+    if (!p->data[0].ptr)  { //** Nothing in primary buffer
+        if (p->data[1].ptr) {  //** Check if 2ndary has data
+            p->data[0].ptr = p->data[1].ptr;  //** and move it to the primary
+            p->data[1].ptr = NULL;
+        } else {
+            tbx_type_malloc_clear(p->data[0].ptr, char, page_size);
+        }
+    }
+}
+
+//*******************************************************************************
 //  copy_page_data - Copies the page data to/from the user buffer
 //*******************************************************************************
 
@@ -2209,6 +2227,18 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
 
             if (err == 0) {
                 if (skip_mode == 0) {
+                    if (!p->curr_data->ptr) { //** Got a NULL page so see if we need to fetch it
+                        _cache_fix_null_page(s->c, p, s->page_size);
+                        if (full_page_overlap(p->offset, s->page_size, lo, hi) == 0) {
+                            if (s->child_last_page >= coff) {  //** Only load the page if not a write beyond the current EOF
+                                log_printf(15, "NULL_PAGE seg=" XIDT " adding page for reading p->offset=" XOT " current child_last_page=" XOT "\n", segment_id(seg), p->offset, s->child_last_page);
+                                pload[pload_count].p = p;
+                                pload[pload_count].data = p->curr_data;
+                                pload_index[pload_count] = *n_pages;
+                                pload_count++;
+                             }
+                        }
+                    }
                     _cache_add_page_to_list(s->c, p, &page[*n_pages], &iov[*n_pages], CACHE_WRITE, master_size, s->page_size);
                     (*n_pages)++;
 
