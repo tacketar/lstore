@@ -1657,6 +1657,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     if (serr.hard != 0) status = gop_failure_status;
     log_printf(1, "hard=%d soft=%d status=%d\n", serr.hard, serr.soft, status.op_status);
+    if (serr.hard) notify_printf(lc->notify, 1, fd->creds, "CLOSE_HARD_ERROR: fname=%s fd=" XIDT " hard_error=%d soft_error=%d\n", fd->path, fd->id, serr.hard, serr.soft);
 
 finished:
     notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
