@@ -293,6 +293,7 @@ typedef struct {
     int n_keys;
     char *id;
     int type;
+    int no_lock;
 } osfile_mk_mv_rm_t;
 
 typedef struct {
@@ -3766,8 +3767,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 {
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-//    struct stat sbuf;
-    FILE *fd;
+    int fd;
     ex_id_t xid;
     int err, mod, part, err_cnt, eno;
     int m_key_max = 20;
@@ -3799,8 +3799,10 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     log_printf(15, "base=%s src=%s fname=%s mode=%x\n", osf->file_path, op->src_path, fname, op->type);
 
-    lock = osf_retrieve_lock(op->os, rpath, NULL);
-    osf_obj_lock(lock);
+    if (op->no_lock == 0) {
+        lock = osf_retrieve_lock(op->os, rpath, NULL);
+        osf_obj_lock(lock);
+    }
 
     if (op->type & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
         if (op->type & (OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
@@ -3810,19 +3812,20 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 err = tbx_io_mknod(fname, S_IFIFO|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, dev);  //** For sockets we just set the flag that it's a socket. It's up to the higher level routines to make it work
             }
             if (err == -1) {
-                osf_obj_unlock(lock);
+                if (op->no_lock == 0) osf_obj_unlock(lock);
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- mknod failed fname=%s\n", op->type, etext1, etext2, fname);
                 goto failure;
             }
             tbx_io_close(err);
         } else {
-            fd = tbx_io_fopen(fname, "w");
-            if (fd == NULL) {
-                osf_obj_unlock(lock);
-                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- fopen failed fname=%s\n", op->type, etext1, etext2, fname);
+            fd = tbx_io_open(fname, O_EXCL|O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+            if (fd == -1) {
+                if (op->no_lock == 0) osf_obj_unlock(lock);
+                status.error_code = errno;
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed. Most likely the file exists fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
                 goto failure;
             }
-            tbx_io_fclose(fd);
+            tbx_io_close(fd);
         }
 
         if (op->type & OS_OBJECT_EXEC_FLAG) { //** See if we need to set the executable bit
@@ -3840,7 +3843,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             err_cnt += safe_remove(op->os, fname);
             free(dir);
             free(base);
-            osf_obj_unlock(lock);
+            if (op->no_lock == 0) osf_obj_unlock(lock);
             goto failure;
         } else {
             free(dir);
@@ -3850,7 +3853,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
             eno = errno;
-            osf_obj_unlock(lock);
+           if (op->no_lock == 0) osf_obj_unlock(lock);
             notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
             goto failure;
         }
@@ -3869,7 +3872,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 eno = errno;
                 log_printf(0, "Error creating object shard attr directory! path=%s full=%s errno=%d\n", op->src_path, sattr, eno);
                 err_cnt += safe_remove(op->os, fname);
-                osf_obj_unlock(lock);
+                if (op->no_lock == 0) osf_obj_unlock(lock);
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir sattr=%s errno=%d\n", op->type, etext1, etext2, sattr, eno);
                 goto failure;
             }
@@ -3881,7 +3884,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
                 err_cnt += safe_remove(op->os, fname);
                 err_cnt += safe_remove(op->os, sattr);
-                osf_obj_unlock(lock);
+                if (op->no_lock == 0) osf_obj_unlock(lock);
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir symlink sattr=%s fattr=%s errno=%d\n", op->type, etext1, etext2, sattr, fattr, eno);
                 goto failure;
             }
@@ -3891,14 +3894,14 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 eno = errno;
                 log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
                 err_cnt += safe_remove(op->os, fname);
-                osf_obj_unlock(lock);
+                if (op->no_lock == 0) osf_obj_unlock(lock);
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory fattr dir fattr=%s errno=%d\n", op->type, etext1, etext2, fattr, eno);
                 goto failure;
             }
         }
     }
 
-    osf_obj_unlock(lock);
+    if (op->no_lock == 0) osf_obj_unlock(lock);
 
     if (op->n_keys == 0) goto success;        //** Kick out if no attrs to set.
 
@@ -4044,6 +4047,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     char sfname[OS_PATH_MAX];
     char dfname[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
+    apr_thread_mutex_t *lock;
     int err, eno;
 
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
@@ -4058,14 +4062,19 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     dop.type = OS_OBJECT_FILE_FLAG | OS_OBJECT_SYMLINK_FLAG;
     dop.id = op->id;
     dop.n_keys = 0;
+    dop.no_lock = 1;
+
+    lock = osf_retrieve_lock(op->os, rpath, NULL);
+    osf_obj_lock(lock);
 
     status = osfile_create_object_fn(&dop, id);
     if (status.op_status != OP_STATE_SUCCESS) {
+        osf_obj_unlock(lock);
         log_printf(15, "Failed creating the dest object: %s\n", op->dest_path);
-        notify_printf(osf->olog, 1, op->creds, "ERROR: SYMLINK(%s, %s) osfile_create_object_fn error\n", etext1, etext2);
+        notify_printf(osf->olog, 1, op->creds, "ERROR: SYMLINK(%s, %s)  osfile_create_object_fn error\n", etext1, etext2);
         if (etext1) free(etext1);
         if (etext2) free(etext2);
-        return(gop_failure_status);
+        return(status);
     }
 
     //** Now remove the placeholder and replace it with the link
@@ -4093,6 +4102,8 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     }
     if (etext1) free(etext1);
     if (etext2) free(etext2);
+
+    osf_obj_unlock(lock);
 
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
