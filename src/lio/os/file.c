@@ -3853,7 +3853,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
             eno = errno;
-           if (op->no_lock == 0) osf_obj_unlock(lock);
+            if (op->no_lock == 0) osf_obj_unlock(lock);
+            status.error_code = eno;
             notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
             goto failure;
         }
