@@ -74,6 +74,7 @@ int main(int argc, char **argv)
     char *buffer;
     char ppbuf[32];
     lio_path_tuple_t tuple;
+    gop_op_status_t status;
 
     bufsize = 20*1024*1024;
 
@@ -150,9 +151,9 @@ int main(int argc, char **argv)
     dtype = lio_exists(tuple.lc, tuple.creds, tuple.path);
 
     if (dtype == 0) { //** Need to create it
-        err = gop_sync_exec(lio_create_gop(tuple.lc, tuple.creds, tuple.path, OS_OBJECT_FILE_FLAG, NULL, NULL));
-        if (err != OP_STATE_SUCCESS) {
-            info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", tuple.path);
+        status = gop_sync_exec_status(lio_create_gop(tuple.lc, tuple.creds, tuple.path, OS_OBJECT_FILE_FLAG, NULL, NULL));
+        if (status.op_status != OP_STATE_SUCCESS) {
+            info_printf(lio_ifd, 1, "ERROR creating file(%s)! errno=%d\n", tuple.path, status.error_code);
             goto finished;
         }
     } else if ((dtype & OS_OBJECT_DIR_FLAG) > 0) { //** It's a dir so fail

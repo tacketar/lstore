@@ -851,18 +851,23 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     //** If we made it here it's a new file or dir
     //** Create the new object
     if (mkpath == 0) {
-        err = gop_sync_exec(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+        status = gop_sync_exec_status(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
     } else {
-        err = gop_sync_exec(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+        status = gop_sync_exec_status(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
     }
-    if (err != OP_STATE_SUCCESS) {
+    if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fullname);
         if (strlen(fullname) > 3900) {  //** Probably a path length issue
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENAMETOOLONG");
             return(-ENAMETOOLONG);
         }
-        FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EREMOTEIO");
-        return(-EREMOTEIO);
+        if (status.error_code == 0) {
+            FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EREMOTEIO");
+            return(-EREMOTEIO);
+        } else {
+            FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ERROR: errno=%d", status.error_code);
+            return(-status.error_code);
+        }
     }
 
     err = 0;

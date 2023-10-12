@@ -420,11 +420,10 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     tbx_log_flush();
 
     //** Make the object with attrs
-    err = gop_sync_exec(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(ll, "ERROR: creating object fname=%s\n", op->src_path);
-        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - creating object fname=%s\n", op->src_path);
-        status = gop_failure_status;
+    status = gop_sync_exec_status(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
+    if (status.op_status != OP_STATE_SUCCESS) {
+        log_printf(ll, "ERROR: creating object fname=%s errno=%d\n", op->src_path, status.error_code);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - creating object fname=%s errno=%d\n", op->src_path, status.error_code);
     }
 
 fail:

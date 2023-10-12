@@ -56,14 +56,17 @@ gop_op_status_t touch_fn(void *arg, int id)
         err = gop_sync_exec(lio_setattr_gop(tuple->lc, tuple->creds, tuple->path, NULL, "os.timestamp.system.modify_data", tuple->lc->host_id, tuple->lc->host_id_len));
         if (err != OP_STATE_SUCCESS) {
             status.op_status = OP_STATE_FAILURE;
-            status.error_code = 1;
+            status.error_code = -1;
         }
     } else if (ftype == 0) {  //** New file so create the object
-        err = gop_sync_exec(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_FILE_FLAG, exnode_data, NULL));
-        if (err != OP_STATE_SUCCESS) {
-            fprintf(stderr, "ERROR getting the next object!\n");
-            status.op_status = OP_STATE_FAILURE;
-            status.error_code = 2;
+        status = gop_sync_exec_status(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_FILE_FLAG, exnode_data, NULL));
+        if (status.op_status != OP_STATE_SUCCESS) {
+            if (status.error_code) {
+                fprintf(stderr, "ERROR creating the object! errno=%d\n", status.error_code);
+            } else {
+                fprintf(stderr, "ERROR creating the object!\n");
+                status.error_code = -2;
+             }
         }
     } else {
         fprintf(stderr, "ERROR checking if file exists: %s\n", tuple->path);
@@ -178,8 +181,13 @@ int main(int argc, char **argv)
             status = gop_get_status(gop);
             tuple = gop_get_private(gop);
             if (status.op_status != OP_STATE_SUCCESS) {
-                info_printf(lio_ifd, 0, "Failed with file %s with: %s\n", tuple->path, error_table[status.error_code]);
-                return_code = EIO;
+                if (status.error_code < 0) {
+                    info_printf(lio_ifd, 0, "Failed with file %s with: %s\n", tuple->path, error_table[-status.error_code]);
+                    return_code = EIO;
+                } else {
+                    info_printf(lio_ifd, 0, "Failed with file %s with: errno=%d\n", tuple->path, status.error_code);
+                    return_code = status.error_code;
+                }
             }
             lio_path_release(tuple);
             free(tuple);

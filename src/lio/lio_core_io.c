@@ -1160,14 +1160,21 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             } else {
                 dtype = OS_OBJECT_FILE_FLAG;
             }
-            err = gop_sync_exec(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id));
-            if (err != OP_STATE_SUCCESS) {
-                info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
-                log_printf(1, "ERROR creating file(%s)!\n", op->path);
-                notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
+            status = gop_sync_exec_status(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id));
+            if (status.op_status != OP_STATE_SUCCESS) {
+                if (status.error_code) {
+                    info_printf(lio_ifd, 1, "ERROR creating file(%s) errno=%d!\n", op->path, status.error_code);
+                    log_printf(1, "ERROR creating file(%s)! errno=%d\n", op->path, status.error_code);
+                    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d errno=%d\n", op->path, op->mode, status.error_code);
+                    status.error_code = -status.error_code;
+                } else {
+                    info_printf(lio_ifd, 1, "ERROR creating file(%s)!\n", op->path);
+                    log_printf(1, "ERROR creating file(%s)!\n", op->path);
+                    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
+                    _op_set_status(status, OP_STATE_FAILURE, -EIO);
+                }
                 free(op->path);
                 *op->fd = NULL;
-                _op_set_status(status, OP_STATE_FAILURE, -EIO);
                 return(status);
             }
         } else if ((dtype & OS_OBJECT_DIR_FLAG) > 0) { //** It's a dir so fail

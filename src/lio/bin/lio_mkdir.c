@@ -45,7 +45,7 @@ char *exnode_data = NULL;
 gop_op_status_t mkdir_fn(void *arg, int id)
 {
     lio_path_tuple_t *tuple = (lio_path_tuple_t *)arg;
-    int ftype, err;
+    int ftype;
     gop_op_status_t status;
 
     status = gop_success_status;
@@ -56,7 +56,7 @@ gop_op_status_t mkdir_fn(void *arg, int id)
     if (ftype > 0) { //** The file exists
         log_printf(1, "ERROR The dir exists\n");
         status.op_status = OP_STATE_FAILURE;
-        status.error_code = 2;
+        status.error_code = -2;
     } else if (ftype < 0) {
         log_printf(0, "ERROR getting the next object!\n");
         status.op_status = OP_STATE_FAILURE;
@@ -64,11 +64,10 @@ gop_op_status_t mkdir_fn(void *arg, int id)
     }
 
     //** Now create the object
-    err = gop_sync_exec(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_DIR_FLAG, exnode_data, NULL));
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "ERROR creating dir!\n");
-        status.op_status = OP_STATE_FAILURE;
-        status.error_code = 3;
+    status = gop_sync_exec_status(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_DIR_FLAG, exnode_data, NULL));
+    if (status.op_status != OP_STATE_SUCCESS) {
+        log_printf(1, "ERROR creating dir! errno=%d\n", status.error_code);
+        if (status.error_code == 0)  status.error_code = -3;
     }
 
     return(status);
@@ -176,8 +175,13 @@ int main(int argc, char **argv)
             tuple = gop_get_private(gop);
             status = gop_get_status(gop);
             if (status.op_status != OP_STATE_SUCCESS) {
-                info_printf(lio_ifd, 0, "Failed with directory %s with error %s\n", tuple->path, error_table[status.error_code]);
-                return_code = EIO;
+                if (status.error_code < 0) {
+                    info_printf(lio_ifd, 0, "Failed with directory %s with error %s\n", tuple->path, error_table[status.error_code]);
+                    return_code = EIO;
+                } else {
+                    info_printf(lio_ifd, 0, "Failed with directory %s with errno=%d\n", tuple->path, status.error_code);
+                    return_code = EIO;
+                }
             }
             gop_free(gop, OP_DESTROY);
             lio_path_release(tuple);
