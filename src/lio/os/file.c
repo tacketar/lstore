@@ -3781,7 +3781,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     char *mkey[m_key_max];
     void *mval[m_key_max];
     int mv_size[m_key_max];
-    apr_thread_mutex_t *lock;
+    apr_thread_mutex_t *lock = NULL;
     gop_op_status_t status, op_status;
     osfile_attr_op_t op_attr;
     osfile_open_op_t op_open;
