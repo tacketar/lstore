@@ -176,7 +176,7 @@ int main(int argc, char **argv)
             status = gop_get_status(gop);
             if (status.op_status != OP_STATE_SUCCESS) {
                 if (status.error_code < 0) {
-                    info_printf(lio_ifd, 0, "Failed with directory %s with error %s\n", tuple->path, error_table[status.error_code]);
+                    info_printf(lio_ifd, 0, "Failed with directory %s with error %s\n", tuple->path, error_table[-status.error_code]);
                     return_code = EIO;
                 } else {
                     info_printf(lio_ifd, 0, "Failed with directory %s with errno=%d\n", tuple->path, status.error_code);
