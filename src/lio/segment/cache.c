@@ -2230,7 +2230,7 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
                     if (!p->curr_data->ptr) { //** Got a NULL page so see if we need to fetch it
                         _cache_fix_null_page(s->c, p, s->page_size);
                         if (full_page_overlap(p->offset, s->page_size, lo, hi) == 0) {
-                            if (s->child_last_page >= coff) {  //** Only load the page if not a write beyond the current EOF
+                            if (s->child_last_page >= p->offset) {  //** Only load the page if not a write beyond the current EOF
                                 log_printf(15, "NULL_PAGE seg=" XIDT " adding page for reading p->offset=" XOT " current child_last_page=" XOT "\n", segment_id(seg), p->offset, s->child_last_page);
                                 pload[pload_count].p = p;
                                 pload[pload_count].data = p->curr_data;
