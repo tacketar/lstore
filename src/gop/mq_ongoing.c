@@ -33,7 +33,7 @@
 #include <tbx/log.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
-
+#include <tbx/notify.h>
 #include "gop/gop.h"
 #include "gop/opque.h"
 #include "gop/types.h"
@@ -78,16 +78,19 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     gop_mq_msg_hash_t *remote_hash;
     apr_time_t now;
     apr_ssize_t id_len;
-    int n, k;
+    int n, k, pending_start, pending_end, added, got;
     char *remote_host_string;
 
     tbx_monitor_thread_create(MON_MY_THREAD, "ongoing_heartbeat_thread");
+
+    q = gop_opque_new();
 
     apr_thread_mutex_lock(on->lock);
     do {
         now = apr_time_now() - apr_time_from_sec(5);  //** Give our selves a little buffer
         log_printf(5, "Loop Start now=" TT "\n", apr_time_now());
-        q = gop_opque_new();
+        added = 0;
+        pending_start = gop_opque_tasks_left(q);
         for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
             apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
 
@@ -117,45 +120,54 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
 
                     //** Make the gop
                     gop = gop_mq_op_new(on->mqc, msg, ongoing_response_status, NULL, NULL, oh->heartbeat);
-                    gop_set_private(gop, table);
+                    gop_set_private(gop, oh);
                     gop_opque_add(q, gop);
 
-                    oh->in_progress = 1; //** Flag it as in progress so it doesn't get deleted behind the scenes
+                    oh->in_progress++; //** Flag it as in progress so it doesn't get deleted behind the scenes
+                    added++;
                 }
             }
 
         }
         log_printf(5, "Loop end now=" TT "\n", apr_time_now());
 
-        //** Wait for it to complete
+        //** See if anything completes
         apr_thread_mutex_unlock(on->lock);
-        opque_waitall(q);
+        gop = gop_waitany_timed(opque_get_gop(q), 1);  //** Wait up to 1 second
         apr_thread_mutex_lock(on->lock);
 
-        //** Dec the counters
-        while ((gop = opque_waitany(q)) != NULL) {
+        //** Dec the counters of anything that completed
+        got = 0;
+        while (gop) {
+            got++;
             log_printf(5, "gid=%d gotone status=%d now=" TT "\n", gop_id(gop), (gop_get_status(gop)).op_status,
                     ((apr_time_t) apr_time_sec(apr_time_now())));
-            table = gop_get_private(gop);
-            table->count--;
+            oh = gop_get_private(gop);
 
             //** Update the next check
-            for (hi = apr_hash_first(NULL, table->table); hi != NULL; hi = apr_hash_next(hi)) {
-                apr_hash_this(hi, (const void **)&id, &id_len, (void **)&oh);
-                oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
+            oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
 
-                //** Check if we get rid of it
-                oh->in_progress = 0;
-                if (oh->count <= 0) {  //** Need to delete it
-                    apr_hash_set(table->table, id, id_len, NULL);
-                    free(oh->id);
-                    free(oh);
-                }
+            //** Check if we get rid of it
+            oh->in_progress--;
+            if (oh->count <= 0) {  //** Need to delete it
+                apr_hash_set(table->table, id, id_len, NULL);
+                free(oh->id);
+                free(oh);
             }
 
             gop_free(gop, OP_DESTROY);
+
+            //** See if another has finished
+            gop = gop_get_next_finished(opque_get_gop(q));
         }
-        gop_opque_free(q, OP_DESTROY);
+
+        pending_end = gop_opque_tasks_left(q);
+
+        if (pending_end > 1) {
+            if (tbx_notify_handle) {
+                tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CLIENT: WARNING -- pending_start=%d sent=%d recved=%d pending_end=%d\n", pending_start, added, got, pending_end);
+            }
+        }
 
         now = apr_time_now();
         log_printf(5, "sleeping %d now=%" APR_TIME_T_FMT "\n", on->check_interval, now);
@@ -170,6 +182,9 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     } while (n == 0);
 
     log_printf(5, "CLEANUP\n");
+
+    //** We now need to wait for everything to finish. But we don't care about processing them since we areexiting
+    opque_waitall(q);
 
     for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
         apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
@@ -189,6 +204,8 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     log_printf(5, "EXITING\n");
 
     apr_thread_mutex_unlock(on->lock);
+
+    gop_opque_free(q, OP_DESTROY);
 
     tbx_monitor_thread_destroy(MON_MY_THREAD);
 
@@ -471,8 +488,8 @@ void mq_ongoing_cb(void *arg, gop_mq_task_t *task)
     apr_thread_mutex_lock(mqon->lock);
     oh = apr_hash_get(mqon->id_table, id, fsize);
     if (oh != NULL) {
+        oh->hb_count++;
         status = gop_success_status;
-        oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
         log_printf(2, "Updating heartbeat for %s hb=%d expire=" TT "\n", id, oh->heartbeat, oh->next_check);
     } else {
         status = gop_failure_status;
@@ -562,9 +579,19 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
             log_printf(10, "host=%s now=" TT " next_check=" TT "\n", oh->id,
                     ((apr_time_t) apr_time_sec(apr_time_now())),
                     ((apr_time_t) apr_time_sec(oh->next_check)));
-            if ((oh->next_check < now) && (oh->next_check > 0)) { //** Expired heartbeat so shut everything associated with the connection
-                ntasks += _mq_ongoing_close(mqon, oh, q);
-                oh->next_check = 0;  //** Skip next time around
+            if ((oh->next_check < now) && (oh->next_check > 0)) { //** Expired heartbeat so check if we shutdown everything associated with the connection
+                if (oh->hb_count == 0) {
+                    ntasks += _mq_ongoing_close(mqon, oh, q);
+                    oh->next_check = 0;  //** Skip next time around
+                } else {
+                    if (oh->hb_count <= 2) {   //** Throw a warning that we probably missed some HBs
+                        if (tbx_notify_handle) {
+                            tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: WARNING -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
+                        }
+                    }
+                    oh->hb_count = 0;
+                    oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
+                }
             } else if (oh->next_check == 0) { //** See if everything has cleaned up
                 if (apr_hash_count(oh->table) == 0) { //** Safe to clean up
                     apr_hash_set(mqon->id_table, key, klen, NULL);
