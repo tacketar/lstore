@@ -28,6 +28,9 @@ extern "C" {
 typedef struct tbx_notify_s tbx_notify_t;
 typedef struct tbx_notify_iter_s tbx_notify_iter_t;
 
+// Optional Extern to install a common notify handle for everyone to use
+extern TBX_API tbx_notify_t *tbx_notify_handle;
+
 // Functions
 TBX_API void tbx_notify_print_running_config(tbx_notify_t *nlog, FILE *fd, int print_section_heading);
 TBX_API void tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fmt, va_list ap);

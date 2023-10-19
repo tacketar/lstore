@@ -70,6 +70,9 @@ struct tbx_notify_iter_s { //** Notification log iterator
     int line;
 };
 
+//** This can be used to store a global notify handle
+tbx_notify_t *tbx_notify_handle = NULL;
+
 //***********************************************************************
 // tbx_notify_log_open_check - Makes sure the fd is correct based on the time
 //***********************************************************************

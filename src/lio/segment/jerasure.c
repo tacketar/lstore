@@ -54,9 +54,9 @@
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
+#include <tbx/notify.h>
 #include <zlib.h>
 
-#include "notify_handle.h"
 #include "blacklist.h"
 #include "ds.h"
 #include "erasure_tools.h"
@@ -1841,7 +1841,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                         empty = &(parity[parity_len + k*s->chunk_size]);   //** This points to an unused part of the buffer
                         memset(empty, 0, s->chunk_size);
                         //ptr[pstripe+k] = NULL;  //** Segfault for debugging QWERT
-                        if (lio_notify_handle) tbx_notify_printf(lio_notify_handle, 1, NULL, "ERROR: HARD_ERROR!!!! jerasure:segjerasre_write_func NULL ptr! seg=" XIDT " off=" XOT " delta_stripe=%d dev=%d\n", segment_id(sw->seg), lo, j, k);
+                        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: HARD_ERROR!!!! jerasure:segjerasre_write_func NULL ptr! seg=" XIDT " off=" XOT " delta_stripe=%d dev=%d\n", segment_id(sw->seg), lo, j, k);
                         log_printf(0, "seg=" XIDT " ERROR NULL ptr! dev=%d\n", segment_id(sw->seg), k);
                         fprintf(stderr, "seg=" XIDT " ERROR NULL ptr! dev=%d\n", segment_id(sw->seg), k);
                         ptr[pstripe + k] = empty;

@@ -50,6 +50,7 @@
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
+#include <lio/notify.h>
 
 #include "authn.h"
 #include "authn/fake.h"
@@ -61,7 +62,6 @@
 #include "ex3.h"
 #include "ex3/system.h"
 #include "lio.h"
-#include "notify_handle.h"
 #include "remote_config.h"
 #include "os.h"
 #include "os/file.h"
@@ -2007,7 +2007,7 @@ no_args:
         return 1;
     }
 
-    lio_notify_handle = lio_gc->notify;   //** Set the global handle for notifications
+    tbx_notify_handle = lio_gc->notify;   //** Set the global handle for notifications
 
     if (path_is_literal) lio_gc->path_is_literal = path_is_literal;  //** See if the user specified literal paths
 

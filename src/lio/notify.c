@@ -40,14 +40,11 @@
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
+#include <tbx/notify.h>
 #include <time.h>
 #include <unistd.h>
-#include "notify_handle.h"
 #include "lio/os.h"
 #include "authn.h"
-
-//** This is set during config loading
-tbx_notify_t *lio_notify_handle = NULL;
 
 //***********************************************************************
 // notify_printf - Logs an operation

@@ -166,6 +166,7 @@ set(LSTORE_PROJECT_INCLUDES
         lio/lio.h
         lio/lio_fuse.h
         lio/notify.h
+        lio/notify_handle.h
         lio/os.h
         lio/path_acl.h
         lio/rs.h
