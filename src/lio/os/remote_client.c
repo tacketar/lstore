@@ -2433,7 +2433,7 @@ gop_op_status_t osrc_response_close_object(void *task_arg, int tid)
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
 
     //** Quit tracking it
-    gop_mq_ongoing_host_dec(osrc->ongoing, osrc->remote_host, fd->data, fd->size);
+    gop_mq_ongoing_host_dec(osrc->ongoing, osrc->remote_host, osrc->host_id, osrc->host_id_len);
 
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
 
