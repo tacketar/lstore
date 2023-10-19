@@ -58,6 +58,8 @@ typedef struct {
     psk_account_t *a;
     tbx_stack_ele_t *ele;
     char handle[PSK_HANDLE_LEN];
+    char *hb;
+    int hb_len;
     int count;
 } psk_creds_t;
 
@@ -291,10 +293,20 @@ void apsk_cred_destroy(lio_creds_t *c)
     lio_authn_psk_server_priv_t *ap = pc->an->priv;
     psk_context_t *ctx;
     psk_account_t *a;
+    intptr_t key;
 
     apr_thread_mutex_lock(ap->lock);
     pc->count--;
     if (pc->count == 0) {  //** This one is done so reap it
+        //** Remove it from the ongoing if it's listed
+        if (pc->hb) {
+            key = *(intptr_t *)c;
+            gop_mq_ongoing_remove(ap->ongoing, pc->hb, pc->hb_len, key);
+            free(pc->hb);
+            pc->hb = NULL;
+            pc->hb_len = 0;
+        }
+
         notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", pc->c.descriptive_id);
         if (pc->c.id != NULL) free(pc->c.id);
         if (pc->c.descriptive_id) free(pc->c.descriptive_id);
@@ -419,6 +431,42 @@ gop_op_generic_t *apsk_cred_logout_gop(void *arg, void *handle)
 }
 
 //***********************************************************************
+// apsk_cred_logout_ongoing_fn - Cred logout routine from a failed heartbeat
+//***********************************************************************
+
+gop_op_status_t apsk_cred_logout_ongoing_fn(void *arg, int id)
+{
+    lio_creds_t *c = arg;
+    psk_creds_t *pc = c->priv;
+    lio_authn_psk_server_priv_t *ap = pc->an->priv;
+
+    //** Destroy the HB since we're only called on an ongoing failure
+    if (pc->hb) {
+       free(pc->hb);
+       pc->hb = NULL;
+       pc->hb_len = 0;
+    }
+
+    notify_printf(ap->notify, 1, NULL, "CREDS_LOGOUT: ONGOING_FAIL - count=%d creds=%s\n", pc->count, c->descriptive_id);
+    an_cred_destroy(c);
+
+    return(gop_success_status);
+}
+
+//***********************************************************************
+// apsk_cred_logout_ongoing_gop - Does the logout when clients close
+//***********************************************************************
+
+gop_op_generic_t *apsk_cred_logout_ongoing_gop(void *arg, void *handle)
+{
+    lio_authn_t *an = arg;
+    lio_authn_psk_server_priv_t *ap = an->priv;
+    lio_creds_t *c = handle;
+
+    return(gop_tp_op_new(ap->tpc, NULL, apsk_cred_logout_ongoing_fn, (void *)c, NULL, 1));
+}
+
+//***********************************************************************
 // apsk_authn_cb - Processes the Login callback
 //***********************************************************************
 
@@ -426,6 +474,7 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
 {
     lio_authn_t *an = arg;
     lio_creds_t *c;
+    psk_creds_t *pc;
     lio_authn_psk_server_priv_t *ap = an->priv;
     gop_mq_frame_t *cid, *fid, *fdid, *fnonce, *fpacket, *fhb;
     char *id, *did, *encrypted, *nonce, *nonce_new, *return_packet, *hb;
@@ -458,7 +507,10 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         status = gop_success_status;
         fhb = mq_msg_pop(msg);  //** This has the heartbeat from for tracking
         gop_mq_get_frame(fhb, (void **)&hb, &hb_len);
-        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_gop, an);
+        pc = c->priv;
+        pc->hb = strdup(hb);
+        pc->hb_len = hb_len;
+        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an);
         gop_mq_frame_destroy(fhb);
     } else {
         if (id_len == 0) id = "NULL";
@@ -480,6 +532,60 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         gop_mq_msg_append_mem(response, nonce_new, crypto_secretbox_NONCEBYTES, MQF_MSG_AUTO_FREE);  //** Nonce
         gop_mq_msg_append_mem(response, return_packet, return_len, MQF_MSG_AUTO_FREE);  //** Creds handle
     }
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(ap->server_portal, gop_mq_task_new(ap->mqc, response, NULL, NULL, 30));
+    log_printf(5, "END status=%d\n", status.op_status);
+}
+
+
+//***********************************************************************
+// apsk_logout_cb - Processes the Logout callback
+//***********************************************************************
+
+void apsk_logout_cb(void *arg, gop_mq_task_t *task)
+{
+    lio_authn_t *an = arg;
+    lio_creds_t *creds;
+    int len;
+    void *ptr;
+    lio_authn_psk_server_priv_t *ap = an->priv;
+    psk_creds_t *pc;
+    gop_mq_frame_t *cid, *fcred;
+    mq_msg_t *msg, *response;
+    gop_op_status_t status;
+
+    log_printf(5, "Processing incoming request\n");
+
+    //** Parse the command.
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    cid = mq_msg_pop(msg);  //** This is the command ID
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fcred = mq_msg_pop(msg); //** This is the creds handle
+    gop_mq_get_frame(fcred, &ptr, &len);
+
+    apr_thread_mutex_lock(ap->lock);
+    pc = apr_hash_get(ap->ctx->creds, ptr, len);
+    creds = (pc) ? &(pc->c) : NULL;
+    apr_thread_mutex_unlock(ap->lock);
+
+    if (creds) {
+        notify_printf(ap->notify, 1, NULL, "CREDS_LOGOUT: creds=%s\n", creds->descriptive_id);
+        an_cred_destroy(creds);
+        status = gop_success_status;
+    } else {
+        status = gop_failure_status;
+    }
+
+    gop_mq_frame_destroy(fcred);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, cid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));  //** Status
     gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
 
     //** Lastly send it
@@ -647,6 +753,7 @@ lio_authn_t *authn_psk_server_create(lio_service_manager_t *ess, tbx_inip_file_t
     //** Get the command table and install our command
     ctable = gop_mq_portal_command_table(ap->server_portal);
     gop_mq_command_set(ctable, PSK_CLIENT_AUTHN_KEY, PSK_CLIENT_AUTHN_KEY_SIZE, an, apsk_authn_cb);
+    gop_mq_command_set(ctable, PSK_CLIENT_LOGOUT_KEY, PSK_CLIENT_LOGOUT_KEY_SIZE, an, apsk_logout_cb);
 
     //** See if we need to set up our own ongoing process
     if (ap->hostname) {

@@ -61,6 +61,50 @@ char *authn_psk_client_get_type(lio_creds_t *c)
 }
 
 //***********************************************************************
+// psk_response_status - Handles a response that just returns the status
+//***********************************************************************
+
+gop_op_status_t psk_response_status(void *task_arg, int tid)
+{
+    gop_mq_task_t *task = (gop_mq_task_t *)task_arg;
+    gop_op_status_t status;
+
+    log_printf(5, "START\n");
+
+    //** Parse the response
+    gop_mq_remove_header(task->response, 1);
+
+    status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
+    log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
+
+    return(status);
+}
+
+//***********************************************************************
+// psk_logout - Does the logout exchange
+//***********************************************************************
+
+void psk_logout(lio_authn_t *an, lio_creds_t *c)
+{
+    lio_authn_psk_client_priv_t *ap = an->priv;
+    mq_msg_t *msg;
+    void *chandle;
+    int len;
+
+    //** Form the message
+    msg = gop_mq_make_exec_core_msg(ap->remote_host, 1);
+    gop_mq_msg_append_mem(msg, PSK_CLIENT_LOGOUT_KEY, PSK_CLIENT_LOGOUT_KEY_SIZE, MQF_MSG_KEEP_DATA);
+    chandle = an_cred_get_handle(c, &len);
+    gop_mq_msg_append_mem(msg, chandle, len, MQF_MSG_KEEP_DATA);
+    gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    //** Make the gop
+    gop_sync_exec(gop_mq_op_new(ap->mqc, msg, psk_response_status, &an, NULL, 60));
+
+    return;
+}
+
+//***********************************************************************
 // authn_psk_client_cred_destroy - Destroy the psk_client credentials
 //***********************************************************************
 
@@ -69,12 +113,14 @@ void authn_psk_client_cred_destroy(lio_creds_t *c)
     lio_authn_t *an = c->priv;
     lio_authn_psk_client_priv_t *ap = an->priv;
 
+    psk_logout(an, c);
     notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", c->descriptive_id);
     if (c->handle != NULL) free(c->handle);
     if (c->id != NULL) free(c->id);
     if (c->descriptive_id != NULL) free(c->descriptive_id);
     free(c);
 }
+
 
 //***********************************************************************
 // psk_response_exchange - Handles the PSK exchange response

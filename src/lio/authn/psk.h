@@ -39,6 +39,8 @@ extern "C" {
 
 #define PSK_CLIENT_AUTHN_KEY      "authn_psk_client"
 #define PSK_CLIENT_AUTHN_KEY_SIZE sizeof(PSK_CLIENT_AUTHN_KEY)
+#define PSK_CLIENT_LOGOUT_KEY      "authn_psk_logout"
+#define PSK_CLIENT_LOGOUT_KEY_SIZE sizeof(PSK_CLIENT_LOGOUT_KEY)
 
 typedef struct {
     mq_msg_t *remote_host;         //** Address of the Remote OS server
