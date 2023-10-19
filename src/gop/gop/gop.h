@@ -90,7 +90,6 @@ GOP_API apr_time_t gop_time_exec(gop_op_generic_t *gop);
 GOP_API void gop_finished_submission(gop_op_generic_t *gop);
 GOP_API void gop_free(gop_op_generic_t *gop, gop_op_free_mode_t mode);
 GOP_API void gop_generic_free(gop_op_generic_t *gop, gop_op_free_mode_t mode);
-GOP_API gop_op_generic_t *gop_get_next_failed(gop_op_generic_t *gop);
 GOP_API gop_op_generic_t *gop_get_next_finished(gop_op_generic_t *gop);
 GOP_API void gop_init(gop_op_generic_t *gop);
 GOP_API void gop_init_mo(gop_op_generic_t *gop, unsigned char mtype);

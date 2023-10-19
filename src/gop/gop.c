@@ -166,30 +166,6 @@ gop_op_generic_t *gop_get_next_finished(gop_op_generic_t *g)
 }
 
 //*************************************************************
-// gop_get_next_failed - returns a failed task list from the provided que
-//      or NULL if none exist.
-//*************************************************************
-
-gop_op_generic_t *gop_get_next_failed(gop_op_generic_t *g)
-{
-    gop_op_generic_t *gop = NULL;
-
-    lock_gop(g);
-    if (gop_get_type(g) == Q_TYPE_QUE) {
-        gop = (gop_op_generic_t *)tbx_stack_pop(g->q->failed);
-    } else {
-        gop = NULL;
-        if (g->base.failure_mode != OP_FM_GET_END) {
-            g->base.failure_mode = OP_FM_GET_END;
-            if (g->base.status.op_status != OP_STATE_SUCCESS) gop = g;
-        }
-    }
-    unlock_gop(g);
-
-    return(gop);
-}
-
-//*************************************************************
 // gop_tasks_failed- Returns the # of errors left in the
 //    failed task/que
 //*************************************************************
@@ -200,7 +176,7 @@ int gop_tasks_failed(gop_op_generic_t *g)
 
     lock_gop(g);
     if (gop_get_type(g) == Q_TYPE_QUE) {
-        nf = tbx_stack_count(g->q->failed);
+        nf = g->q->nfailed;
     } else {
         nf = (g->base.status.op_status == OP_STATE_SUCCESS) ? 0 : 1;
     }

@@ -49,7 +49,7 @@ GOP_API void gop_shutdown();
 #define opque_failure_gop_cb_set(q, fn, priv) gop_cb_set(&(q->failure_cb), fn, priv)
 #define opque_callback_append(q, cb) gop_callback_append(opque_get_gop(q), (cb))
 #define opque_get_next_finished(q) gop_get_next_finished(opque_get_gop(q))
-#define opque_get_next_failed(q) gop_get_next_failed(opque_get_gop(q))
+//#define opque_get_next_failed(q) gop_get_next_failed(opque_get_gop(q))
 #define gop_opque_tasks_failed(q) gop_tasks_failed(opque_get_gop(q))
 #define gop_opque_tasks_finished(q) gop_tasks_finished(opque_get_gop(q))
 #define gop_opque_tasks_left(q) gop_tasks_left(opque_get_gop(q))
@@ -70,11 +70,11 @@ GOP_API void gop_shutdown();
 struct gop_que_data_t {
     tbx_stack_t *list;         //** List of tasks
     tbx_stack_t *finished;     //** lists that have completed and not yet processed
-    tbx_stack_t *failed;       //** All lists that fail are also placed here
-    int nleft;             //** Number of lists left to be processed
-    int nsubmitted;        //** Nunmber of submitted tasks (doesn't count sub q's)
-    bool finished_submission; //** No more tasks will be submitted so it's safe to free the data when finished
-    gop_callback_t failure_cb;   //** Only used if a task fails
+    int nleft;                 //** Number of lists left to be processed
+    int nfailed;               //** Number of failed tasks
+    int nsubmitted;            //** Nunmber of submitted tasks (doesn't count sub q's)
+    bool finished_submission;  //** No more tasks will be submitted so it's safe to free the data when finished
+    gop_callback_t failure_cb; //** Only used if a task fails
     gop_opque_t *opque;
 };
 

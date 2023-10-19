@@ -155,7 +155,7 @@ void _opque_cb(void *v, int mode)
     //** Get the status (gop is already locked)
     type = gop_get_type(gop);
     if (type == Q_TYPE_QUE) {
-        n = tbx_stack_count(gop->q->failed);
+        n = gop->q->nfailed;
         log_printf(15, "_opque_cb: qid=%d gid=%d  tbx_stack_count(q->failed)=%d gop->status=%d\n", gop_id(&(q->opque->op)), gop_id(gop), n, gop->base.status.op_status);
         success = (n == 0) ? gop->base.status : gop_failure_status;
     } else {
@@ -175,14 +175,14 @@ void _opque_cb(void *v, int mode)
     log_printf(15, "Printing finished stack for qid=%d\n", gop_id(&(q->opque->op)));
     if (tbx_log_level() > 15) _opque_print_stack(q->finished);
 
-    if (success.op_status == OP_STATE_FAILURE) tbx_stack_push(q->failed, gop); //** Push it on the failed list if needed
+    if (success.op_status == OP_STATE_FAILURE) q->nfailed++; //** Flag it as failed
 
     q->nleft--;
-    log_printf(15, "_opque_cb: qid=%d gid=%d nleft=%d tbx_stack_count(q->failed)=%d tbx_stack_count(q->finished)=%d\n", gop_id(&(q->opque->op)), gop_id(gop), q->nleft, tbx_stack_count(q->failed), tbx_stack_count(q->finished));
+    log_printf(15, "_opque_cb: qid=%d gid=%d nleft=%d q->nfailed=%d tbx_stack_count(q->finished)=%d\n", gop_id(&(q->opque->op)), gop_id(gop), q->nleft, q->nfailed, tbx_stack_count(q->finished));
     tbx_log_flush();
 
     if (q->nleft <= 0) {  //** we're finished
-        if (tbx_stack_count(q->failed) == 0) {
+        if (q->nfailed == 0) {
             q->opque->op.base.status = gop_success_status;
             callback_execute(q->opque->op.base.cb, OP_STATE_SUCCESS);
 
@@ -255,7 +255,7 @@ void init_opque(gop_opque_t *q)
 
     que->list = tbx_stack_new();
     que->finished = tbx_stack_new();
-    que->failed = tbx_stack_new();
+    que->nfailed = 0;
     que->nleft = 0;
     que->nsubmitted = 0;
     gop->base.retries = 0;
@@ -336,14 +336,13 @@ void gop_opque_free(gop_opque_t *opq, int mode)
 {
     gop_que_data_t *q = &(opq->qd);
 
-    log_printf(15, "qid=%d nfin=%d nlist=%d nfailed=%d\n", gop_id(&(opq->op)), tbx_stack_count(q->finished), tbx_stack_count(q->list), tbx_stack_count(q->failed));
+    log_printf(15, "qid=%d nfin=%d nlist=%d nfailed=%d\n", gop_id(&(opq->op)), tbx_stack_count(q->finished), tbx_stack_count(q->list), q->nfailed);
 
    tbx_monitor_obj_destroy(gop_mo(opque_get_gop(opq)));
 
     lock_opque(&(opq->qd));  //** Lock it to make sure Everything is finished and safe to free
 
     //** Free the stacks
-    tbx_stack_free(q->failed, 0);
     free_finished_stack(opq, mode);
     free_list_stack(q->list, mode);
 
@@ -421,7 +420,7 @@ gop_op_status_t opque_completion_status(gop_opque_t *que)
     gop_op_status_t status;
 
     lock_opque(q);
-    status = (tbx_stack_count(q->failed) == 0) ? q->opque->op.base.status : gop_failure_status;
+    status = (q->nfailed == 0) ? q->opque->op.base.status : gop_failure_status;
     unlock_opque(q);
 
     return(status);

@@ -721,7 +721,6 @@ gop_op_status_t lio_remove_regex_object_fn(void *arg, int id)
     os_destroy_object_iter(op->lc->os, it);
 
     opque_waitall(q);
-    nfailed += gop_opque_tasks_failed(q);
     gop_opque_free(q, OP_DESTROY);
 
     status.op_status = (nfailed > 0) ? OP_STATE_FAILURE : OP_STATE_SUCCESS;
