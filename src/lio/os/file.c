@@ -6042,6 +6042,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         op->path = NULL;  //** This is now used by the fd
         op->id = NULL;
         status = gop_success_status;
+        if ((fd->mode & (OS_MODE_READ_BLOCKING|OS_MODE_WRITE_BLOCKING)) != 0)  tbx_notify_printf(osf->olog, 1, fd->id, "OBJECT_OPEN: fname=%s mode=%d\n",fd->object_name, fd->mode);
     }
 
     //** Also add us to the open file list
@@ -6138,8 +6139,13 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
 
     if (op->cfd == NULL) return(gop_success_status);
 
+    if ((op->cfd->mode & (OS_MODE_READ_BLOCKING|OS_MODE_WRITE_BLOCKING)) != 0)  tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE: fname=%s mode=%d\n",op->cfd->object_name, op->cfd->mode);
+
     full_object_unlock(FOL_OS, osf->os_lock, op->cfd, op->cfd->mode);
-    if (op->cfd->user_mode != 0) full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, op->cfd->user_mode);
+    if (op->cfd->user_mode != 0) {
+        tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE_FLOCK: fname=%s user_mode=%d\n", op->cfd->object_name, op->cfd->user_mode);
+        full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, op->cfd->user_mode);
+    }
     apr_thread_mutex_lock(osf->open_fd_lock);
     tbx_list_remove(osf->open_fd, op->cfd->object_name, op->cfd);
     apr_thread_mutex_unlock(osf->open_fd_lock);
@@ -6181,6 +6187,7 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
 
     if (op->fd->user_mode != 0) { //** Already have a lock so see how we change it
         if (op->mode & OS_MODE_UNLOCK) { //** Got an unlock operation
+           tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UNLOCK fname=%s user_mode=%d\n",op->fd->object_name, op->fd->user_mode);
            full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, op->fd->user_mode);
            op->fd->user_mode = op->mode;
            return(gop_success_status);
@@ -6210,8 +6217,10 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
 finished:
     if (err != 0) {  //** Either a timeout or abort occured
         status = gop_failure_status;
+        tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: ERROR: LOCK fname=%s user_mode=%d\n",op->fd->object_name, op->mode);
     } else {
         status = gop_success_status;
+        tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: LOCK fname=%s user_mode=%d\n", op->fd->object_name, op->mode);
     }
 
     return(status);
@@ -6591,7 +6600,7 @@ void osfile_print_open_fd(lio_object_service_fn_t *os, FILE *rfd, int print_sect
     it = tbx_list_iter_search(osf->open_fd, NULL, 0);
     tbx_list_next(&it, (tbx_list_key_t *)&fname, (tbx_list_data_t **)&fd);
     while (fname) {
-        fprintf(rfd, "   fname=%s ftype=%d mode=%d  id=%s\n", fname, fd->ftype, fd->mode, fd->id);
+        fprintf(rfd, "   fname=%s ftype=%d mode=%d user_mode=%d id=%s\n", fname, fd->ftype, fd->mode, fd->user_mode, fd->id);
         tbx_list_next(&it, (tbx_list_key_t *)&fname, (tbx_list_data_t **)&fd);
     }
     fprintf(rfd, "\n");
