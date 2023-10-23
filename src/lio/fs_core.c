@@ -764,7 +764,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
         dit->dotdot_path = strdup(fname);
     }
 
-    log_printf(1, "dot=%s dotdot=%s\n", dit->dot_path, dit->dotdot_path);
+    log_printf(2, "dot=%s dotdot=%s\n", dit->dot_path, dit->dotdot_path);
 
     if (lio_fs_stat(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), NULL, 1, 0) != 0) {
         lio_fs_closedir(dit);
@@ -1227,7 +1227,7 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     t2 = off;
 
     FS_MON_OBJ_CREATE_IRATE(size, "FS_PREAD: off=" OT " size=" ST, off, size);
-    log_printf(1, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
+    log_printf(2, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null file desriptor\n");
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EDADF");
@@ -1253,7 +1253,7 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
-    log_printf(1, "END fname=%s seg=" XIDT " size=" XOT " off=%zu nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
+    log_printf(2, "END fname=%s seg=" XIDT " size=" XOT " off=%zu nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
     tbx_log_flush();
 
     FS_MON_OBJ_DESTROY();
@@ -1340,7 +1340,7 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
 
     FS_MON_OBJ_CREATE_IRATE(size, "FS_PWRITE: off=" OT " size=" ST, off, size);
 
-    log_printf(1, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
+    log_printf(2, "fname=%s size=" XOT " off=" XOT " fd=%p\n", fd->path, t1, t2, fd);
     tbx_log_flush();
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null LFS handle\n");
@@ -1360,7 +1360,7 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
-    log_printf(1, "END fname=%s seg=" XIDT " size=" XOT " off=" XOT " nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
+    log_printf(2, "END fname=%s seg=" XIDT " size=" XOT " off=" XOT " nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
     tbx_log_flush();
 
     FS_MON_OBJ_DESTROY();
@@ -1446,7 +1446,7 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
         return(-EBADF);
     }
 
-    log_printf(1, "START fname=%s\n", fd->path);
+    log_printf(2, "START fname=%s\n", fd->path);
 
     FS_MON_OBJ_CREATE("FS_FLUSH");
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
@@ -1461,7 +1461,7 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
-    log_printf(1, "END fname=%s dt=%lf\n", fd->path, dt);
+    log_printf(2, "END fname=%s dt=%lf\n", fd->path, dt);
     tbx_log_flush();
 
     return(0);
@@ -1486,7 +1486,7 @@ ex_off_t lio_fs_copy_file_range(lio_fs_t *fs, lio_fd_t *fd_in, off_t offset_in, 
         return(-EBADF);
     }
 
-    log_printf(1, "START copy_file_range src=%s dest=%s\n", fd_in->path, fd_out->path);
+    log_printf(2, "START copy_file_range src=%s dest=%s\n", fd_in->path, fd_out->path);
 
     FS_MON_OBJ_CREATE_IRATE(size, "FS_COPY_FILE_RANGE: fin=%s fout=%s off_in=" OT " off_out=" OT " size=" ST, fd_in->fh->fname, fd_out->fh->fname, offset_in, offset_out, size);
     tbx_monitor_obj_reference(&mo, &(fd_in->fh->mo));
@@ -1515,7 +1515,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     ex_id_t sid;
     lio_file_handle_t *fh;
 
-    log_printf(1, "oldname=%s newname=%s\n", oldname, newname);
+    log_printf(2, "oldname=%s newname=%s\n", oldname, newname);
 
     FS_MON_OBJ_CREATE("FS_RENAME: old=%s new=%s", oldname, newname);
 
@@ -2338,12 +2338,12 @@ already_have_a_lock:
     }
 
     if (size == 0) {
-        log_printf(1, "SIZE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
+        log_printf(2, "SIZE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
     } else if ((int)size >= v_size[0]) {
-        log_printf(1, "FULL bpos=%d buf=%.*s\n",v_size[0], v_size[0], val[0]);
+        log_printf(2, "FULL bpos=%d buf=%.*s\n",v_size[0], v_size[0], val[0]);
         memcpy(buf, val[0], v_size[0]);
     } else {
-        log_printf(1, "ERANGE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
+        log_printf(2, "ERANGE bpos=%d buf=%.*s\n", v_size[0], v_size[0], val[0]);
     }
 
     FS_MON_OBJ_DESTROY();
