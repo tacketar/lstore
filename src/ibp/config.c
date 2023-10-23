@@ -471,7 +471,8 @@ int _ibp_connect(tbx_ns_t *ns, void *connect_context, char *host, int port, tbx_
     int i, n;
     int encrypted;
     int to = timeout;
-    log_printf(0, "HOST host=%s to=%d\n", host, to);
+
+    log_printf(3, "HOST host=%s to=%d\n", host, to);
 
     encrypted = tbx_ns_encrypt_status(ns); //** Store the ecryption setting since it can get overwritten in the creation
     if (cc != NULL) {
