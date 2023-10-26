@@ -40,6 +40,7 @@
 #include "mq_helpers.h"
 #include "mq_ongoing.h"
 
+
 //***********************************************************************
 // ongoing_response_status - Handles a response that just returns the status
 //***********************************************************************
@@ -190,6 +191,30 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     //** We now need to wait for everything to finish. But we don't care about processing them since we areexiting
     opque_waitall(q);
 
+    //** Go ahead and logout
+    for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
+        apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
+
+        for (hi = apr_hash_first(NULL, table->table); hi != NULL; hi = apr_hash_next(hi)) {
+            apr_hash_this(hi, (const void **)&id, &id_len, (void **)&oh);
+            //** Form the message
+            msg = gop_mq_make_exec_core_msg(table->remote_host, 1);
+            gop_mq_msg_append_mem(msg, ONGOING_LOGOUT_KEY, ONGOING_LOGOUT_SIZE, MQF_MSG_KEEP_DATA);
+            gop_mq_msg_append_mem(msg, oh->id, oh->id_len, MQF_MSG_KEEP_DATA);
+            gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+            //** Make the gop and send it
+            gop = gop_mq_op_new(on->mqc, msg, ongoing_response_status, NULL, NULL, oh->heartbeat);
+            gop_set_private(gop, oh);
+            gop_opque_add(q, gop);
+        }
+    }
+
+
+    //** Wait for the response
+    opque_waitall(q);
+
+    //** Final cleanup
     for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
         apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
 
@@ -451,6 +476,98 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
     return(ptr);
 }
 
+//***********************************************************************
+// _mq_ongoing_close - Closes all ongoing objects associated with the connection
+//     NOTE:  Assumes the ongoing_lock is held by the calling process
+//***********************************************************************
+
+int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opque_t *q)
+{
+    apr_hash_index_t *hi;
+    char *key;
+    apr_ssize_t klen;
+    gop_mq_ongoing_object_t *oo;
+    gop_op_generic_t *gop;
+    int ntasks;
+
+    int n = apr_hash_count(oh->table);
+    log_printf(2, "closing host=%s task_count=%d now=" TT " next_check=" TT " hb=%d\n", oh->id, n, apr_time_now(), oh->next_check, oh->heartbeat);
+
+    ntasks = 0;
+
+    for (hi = apr_hash_first(NULL, oh->table); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, (const void **)&key, &klen, (void **)&oo);
+
+        if (oo->auto_clean) apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
+
+        gop = oo->on_fail(oo->on_fail_arg, oo->handle);
+        gop_set_private(gop, (oo->auto_clean == 1) ? oo : NULL);
+        gop_opque_add(q, gop);
+
+        ntasks++;
+    }
+
+    return(ntasks);
+}
+
+
+//***********************************************************************
+// mq_ongoing_logout_cb - Handles an ongoing logout
+//***********************************************************************
+
+void mq_ongoing_logout_cb(void *arg, gop_mq_task_t *task)
+{
+    gop_mq_ongoing_t *mqon = (gop_mq_ongoing_t *)arg;
+    gop_mq_frame_t *fid, *fuid;
+    char *id;
+    gop_mq_ongoing_host_t *oh;
+    int fsize;
+    mq_msg_t *msg, *response;
+    gop_opque_t *q;
+    gop_op_status_t status;
+
+    log_printf(1, "Processing incoming request. EXEC START now=" TT "\n",
+                    ((apr_time_t) apr_time_sec(apr_time_now())));
+    tbx_log_flush();
+
+    //** Parse the command.
+    msg = task->msg;
+    gop_mq_remove_header(msg, 0);
+
+    fid = mq_msg_pop(msg);  //** This is the ID for responses
+    gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the application command frame
+
+    fuid = mq_msg_pop(msg);  //** Host/user ID
+    gop_mq_get_frame(fuid, (void **)&id, &fsize);
+
+    log_printf(2, "looking up %s\n", id);
+
+    //** Do the lookup and update the heartbeat timeout
+    apr_thread_mutex_lock(mqon->lock);
+    oh = apr_hash_get(mqon->id_table, id, fsize);
+    if (oh != NULL) {
+        q = gop_opque_new();
+        _mq_ongoing_close(mqon, oh, q);
+        apr_thread_mutex_unlock(mqon->lock);
+        status =  (opque_waitall(q) == 0) ? gop_success_status : gop_failure_status;
+        gop_opque_free(q, OP_DESTROY);
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_LOGOUT_CB: id=%s id_len=%d status=%d\n", id, fsize, status.op_status);
+    } else {
+        apr_thread_mutex_unlock(mqon->lock);
+        status = gop_failure_status;
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_LOGOUT_CB: ERROR -- Unknown host! id=%s id_len=%d\n", id, fsize);
+    }
+
+    gop_mq_frame_destroy(fuid);
+
+    //** Form the response
+    response = gop_mq_make_response_core_msg(msg, fid);
+    gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
+    gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
+
+    //** Lastly send it
+    gop_mq_submit(mqon->server_portal, gop_mq_task_new(mqon->mqc, response, NULL, NULL, 30));
+}
 
 //***********************************************************************
 // mq_ongoing_cb - Processes a heartbeat for clients with ongoing open handles
@@ -507,40 +624,6 @@ void mq_ongoing_cb(void *arg, gop_mq_task_t *task)
 }
 
 //***********************************************************************
-// _mq_ongoing_close - Closes all ongoing objects associated with the connection
-//     NOTE:  Assumes the ongoing_lock is held by the calling process
-//***********************************************************************
-
-int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opque_t *q)
-{
-    apr_hash_index_t *hi;
-    char *key;
-    apr_ssize_t klen;
-    gop_mq_ongoing_object_t *oo;
-    gop_op_generic_t *gop;
-    int ntasks;
-
-    int n = apr_hash_count(oh->table);
-    log_printf(2, "closing host=%s task_count=%d now=" TT " next_check=" TT " hb=%d\n", oh->id, n, apr_time_now(), oh->next_check, oh->heartbeat);
-
-    ntasks = 0;
-
-    for (hi = apr_hash_first(NULL, oh->table); hi != NULL; hi = apr_hash_next(hi)) {
-        apr_hash_this(hi, (const void **)&key, &klen, (void **)&oo);
-
-        if (oo->auto_clean) apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
-
-        gop = oo->on_fail(oo->on_fail_arg, oo->handle);
-        gop_set_private(gop, (oo->auto_clean == 1) ? oo : NULL);
-        gop_opque_add(q, gop);
-
-        ntasks++;
-    }
-
-    return(ntasks);
-}
-
-//***********************************************************************
 // mq_ongoing_server_thread - Checks to make sure heartbeats are being
 //     being received from clients with open handles
 //***********************************************************************
@@ -580,6 +663,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                     ((apr_time_t) apr_time_sec(oh->next_check)));
             if ((oh->next_check < now) && (oh->next_check > 0)) { //** Expired heartbeat so check if we shutdown everything associated with the connection
                 if (oh->hb_count == 0) {
+                    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: ERROR -- Failed heartbeat! Closing! id=%s\n", oh->id);
                     ntasks += _mq_ongoing_close(mqon, oh, q);
                     oh->next_check = 0;  //** Skip next time around
                 } else {
@@ -712,6 +796,7 @@ gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *
 
         ctable = gop_mq_portal_command_table(server_portal);
         gop_mq_command_set(ctable, ONGOING_KEY, ONGOING_SIZE, mqon, mq_ongoing_cb);
+        gop_mq_command_set(ctable, ONGOING_LOGOUT_KEY, ONGOING_LOGOUT_SIZE, mqon, mq_ongoing_logout_cb);
         tbx_thread_create_assert(&(mqon->ongoing_server_thread), NULL, mq_ongoing_server_thread, (void *)mqon, mqon->mpool);
     }
 

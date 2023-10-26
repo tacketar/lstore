@@ -49,9 +49,10 @@ GOP_API void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len
 
 // Preprocessor constants
 
-// FIXME: Don't open-code this, perform the actual strlen
 #define ONGOING_KEY            "ongoing"
-#define ONGOING_SIZE           sizeof(ONGOING_KEY)
+#define ONGOING_SIZE           8
+#define ONGOING_LOGOUT_KEY     "ongoing_logout"
+#define ONGOING_LOGOUT_SIZE    15
 
 #define ONGOING_SERVER 1
 #define ONGOING_CLIENT 2
