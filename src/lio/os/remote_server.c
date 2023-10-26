@@ -47,6 +47,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
@@ -1199,6 +1200,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
     gop_mq_ongoing_object_t *oo;
     unsigned char *data;
     lio_creds_t *creds;
+    intptr_t rkey;
     int fsize, handle_len, n;
     int64_t mode, max_wait;
     mq_msg_t *msg, *response;
@@ -1258,7 +1260,8 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
         gop_mq_get_frame(fhb, (void **)&handle, &handle_len);
         log_printf(5, "handle=%s\n", handle);
         log_printf(5, "handle_len=%d\n", handle_len);
-        oo = gop_mq_ongoing_add(osrs->ongoing, 1, handle, handle_len, (void *)fd, (gop_mq_ongoing_fail_fn_t)osrs->os_child->close_object, osrs->os_child);
+        tbx_random_get_bytes(&rkey, sizeof(rkey));
+        oo = gop_mq_ongoing_add(osrs->ongoing, 1, handle, handle_len, rkey, (void *)fd, (gop_mq_ongoing_fail_fn_t)osrs->os_child->close_object, osrs->os_child);
 
         n=sizeof(intptr_t);
         log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", oo->key, n);

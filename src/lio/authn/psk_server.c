@@ -510,7 +510,7 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         pc = c->priv;
         pc->hb = strdup(hb);
         pc->hb_len = hb_len;
-        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an);
+        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, ONGOING_PTR2KEY(c), (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an);
         gop_mq_frame_destroy(fhb);
     } else {
         if (id_len == 0) id = "NULL";

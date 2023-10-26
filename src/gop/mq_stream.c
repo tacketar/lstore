@@ -30,6 +30,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/packer.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
@@ -785,7 +786,7 @@ int gop_mq_stream_write(gop_mq_stream_t *mqs, void *vdata, int len)
             if (mqs->mpool == NULL) {  //** Got to configure everything
                 mqs_multipacket_create(mqs);
                 apr_thread_mutex_lock(mqs->lock);
-                mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs, mqs_write_on_fail, NULL);
+                mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
 
                 if (nleft > 0) mqs->data[MQS_STATE_INDEX] = MQS_MORE;
                 mqs_write_send(mqs, mqs->address, mqs->fid);
@@ -814,7 +815,7 @@ int gop_mq_stream_write(gop_mq_stream_t *mqs, void *vdata, int len)
                     if (mqs->mpool == NULL) {  //** Got to configure everything
                         mqs_multipacket_create(mqs);
                         apr_thread_mutex_lock(mqs->lock);
-                        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs, mqs_write_on_fail, NULL);
+                        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
                     }
 
                     mqs->want_more = MQS_MORE;
@@ -936,7 +937,6 @@ void gop_mq_stream_write_destroy(gop_mq_stream_t *mqs)
 gop_mq_stream_t *gop_mq_stream_write_create(gop_mq_context_t *mqc, gop_mq_portal_t *server_portal, gop_mq_ongoing_t *ongoing, char tbx_pack_type, int max_size, int timeout, mq_msg_t *address, gop_mq_frame_t *fid, gop_mq_frame_t *hid, bool launch_flusher)
 {
     gop_mq_stream_t *mqs;
-    intptr_t key;
     int ptype;
 
     tbx_type_malloc_clear(mqs, gop_mq_stream_t, 1);
@@ -963,8 +963,8 @@ gop_mq_stream_t *gop_mq_stream_write_create(gop_mq_context_t *mqc, gop_mq_portal
     mqs->data[MQS_STATE_INDEX] = MQS_MORE;
     mqs->data[MQS_PACK_INDEX] = tbx_pack_type;
     mqs->data[MQS_HANDLE_SIZE_INDEX] = sizeof(intptr_t);
-    key = (intptr_t)mqs;
-    memcpy(&(mqs->data[MQS_HANDLE_INDEX]), &key, sizeof(key));
+    tbx_random_get_bytes(&(mqs->okey), sizeof(mqs->okey));
+    memcpy(&(mqs->data[MQS_HANDLE_INDEX]), &(mqs->okey), sizeof(mqs->okey));
     ptype = (mqs->data[MQS_PACK_INDEX] == MQS_PACK_COMPRESS) ? PACK_COMPRESS : PACK_NONE;
     log_printf(5, "msid=%d ptype=%d tbx_pack_type=%c\n", mqs->msid, ptype, mqs->data[MQS_PACK_INDEX]);
     mqs->pack = tbx_pack_create(ptype, PACK_WRITE, &(mqs->data[MQS_HEADER]), mqs->len-MQS_HEADER);
@@ -974,7 +974,7 @@ gop_mq_stream_t *gop_mq_stream_write_create(gop_mq_context_t *mqc, gop_mq_portal
     //** Launch the flusher now if requested
     if (launch_flusher == 1) {
         mqs_multipacket_create(mqs);
-        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs, mqs_write_on_fail, NULL);
+        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
         mqs->sent_data = 1;
         tbx_thread_create_assert(&(mqs->flusher_thread), NULL, mqs_flusher_thread,  (void *)mqs, mqs->mpool);
     }

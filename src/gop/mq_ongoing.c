@@ -56,6 +56,10 @@ gop_op_status_t ongoing_response_status(void *task_arg, int tid)
 
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
+    if (status.op_status != OP_STATE_SUCCESS) {
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CLIENT: ERROR -- Got a failed heartbeat! status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
+    }
+
 
     return(status);
 }
@@ -306,14 +310,14 @@ fail:
 // gop_mq_ongoing_add - Adds an onging object to the tracking tables
 //***********************************************************************
 
-gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg)
+gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, intptr_t key, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg)
 {
     gop_mq_ongoing_object_t *ongoing;
     gop_mq_ongoing_host_t *oh;
 
     tbx_type_malloc(ongoing, gop_mq_ongoing_object_t, 1);
     ongoing->handle = handle;
-    ongoing->key = (intptr_t)handle;
+    ongoing->key = key;
     ongoing->on_fail = on_fail;
     ongoing->on_fail_arg = on_fail_arg;
     ongoing->count = 0;
@@ -374,7 +378,7 @@ void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t 
             log_printf(6, "Found!\n");
             ptr = ongoing->handle;
             ongoing->count++;
-            oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
+            oh->hb_count++;  //** Add a heartbeat since we're using it
         }
     }
 
@@ -402,13 +406,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
         if (ongoing != NULL) {
             log_printf(6, "Found!\n");
             ongoing->count--;
-            oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
-
-            log_printf(2, "Updating heartbeat for %s hb=%d expire=" TT "\n",
-                            id,
-                            oh->heartbeat,
-                            ((apr_time_t) apr_time_sec(oh->next_check)));
-
+            oh->hb_count++;  //** Add a heartbeat since we're using it
             apr_thread_cond_broadcast(mqon->cond); //** Let everyone know it;'s been released
         }
     }
@@ -493,6 +491,7 @@ void mq_ongoing_cb(void *arg, gop_mq_task_t *task)
         log_printf(2, "Updating heartbeat for %s hb=%d expire=" TT "\n", id, oh->heartbeat, oh->next_check);
     } else {
         status = gop_failure_status;
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CB: ERROR -- Unknown host! id=%s id_len=%d\n", id, fsize);
     }
     apr_thread_mutex_unlock(mqon->lock);
 

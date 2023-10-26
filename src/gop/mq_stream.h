@@ -73,6 +73,7 @@ struct gop_mq_stream_t {
     mq_msg_t *remote_host;
     char *host_id;
     char *stream_id;
+    intptr_t okey;
     int sid_len;
     int hid_len;
     mq_msg_t *address;
