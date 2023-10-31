@@ -48,6 +48,8 @@
 #define MQ_IDENTITY ZMQ_IDENTITY
 #endif
 
+#define MQ_EVENT_ALL ZMQ_EVENT_ALL    //** This is the monitoring flag
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -108,9 +110,12 @@ struct gop_mq_conn_t {  //** MQ connection container
     apr_hash_t *heartbeat_lut;  //** This is a table of valid heartbeat pointers
     apr_time_t check_start;  //** Last check time
     apr_thread_t *thread;     //** thread handle
+    apr_thread_t *monitoring_thread;  //** Monitoring thread if enabled
+    char *inproc;             //** inproc name
     gop_mq_heartbeat_entry_t *hb_conn;  //** Immediate connection uplink
     uint64_t  n_ops;         //** Numbr of ops the connection has processed
     int cefd[2];             //** Private event FD for initial connection handshake
+    tbx_atomic_int_t shutdown; //** Flag for shutting down
     gop_mq_command_stats_t stats;//** Command stats
     apr_pool_t *mpool;       //** MEmory pool for connection/thread. APR mpools aren't thread safe!!!!!!!
 };
@@ -126,6 +131,7 @@ struct gop_mq_context_t {      //** Main MQ context
     int heartbeat_failure;     //** Missing heartbeat DT for failure classification
     int socket_type;           //** NEW: Type of socket to use (TRACE_ROUTER or ROUND_ROBIN)
     int bind_short_running_max;    //** Max number of short running tasks allowed to run at a time
+    int enable_monitoring;     //** Enable socket monitoring/logging
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     char *section;             //** Config section used
     apr_thread_mutex_t *lock;  //** Context lock

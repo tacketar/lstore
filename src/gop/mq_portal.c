@@ -14,6 +14,7 @@
    limitations under the License.
 */
 
+#include <arpa/inet.h>
 #include <apr.h>
 #include <apr_base64.h>
 #include <apr_errno.h>
@@ -31,6 +32,8 @@
 #include <tbx/fmttypes.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/notify.h>
+#include <tbx/random.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/io.h>
@@ -57,7 +60,8 @@ static gop_mq_context_t mqc_default_options = {
     .heartbeat_dt = 5,
     .heartbeat_failure = 60,
     .min_ops_per_sec = 100,
-    .bind_short_running_max = 40
+    .bind_short_running_max = 40,
+    .enable_monitoring = 0
 };
 
 
@@ -1317,6 +1321,144 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
 }
 
 //**************************************************************
+// fd2address - Turns the sock FD into an address
+//    NOTE: address should be of size 255 or larger
+//**************************************************************
+
+char *fd2address(int fd, char *address)
+{
+    socklen_t alen;
+    struct sockaddr_in sa;
+
+    address[0] = '\0';
+    if (fd == -1) return(address);
+
+    alen = sizeof(sa);
+    if (getpeername(fd, (struct sockaddr *)&sa, &alen) != 0) return(address);
+    inet_ntop(AF_INET, &sa.sin_addr, address, 255);
+
+    return(address);
+}
+
+//**************************************************************
+// mq_monitoring_thread - Monitoring thread
+//    NOTE: This directly uses some 0mq definitions!!!
+//**************************************************************
+
+void *mq_monitoring_thread(apr_thread_t *th, void *arg)
+{
+    gop_mq_conn_t *c = (gop_mq_conn_t *)arg;
+    gop_mq_pollitem_t pfd;
+    gop_mq_socket_t *sock;
+    int err, n;
+    mq_msg_t *msg;
+    gop_mq_frame_t *f;
+    int event, value;
+    char *data;
+    char addr[256];
+    char fdaddr[256];
+    int len;
+
+    log_printf(0, "host=%s inproc=%s\n", c->pc->host, c->inproc);
+
+    sock = gop_mq_socket_new(c->pc->ctx, MQ_PAIR);
+    err = gop_mq_connect(sock, c->inproc);
+    if (err) {
+        log_printf(0, "ERROR: host=%s inproc=%s err=%d Failed to connect to the monitoring socket!\n", c->pc->host, c->inproc, err);
+        gop_mq_socket_destroy(c->pc->ctx, sock);
+        return(NULL);
+    }
+    pfd.socket = gop_mq_poll_handle(sock);
+    pfd.events = MQ_POLLIN;
+
+    do {
+        n = gop_mq_poll(&pfd, 1, 1000);
+        if (n && tbx_notify_handle) {
+            msg = gop_mq_msg_new();
+            while (gop_mq_recv(sock, msg, MQ_DONTWAIT) == 0) {
+                //** The event type and value
+                f = gop_mq_msg_first(msg);
+                gop_mq_get_frame(f, (void **)&data, &len);
+                event = *(uint16_t *)data;
+                value = *(uint32_t *)(data + 2);
+
+                //** This is the address if applicable
+                f = gop_mq_msg_next(msg);
+                if (f) {
+                    gop_mq_get_frame(f, (void **)&data, &len);
+                    if (len > ((int)sizeof(addr)-1)) {
+                        len = sizeof(addr)-1;
+                    }
+                    memcpy(addr, data, len);
+                    addr[len] = '\0';
+                } else {
+                    memcpy(addr, "(NULL)", 7);
+                }
+
+                switch (event) {
+                case (ZMQ_EVENT_CONNECTED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_CONNECTED  sockfd=%d fdaddr=%s addr=%s\n", value, fd2address(value, fdaddr), addr);
+                    break;
+                case (ZMQ_EVENT_CONNECT_DELAYED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_CONNECT_DELAYED addr=%s\n", addr);
+                    break;
+                case (ZMQ_EVENT_CONNECT_RETRIED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_CONNECT_RETRIED retry_ms=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_LISTENING):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_LISTENING sockfd=%d fdaddr=%s addr=%s\n", value, fd2address(value, fdaddr), addr);
+                    break;
+                case (ZMQ_EVENT_BIND_FAILED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_BIND_FAILED errno=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_ACCEPTED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_ACCEPTED sockfd=%d fdaddr=%s addr=%s\n", value, fd2address(value, fdaddr), addr);
+                    break;
+                case (ZMQ_EVENT_ACCEPT_FAILED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_ACCEPT_FAILED errno=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_CLOSED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_CLOSED sockfd=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_CLOSE_FAILED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_CLOSE_FAILED errno=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_DISCONNECTED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_DISCONNECTED sockfd=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_MONITOR_STOPPED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_MONITOR_STOPPED addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL errno=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_HANDSHAKE_SUCCEEDED):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_SUCCEEDED addr=%s\n", addr);
+                    break;
+                case (ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL zmq_protocol_error=%d addr=%s\n", value, addr);
+                    break;
+                case (ZMQ_EVENT_HANDSHAKE_FAILED_AUTH):
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_AUTH zap_error=%d addr=%s\n", value, addr);
+                    break;
+                default:
+                    tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: UNKNOWN  event=%d  value=%d addr=%s\n", event, value, addr);
+                    break;
+                }
+
+                gop_mq_msg_destroy(msg);
+                msg = gop_mq_msg_new();
+            }
+            gop_mq_msg_destroy(msg);
+        }
+    } while (tbx_atomic_get(c->shutdown) == 0);
+
+    gop_mq_socket_destroy(c->pc->ctx, sock);
+
+    return(NULL);
+}
+
+//**************************************************************
 // mq_conn_make - Makes the actual connection.  Returns 0 for
 //    success and 1 for failure.
 //**************************************************************
@@ -1330,6 +1472,7 @@ int mq_conn_make(gop_mq_conn_t *c)
     char *data;
     apr_time_t start, dt;
     gop_mq_heartbeat_entry_t *hb;
+    char inproc[255];
 
     log_printf(5, "START host=%s\n", c->pc->host);
 
@@ -1340,6 +1483,15 @@ int mq_conn_make(gop_mq_conn_t *c)
     //** Hardcoded MQ_TRACE_ROUTER socket type
     c->sock = gop_mq_socket_new(c->pc->ctx, c->pc->socket_type);
     log_printf(2, "host = %s, connect_mode = %d\n", c->pc->host, c->pc->connect_mode);
+
+    if (c->pc->mqc->enable_monitoring) {  //** Note that the portal should be fresh with max_conn=1 so this is "locked"
+        tbx_random_get_bytes(&n, sizeof(n));
+        snprintf(inproc, sizeof(inproc), "inproc://monitor-%d", n);
+        c->inproc = strdup(inproc);
+        c->sock->monitor(c->sock, c->inproc, MQ_EVENT_ALL);
+        tbx_thread_create_assert(&(c->monitoring_thread), NULL, mq_monitoring_thread, (void *)c, c->mpool);
+    }
+
     if (c->pc->connect_mode == MQ_CMODE_CLIENT) {
         err = gop_mq_connect(c->sock, c->pc->host);
     } else {
@@ -1460,6 +1612,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     gop_mq_pollitem_t pfd[3];
     apr_time_t next_hb_check, last_check;
     double proc_rate, dt;
+    apr_status_t dummy;
     char v;
 
     log_printf(2, "START: host=%s heartbeat_dt=%d\n", c->pc->host, c->pc->heartbeat_dt);
@@ -1562,6 +1715,12 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 cleanup:
     //** Cleanup my struct but don'r free(c).
     //** This is done on portal cleanup
+    if (c->inproc) {
+        tbx_atomic_set(c->shutdown, 1);
+        apr_thread_join(&dummy, c->monitoring_thread);
+        free(c->inproc);
+    }
+
     gop_mq_stats_print(2, c->mq_uuid, &(c->stats));
     log_printf(2, "END: uuid=%s total_incoming=" I64T " total_processed=" I64T " oops=%d\n", c->mq_uuid, total_incoming, total_proc, oops);
     tbx_log_flush();
@@ -1970,6 +2129,7 @@ void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_sect
     fprintf(fd, "max_threads = %d\n", mqc->max_threads);
     fprintf(fd, "max_recursion = %d\n", mqc->max_recursion);
     fprintf(fd, "backlog_trigger = %d\n", mqc->backlog_trigger);
+    fprintf(fd, "enable_monitoring = %d\n", mqc->enable_monitoring);
     fprintf(fd, "heartbeat_dt = %d # seconds\n", mqc->heartbeat_dt);
     fprintf(fd, "heartbeat_failure = %d # seconds\n", mqc->heartbeat_failure);
     fprintf(fd, "min_ops_per_sec = %lf\n", mqc->min_ops_per_sec);
@@ -2001,6 +2161,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
     mqc->heartbeat_failure = tbx_inip_get_integer(ifd, section, "heartbeat_failure", mqc_default_options.heartbeat_failure);
     mqc->min_ops_per_sec = tbx_inip_get_double(ifd, section, "min_ops_per_sec", mqc_default_options.min_ops_per_sec);
     mqc->bind_short_running_max = tbx_inip_get_integer(ifd, section, "bind_short_running_max", mqc_default_options.bind_short_running_max);
+    mqc->enable_monitoring = tbx_inip_get_integer(ifd, section, "enable_monitoring", mqc_default_options.enable_monitoring);
 
     // New socket_type parameter
     mqc->socket_type = tbx_inip_get_integer(ifd, section, "socket_type", MQ_TRACE_ROUTER);
