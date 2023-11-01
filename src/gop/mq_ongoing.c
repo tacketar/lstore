@@ -703,6 +703,8 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
             }
         }
 
+        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: Loop end\n");)
+
         //** Sleep until time for the next heartbeat or time to exit
         apr_thread_cond_timedwait(mqon->cond, mqon->lock, timeout);
         n = mqon->shutdown;
