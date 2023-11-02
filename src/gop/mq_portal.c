@@ -779,7 +779,7 @@ int mqc_ping(gop_mq_conn_t *c, mq_msg_t *msg)
 {
     mq_msg_t *pong;
     gop_mq_frame_t *f, *pid;
-    MQ_DEBUG(gop_mq_frame_t *flast;)
+    MQ_DEBUG(gop_mq_frame_t *flast = NULL;)
     int err;
 
     //** Peel off the top frames and just leave the return address
@@ -799,7 +799,7 @@ int mqc_ping(gop_mq_conn_t *c, mq_msg_t *msg)
     }
 
     MQ_DEBUG(
-        if (tbx_notify_handle) {
+        if (tbx_notify_handle && flast) {
             char *hptr;
             char host[1024];
             int size;
