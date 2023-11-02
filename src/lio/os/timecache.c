@@ -841,6 +841,7 @@ int _ostcdb_resolve_attr_link(lio_object_service_fn_t *os, tbx_stack_t *tree, ch
     char *aname;
     ostcdb_object_t *lo;
     ostcdb_attr_t *la;
+    apr_hash_t *attrs;
 
     log_printf(5, "START alink=%s\n", alink);
 
@@ -883,7 +884,8 @@ int _ostcdb_resolve_attr_link(lio_object_service_fn_t *os, tbx_stack_t *tree, ch
     lo = tbx_stack_get_current_data(&rtree);  //** This will get placed as the next object on the stack
 
     if (lo == NULL) goto finished;
-    la = apr_hash_get(lo->attrs, aname, APR_HASH_KEY_STRING);
+    attrs = (lo->hard_obj) ? lo->hard_obj->attrs : lo->attrs;
+    la = apr_hash_get(attrs, aname, APR_HASH_KEY_STRING);
     log_printf(5, "alink=%s aname=%s lattr=%p mr=%d\n", alink, aname, la, max_recurse);
 
     if (la != NULL) {
