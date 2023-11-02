@@ -89,6 +89,8 @@ struct gop_mq_heartbeat_entry_t {
     uint64_t lut_id;
     int key_size;
     int count;
+    int hb_count;
+    apr_time_t next_check;
     apr_time_t last_check;
 };
 
@@ -97,8 +99,6 @@ struct gop_mq_task_monitor_t {
     gop_mq_heartbeat_entry_t *tracking;
     char *id;
     int id_size;
-    apr_time_t last_check;
-    apr_time_t timeout;
 };
 
 struct gop_mq_conn_t {  //** MQ connection container
