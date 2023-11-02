@@ -1467,18 +1467,26 @@ void *mq_monitoring_thread(apr_thread_t *th, void *arg)
                 case (ZMQ_EVENT_MONITOR_STOPPED):
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_MONITOR_STOPPED addr=%s\n", value, addr);
                     break;
+#ifdef ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL
                 case (ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL):
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL errno=%d addr=%s\n", value, addr);
                     break;
+#endif
+#ifdef ZMQ_EVENT_HANDSHAKE_SUCCEEDED
                 case (ZMQ_EVENT_HANDSHAKE_SUCCEEDED):
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_SUCCEEDED addr=%s\n", addr);
                     break;
+#endif
+#ifdef ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL
                 case (ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL):
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL zmq_protocol_error=%d addr=%s\n", value, addr);
                     break;
+#endif
+#ifdef ZMQ_EVENT_HANDSHAKE_FAILED_AUTH
                 case (ZMQ_EVENT_HANDSHAKE_FAILED_AUTH):
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: event=ZMQ_EVENT_HANDSHAKE_FAILED_AUTH zap_error=%d addr=%s\n", value, addr);
                     break;
+#endif
                 default:
                     tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_MONITOR: UNKNOWN  event=%d  value=%d addr=%s\n", event, value, addr);
                     break;
