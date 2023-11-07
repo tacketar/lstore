@@ -953,9 +953,11 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
     apr_time_t now;
     int n, pending_count, conn_dead, do_conn_hb;
     char b64[1024];
-
     double dts;
     apr_time_t start = apr_time_now();
+    MQ_DEBUG(int n_hb_dest, n_waiting;)
+    MQ_DEBUG(apr_time_t dt_send, dt_dest, dt_waiting);
+
     log_printf(6, "START host=%s\n", c->mq_uuid);
     tbx_log_flush();
     dt_fail = apr_time_make(c->pc->heartbeat_failure, 0);
@@ -965,6 +967,8 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
 
     do_conn_hb = 0;  //** Keep track of if I'm HBing my direct uplink.
 
+    MQ_DEBUG(n_hb_dest = apr_hash_count(c->heartbeat_dest);)
+    MQ_DEBUG(dt_dest = apr_time_now();)
     //** Check the heartbeat dest table
     //** NOTE: using internal non-threadsafe iterator.  Should be ok in this case
     hi = apr_hash_first(NULL, c->heartbeat_dest);
@@ -977,7 +981,7 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
         if (now > entry->next_check) {  //** Time to check
             if (entry->hb_count > 0) { //** All good
                 entry->next_check = apr_time_now() + dt_fail;
-                MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: SUCCESS hb->key=%s hb->count=%d hb->hb_count=%d hb->next_check=%d\n", entry->key, entry->count, entry->hb_count, apr_time_sec(entry->next_check));)
+                MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: SUCCESS n_hb_dest=%d hb->key=%s hb->count=%d hb->hb_count=%d hb->next_check=%d\n", n_hb_dest, entry->key, entry->count, entry->hb_count, apr_time_sec(entry->next_check));)
                 entry->hb_count = 0;
             } else {  //** Dead connection so fail everything
                 if (entry == c->hb_conn) conn_dead = 1;
@@ -985,8 +989,8 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
                 log_printf(8, "hb->key=%s FAIL dt=%zd\n", entry->key, klen);
                 log_printf(6, "before waiting size=%d\n", apr_hash_count(c->waiting));
 
-                MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: FAILING hb->key=%s hb->count=%d\n", entry->key, entry->count);)
-
+                MQ_DEBUG(n_waiting = apr_hash_count(c->waiting);)
+                MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: FAILING n_hb_dest=%d n_waiting=%d hb->key=%s hb->count=%d\n", n_hb_dest, n_waiting, entry->key, entry->count);)
                 //** NOTE: using internal non-threadsafe iterator.  Should be ok in this case
                 for (hit = apr_hash_first(NULL, c->waiting); hit != NULL; hit = apr_hash_next(hit)) {
                     apr_hash_this(hit, (const void **)&key, &klen, (void **)&tn);
@@ -1030,10 +1034,12 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
             c->stats.outgoing[MQS_HEARTBEAT_INDEX]++;
             c->stats.outgoing[MQS_PING_INDEX]++;
 
-            MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: PING hb->key=%s hb->count=%d hb->hb_count=%d\n", entry->key, entry->count, entry->hb_count);)
-
             entry->last_check = now;  //** Flag that we've sent a hearbeat
+            MQ_DEBUG(dt_send = apr_time_now();)
             gop_mq_send(c->sock, entry->address, 0);
+            MQ_DEBUG(dt_send = apr_time_now() - dt_send;)
+            MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: PING n_hb_dest=%d hb->key=%s hb->count=%d hb->hb_count=%d dt_send=%d\n", n_hb_dest, entry->key, entry->count, entry->hb_count, apr_time_sec(dt_send));)
+
             pending_count++;
         }
 
@@ -1041,9 +1047,12 @@ next:
         hi = apr_hash_next(hi);
     }
 
+    MQ_DEBUG(dt_dest = apr_time_now()-dt_dest; if ((apr_time_sec(dt_dest) > 0) && (tbx_notify_handle)) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: LOOP_DEST n_hb_dest=%d dt_dest=%d\n", n_hb_dest, apr_time_sec(dt_dest));)
+
     //** Do the same for individual commands
     now = apr_time_now();
     //** NOTE: using internal non-threadsafe iterator.  Should be ok in this case
+    MQ_DEBUG(n_waiting = apr_hash_count(c->waiting); dt_waiting = apr_time_now();)
     hi = apr_hash_first(NULL, c->waiting);
     log_printf(6, "before waiting size=%d\n", apr_hash_count(c->waiting));
     while (hi != NULL) {
@@ -1057,7 +1066,7 @@ next:
             //** Clear it out
             apr_hash_set(c->waiting, key, klen, NULL);
 
-            MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: TASK_FAIL sid=%s\n", gop_mq_id2str(key, klen, b64, sizeof(b64)));)
+            MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: TASK_FAIL sid=%s n_waiting=%d\n", gop_mq_id2str(key, klen, b64, sizeof(b64)), n_waiting);)
 
             //** Submit the fail task
             log_printf(6, "Failed task uuid=%s hash_count=%u sid=%s\n", c->mq_uuid, apr_hash_count(c->waiting), gop_mq_id2str(key, klen, b64, sizeof(b64)));
@@ -1077,6 +1086,7 @@ next:
         hi = apr_hash_next(hi);
     }
 
+    MQ_DEBUG(dt_waiting = apr_time_now()-dt_waiting; if ((apr_time_sec(dt_waiting) > 0) && (tbx_notify_handle)) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: LOOP_WAITING n_hb_dest=%d n_waiting=%d dt_dest=%d\n", n_hb_dest, n_waiting, apr_time_sec(dt_waiting));)
     log_printf(6, "after waiting size=%d\n", apr_hash_count(c->waiting));
 
     if (do_conn_hb == 1) {    //** Check if we HB the main uplink
@@ -1115,6 +1125,10 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
     gop_mq_task_t *task;
     char *data;
     int size;
+    MQ_DEBUG(apr_time_t dts, dtotal, dt_ping, dt_pong, dt_track, dt_response, dt_exec, dt_err;)
+    MQ_DEBUG(int nping, npong, ntrack, nresponse, nexec, nerr);
+    MQ_DEBUG(dt_ping = dt_pong = dt_track = dt_response = dt_exec = dt_err = 0);
+    MQ_DEBUG(nping = npong = ntrack = nresponse = nexec = nerr = 0;);
 
     log_printf(5, "processing incoming start\n");
     //** If nproc is negative we always grab some tasks if available
@@ -1122,6 +1136,7 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
     *nproc = 0;
     if (max_count <= 0) return(0);
 
+    MQ_DEBUG(dtotal = apr_time_now();)
     //** Process all that are on the wire
     msg = gop_mq_msg_new();
     count = 0;
@@ -1155,25 +1170,32 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
             log_printf(15, "Processing MQF_PING_KEY\n");
             tbx_log_flush();
             c->stats.incoming[MQS_PING_INDEX]++;
+            MQ_DEBUG(dts = apr_time_now());
             mqc_ping(c, msg);
+            MQ_DEBUG(dt_ping += (apr_time_now() - dts); nping++;)
         } else if (mq_data_compare(MQF_PONG_KEY, MQF_PONG_SIZE, data, size) == 0) {
             log_printf(15, "Processing MQF_PONG_KEY\n");
             tbx_log_flush();
             c->stats.incoming[MQS_PONG_INDEX]++;
+            MQ_DEBUG(dts = apr_time_now());
             mqc_pong(c, msg);
+            MQ_DEBUG(dt_pong += (apr_time_now() - dts); npong++;)
         } else if (mq_data_compare(MQF_TRACKADDRESS_KEY, MQF_TRACKADDRESS_SIZE, data, size) == 0) {
             log_printf(15, "Processing MQF_TRACKADDRESS_KEY\n");
             tbx_log_flush();
             c->stats.incoming[MQS_TRACKADDRESS_INDEX]++;
+            MQ_DEBUG(dts = apr_time_now());
             mqc_trackaddress(c, msg);
+            MQ_DEBUG(dt_track += (apr_time_now() - dts); ntrack++;)
         } else if (mq_data_compare(MQF_RESPONSE_KEY, MQF_RESPONSE_SIZE, data, size) == 0) {
             log_printf(15, "Processing MQF_RESPONSE_KEY\n");
             tbx_log_flush();
             c->stats.incoming[MQS_RESPONSE_INDEX]++;
+            MQ_DEBUG(dts = apr_time_now());
             mqc_response(c, msg, 1);
+            MQ_DEBUG(dt_response += apr_time_now() - dts; nresponse++;)
         } else if ((mq_data_compare(MQF_EXEC_KEY, MQF_EXEC_SIZE, data, size) == 0) ||
                    (mq_data_compare(MQF_TRACKEXEC_KEY, MQF_TRACKEXEC_SIZE, data, size) == 0)) {
-
             if (mq_data_compare(MQF_TRACKEXEC_KEY, MQF_TRACKEXEC_SIZE, data, size) == 0) {
                 log_printf(15, "Processing MQF_TRACKEXEC_KEY\n");
                 tbx_log_flush();
@@ -1182,18 +1204,21 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
                 log_printf(15, "Processing MQF_EXEC_KEY\n");
                 tbx_log_flush();
                 c->stats.incoming[MQS_EXEC_INDEX]++;
-
             }
 
             //** It's up to the task to send any tracking information back.
             log_printf(5, "Submiting task for execution\n");
             task = gop_mq_task_new(c->pc->mqc, msg, NULL, c->pc, -1);
             tbx_atomic_inc(c->pc->running);
+            MQ_DEBUG(dts = apr_time_now());
             thread_pool_direct(c->pc->tp, mqt_exec, task);
+            MQ_DEBUG(dt_exec += (apr_time_now() - dts); nexec++;)
         } else {   //** Unknwon command so drop it
             log_printf(5, "ERROR: Unknown command.  Dropping\n");
             c->stats.incoming[MQS_UNKNOWN_INDEX]++;
+            MQ_DEBUG(dts = apr_time_now());
             gop_mq_msg_destroy(msg);
+            MQ_DEBUG(dt_err += apr_time_now() - dts; nerr++;)
             goto skip;
         }
 skip:
@@ -1201,6 +1226,9 @@ skip:
         if (count > max_count) break;  //** Kick out for other processing
     }
 
+    MQ_DEBUG(dtotal = apr_time_now() - dtotal;)
+    MQ_DEBUG(if ((apr_time_sec(dtotal) > 0) && (tbx_notify_handle)) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_INCOMING: dt=secs ntotal=%d dt_total=%d nping=%d dt_ping=%d npong=%d dt_pong=%d ntrack=%d dt_track=%d nresponse=%d dt_response=%d nexec=%d dt_exec=%d nerr=%d dt_err=%d\n", 
+        count, apr_time_sec(dtotal), nping, apr_time_sec(dt_ping), npong, apr_time_sec(dt_pong), ntrack, apr_time_sec(dt_track), nresponse, apr_time_sec(dt_response), nexec, apr_time_sec(dt_exec), nerr, apr_time_sec(dt_err));)
     gop_mq_msg_destroy(msg);  //** Clean up
 
     *nproc += count;  //** Inc processed commands
@@ -1718,16 +1746,16 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0;);
 
         if (k > 0) {  //** Got an event so process it
-            nproc = submit_max;
-            if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) finished += mqc_process_task(c, &npoll, &nproc);
+            nproc = 0;
+            if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) { nproc = submit_max; finished += mqc_process_task(c, &npoll, &nproc); }
             MQ_DEBUG(dt_task = apr_time_now();)
 
             nprocessed += nproc;
             total_proc += nproc;
             //finished += mqc_process_task(c, &npoll, &nprocessed);
             log_printf(5, "after process_task finished=%d\n", finished);
-            nincoming = short_running_max;
-            if (pfd[PI_CONN].revents != 0) finished += mqc_process_incoming(c, &nincoming);
+            nincoming = 0;
+            if (pfd[PI_CONN].revents != 0) { nincoming = short_running_max; finished += mqc_process_incoming(c, &nincoming); }
             MQ_DEBUG(dt_incoming = apr_time_now();)
 
             nprocessed += nincoming;
