@@ -1690,6 +1690,22 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     apr_status_t dummy;
     char v;
     MQ_DEBUG(apr_time_t ts, te, dt_task, dt_incoming, dt_hb;)
+    MQ_DEBUG(int nice_priority = 0;)
+
+    //**Adjust the priority if requested
+    if (c->pc->conn_priority != 0) {
+        errno = 0;  //** Clear errno so we can detect an error
+        i = nice(c->pc->conn_priority);
+        if (errno != 0) {
+            i = errno;
+            log_printf(0, "WARNING: Unable to set gop_mq_conn_thread priority to %d errno=%d!\n", c->pc->conn_priority, i);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "WARNING: Unable to set gop_mq_conn_thread priority to %d errno=%d!\n", c->pc->conn_priority, i);
+            fprintf(stderr, "WARNING: Unable to set gop_mq_conn_thread priority to %d errno=%d!\n", c->pc->conn_priority, i);
+        }
+
+        MQ_DEBUG(nice_priority = i;)
+        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: thread priority=%d\n", i);)
+    }
 
     MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: START host=%s mode=%s heartbeat_dt=%d\n", c->pc->host, ((c->pc->connect_mode == MQ_CMODE_CLIENT) ? "CLIENT" : "SERVER"), c->pc->heartbeat_dt);)
     log_printf(2, "START: host=%s heartbeat_dt=%d\n", c->pc->host, c->pc->heartbeat_dt);
@@ -1803,8 +1819,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
         MQ_DEBUG(te = apr_time_now();)
         MQ_DEBUG(if (dt_task > 0) { dt_incoming = dt_incoming - dt_task; dt_task = dt_task - ts; })
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: LOOP dt=secs host=%s ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d dt_hb=%d dtotal=%d\n", c->pc->host, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), apr_time_sec(dt_hb), apr_time_sec(te-ts));)
-
+        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), apr_time_sec(dt_hb), apr_time_sec(te-ts));)
     } while (finished == 0);
 
 
@@ -2135,6 +2150,7 @@ gop_mq_portal_t *gop_mq_portal_create(gop_mq_context_t *mqc, char *host, gop_mq_
     p->min_ops_per_sec = mqc->min_ops_per_sec;
     p->socket_type = mqc->socket_type;                   // socket type
     p->connect_mode = connect_mode;
+    p->conn_priority = mqc->conn_priority;
     p->tp = mqc->tp;
 
     p->ctx = gop_mq_socket_context_new();
@@ -2226,6 +2242,7 @@ void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_sect
     fprintf(fd, "min_threads = %d\n", mqc->min_threads);
     fprintf(fd, "max_threads = %d\n", mqc->max_threads);
     fprintf(fd, "max_recursion = %d\n", mqc->max_recursion);
+    fprintf(fd, "conn_priority = %d # 20(low priority)..-19(high priority)\n", mqc->conn_priority);
     fprintf(fd, "backlog_trigger = %d\n", mqc->backlog_trigger);
     fprintf(fd, "enable_monitoring = %d\n", mqc->enable_monitoring);
     fprintf(fd, "heartbeat_dt = %d # seconds\n", mqc->heartbeat_dt);
@@ -2254,6 +2271,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
     mqc->min_threads = tbx_inip_get_integer(ifd, section, "min_threads", mqc_default_options.min_threads);
     mqc->max_threads = tbx_inip_get_integer(ifd, section, "max_threads", mqc_default_options.max_threads);
     mqc->max_recursion = tbx_inip_get_integer(ifd, section, "max_recursion", mqc_default_options.max_recursion);
+    mqc->conn_priority = tbx_inip_get_integer(ifd, section, "conn_priority", mqc_default_options.conn_priority);
     mqc->backlog_trigger = tbx_inip_get_integer(ifd, section, "backlog_trigger", mqc_default_options.backlog_trigger);
     mqc->heartbeat_dt = tbx_inip_get_integer(ifd, section, "heartbeat_dt",mqc_default_options.heartbeat_dt);
     mqc->heartbeat_failure = tbx_inip_get_integer(ifd, section, "heartbeat_failure", mqc_default_options.heartbeat_failure);

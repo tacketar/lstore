@@ -130,8 +130,9 @@ struct gop_mq_context_t {      //** Main MQ context
     int heartbeat_dt;          //** Heartbeat interval
     int heartbeat_failure;     //** Missing heartbeat DT for failure classification
     int socket_type;           //** NEW: Type of socket to use (TRACE_ROUTER or ROUND_ROBIN)
-    int bind_short_running_max;    //** Max number of short running tasks allowed to run at a time
+    int bind_short_running_max; //** Max number of short running tasks allowed to run at a time
     int enable_monitoring;     //** Enable socket monitoring/logging
+    int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     char *section;             //** Config section used
     apr_thread_mutex_t *lock;  //** Context lock
@@ -160,6 +161,7 @@ struct gop_mq_portal_t {   //** Container for managing connections to a single h
     int n_close;               //** Number of connections being requested to close
     int bind_short_running_max;  //** Max number of short running tasks allowed to run at a time
     int socket_type;           //** Socket type
+    int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
     tbx_atomic_int_t running; //** Running tasks
     uint64_t n_ops;            //** Operation count
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
