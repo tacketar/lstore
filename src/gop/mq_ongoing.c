@@ -437,7 +437,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
             log_printf(6, "Found!\n");
             ongoing->count--;
             oh->hb_count++;  //** Add a heartbeat since we're using it
-            apr_thread_cond_broadcast(mqon->cond); //** Let everyone know it;'s been released
+            if (ongoing->count <= 0) apr_thread_cond_broadcast(mqon->cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
         }
     }
 
