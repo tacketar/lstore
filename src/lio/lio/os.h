@@ -193,6 +193,7 @@ LIO_API int os_user_locking_tests(char *prefix);
 #define OS_MODE_BLOCK_ONLY_IF_FILE    128  // ** Only use a blocking lock if a file
 #define OS_MODE_BASE_MODES             63
 #define OS_MODE_FLAGS                 192
+#define OS_MODE_PENDING               256
 
 // Preprocessor macros
 #define os_close_object(os, fd) (os)->close_object(os, fd)
