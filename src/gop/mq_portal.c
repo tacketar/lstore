@@ -1314,6 +1314,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         }
         if (f == NULL) { //** Bad command
             log_printf(0, "Invalid command!\n");
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid command!\n");
             return_code = 1;
             continue;
         }
@@ -1324,6 +1325,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         if (mq_data_compare(data, size, MQF_VERSION_KEY, MQF_VERSION_SIZE) != 0) {  //** Bad version number
             log_printf(0, "Invalid version!\n");
             log_printf(0, "length = %d\n", size);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid version! ver_len=%d\n", size);
             return_code = 1;
             continue;
         }
@@ -1365,6 +1367,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         if (i == -1) {
             log_printf(0, "Error sending msg! errno=%d\n", errno);
             mq_task_complete(c, task, OP_STATE_FAILURE);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Failed sending message! errno=%d\n", errno);
             return_code = 1;
             continue;
         }
