@@ -5580,7 +5580,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
         rp = it->realpath;
     } else {  //** We have to protect accessing the FD->realpath
         slot = osf_realpath_lock(it->fd);
-        strncpy(rpath, it->fd->realpath, OS_PATH_MAX-1);
+        strncpy(rpath, it->fd->realpath, OS_PATH_MAX-1); rpath[OS_PATH_MAX-1] = '\0';
         rp = rpath;
         apr_thread_mutex_unlock(osf->internal_lock[slot]);
     }
