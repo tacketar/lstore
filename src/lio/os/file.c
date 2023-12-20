@@ -336,6 +336,9 @@ typedef struct {
 #define osf_obj_lock(lock)  apr_thread_mutex_lock(lock)
 #define osf_obj_unlock(lock)  apr_thread_mutex_unlock(lock)
 
+int osf_realpath_lock(osfile_fd_t *fd);
+void osf_internal_fd_lock(lio_object_service_fn_t *os, osfile_fd_t *fd);
+void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd);
 gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id);
 char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_prefix);
 apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot);
@@ -958,12 +961,13 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
 // full_object_lock -  Locks the object across all systems
 //***********************************************************************
 
-int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int max_wait)
+int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_lock, int max_wait, int do_lock_rp)
 {
     tbx_pch_t obj_pch;
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
-    int err, rw_mode, do_wait;
+    int err, rw_mode, do_wait, slot;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
 
     rw_mode = rw_lock; do_wait = 1;
     if (rw_lock & OS_MODE_NONBLOCKING) {
@@ -973,6 +977,7 @@ int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int r
 
     if (rw_mode & (OS_MODE_READ_IMMEDIATE|OS_MODE_WRITE_IMMEDIATE)) return(0);
 
+    if (do_lock_rp) { slot = osf_realpath_lock(fd); }  //** If needed lock the RP
     apr_thread_mutex_lock(flock->fobj_lock);
 
     //** See if we already have a reference stored
@@ -985,6 +990,8 @@ int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int r
         tbx_list_insert(flock->fobj_table, fd->realpath, fol);
         log_printf(15, "fname=%s new lock!\n", fd->opath);
     }
+
+    if (do_lock_rp) { apr_thread_mutex_unlock(osf->internal_lock[slot]); }  //** If needed unlock the RP
 
     if (fd->fol[fol_slot] == NULL) fd->fol[fol_slot] = fol;  //** Go ahead and store if for future reference
 
@@ -1026,20 +1033,24 @@ int full_object_lock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int r
 // full_object_unlock - Unlocks an object
 //***********************************************************************
 
-void full_object_unlock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode)
+void full_object_unlock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, int rw_mode, int do_lock_rp)
 {
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
-    int err;
+    int err, slot;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
 
     fol = fd->fol[fol_slot];
     if (fol == NULL) { return; }  //** Nothing to do. No outstanding lock
+
+    if (do_lock_rp) { slot = osf_realpath_lock(fd); }  //** If needed lock the RP
 
     apr_thread_mutex_lock(flock->fobj_lock);
 
     err = fobj_remove_active(fol, fd);
 
     if (err != 0) {  //**Exit if it wasn't found
+        if (do_lock_rp) { apr_thread_mutex_unlock(osf->internal_lock[slot]); }  //** If needed unlock the RP
         apr_thread_mutex_unlock(flock->fobj_lock);
         return;
     }
@@ -1067,6 +1078,8 @@ void full_object_unlock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, in
             apr_thread_cond_broadcast(handle->cond);   //** They will wake up when fobj_lock is released in the calling routine
         }
     }
+
+    if (do_lock_rp) { apr_thread_mutex_unlock(osf->internal_lock[slot]); }  //** If needed unlock the RP
 
     apr_thread_mutex_unlock(flock->fobj_lock);
 }
@@ -1179,17 +1192,19 @@ void osf_multi_attr_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile
     char linkname[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
 
-    //** Always get the primary
+    //** Always get the primary object_name and RP since the calling program expects the RP to be locked as well
 try_again:
     n = 0;
-    slot_rp = tbx_atomic_get(fd->ilock_rp);
-    lock_slot[n] = slot_rp;
-    lock_table[n] = osf->internal_lock[slot_rp];
-    n++;
     slot_obj = tbx_atomic_get(fd->ilock_obj);
+    lock_slot[n] = slot_obj;
+    lock_table[n] = osf->internal_lock[slot_obj];
+    apr_thread_mutex_lock(lock_table[n]);  //** We have to lock this now since we use the object_name below
+    n++;
+
+    slot_rp = tbx_atomic_get(fd->ilock_rp);
     if (slot_obj != slot_rp) {
-        lock_slot[n] = slot_obj;
-        lock_table[n] = osf->internal_lock[slot_obj];
+        lock_slot[n] = slot_rp;
+        lock_table[n] = osf->internal_lock[slot_rp];
         n++;
     }
 
@@ -1224,6 +1239,8 @@ try_again:
 
     *n_locks = n;  //** Return the lock count
 
+    apr_thread_mutex_unlock(osf->internal_lock[slot_obj]);  //** We need to unlock the object_name while we do the sorting/locking
+
     //** This is done naively cause normally there will be just a few locks
     max_index = osf->internal_lock_size;
     for (i=0; i<n; i++) {
@@ -1241,7 +1258,6 @@ try_again:
     }
 
     //** Make sure the fd slot didn't change
-    i = tbx_atomic_get(fd->ilock_rp);
     if ((tbx_atomic_get(fd->ilock_rp) != slot_rp) || (tbx_atomic_get(fd->ilock_obj) != slot_obj)) { //** If so unlock everything and try again
         osf_multi_unlock(lock_table, n);
         goto try_again;
@@ -1251,7 +1267,7 @@ try_again:
 }
 
 //***********************************************************************
-// osf_internal_fd_lock - Locking for multiple FDs
+// osf_internal_2fd_lock - Locking for multiple FDs
 //***********************************************************************
 
 void osf_internal_2fd_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *fd1, osfile_fd_t *fd2, apr_thread_mutex_t **lock_table, int *n_locks)
@@ -1695,9 +1711,51 @@ void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_ol
     return;
 }
 
+//***********************************************************************
+// osf_object_name_lock - Helper to lock fd->object_name
+//    It returns the slot used for the lock
+//***********************************************************************
+
+int osf_object_name_lock(osfile_fd_t *fd)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    int slot;
+
+again:
+    slot = tbx_atomic_get(fd->ilock_obj);
+    apr_thread_mutex_lock(osf->internal_lock[slot]);
+    if (slot != tbx_atomic_get(fd->ilock_obj)) {
+        apr_thread_mutex_unlock(osf->internal_lock[slot]);
+        goto again;
+    }
+
+    return(slot);
+}
+
+//***********************************************************************
+// osf_realpath_lock - Helper to lock fd->realpath
+//    It returns the slot used for the lock
+//***********************************************************************
+
+int osf_realpath_lock(osfile_fd_t *fd)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    int slot;
+
+again:
+    slot = tbx_atomic_get(fd->ilock_rp);
+    apr_thread_mutex_lock(osf->internal_lock[slot]);
+    if (slot != tbx_atomic_get(fd->ilock_rp)) {
+        apr_thread_mutex_unlock(osf->internal_lock[slot]);
+        goto again;
+    }
+
+    return(slot);
+}
 
 //***********************************************************************
 // va_create_get_attr - Returns the object creation time in secs since epoch
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1713,6 +1771,7 @@ int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
+
     err = stat(fullname, &s);
     if (err != 0) {
         *v_size = -1;
@@ -1730,6 +1789,7 @@ int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
 
 //***********************************************************************
 // va_realpath_attr - Returns the object realpath information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_realpath_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1742,6 +1802,7 @@ int va_realpath_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
 //***********************************************************************
 // va_link_get_attr - Returns the object link information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1787,6 +1848,7 @@ int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
 //***********************************************************************
 // va_link_count_get_attr - Returns the object link count information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_link_count_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1800,6 +1862,7 @@ int va_link_count_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *o
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
+    //** Protect the object_name via a lock
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
 
     err = lstat(fullname, &s);
@@ -1820,6 +1883,7 @@ int va_link_count_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *o
 
 //***********************************************************************
 // va_type_get_attr - Returns the object type information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_type_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1833,6 +1897,7 @@ int va_type_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
+
     ftype = lio_os_local_filetype(fullname);
 
     snprintf(buffer, sizeof(buffer), "%d", ftype);
@@ -1897,6 +1962,7 @@ void _lock_get_attr(fobj_lock_t *fol, char *buf, int *used, int bufsize, int is_
 
 //***********************************************************************
 // va_lock_get_attr - Returns the file lock information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1911,12 +1977,11 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
-    log_printf(15, "fname=%s rp=%s\n", fd->opath, fd->realpath);
+    log_printf(15, "fname=%s\n", fd->opath);
 
     apr_thread_mutex_lock(osf->os_lock->fobj_lock);
 
     fol = (fd->fol[FOL_OS]) ? fd->fol[FOL_OS] : tbx_list_search(osf->os_lock->fobj_table, fd->realpath);
-
     if (fol == NULL) {
         *val = NULL;
         *v_size = 0;
@@ -1946,6 +2011,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
 //***********************************************************************
 // va_lock_user_get_attr - Returns the file os.lock.user information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
@@ -1995,6 +2061,7 @@ int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 
 //***********************************************************************
 // va_attr_type_get_attr - Returns the attribute type information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_attr_type_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
@@ -2032,6 +2099,7 @@ int va_attr_type_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
 
 //***********************************************************************
 // va_attr_link_get_attr - Returns the attribute link information
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_attr_link_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
@@ -2101,6 +2169,7 @@ int va_attr_link_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
 
 //***********************************************************************
 // va_timestamp_set_attr - Sets the requested timestamp
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_timestamp_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void *val, int v_size, int *atype)
@@ -2136,6 +2205,7 @@ int va_timestamp_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 //***********************************************************************
 // va_timestamp_get_attr - Returns the requested timestamp or current time
 //    if no timestamp is specified
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_timestamp_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
@@ -2167,6 +2237,7 @@ int va_timestamp_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 
 //***********************************************************************
 // va_timestamp_get_link - Returns the requested timestamp's link if available
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_timestamp_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
@@ -2199,6 +2270,7 @@ int va_timestamp_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_
 
 //***********************************************************************
 // va_append_set_attr - Appends the data to the attribute
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_append_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void *val, int v_size, int *atype)
@@ -2224,6 +2296,7 @@ int va_append_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
 
 //***********************************************************************
 // va_append_get_attr - Just returns the attr after peeling off the PVA
+//   NOTE the internal FD lock should be held before calling
 //***********************************************************************
 
 int va_append_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
@@ -3345,6 +3418,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
 
 //***********************************************************************
 // osf_get_inode - Get's the inode for the file
+//   NOTE: No need to do any locking since aren't officially an open FD being tracked
 //***********************************************************************
 
 int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath, int ftype, char *inode, int *inode_len)
@@ -3354,6 +3428,8 @@ int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath,
 
     strncpy(fd.realpath, rpath, sizeof(fd.realpath)-1);
     fd.object_name = rpath;
+    osf_retrieve_lock(os, rpath, &(fd.ilock_rp));
+    fd.ilock_obj = fd.ilock_rp;
     fd.opath = rpath;
     fd.ftype = ftype;
 
@@ -4588,40 +4664,22 @@ gop_op_status_t osfile_copy_multiple_attrs_fn(void *arg, int id)
     gop_op_status_t status;
     lio_os_authz_local_t  ug;
     osaz_attr_filter_t filter;
+    apr_thread_mutex_t *locks[4];
     void *val;
     int v_size;
-    int slot_src, slot_dest;
-    int i, j, err, atype;
+    int n_locks;;
+    int i, err, atype;
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
-try_again:
-    slot_src = tbx_atomic_get(op->fd_src->ilock_rp);
-    slot_dest = tbx_atomic_get(op->fd_dest->ilock_rp);
-    if (slot_src < slot_dest) {
-        osf_obj_lock(osf->internal_lock[slot_src]);
-        osf_obj_lock(osf->internal_lock[slot_dest]);
-    } else if (slot_src > slot_dest) {
-        osf_obj_lock(osf->internal_lock[slot_dest]);
-        osf_obj_lock(osf->internal_lock[slot_src]);
-    } else {  //** Same slot so only need to lock one
-        osf_obj_lock(osf->internal_lock[slot_src]);
-    }
+    osf_internal_2fd_lock(op->os, op->creds, op->fd_src, op->fd_dest, locks, &n_locks);
 
-    //** Make sure nothing changed while we were doin the handshake
-    i = tbx_atomic_get(op->fd_src->ilock_rp);
-    j = tbx_atomic_get(op->fd_dest->ilock_rp);
-    if ((i != slot_src) || (j != slot_dest)) {
-        osf_obj_lock(osf->internal_lock[slot_dest]);
-        osf_obj_lock(osf->internal_lock[slot_src]);
-        goto try_again;
-    }
     osaz_ug_hint_init(osf->osaz, op->creds, &ug);
     ug.creds = op->creds;
     osaz_ug_hint_set(osf->osaz, op->creds, &ug);
 
     status = gop_success_status;
     for (i=0; i<op->n; i++) {
-        log_printf(15, " fsrc=%s (lock=%d) fdest=%s (lock=%d)   n=%d i=%d key_src=%s key_dest=%s\n", op->fd_src->opath, slot_src, op->fd_dest->opath, slot_dest, op->n, i, op->key_src[i], op->key_dest[i]);
+        log_printf(15, " fsrc=%s fdest=%s  n=%d i=%d key_src=%s key_dest=%s\n", op->fd_src->opath, op->fd_dest->opath, op->n, i, op->key_src[i], op->key_dest[i]);
         if ((osaz_attr_access(osf->osaz, op->creds, NULL, op->fd_src->realpath, op->key_src[i], OS_MODE_READ_IMMEDIATE, &filter) != 0) &&
                 (osaz_attr_create(osf->osaz, op->creds, NULL, op->fd_src->realpath, op->key_dest[i]) == 1)) {
 
@@ -4646,8 +4704,7 @@ try_again:
         }
     }
 
-    osf_obj_lock(osf->internal_lock[slot_src]);
-    if (slot_src != slot_dest) osf_obj_lock(osf->internal_lock[slot_dest]);
+    osf_multi_unlock(locks, n_locks);
 
     osaz_ug_hint_free(osf->osaz, op->creds, &ug);
 
@@ -4890,6 +4947,7 @@ gop_op_generic_t *osfile_move_attr(lio_object_service_fn_t *os, lio_creds_t *cre
 
 //***********************************************************************
 // osf_get_attr - Gets the attribute given the name and base directory
+//     NOTE: Assumes that the ofd ilock_obj and ilock_rp are held
 //***********************************************************************
 
 int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath, int flag_missing_as_error)
@@ -5261,6 +5319,7 @@ int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, v
 
 //***********************************************************************
 // osf_set_attr - Sets the attribute given the name and base directory
+//     NOTE: Assumes the ilock_obj and ilock_rp are held!!
 //***********************************************************************
 
 int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void *val, int v_size, int *atype, int append_val)
@@ -5507,15 +5566,24 @@ gop_op_generic_t *osfile_set_multiple_attrs_immediate(lio_object_service_fn_t *o
 int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
 {
     osfile_attr_iter_t *it = (osfile_attr_iter_t *)oit;
-    int i, n, atype;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)it->os->priv;
+    int i, n, atype, slot;
     apr_ssize_t klen;
     lio_os_virtual_attr_t *va;
     struct dirent *entry;
+    char rpath[OS_PATH_MAX];
     char *rp;
     lio_os_regex_table_t *rex = it->regex;
 
     //** Check the VA's 1st
-    rp = (it->realpath) ? it->realpath : it->fd->realpath;
+    if (it->realpath) {
+        rp = it->realpath;
+    } else {  //** We have to protect accessing the FD->realpath
+        slot = osf_realpath_lock(it->fd);
+        strncpy(rpath, it->fd->realpath, OS_PATH_MAX-1);
+        rp = rpath;
+        apr_thread_mutex_unlock(osf->internal_lock[slot]);
+    }
     while (it->va_index != NULL) {
         apr_hash_this(it->va_index, (const void **)key, &klen, (void **)&va);
         it->va_index = apr_hash_next(it->va_index);
@@ -5523,11 +5591,14 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
             n = (rex->regex_entry[i].fixed == 1) ? strcmp(rex->regex_entry[i].expression, va->attribute) : regexec(&(rex->regex_entry[i].compiled), va->attribute, 0, NULL, 0);
             if (n == 0) { //** got a match
                 n = it->v_max;
+                osf_internal_fd_lock(it->fd->os, it->fd);
                 if (osf_get_attr(it->fd->os, it->creds, it->fd, va->attribute, val, &n, &atype, NULL, rp, 1) == 0) {
+                    osf_internal_fd_unlock(it->fd->os, it->fd);
                     *v_size = n;
                     *key = strdup(va->attribute);
                     return(0);
                 }
+                osf_internal_fd_unlock(it->fd->os, it->fd);
             }
         }
     }
@@ -5548,12 +5619,15 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
 
             if (n == 0) { //** got a match
                 n = it->v_max;
+                osf_internal_fd_lock(it->fd->os, it->fd);
                 if (osf_get_attr(it->fd->os, it->creds, it->fd, entry->d_name, val, &n, &atype, NULL, rp, 1) == 0) {
+                    osf_internal_fd_unlock(it->fd->os, it->fd);
                     *v_size = n;
                     *key = strdup(entry->d_name);
                     log_printf(15, "key=%s val=%s\n", *key, (char *)(*val));
                     return(0);
                 }
+                osf_internal_fd_unlock(it->fd->os, it->fd);
             }
         }
     }
@@ -6032,7 +6106,8 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
-    err = full_object_lock(FOL_OS, osf->os_lock, fd, fd->mode, op->max_wait);  //** Do a full lock if needed
+    //** No need to lock the realpath since we aren't being monitored yet
+    err = full_object_lock(FOL_OS, osf->os_lock, fd, fd->mode, op->max_wait, 0);  //** Do a full lock if needed
 
     log_printf(15, "full_object_lock=%d fname=%s uuid=" LU " max_wait=%d fd=%p fd->fol=%p\n", err, fd->opath, fd->uuid, op->max_wait, fd, fd->fol);
     if (err != 0) {  //** Either a timeout or abort occured
@@ -6151,7 +6226,8 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
 
     if ((op->cfd->mode & (OS_MODE_READ_BLOCKING|OS_MODE_WRITE_BLOCKING)) != 0)  tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE: fname=%s mode=%d\n",op->cfd->opath, op->cfd->mode);
 
-    full_object_unlock(FOL_OS, osf->os_lock, op->cfd, op->cfd->mode);
+    //** Need to protect the realpath in the user unlock operation
+    full_object_unlock(FOL_OS, osf->os_lock, op->cfd, op->cfd->mode, 1);
     umode = tbx_atomic_get(op->cfd->user_mode);
     if (umode != 0) {
         if (umode & OS_MODE_PENDING) { //** We have a pending user lock we need to fail and wait for it to complete
@@ -6171,12 +6247,17 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
             }
         } else {
             tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE_FLOCK: fname=%s user_mode=%d\n", op->cfd->opath, umode);
-            full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, umode);
+            //** Need to protect the realpath in the user unlock operation
+            full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, umode, 1);
         }
     }
+
+    //** No need to lock object_name since if a rename is occurring the open_fd_lock is held
     apr_thread_mutex_lock(osf->open_fd_lock);
     tbx_list_remove(osf->open_fd, op->cfd->object_name, op->cfd);
     apr_thread_mutex_unlock(osf->open_fd_lock);
+
+    //** Safe to use the object_name here without the lock since no one knows about the FD anymore
     if (op->cfd->object_name != op->cfd->opath) free(op->cfd->object_name);  //** these are different if the file was moved while open
     free(op->cfd->opath);
     free(op->cfd->attr_dir);
@@ -6225,14 +6306,14 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
             goto finished;
         } else if (op->mode & OS_MODE_UNLOCK) { //** Got an unlock operation
             tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UNLOCK fname=%s user_mode=%d\n",op->fd->opath, umode);
-            full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode);
+            full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode, 1);
             tbx_atomic_set(op->fd->user_mode, op->mode);
             return(gop_success_status);
         } else if (umode & OS_MODE_READ_BLOCKING) {
             if (op->mode & OS_MODE_WRITE_BLOCKING) {
-                full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode);
+                full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode, 1);
                 tbx_atomic_set(op->fd->user_mode, OS_MODE_PENDING);
-                err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait);
+                err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait, 1);
                 if (err == 0) {
                     tbx_atomic_set(op->fd->user_mode, op->mode);
                 } else {
@@ -6253,7 +6334,7 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
     }
 
     tbx_atomic_set(op->fd->user_mode, OS_MODE_PENDING);
-    err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait);
+    err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait, 1);
     if (err == 0) {
         tbx_atomic_set(op->fd->user_mode, op->mode);
     } else {
@@ -6293,7 +6374,8 @@ gop_op_generic_t *osfile_lock_user_object(lio_object_service_fn_t *os, os_fd_t *
 }
 
 //***********************************************************************
-// osfile_abort_lock_user_object_fn - Performs the actual uer lock abort operation
+// osfile_abort_lock_user_object_fn - Performs the actual user lock abort operation
+//   NOTE: We do acquire/release the FD RP lock
 //***********************************************************************
 
 gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
@@ -6303,13 +6385,19 @@ gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
     gop_op_status_t status;
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
+    int slot;
 
     if (op->mode & OS_MODE_READ_IMMEDIATE) return(gop_success_status);
 
+    slot = osf_realpath_lock(op->fd);
     apr_thread_mutex_lock(osf->os_lock_user->fobj_lock);
 
     fol = tbx_list_search(osf->os_lock_user->fobj_table, op->fd->realpath);
-    if (fol == NULL) return(gop_failure_status);
+    apr_thread_mutex_unlock(osf->internal_lock[slot]);
+    if (fol == NULL) {
+        apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+        return(gop_failure_status);
+    }
 
     //** Find the task in the pending list and remove it
     status = gop_failure_status;
