@@ -1253,8 +1253,8 @@ try_again:
             }
         }
 
-        apr_thread_mutex_lock(lock_table[small_slot]);
-        lock_slot[small_slot] = max_index;
+        apr_thread_mutex_lock(lock_table[small_slot]);   //** Do the lock before we wipe the index
+        lock_slot[small_slot] = max_index;               //** Wipe the index for the next round
     }
 
     //** Make sure the fd slot didn't change
@@ -1594,7 +1594,8 @@ void _update_fobj_path_active_stack(int n_old, int n_new, const char *rp_new, tb
     tbx_stack_move_to_top(stack);
     while ((fd = (osfile_fd_t *)tbx_stack_get_current_data(stack)) != NULL) {
         snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
-        strcpy(fd->realpath, fname);
+        strcpy(fd->realpath, fname);     //** Update the RP
+        osf_retrieve_lock(fd->os, fd->realpath, &(fd->ilock_rp));  //** And also the ilock_rp index
         tbx_stack_move_down(stack);
     }
 
@@ -1616,7 +1617,8 @@ void _update_fobj_path_pending_stack(int n_old, int n_new, const char *rp_new, t
     while ((ftask = (fobj_lock_task_t *)tbx_stack_get_current_data(stack)) != NULL) {
         fd = ftask->fd;
         snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
-        strcpy(fd->realpath, fname);
+        strcpy(fd->realpath, fname);     //** Update the RP
+        osf_retrieve_lock(fd->os, fd->realpath, &(fd->ilock_rp));  //** And also the ilock_rp index
         tbx_stack_move_down(stack);
     }
 
@@ -1697,6 +1699,7 @@ void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_ol
             snprintf(fnew, OS_PATH_MAX, "%s%s", prefix_new, fname + n_old);  //** Make the new path
             if (fd->opath != fd->object_name) free(fd->object_name);   //** Only free it if it's not the original path that's immutable
             fd->object_name = strdup(fnew);
+            osf_retrieve_lock(fd->os, fd->object_name, &(fd->ilock_obj));  //** And also the ilock_obj index
 
             //** Remove/add the new entry list entry
             tbx_list_iter_remove(&it);
