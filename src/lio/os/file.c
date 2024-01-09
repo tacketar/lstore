@@ -1043,7 +1043,7 @@ void full_object_unlock(int fol_slot, fobject_lock_t *flock, osfile_fd_t *fd, in
     fol = fd->fol[fol_slot];
     if (fol == NULL) { return; }  //** Nothing to do. No outstanding lock
 
-    if (do_lock_rp) { slot = osf_realpath_lock(fd); }  //** If needed lock the RP
+    slot = (do_lock_rp) ? osf_realpath_lock(fd) : 0;  //** If needed lock the RP
 
     apr_thread_mutex_lock(flock->fobj_lock);
 
