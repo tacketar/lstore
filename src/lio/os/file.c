@@ -4469,6 +4469,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     ftype = 0;  //** Init it to make the compiler happy on the warn
 
     //** Lock the individual objects based on their slot positions to avoid a deadlock
+    ilock = NULL;
     if (dolock == 1) {
         ilock = ilock_table;
         n_locks = osf_match_open_fd_lock(os, srpath, drpath, src_path, dest_path, max_locks, &ilock, 1);

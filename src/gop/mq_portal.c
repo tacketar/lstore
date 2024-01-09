@@ -1753,6 +1753,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
     //** Main processing loop
     finished = 0;
+    nincoming = 0;
     heartbeat_ms = c->pc->heartbeat_dt * 1000;
     npoll = 2;
     next_hb_check = apr_time_now() + apr_time_from_sec(1);
