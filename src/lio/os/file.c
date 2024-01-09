@@ -659,7 +659,7 @@ void osf_make_attr_symlink(lio_object_service_fn_t *os, char *link_path, char *d
 //  osf_resolve_attr_symlink - Resolves an attribute symlink
 //*************************************************************
 
-int osf_resolve_attr_path(lio_object_service_fn_t *os, char *real_path, char *path, char *key, int ftype, int *atype, int max_recurse)
+int osf_resolve_attr_path(lio_object_service_fn_t *os, char *attr_dir, char *real_path, char *path, char *key, int ftype, int *atype, int max_recurse)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char *attr, *dkey, *dfile;
@@ -668,16 +668,16 @@ int osf_resolve_attr_path(lio_object_service_fn_t *os, char *real_path, char *pa
     char fullname[OS_PATH_MAX];
 
     //** Get the key path
-    attr = object_attr_dir(os, osf->file_path, path, ftype);
+    attr = (attr_dir) ? attr_dir : object_attr_dir(os, osf->file_path, path, ftype);
     snprintf(real_path, OS_PATH_MAX, "%s/%s", attr, key);
     *atype = lio_os_local_filetype(real_path);
     log_printf(15, "fullname=%s atype=%d\n", real_path, *atype);
     if ((*atype & OS_OBJECT_SYMLINK_FLAG) == 0) {  //** If a normal file then just return
-        free(attr);
+        if (attr != attr_dir) free(attr);
         return(0);
     }
 
-    free(attr);
+    if (attr != attr_dir) free(attr);   //** Go ahead and free the old attr path if needed since we have to symlink to resolve
 
     //** It's a symlink so read it first
     n = readlink(real_path, fullname, OS_PATH_MAX-1);
@@ -728,13 +728,13 @@ int osf_resolve_attr_path(lio_object_service_fn_t *os, char *real_path, char *pa
     dtype = lio_os_local_filetype(real_path);
     if (dtype & OS_OBJECT_SYMLINK_FLAG) {  //** Need to recurseively resolve the link
         if (max_recurse > 0) {
-            err = osf_resolve_attr_path(os, real_path, &(fullname[osf->file_path_len]), dkey, dtype, &n, max_recurse-1);
+            err = osf_resolve_attr_path(os, NULL, real_path, &(fullname[osf->file_path_len]), dkey, dtype, &n, max_recurse-1);
         } else {
             log_printf(0, "Oops! Hit max recurse depth! last path=%s\n", real_path);
         }
     }
 
-    free(attr);
+    free(attr);   //** This is always locally generated if we made it here
     free(dfile);
     free(dkey);
 
@@ -1213,7 +1213,7 @@ try_again:
     //** Now cycle through the attributes starting with the 1 that triggered the call
     linkname[sizeof(linkname)-1] = 0;
     for (i=first_link; i<n_keys; i++) {
-        len = osf_resolve_attr_path(os, linkname, fd->object_name, key[i], fd->ftype, &atype, 20);
+        len = osf_resolve_attr_path(os, fd->attr_dir, linkname, fd->object_name, key[i], fd->ftype, &atype, 20);
         log_printf(15, "i=%d len=%d fname=%s key=%s linkname=%s\n", i, len, fd->opath, key[i], linkname);
         if ((atype & OS_OBJECT_SYMLINK_FLAG) && (len > 0)) {
             j=len-1;  //** Peel off the key name.  We only need the parent object path
@@ -1325,63 +1325,6 @@ int mycompare(int n_prefix, const char *prefix, const char *fname)
 }
 
 //***********************************************************************
-// _get_matching_fobj_locks - Gets the matching locks to the prefix for open files
-//     Returns the number of locks added to the list.
-//
-// NOTE: The flock structure should be locked by the calling program and a if the table is to small
-//***********************************************************************
-
-int _get_matching_fobj_locks(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *prefix, int *lock_index, int max_locks)
-{
-    int n, n_prefix;
-    fobj_lock_t *fol;
-    tbx_list_iter_t it;
-    char *fname;
-
-    n_prefix = strlen(prefix);
-    n = 0;
-    it = tbx_list_iter_search(flock->fobj_table, (char *)prefix, 0);
-    tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
-    while (mycompare(n_prefix, prefix, fname) == 0) {
-        if (n < max_locks) osf_retrieve_lock(os, fname, &(lock_index[n]));
-        n++;
-        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
-    }
-
-    return(n);
-}
-
-//***********************************************************************
-// _get_matching_fobj_locks_and_alloc - Same as _get_matching_fobj_locks but iterates allocating space as needed
-//***********************************************************************
-
-int _get_matching_fobj_locks_and_alloc(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *prefix, int n_used, int *max_locks, int **lock_index, int do_lock)
-{
-    int k, nleft;
-    int *ilock = *lock_index;
-
-    //** Now add the os_lock
-again:
-    nleft = (*max_locks) - n_used;
-    if (do_lock) apr_thread_mutex_lock(flock->fobj_lock);
-    k = _get_matching_fobj_locks(os, flock, prefix, ilock + n_used, nleft);
-    if (do_lock) apr_thread_mutex_unlock(flock->fobj_lock);
-
-    if (nleft < k) {
-        *max_locks = 2 * (*max_locks);
-        if (k> (*max_locks)) *max_locks = 2*(k + n_used);
-        tbx_type_realloc(ilock, int, *max_locks);
-        goto again;
-    }
-
-    //** Update the count
-    n_used = n_used + k;
-
-    return(n_used);
-}
-
-
-//***********************************************************************
 // _get_matching_open_fd_locks - Gets the matching open FD locks to the prefix for open files
 //     Returns the number of locks added to the list.
 //
@@ -1398,7 +1341,16 @@ int _get_matching_open_fd_locks(lio_object_service_fn_t *os, const char *prefix,
 
     n_prefix = strlen(prefix);
     n = 0;
-    it = tbx_list_iter_search(osf->open_fd, (char *)prefix, 0);
+    it = tbx_list_iter_search(osf->open_fd_obj, (char *)prefix, 0);
+    tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+    while (mycompare(n_prefix, prefix, fname) == 0) {
+        if (n < max_locks) osf_retrieve_lock(os, fname, &(lock_index[n]));
+        n++;
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+    }
+
+    //** Do the same for the Realpaths
+    it = tbx_list_iter_search(osf->open_fd_rp, (char *)prefix, 0);
     tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
     while (mycompare(n_prefix, prefix, fname) == 0) {
         if (n < max_locks) osf_retrieve_lock(os, fname, &(lock_index[n]));
@@ -1440,11 +1392,11 @@ again:
 }
 
 //***********************************************************************
-// osf_match_fobj_lock_try - Locks all the matching prefix/file objects and and any open objects
+// osf_match_open_fd_lock_try - Locks all the matching prefix/file objects and and any open objects
 //  NOTE: The flock structs are locked when returned
 //***********************************************************************
 
-int osf_match_fobj_lock_try(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int *max_locks, int **lock_index, int do_lock)
+int osf_match_open_fd_lock_try(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int *max_locks, int **lock_index, int do_lock)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int n, i;
@@ -1462,12 +1414,6 @@ int osf_match_fobj_lock_try(lio_object_service_fn_t *os, const char *rp_src, con
     osf_retrieve_lock(os, obj_src, &(ilock[2]));
     osf_retrieve_lock(os, obj_dest, &(ilock[3]));
     n = 4;
-
-    //** Now add the os_locks and os_user_locks
-    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock, rp_src, n, max_locks, lock_index, do_lock);
-    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock, rp_dest, n, max_locks, lock_index, do_lock);
-    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock_user, rp_src, n, max_locks, lock_index, do_lock);
-    n = _get_matching_fobj_locks_and_alloc(os, osf->os_lock_user, rp_dest, n, max_locks, lock_index, do_lock);
 
     //** And the open FD locks
     n = _get_matching_open_fd_locks_and_alloc(os, obj_src, n, max_locks, lock_index, do_lock);
@@ -1496,7 +1442,7 @@ int osf_match_fobj_lock_try(lio_object_service_fn_t *os, const char *rp_src, con
 //  NOTE: The flock structs are unlocked when returned
 //***********************************************************************
 
-void osf_match_fobj_unlock(lio_object_service_fn_t *os, int n_locks, int *lock_index)
+void osf_match_open_fd_unlock(lio_object_service_fn_t *os, int n_locks, int *lock_index)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int i;
@@ -1535,11 +1481,11 @@ int _compare_fobj_locks(int n1, int *ilock1, int n2, int *ilock2)
 }
 
 //***********************************************************************
-// osf_match_fobj_lock - Locks all the matching prefix/file objects and and any open objects
+// osf_match_open_fd_lock - Locks all the matching prefix/file open objects
 //  NOTE: The flock structs are locked when returned
 //***********************************************************************
 
-int osf_match_fobj_lock(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int max_locks, int **lock_index, int do_lock)
+int osf_match_open_fd_lock(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int max_locks, int **lock_index, int do_lock)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int n1, n2, max1, max2, i;
@@ -1551,13 +1497,13 @@ int osf_match_fobj_lock(lio_object_service_fn_t *os, const char *rp_src, const c
     max2 = 0;
     ilock2 = NULL;
 
-    n1 = osf_match_fobj_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max1, &ilock1, 1);  //** Get the inital set
+    n1 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max1, &ilock1, 1);  //** Get the inital set
 again:
-    n2 = osf_match_fobj_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max2, &ilock2, 0);  //** again but under the locks
+    n2 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max2, &ilock2, 0);  //** again but under the locks
 
     //**Compare lock tables to see if we're Ok.
     if (_compare_fobj_locks(n1, ilock1, n2, ilock2) != 0) {  //** They aren't a subset so got to do it again
-        osf_match_fobj_unlock(os, n1, ilock1);  //** Unlock the base set
+        osf_match_open_fd_unlock(os, n1, ilock1);  //** Unlock the base set
         if (ilock1 != *lock_index) free(ilock1);  //** Free the space
         ilock1 = ilock2; ilock2 = NULL;   //** And swap the sets
         n1 = n2; n2 = 0;
@@ -1580,65 +1526,6 @@ again:
     return(n1);
 }
 
-
-//***********************************************************************
-// _update_fobj_path_active_stack - Does the FD path update for active locks
-//***********************************************************************
-
-void _update_fobj_path_active_stack(int n_old, int n_new, const char *rp_new, tbx_stack_t *stack)
-{
-    osfile_fd_t *fd;
-    char fname[OS_PATH_MAX];
-
-    //** The active stack has FD's on it
-    tbx_stack_move_to_top(stack);
-    while ((fd = (osfile_fd_t *)tbx_stack_get_current_data(stack)) != NULL) {
-        snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
-        strcpy(fd->realpath, fname);     //** Update the RP
-        osf_retrieve_lock(fd->os, fd->realpath, &(fd->ilock_rp));  //** And also the ilock_rp index
-        tbx_stack_move_down(stack);
-    }
-
-    return;
-}
-
-//***********************************************************************
-// _update_fobj_path_pending_stack - Does the FD path update for pending locks
-//***********************************************************************
-
-void _update_fobj_path_pending_stack(int n_old, int n_new, const char *rp_new, tbx_stack_t *stack)
-{
-    fobj_lock_task_t *ftask;
-    osfile_fd_t *fd;
-    char fname[OS_PATH_MAX];
-
-    //** The pending stack has task handles
-    tbx_stack_move_to_top(stack);
-    while ((ftask = (fobj_lock_task_t *)tbx_stack_get_current_data(stack)) != NULL) {
-        fd = ftask->fd;
-        snprintf(fname, OS_PATH_MAX, "%s%s", rp_new, fd->realpath + n_old);
-        strcpy(fd->realpath, fname);     //** Update the RP
-        osf_retrieve_lock(fd->os, fd->realpath, &(fd->ilock_rp));  //** And also the ilock_rp index
-        tbx_stack_move_down(stack);
-    }
-
-    return;
-}
-
-//***********************************************************************
-// _update_fobj_path_entry - Updates the fol individual fd paths
-//     NOTE: Assummes the internal locks are all held.
-//***********************************************************************
-
-void _update_fobj_path_entry(fobject_lock_t *flock, int n_old, int n_new, const char *rp_new, char *fname, fobj_lock_t *fol)
-{
-    //** Update the individual FDs
-    _update_fobj_path_pending_stack(n_old, n_new, rp_new, fol->pending_stack);
-    _update_fobj_path_active_stack(n_old, n_new, rp_new, fol->active_stack);
-
-    return;
-}
-
 //***********************************************************************
 // _osf_update_fobj_path - Updates all the open FD's fnames with the updated prefix from the rename
 //   NOTE: The flock and all internal FDs to be modified should be locked!
@@ -1646,20 +1533,19 @@ void _update_fobj_path_entry(fobject_lock_t *flock, int n_old, int n_new, const 
 
 void _osf_update_fobj_path(lio_object_service_fn_t *os, fobject_lock_t *flock, const char *rp_old, const char *rp_new)
 {
-    int n_old, n_new, cmp;
+    int n_old, cmp;
+//    int n_old, n_new, cmp;
     fobj_lock_t *fol;
     tbx_list_iter_t it;
     char *fname;
     char fnew[OS_PATH_MAX];
 
     n_old = strlen(rp_old);
-    n_new = strlen(rp_new);
     do {
         it = tbx_list_iter_search(flock->fobj_table, (char *)rp_old, 0);
         tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fol);
         cmp = mycompare(n_old, rp_old, fname);
         if (cmp == 0) {  //** Got a match
-            _update_fobj_path_entry(flock, n_old, n_new, rp_new, fname, fol); //** Upate the entry
             snprintf(fnew, OS_PATH_MAX, "%s%s", rp_new, fname + n_old);  //** Make the new path
 
             //** Remove/add the new entry list entry
@@ -1677,14 +1563,14 @@ void _osf_update_fobj_path(lio_object_service_fn_t *os, fobject_lock_t *flock, c
 
 
 //***********************************************************************
-// _osf_update_open_fd_path - Updates all the open FD's fnames with the updated prefix from the rename
+// _osf_update_open_fd_path_obj - Updates all the open FD's fnames with the updated prefix from the rename
 //   NOTE: The open_fd_lock and all internal FDs to be modified should be locked!
 //***********************************************************************
 
-void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_old, const char *prefix_new)
+void _osf_update_open_fd_path_obj(lio_object_service_fn_t *os, const char *prefix_old, const char *prefix_new)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int n_old, cmp;
+    int n_old, cmp, ilock;
     osfile_fd_t *fd;
     tbx_list_iter_t it;
     char *fname;
@@ -1692,26 +1578,77 @@ void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_ol
 
     n_old = strlen(prefix_old);
     do {
-        it = tbx_list_iter_search(osf->open_fd, (char *)prefix_old, 0);
+        it = tbx_list_iter_search(osf->open_fd_obj, (char *)prefix_old, 0);
         tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
         cmp = mycompare(n_old, prefix_old, fname);
         if (cmp == 0) {  //** Got a match
             snprintf(fnew, OS_PATH_MAX, "%s%s", prefix_new, fname + n_old);  //** Make the new path
             if (fd->opath != fd->object_name) free(fd->object_name);   //** Only free it if it's not the original path that's immutable
             fd->object_name = strdup(fnew);
-            osf_retrieve_lock(fd->os, fd->object_name, &(fd->ilock_obj));  //** And also the ilock_obj index
+            osf_retrieve_lock(fd->os, fd->object_name, &ilock);  //** And also the ilock_obj index
+            tbx_atomic_set(fd->ilock_obj, ilock);
+            if (fd->attr_dir) free(fd->attr_dir);
+            fd->attr_dir = object_attr_dir(os, osf->file_path, fd->object_name, fd->ftype);
 
             //** Remove/add the new entry list entry
             tbx_list_iter_remove(&it);
-            tbx_list_insert(osf->open_fd, fnew, fd);
+            tbx_list_insert(osf->open_fd_obj, fnew, fd);
 
             //** Need to restart the iter since we did an update
-            it = tbx_list_iter_search(osf->open_fd, (char *)prefix_old, 0);
+            it = tbx_list_iter_search(osf->open_fd_obj, (char *)prefix_old, 0);
             tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
         }
     } while (cmp == 0);
 
     return;
+}
+
+//***********************************************************************
+// _osf_update_open_fd_path_realpath - Updates all the open FD's fnames with the updated prefix from the rename
+//   NOTE: The open_fd_lock and all internal FDs to be modified should be locked!
+//***********************************************************************
+
+void _osf_update_open_fd_path_rp(lio_object_service_fn_t *os, const char *prefix_old, const char *prefix_new)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int n_old, cmp, ilock;
+    osfile_fd_t *fd;
+    tbx_list_iter_t it;
+    char *fname;
+    char fnew[OS_PATH_MAX];
+
+    n_old = strlen(prefix_old);
+    do {
+        it = tbx_list_iter_search(osf->open_fd_rp, (char *)prefix_old, 0);
+        tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+        cmp = mycompare(n_old, prefix_old, fname);
+        if (cmp == 0) {  //** Got a match
+            snprintf(fd->realpath, OS_PATH_MAX, "%s%s", prefix_new, fname + n_old);  //** Make the new path
+            osf_retrieve_lock(fd->os, fd->realpath, &ilock);  //** And also the ilock_obj index
+            tbx_atomic_set(fd->ilock_rp, ilock);
+
+            //** Remove/add the new entry list entry
+            tbx_list_iter_remove(&it);
+            tbx_list_insert(osf->open_fd_rp, fnew, fd);
+
+            //** Need to restart the iter since we did an update
+            it = tbx_list_iter_search(osf->open_fd_rp, (char *)prefix_old, 0);
+            tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
+        }
+    } while (cmp == 0);
+
+    return;
+}
+
+//***********************************************************************
+// _osf_update_open_fd_path - Updates all the open FD's fnames with the updated prefix from the rename
+//   NOTE: The open_fd_lock and all internal FDs to be modified should be locked!
+//***********************************************************************
+
+void _osf_update_open_fd_path(lio_object_service_fn_t *os, const char *prefix_old, const char *prefix_new)
+{
+    _osf_update_open_fd_path_obj(os, prefix_old, prefix_new);
+    _osf_update_open_fd_path_rp(os, prefix_old, prefix_new);
 }
 
 //***********************************************************************
@@ -4534,7 +4471,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     //** Lock the individual objects based on their slot positions to avoid a deadlock
     if (dolock == 1) {
         ilock = ilock_table;
-        n_locks = osf_match_fobj_lock(os, srpath, drpath, src_path, dest_path, max_locks, &ilock, 1);
+        n_locks = osf_match_open_fd_lock(os, srpath, drpath, src_path, dest_path, max_locks, &ilock, 1);
     }
 
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
@@ -4599,11 +4536,15 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 fail:
     if (dolock == 1) {
         if (err == 0) {
+            //** This just updates teh table index which uses the RP
             _osf_update_fobj_path(os, osf->os_lock, srpath, drpath);
             _osf_update_fobj_path(os, osf->os_lock_user, srpath, drpath);
+
+            //** This updates the actual FD's object_name and realpath fields
+            _osf_update_open_fd_path(os, srpath, drpath);
             _osf_update_open_fd_path(os, src_path, dest_path);
         }
-        osf_match_fobj_unlock(os, n_locks, ilock);
+        osf_match_open_fd_unlock(os, n_locks, ilock);
         if (ilock != ilock_table) free(ilock);
     }
 
@@ -4997,7 +4938,7 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
 
 
     //** Lastly look at the actual attributes
-    n = osf_resolve_attr_path(os, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
+    n = osf_resolve_attr_path(os, ofd->attr_dir, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
     log_printf(15, "fname=%s *v_size=%d resolve=%d\n", fname, *v_size, n);
     if (n != 0) {
         if (*v_size < 0) *val = NULL;
@@ -5367,7 +5308,7 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
         return(0);
     }
 
-    n = osf_resolve_attr_path(os, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
+    n = osf_resolve_attr_path(os, ofd->attr_dir, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
     if (n != 0) {
         log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, ofd->opath, attr);
         notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", ofd->opath, attr, atype);
@@ -6106,7 +6047,6 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     fd->id = op->id;
     fd->uuid = op->uuid;
     strncpy(fd->realpath, rp, OS_PATH_MAX-1);
-
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
     //** No need to lock the realpath since we aren't being monitored yet
@@ -6132,7 +6072,8 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     //** Also add us to the open file list
     apr_thread_mutex_lock(osf->open_fd_lock);
-    tbx_list_insert(osf->open_fd, fd->object_name, fd);
+    tbx_list_insert(osf->open_fd_obj, fd->object_name, fd);
+    tbx_list_insert(osf->open_fd_rp, fd->realpath, fd);
     apr_thread_mutex_unlock(osf->open_fd_lock);
 
     return(status);
@@ -6257,7 +6198,8 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
 
     //** No need to lock object_name since if a rename is occurring the open_fd_lock is held
     apr_thread_mutex_lock(osf->open_fd_lock);
-    tbx_list_remove(osf->open_fd, op->cfd->object_name, op->cfd);
+    tbx_list_remove(osf->open_fd_obj, op->cfd->object_name, op->cfd);
+    tbx_list_remove(osf->open_fd_rp, op->cfd->realpath, op->cfd);
     apr_thread_mutex_unlock(osf->open_fd_lock);
 
     //** Safe to use the object_name here without the lock since no one knows about the FD anymore
@@ -6733,9 +6675,9 @@ void osfile_print_open_fd(lio_object_service_fn_t *os, FILE *rfd, int print_sect
     tbx_list_iter_t it;
 
     apr_thread_mutex_lock(osf->open_fd_lock);
-    fprintf(rfd, "OSFile Open Files (n=%d) -----------------------------\n", tbx_list_key_count(osf->open_fd));
+    fprintf(rfd, "OSFile Open Files (n=%d) -----------------------------\n", tbx_list_key_count(osf->open_fd_obj));
 
-    it = tbx_list_iter_search(osf->open_fd, NULL, 0);
+    it = tbx_list_iter_search(osf->open_fd_obj, NULL, 0);
     tbx_list_next(&it, (tbx_list_key_t *)&fname, (tbx_list_data_t **)&fd);
     while (fname) {
         fprintf(rfd, "   fname=%s ftype=%d mode=%d user_mode=" LU " id=%s\n", fname, fd->ftype, fd->mode, tbx_atomic_get(fd->user_mode), fd->id);
@@ -6811,7 +6753,8 @@ void osfile_destroy(lio_object_service_fn_t *os)
     fobj_lock_destroy(osf->os_lock);
     fobj_lock_destroy(osf->os_lock_user);
     tbx_list_destroy(osf->vattr_prefix);
-    tbx_list_destroy(osf->open_fd);
+    tbx_list_destroy(osf->open_fd_obj);
+    tbx_list_destroy(osf->open_fd_rp);
 
     if (osf->shard_prefix) {
         for (i=0; i<osf->n_shard_prefix; i++) {
@@ -7004,7 +6947,8 @@ next:
 
     osf->os_lock = fobj_lock_create();
     osf->os_lock_user = fobj_lock_create();
-    osf->open_fd = tbx_list_create(1, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
+    osf->open_fd_obj = tbx_list_create(1, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
+    osf->open_fd_rp = tbx_list_create(1, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
     apr_thread_mutex_create(&(osf->open_fd_lock), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
 
     osf->base_path_len = strlen(osf->base_path);

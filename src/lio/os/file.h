@@ -99,7 +99,8 @@ struct lio_osfile_priv_t {
     apr_pool_t *mpool;
     apr_hash_t *vattr_hash;
     tbx_list_t *vattr_prefix;
-    tbx_list_t *open_fd;
+    tbx_list_t *open_fd_obj;
+    tbx_list_t *open_fd_rp;
     apr_thread_mutex_t *open_fd_lock;
     fobject_lock_t *os_lock;
     fobject_lock_t *os_lock_user;
