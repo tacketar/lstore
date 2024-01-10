@@ -3363,17 +3363,22 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
 
 int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath, int ftype, char *inode, int *inode_len)
 {
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_fd_t fd;
     int n, atype;
 
+    memset(&fd, 0, sizeof(fd));
     strncpy(fd.realpath, rpath, sizeof(fd.realpath)-1);
     fd.object_name = rpath;
     osf_retrieve_lock(os, rpath, &(fd.ilock_rp));
     fd.ilock_obj = fd.ilock_rp;
+    fd.attr_dir = object_attr_dir(os, osf->file_path, rpath, ftype);
     fd.opath = rpath;
     fd.ftype = ftype;
 
     n = osf_get_attr(os, creds, &fd, "system.inode", (void **)&inode, inode_len, &atype, NULL, rpath, 1);
+    if (fd.attr_dir) free(fd.attr_dir);
+
     return(n);
 }
 
