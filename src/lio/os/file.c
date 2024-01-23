@@ -3852,8 +3852,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         } else {
             fd = tbx_io_open(fname, O_EXCL|O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
             if (fd == -1) {
-                if (op->no_lock == 0) osf_obj_unlock(lock);
                 status.error_code = errno;
+                if (op->no_lock == 0) osf_obj_unlock(lock);
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed. Most likely the file exists fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
                 goto failure;
             }
