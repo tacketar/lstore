@@ -598,7 +598,7 @@ retry:
         include_basename = -1;
         goto retry;
     }
-    strcpy(rpath, rp+osf->file_path_len);
+    strncpy(rpath, rp+osf->file_path_len, OS_PATH_MAX);
     if (file) {  //** Need to now add the file name afte resolving the parent
         n = strlen(rpath);
         snprintf(rpath + n, OS_PATH_MAX-n, "/%s", file);
@@ -2193,11 +2193,11 @@ int va_timestamp_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_
 
     if ((int)strlen(fullkey) > n) {  //** Normal attribute timestamp
         n = (long)osf->attr_link_pva.priv;
-        strcpy(buffer, osf->attr_link_pva.attribute);
+        strncpy(buffer, osf->attr_link_pva.attribute, OS_PATH_MAX);
         buffer[n] = '.';
         n++;
 
-        strcpy(&(buffer[n]), key);
+        strncpy(&(buffer[n]), key, OS_PATH_MAX-n);
         n = osf->attr_link_pva.get(&osf->attr_link_pva, os, creds, fd, buffer, val, v_size, atype);
     } else {  //** No attribute specified os return 0
         *atype = OS_OBJECT_VIRTUAL_FLAG;
@@ -2669,7 +2669,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                         }
                                         log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                         if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
-                                        strcpy(it->prev_match, itl->path);
+                                        strncpy(it->prev_match, itl->path, OS_PATH_MAX); it->prev_match[OS_PATH_MAX-1] = '\0';
                                         if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                         return(i);
                                     }
@@ -2709,7 +2709,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                             strncpy(it->rp, rp, OS_PATH_MAX); it->realpath = it->rp;
                                             log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                             if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
-                                            strcpy(it->prev_match, itl->path);
+                                            strncpy(it->prev_match, itl->path, OS_PATH_MAX); it->prev_match[OS_PATH_MAX-1] = '\0';
                                             if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                             return(i);
                                         }
@@ -3368,7 +3368,7 @@ int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath,
     int n, atype;
 
     memset(&fd, 0, sizeof(fd));
-    strncpy(fd.realpath, rpath, sizeof(fd.realpath)-1);
+    strncpy(fd.realpath, rpath, sizeof(fd.realpath)); fd.realpath[sizeof(fd.realpath)-1] = '\0';
     fd.object_name = rpath;
     osf_retrieve_lock(os, rpath, &(fd.ilock_rp));
     fd.ilock_obj = fd.ilock_rp;
@@ -3757,7 +3757,7 @@ gop_op_status_t osfile_realpath_fn(void *arg, int id)
 
     if (osaz_object_access(osf->osaz, op->creds, NULL, rp, OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
 
-    strcpy(op->dest_path, rp);
+    strncpy(op->dest_path, rp, OS_PATH_MAX);   //** We're making an assumption here the dest_path is of size OS_PATH_MAX
     log_printf(15, "fname=%s  realpath=%s\n", op->src_path, op->dest_path);
 
     return(status);
@@ -3765,6 +3765,7 @@ gop_op_status_t osfile_realpath_fn(void *arg, int id)
 
 //***********************************************************************
 //  osfile_realpath - Returns the realpath
+//      NOTE: Assumes realpath is large enough to store the real path.
 //***********************************************************************
 
 gop_op_generic_t *osfile_realpath(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, char *realpath)
@@ -3779,7 +3780,7 @@ gop_op_generic_t *osfile_realpath(lio_object_service_fn_t *os, lio_creds_t *cred
     op->os = os;
     op->creds = creds;
     op->src_path = strdup(path);
-    op->dest_path = realpath;
+    op->dest_path = realpath;   //** Assumes realpath is OS_PATH_MAX and can safely store the RP
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_realpath_fn, (void *)op, osfile_free_realpath, 1));
 }
@@ -6052,7 +6053,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     fd->opath = op->path;   //** This is never changed even under a rename and is safe to use everywhere for logging
     fd->id = op->id;
     fd->uuid = op->uuid;
-    strncpy(fd->realpath, rp, OS_PATH_MAX-1);
+    strncpy(fd->realpath, rp, OS_PATH_MAX-1); fd->realpath[OS_PATH_MAX-1] = '\0';
     fd->attr_dir = object_attr_dir(op->os, osf->file_path, fd->object_name, ftype);
 
     //** No need to lock the realpath since we aren't being monitored yet
