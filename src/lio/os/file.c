@@ -2492,7 +2492,7 @@ osf_dir_t *my_opendir(char *fullname, char *frag)
 {
     osf_dir_t *d;
 
-    tbx_type_malloc(d, osf_dir_t, 1);
+    tbx_type_malloc_clear(d, osf_dir_t, 1);
 
     if (frag == NULL) {
         d->type = 0;
@@ -3522,7 +3522,7 @@ gop_op_generic_t *osfile_remove_regex_object(lio_object_service_fn_t *os, lio_cr
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_remove_regex_op_t *op;
 
-    tbx_type_malloc(op, osfile_remove_regex_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_remove_regex_op_t, 1);
 
     op->os = os;
     op->creds = creds;
@@ -3655,7 +3655,7 @@ gop_op_generic_t *osfile_regex_object_set_multiple_attrs(lio_object_service_fn_t
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_regex_object_attr_op_t *op;
 
-    tbx_type_malloc(op, osfile_regex_object_attr_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_regex_object_attr_op_t, 1);
 
     op->os = os;
     op->creds = creds;
@@ -5384,7 +5384,7 @@ gop_op_generic_t *osfile_set_attr(lio_object_service_fn_t *os, lio_creds_t *cred
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_attr_op_t *op;
 
-    tbx_type_malloc(op, osfile_attr_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_attr_op_t, 1);
 
     op->os = os;
     op->creds = creds;
@@ -5410,7 +5410,7 @@ gop_op_generic_t *osfile_set_multiple_attrs(lio_object_service_fn_t *os, lio_cre
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_attr_op_t *op;
 
-    tbx_type_malloc(op, osfile_attr_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_attr_op_t, 1);
 
     op->os = os;
     op->creds = creds;
@@ -5497,7 +5497,7 @@ gop_op_generic_t *osfile_set_multiple_attrs_immediate(lio_object_service_fn_t *o
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_attr_op_t *op;
 
-    tbx_type_malloc(op, osfile_attr_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_attr_op_t, 1);
 
     op->os = os;
     op->creds = creds;
@@ -5875,7 +5875,7 @@ os_object_iter_t *osfile_create_object_iter_alist(lio_object_service_fn_t *os, l
     it->key = key;
     it->val = val;
     it->v_size = v_size;
-    tbx_type_malloc(it->v_size_user, int, it->n_list);
+    tbx_type_malloc_clear(it->v_size_user, int, it->n_list);
     memcpy(it->v_size_user, v_size, sizeof(int)*it->n_list);
 
     it->v_fixed = 1;
@@ -6041,7 +6041,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         return(gop_failure_status);
     }
 
-    tbx_type_malloc(fd, osfile_fd_t, 1);
+    tbx_type_malloc_clear(fd, osfile_fd_t, 1);
 
     osf_retrieve_lock(op->os, rpath, &(fd->ilock_rp));
     osf_retrieve_lock(op->os, op->path, &(fd->ilock_obj));
@@ -6228,7 +6228,7 @@ gop_op_generic_t *osfile_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_open_op_t *op;
 
-    tbx_type_malloc(op, osfile_open_op_t, 1);
+    tbx_type_malloc_clear(op, osfile_open_op_t, 1);
 
     op->os = os;
     op->cfd = (osfile_fd_t *)ofd;

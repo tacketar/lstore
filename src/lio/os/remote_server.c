@@ -183,7 +183,7 @@ void osrs_update_active_table(lio_object_service_fn_t *os, gop_mq_frame_t *hid)
         }
 
         //** Now make the new entry
-        tbx_type_malloc(a, osrs_active_t, 1);
+        tbx_type_malloc_clear(a, osrs_active_t, 1);
         tbx_type_malloc(a->host_id, char, id_len+1);
         memcpy(a->host_id, host_id, id_len);
         a->host_id[id_len] = 0;
