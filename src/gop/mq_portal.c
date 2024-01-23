@@ -740,7 +740,7 @@ void mqc_trackaddress(gop_mq_conn_t *c, mq_msg_t *msg)
             tbx_type_malloc_clear(hb, gop_mq_heartbeat_entry_t, 1);
             hb->key = address;
             hb->key_size = n;
-            hb->lut_id = tbx_atomic_global_counter();
+            tbx_random_get_bytes(&(hb->lut_id), sizeof(hb->lut_id));
 
             log_printf(5, "trackaddress hb_lut=" LU "\n", hb->lut_id);
             //** Form the heartbeat msg
