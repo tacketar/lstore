@@ -23,11 +23,25 @@
 #include <apr_pools.h>
 #include <apr_thread_mutex.h>
 #include <openssl/rand.h>
+#include <openssl/opensslv.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "tbx/assert_result.h"
 #include "tbx/random.h"
+
+
+//** See if we need to do locking
+#ifdef OPENSSL_VERSION_MAJOR
+ #if ((OPENSSL_VERSION_MAJOR == 1) && (OPENSSL_VERSION_MINOR >= 1)) || (OPENSSL_VERSION_MAJOR > 1)
+    #define RAND_LOCK()
+    #define RAND_UNLOCK()
+ #endif
+#endif
+#ifndef RAND_LOCK
+    #define RAND_LOCK() apr_thread_mutex_lock(_rnd_lock)
+    #define RAND_UNLOCK() apr_thread_mutex_unlock(_rnd_lock)
+#endif
 
 // Forward declarations
 void random_seed(const void *buf, int nbytes);
@@ -75,9 +89,9 @@ int tbx_random_shutdown()
 
 void random_seed(const void *buf, int nbytes)
 {
-    apr_thread_mutex_lock(_rnd_lock);
+    RAND_LOCK();
     RAND_seed(buf, nbytes);
-    apr_thread_mutex_unlock(_rnd_lock);
+    RAND_UNLOCK();
 
     return;
 }
@@ -92,9 +106,9 @@ int tbx_random_get_bytes(void *buf, int nbytes)
 
     if (_rnd_lock == NULL) tbx_random_startup();
 
-    apr_thread_mutex_lock(_rnd_lock);
+    RAND_LOCK();
     err = RAND_bytes((unsigned char *)buf, nbytes);
-    apr_thread_mutex_unlock(_rnd_lock);
+    RAND_UNLOCK();
 
     return(err);
 }
