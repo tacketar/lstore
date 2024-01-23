@@ -2764,7 +2764,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
 
     if (buffer != NULL) free(buffer);
 
-    if ((status.op_status != OP_STATE_SUCCESS) && (already_exists == 0)) { //** Copy failed so remove the destination if needed
+    if ((status.op_status != OP_STATE_SUCCESS) && (already_exists == 0) && (cp->dest_tuple.is_lio != 0)) { //** Copy failed so remove the destination if needed
         log_printf(5, "Failed with copy. Removing destination: %s\n", cp->dest_tuple.path);
         gop_sync_exec(lio_remove_gop(cp->dest_tuple.lc, cp->dest_tuple.creds, cp->dest_tuple.path, NULL, 0));
     }
