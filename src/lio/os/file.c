@@ -3268,16 +3268,16 @@ gop_op_generic_t *osfile_object_exec_modify(lio_object_service_fn_t *os, lio_cre
 // osf_object_remove - Removes the current dir or object (non-recursive)
 //***********************************************************************
 
-int osf_object_remove(lio_object_service_fn_t *os, char *path)
+int osf_object_remove(lio_object_service_fn_t *os, char *path, int ftype)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int ftype, atype, n, err_cnt;
+    int atype, n, err_cnt;
     char *dir, *base, *hard_inode;
     struct stat s;
     char fattr[OS_PATH_MAX];
     char alink[OS_PATH_MAX];
 
-    ftype = lio_os_local_filetype(path);
+    if (ftype <= 0) ftype = lio_os_local_filetype(path);
     hard_inode = NULL;
     err_cnt = 0;
 
@@ -3323,7 +3323,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path)
             free(dir);
             free(base);
 
-            err_cnt += osf_object_remove(os, hard_inode);
+            err_cnt += osf_object_remove(os, hard_inode, 0);
             free(hard_inode);
 
             if (n > 0) { //** Remove the shard hardlink directory
@@ -3412,7 +3412,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {  //** Regular file so rm the attributes dir and the object
         log_printf(15, "Simple file removal: fname=%s\n", op->src_path);
         osf_get_inode(op->os, op->creds, op->src_path, ftype, inode, &inode_len);
-        status = (osf_object_remove(op->os, fname) == 0) ? gop_success_status : gop_failure_status;
+        status = (osf_object_remove(op->os, fname, ftype) == 0) ? gop_success_status : gop_failure_status;
     } else {  //** Directory so make sure it's empty
         if (osf_is_empty(fname) != 1) {
             osf_obj_unlock(lock);
@@ -3424,7 +3424,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
         osf_get_inode(op->os, op->creds, op->src_path, ftype, inode, &inode_len);
 
         //** The directory is empty so can safely remove it
-        status = (osf_object_remove(op->os, fname) == 0) ? gop_success_status : gop_failure_status;
+        status = (osf_object_remove(op->os, fname, ftype) == 0) ? gop_success_status : gop_failure_status;
     }
 
     char *etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', ((ftype & OS_OBJECT_SYMLINK_FLAG) ? op->src_path : rp));
@@ -4000,7 +4000,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     }
 
     if (status.op_status != OP_STATE_SUCCESS) { //** Got an error so clean up
-        err = osf_object_remove(op->os, fname);
+        err = osf_object_remove(op->os, fname, 0);
         goto failure;
     }
 
@@ -6410,7 +6410,7 @@ int osf_fsck_check_file(lio_object_service_fn_t *os, lio_creds_t *creds, char *f
         if (dofix == OS_FSCK_MANUAL) return(OS_FSCK_MISSING_OBJECT);
         if (dofix == OS_FSCK_REMOVE) {
             //** Remove the FA dir
-            osf_object_remove(os, fullname);
+            osf_object_remove(os, fullname, 0);
             return(OS_FSCK_GOOD);
         }
 
@@ -6436,7 +6436,7 @@ int osf_fsck_check_file(lio_object_service_fn_t *os, lio_creds_t *creds, char *f
         }
         if (dofix == OS_FSCK_REMOVE) {
             //** Remove the FA dir
-            osf_object_remove(os, fullname);
+            osf_object_remove(os, fullname, 0);
             free(faname);
             return(OS_FSCK_GOOD);
         }
@@ -6477,7 +6477,7 @@ int osf_fsck_check_dir(lio_object_service_fn_t *os, lio_creds_t *creds, char *fn
         }
         if (dofix == OS_FSCK_REMOVE) {
             //** Remove the FA dir
-            osf_object_remove(os, fname);
+            osf_object_remove(os, fname, 0);
             free(faname);
             return(OS_FSCK_GOOD);
         }
