@@ -1322,9 +1322,9 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             gop_mq_get_frame(f, (void **)&data, &size);
             log_printf(10, "length = %d\n", size);
         }
-        if (f == NULL) { //** Bad command
-            log_printf(0, "Invalid command!\n");
-            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid command! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
+        if (f == NULL) { //** Missing empty frame
+            log_printf(0, "Missing empty frame!\n");
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Missing empty frame! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
             return_code = 1;
             continue;
         }
