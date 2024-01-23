@@ -1133,6 +1133,7 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
     log_printf(5, "processing incoming start\n");
     //** If nproc is negative we always grab some tasks if available
     max_count = (*nproc < 0) ? -(*nproc) : (*nproc - (int)tbx_atomic_get(c->pc->running));
+
     *nproc = 0;
     if (max_count <= 0) return(0);
 
@@ -1684,7 +1685,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 {
     gop_mq_conn_t *c = (gop_mq_conn_t *)data;
     int k, npoll, err, finished, nprocessed, nproc, nincoming, slow_exit, oops;
-    int short_running_max, submit_max, i;
+    int short_running_max, submit_max, i, hb_check;
     long int heartbeat_ms;
     int64_t total_proc, total_incoming;
     gop_mq_pollitem_t pfd[3];
@@ -1763,8 +1764,8 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         k = gop_mq_poll(pfd, npoll, heartbeat_ms);
         log_printf(5, "pfd[EFD]=%d pdf[CONN]=%d npoll=%d n=%d errno=%d\n", pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, errno);
 
-        MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0;);
-
+        MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0; )
+        MQ_DEBUG(nproc = nincoming = nprocessed = hb_check = 0; )
         if (k > 0) {  //** Got an event so process it
             nproc = 0;
             if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) { nproc = submit_max; finished += mqc_process_task(c, &npoll, &nproc); }
@@ -1787,9 +1788,9 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
             goto cleanup;
         }
 
-        MQ_DEBUG(dt_hb = 0;)
+        MQ_DEBUG(dt_hb = 0; hb_check = 0;)
         if ((apr_time_now() > next_hb_check) || (npoll == 1)) {
-            MQ_DEBUG(dt_hb = apr_time_now();)
+            MQ_DEBUG(dt_hb = apr_time_now(); hb_check = 1; )
             finished += mqc_heartbeat(c, npoll);
             MQ_DEBUG(dt_hb = apr_time_now() - dt_hb;)
 
@@ -1815,7 +1816,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
                 apr_thread_mutex_unlock(c->pc->lock);
             }
 
-            nprocessed = 0;
+//            nprocessed = 0;
             last_check = apr_time_now();
 
             if ((finished == 0) && (npoll == 1)) sleep(1);  //** Want to exit but have some commands pending
@@ -1823,7 +1824,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
         MQ_DEBUG(te = apr_time_now();)
         MQ_DEBUG(if (dt_task > 0) { dt_incoming = dt_incoming - dt_task; dt_task = dt_task - ts; })
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), apr_time_sec(dt_hb), apr_time_sec(te-ts));)
+        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s pfd[EFD]=%d pdf[CONN]=%d npoll=%d n=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));)
     } while (finished == 0);
 
 
