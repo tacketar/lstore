@@ -64,7 +64,8 @@ struct gop_mq_ongoing_host_t {
 struct gop_mq_ongoing_t {
     apr_pool_t *mpool;
     apr_thread_mutex_t *lock;
-    apr_thread_cond_t *cond;
+    apr_thread_cond_t *thread_cond;    //** Used in the server and client threads and used for shutdown
+    apr_thread_cond_t *object_cond;    //** Used by the ongoing release/remove for cleanups
     apr_hash_t *id_table;       //** Server table
     apr_hash_t *table;          //** Client table
     apr_thread_t *ongoing_server_thread;
