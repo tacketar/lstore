@@ -155,6 +155,7 @@ GOP_API gop_mq_msg_hash_t gop_mq_msg_hash(mq_msg_t *msg);
 GOP_API void gop_mq_msg_mem_push(mq_msg_t *msg, void *data, int len, gop_mqf_msg_t auto_free);
 GOP_API int gop_mq_msg_total_size(mq_msg_t *msg);
 GOP_API mq_msg_t *gop_mq_msg_trackaddress(char *host, mq_msg_t *raw_address, gop_mq_frame_t *fid, int dup_frames);
+GOP_API char *gop_mq_msg_dump(mq_msg_t *msg, char *buffer, int *bsize);
 
 GOP_API void gop_mq_stats_add(gop_mq_command_stats_t *a, gop_mq_command_stats_t *b);
 GOP_API void gop_mq_stats_print(int ll, char *tag, gop_mq_command_stats_t *a);

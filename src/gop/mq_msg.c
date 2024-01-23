@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
+#include <tbx/append_printf.h>
 
 #include "mq_portal.h"
 
@@ -268,4 +269,41 @@ int gop_mq_msg_total_size(mq_msg_t *msg)
     }
 
     return(n);
+}
+
+
+//*************************************************************
+// gop_mq_msg_dump - Dumps the msg stats and frame counts to a buffer
+//   buffer - Location to store the information
+//   bsize  - On entry it contains the size ofthe buffer and on return holds the number of characters stored
+//*************************************************************
+
+char *gop_mq_msg_dump(mq_msg_t *msg, char *buffer, int *bsize)
+{
+    int i, n, len, pos, nbytes;
+    gop_mq_frame_t *f;
+    void *ptr;
+
+    //** Prep the buffer info
+    pos = 0;
+    nbytes = *bsize;
+
+    //** Dump the msg stats
+    len = gop_mq_msg_total_size(msg);
+    n = gop_mq_msg_count(msg);
+    tbx_append_printf(buffer, &pos, nbytes, "MSG -- n_frames=%d total_bytes=%d -- Frames: ", n, len);
+
+    i = 0;
+    f = gop_mq_msg_first(msg);
+    while (f) {
+        gop_mq_get_frame(f, &ptr, &len);
+        tbx_append_printf(buffer, &pos, nbytes, "%d:%d ", i, len);
+        f = gop_mq_msg_next(msg);
+        i++;
+    }
+
+    tbx_append_printf(buffer, &pos, nbytes, "\n");
+
+    *bsize = pos;
+    return(buffer);
 }
