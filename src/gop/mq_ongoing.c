@@ -181,7 +181,7 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         log_printf(5, "sleeping %d now=%" APR_TIME_T_FMT "\n", on->check_interval, now);
 
         //** Sleep until time for the next heartbeat or time to exit
-        if (on->shutdown == 0) apr_thread_cond_timedwait(on->cond, on->lock, timeout);
+        if (on->shutdown == 0) apr_thread_cond_timedwait(on->thread_cond, on->lock, timeout);
         n = on->shutdown;
 
         now = apr_time_now() - now;
@@ -437,7 +437,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
             log_printf(6, "Found!\n");
             ongoing->count--;
             oh->hb_count++;  //** Add a heartbeat since we're using it
-            if (ongoing->count <= 0) apr_thread_cond_broadcast(mqon->cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
+            if (ongoing->count <= 0) apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
         }
     }
 
@@ -469,7 +469,7 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
             log_printf(6, "Found handle\n");
             ptr = ongoing->handle;
             while (ongoing->count > 0) {
-                apr_thread_cond_wait(mqon->cond, mqon->lock);
+                apr_thread_cond_wait(mqon->object_cond, mqon->lock);
             }
             apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
             free(ongoing);
@@ -706,7 +706,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
         MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: Loop end\n");)
 
         //** Sleep until time for the next heartbeat or time to exit
-        apr_thread_cond_timedwait(mqon->cond, mqon->lock, timeout);
+        apr_thread_cond_timedwait(mqon->thread_cond, mqon->lock, timeout);
         n = mqon->shutdown;
 
         log_printf(15, "loop end n=%d\n", n);
@@ -765,7 +765,7 @@ void gop_mq_ongoing_destroy(gop_mq_ongoing_t *mqon)
     //** Wake up the ongoing thread
     apr_thread_mutex_lock(mqon->lock);
     mqon->shutdown = 1;
-    apr_thread_cond_broadcast(mqon->cond);
+    apr_thread_cond_broadcast(mqon->thread_cond);
     apr_thread_mutex_unlock(mqon->lock);
 
     //** Wait for it to shutdown
@@ -800,7 +800,8 @@ gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *
 
     assert_result(apr_pool_create(&(mqon->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(mqon->lock), APR_THREAD_MUTEX_DEFAULT, mqon->mpool);
-    apr_thread_cond_create(&(mqon->cond), mqon->mpool);
+    apr_thread_cond_create(&(mqon->thread_cond), mqon->mpool);
+    apr_thread_cond_create(&(mqon->object_cond), mqon->mpool);
 
     if (mode & ONGOING_SERVER) {
         mqon->id_table = apr_hash_make(mqon->mpool);
