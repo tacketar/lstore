@@ -1124,6 +1124,8 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
     gop_mq_frame_t *f;
     gop_mq_task_t *task;
     char *data;
+    char mbuf[4096];
+    int mlen;
     int size;
     MQ_DEBUG(apr_time_t dts, dtotal, dt_ping, dt_pong, dt_track, dt_response, dt_exec, dt_err;)
     MQ_DEBUG(int nping, npong, ntrack, nresponse, nexec, nerr);
@@ -1144,11 +1146,14 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
     while ((n = gop_mq_recv(c->sock, msg, MQ_DONTWAIT)) == 0) {
         count++;
         log_printf(5, "Got a message count=%d\n", count);
+
         //** verify we have an empty frame
         f = gop_mq_msg_first(msg);
         gop_mq_get_frame(f, (void **)&data, &size);
         if (size != 0) {
             log_printf(0, "ERROR: Missing empty frame!\n");
+            if (tbx_notify_handle) { mlen = sizeof(mbuf); tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_INCOMING: ERROR: Missing empty frame! %s\n", gop_mq_msg_dump(msg, mbuf, &mlen)); }
+
             task = gop_mq_task_new(c->pc->mqc, msg, NULL, c->pc, -1);
             tbx_atomic_inc(c->pc->running);
             mqt_exec(NULL, task);
@@ -1160,6 +1165,7 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
         gop_mq_get_frame(f, (void **)&data, &size);
         if (mq_data_compare(data, size, MQF_VERSION_KEY, MQF_VERSION_SIZE) != 0) {
             log_printf(0, "ERROR: Invalid version!\n");
+            if (tbx_notify_handle) { mlen = sizeof(mbuf); tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_INCOMING: ERROR: Invalid version! %s\n", gop_mq_msg_dump(msg, mbuf, &mlen)); }
             gop_mq_msg_destroy(msg);
             goto skip;
         }
@@ -1216,6 +1222,7 @@ int mqc_process_incoming(gop_mq_conn_t *c, int *nproc)
             MQ_DEBUG(dt_exec += (apr_time_now() - dts); nexec++;)
         } else {   //** Unknwon command so drop it
             log_printf(5, "ERROR: Unknown command.  Dropping\n");
+            if (tbx_notify_handle) { mlen = sizeof(mbuf); tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_INCOMING: ERROR: Unknown command. Dropping! %s\n", gop_mq_msg_dump(msg, mbuf, &mlen)); }
             c->stats.incoming[MQS_UNKNOWN_INDEX]++;
             MQ_DEBUG(dts = apr_time_now());
             gop_mq_msg_destroy(msg);
@@ -1253,10 +1260,11 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
     gop_mq_task_t *task = NULL;
     gop_mq_frame_t *f;
     gop_mq_task_monitor_t *tn;
-    char b64[1024];
+    char b64[1024], mbuf[4096];
     char *data, v;
-    int i, j, size, tracking, ntask, return_code;
+    int i, j, mlen, size, tracking, ntask, return_code;
 
+    mlen = sizeof(mbuf);
     return_code = 0;
     *nproc = 0;
     ntask = 0;
@@ -1284,6 +1292,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
     }
 
     if (i < 0) {
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: reading the pipe! read=-1\n");
         log_printf(1, "OOPS! read=-1 task=%p!\n", task);
     }
 
@@ -1315,7 +1324,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         }
         if (f == NULL) { //** Bad command
             log_printf(0, "Invalid command!\n");
-            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid command!\n");
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid command! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
             return_code = 1;
             continue;
         }
@@ -1326,7 +1335,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         if (mq_data_compare(data, size, MQF_VERSION_KEY, MQF_VERSION_SIZE) != 0) {  //** Bad version number
             log_printf(0, "Invalid version!\n");
             log_printf(0, "length = %d\n", size);
-            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid version! ver_len=%d\n", size);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid version! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
             return_code = 1;
             continue;
         }
@@ -1361,6 +1370,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         } else {
             c->stats.outgoing[MQS_UNKNOWN_INDEX]++;
             log_printf(10, "Unknown key found! key = %s\n", data);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Unknown key found! key=%s\n", data);
         }
 
         //** Send it on
