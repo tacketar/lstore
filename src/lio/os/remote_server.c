@@ -1320,13 +1320,9 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
 
-tbx_log_flush();
-log_printf(0, "before handle_remove\n"); tbx_log_flush();
-
     //** Do the host lookup
     if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key)) != NULL) {
         log_printf(6, "Found handle: handle=%p\n", handle);
-tbx_log_flush();
 
         gop = os_close_object(osrs->os_child, handle);
         gop_waitall(gop);
@@ -1334,9 +1330,9 @@ tbx_log_flush();
         gop_free(gop, OP_DESTROY);
     } else {
         log_printf(6, "ERROR missing host=%s\n", id);
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "osrs_close_object_cb: ERROR no matching ongoing object! host=%s\n", id);
         status = gop_failure_status;
     }
-log_printf(0, "after handle if handle=%p\n", handle); tbx_log_flush();
 
     gop_mq_frame_destroy(fhid);
     gop_mq_frame_destroy(fuid);
@@ -1437,6 +1433,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     //** Do the host lookup
     if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key)) == NULL) {
         log_printf(6, "ERROR missing host=%s\n", id);
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR missing host=%s\n", id);
         status = gop_failure_status;
     } else {
         log_printf(6, "Found handle\n");
