@@ -2555,9 +2555,9 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
     ino_t *ino_sys;
     osf_obj_level_t *itl;
     osf_obj_level_t *it_top = NULL;
-    char fname[OS_PATH_MAX];
-    char fullname[OS_PATH_MAX];
-    char rp[OS_PATH_MAX];
+    char fname[2*OS_PATH_MAX];
+    char fullname[2*OS_PATH_MAX];
+    char rp[2*OS_PATH_MAX];
     char *obj_fixed = NULL;
 
     *dir_change = 0;
@@ -2616,14 +2616,14 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                         (strcmp(itl->entry, ".") == 0) || (strcmp(itl->entry, "..") == 0)) i = 1;
             }
             if (i == 0) { //** Regex match
-                snprintf(fname, OS_PATH_MAX, "%s/%s", itl->path, itl->entry);
-                snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fname);
+                snprintf(fname, sizeof(fname), "%s/%s", itl->path, itl->entry);
+                snprintf(fullname, sizeof(fullname), "%s%s", osf->file_path, fname);
 
                 i = os_local_filetype_stat(fullname, &link_stat, &object_stat);
                 if ((i & OS_OBJECT_SYMLINK_FLAG) || (strchr(itl->entry, '/'))) {
                      _osf_realpath(it->os, fname, rp, 1);
                 } else {
-                    snprintf(rp, OS_PATH_MAX, "%s/%s", itl->realpath, itl->entry);
+                    snprintf(rp, sizeof(rp), "%s/%s", itl->realpath, itl->entry);
                 }
                 log_printf(15, "POSSIBLE MATCH level=%d table->n=%d fname=%s max_level=%d\n", it->curr_level, it->table->n, fname, it->max_level);
 
@@ -3807,7 +3807,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     char *dir, *base;
     char *etext1, *etext2;
     char fname[OS_PATH_MAX];
-    char fattr[OS_PATH_MAX];
+    char fattr[2*OS_PATH_MAX];
     char sattr[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
     char *mkey[m_key_max];
@@ -3892,7 +3892,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         }
 
         //** Also need to make the attributes directory
-        snprintf(fattr, OS_PATH_MAX, "%s/%s", fname, FILE_ATTR_PREFIX);
+        snprintf(fattr, sizeof(fattr), "%s/%s", fname, FILE_ATTR_PREFIX);
         if (osf->shard_enable) {
             //** Make the shard directory using a random number
             tbx_random_get_bytes(&xid, sizeof(xid));
@@ -6845,7 +6845,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     lio_object_service_fn_t *os;
     lio_osfile_priv_t *osf;
     osaz_create_t *osaz_create;
-    char pname[OS_PATH_MAX], pattr[OS_PATH_MAX], rpath[OS_PATH_MAX];
+    char pname[OS_PATH_MAX], pattr[2*OS_PATH_MAX], rpath[OS_PATH_MAX];
     char *atype, *asection, *rp;
     int i, j, err;
 
@@ -7146,7 +7146,7 @@ next:
         }
 
         //** Check the attribute directory exists
-        snprintf(pattr, OS_PATH_MAX, "%s/%s", pname, FILE_ATTR_PREFIX);
+        snprintf(pattr, sizeof(pattr), "%s/%s", pname, FILE_ATTR_PREFIX);
         if (lio_os_local_filetype(pattr) == 0) {
             err = mkdir(pattr, DIR_PERMS);
             if (err != 0) {
@@ -7158,7 +7158,7 @@ next:
         }
 
         //** Check that the orphaned hardlinks exist
-        snprintf(pattr, OS_PATH_MAX, "%s/orphaned", pname);
+        snprintf(pattr, sizeof(pattr), "%s/orphaned", pname);
         if (lio_os_local_filetype(pattr) == 0) {
             err = mkdir(pattr, DIR_PERMS);
             if (err != 0) {
@@ -7170,7 +7170,7 @@ next:
         }
 
         //** Check that the orphaned hardlinks exist
-        snprintf(pattr, OS_PATH_MAX, "%s/broken", pname);
+        snprintf(pattr, sizeof(pattr), "%s/broken", pname);
         if (lio_os_local_filetype(pattr) == 0) {
             err = mkdir(pattr, DIR_PERMS);
             if (err != 0) {

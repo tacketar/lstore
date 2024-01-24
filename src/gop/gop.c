@@ -60,9 +60,9 @@ gop_op_status_t gop_error_status = {OP_STATE_ERROR, 0};
 char *gop_generate_host_id(char *my_name, char *exe_name, int heartbeat, int random_num)
 {
     unsigned int n;
-    char hostname[4096];
+    char hostname[1024];
     char buffer[4096];
-    char exe[4096];
+    char exe[1024];
 
     //** Get my hostname if nothing is supplied
     if (!my_name) {

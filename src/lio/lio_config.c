@@ -701,7 +701,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
     lio_path_tuple_t tuple, *tuple2;
     tbx_inip_file_t *ifd;
     char uri[1024];
-    char buffer[1024];
+    char buffer[2048];
     int n, is_lio, pp_port;
     time_t ts;
 
@@ -1700,6 +1700,7 @@ int lio_init(int *argc, char ***argvp)
     tbx_stack_t *hints;
     char *name, *info_fname;
     char var[4096];
+    char cname[8192];
     char *dummy = NULL;
     char *env;
     char **eargv;
@@ -1906,11 +1907,11 @@ no_args:
             snprintf(var, sizeof(var), "%s/.lio/default", home);
             snprintf(buffer, sizeof(buffer), "%s/.lio/lio.cfg", home);
             if (lio_os_local_filetype(var) & OS_OBJECT_FILE_FLAG) {  //* $HOME default
-                snprintf(buffer, sizeof(buffer), "file://%s", var);
-                cfg_name = buffer;
+                snprintf(cname, sizeof(cname), "file://%s", var);
+                cfg_name = cname;
             } else if (lio_os_local_filetype(var) & OS_OBJECT_FILE_FLAG) {  //* $HOME INI file
-                snprintf(var, sizeof(var), "file://%s", buffer);
-                cfg_name = var;
+                snprintf(cname, sizeof(cname), "file://%s", buffer);
+                cfg_name = cname;
             } else if (lio_os_local_filetype("/etc/lio/default") & OS_OBJECT_FILE_FLAG) {
                 cfg_name = "file:///etc/lio/default";
             } else if (lio_os_local_filetype("/etc/lio/lio.cfg") & OS_OBJECT_FILE_FLAG) {
