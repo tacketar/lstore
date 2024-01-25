@@ -3854,7 +3854,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             if (fd == -1) {
                 status.error_code = errno;
                 if (op->no_lock == 0) osf_obj_unlock(lock);
-                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed. Most likely the file exists fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
+                notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed. Most likely the file exists fname=%s errno=%d\n", op->type, etext1, etext2, fname, status.error_code);
                 goto failure;
             }
             tbx_io_close(fd);
@@ -3887,7 +3887,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             eno = errno;
             if (op->no_lock == 0) osf_obj_unlock(lock);
             status.error_code = eno;
-            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, errno);
+            notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, eno);
             goto failure;
         }
 
@@ -6259,7 +6259,7 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
         if (umode & OS_MODE_PENDING) {
             tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: ERROR: Pending mode!! fname=%s umode=%d\n",op->fd->opath, umode);
             err = 1;
-            goto finished;
+            return(gop_failure_status);
         } else if (op->mode & OS_MODE_UNLOCK) { //** Got an unlock operation
             tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UNLOCK fname=%s user_mode=%d\n",op->fd->opath, umode);
             full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode, 1);
@@ -6267,44 +6267,50 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
             return(gop_success_status);
         } else if (umode & OS_MODE_READ_BLOCKING) {
             if (op->mode & OS_MODE_WRITE_BLOCKING) {
+                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UPGRADE-START fname=%s curr_user_mode=%d new_user_mode=%d\n",op->fd->opath, umode, op->mode);
                 full_object_unlock(FOL_USER, osf->os_lock_user, op->fd, umode, 1);
+                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UPGRADE-UNLOCK fname=%s curr_user_mode=%d new_user_mode=%d\n",op->fd->opath, umode, op->mode);
                 tbx_atomic_set(op->fd->user_mode, OS_MODE_PENDING);
                 err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait, 1);
+                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: UPGRADE-RELOCK fname=%s curr_user_mode=%d new_user_mode=%d err=%d\n",op->fd->opath, umode, op->mode, err);
+                dt = apr_time_now() - dt;
                 if (err == 0) {
+                    tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: LOCK fname=%s user_mode=%d dt=%d\n", op->fd->opath, op->mode, apr_time_sec(dt));
                     tbx_atomic_set(op->fd->user_mode, op->mode);
+                    status = gop_success_status;
                 } else {
+                    tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: ERROR: LOCK fname=%s new_mode=%d old_mode=%d dt=%d\n",op->fd->opath, op->mode, umode, apr_time_sec(dt));
                     tbx_atomic_set(op->fd->user_mode, 0);
+                    status = gop_failure_status;
                 }
-               goto finished;
+                return(status);
             }
             return(gop_success_status);
         } else if (umode & OS_MODE_WRITE_BLOCKING) {
             if (op->mode & OS_MODE_READ_BLOCKING) {
                 full_object_downgrade_lock(FOL_USER, osf->os_lock_user, op->fd);
+                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: DOWNGRADE-LOCK fname=%s user_mode=%d err=%d\n",op->fd->opath, op->mode);
                 tbx_atomic_set(op->fd->user_mode, op->mode);
             }
             return(gop_success_status);
         }
     } else if (op->mode & OS_MODE_UNLOCK) {  //** No previous lock held so just ignore it
+        dt = apr_time_now() - dt;
+        tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: NOLOCK fname=%s user_mode=%d dt=%d\n", op->fd->opath, op->mode, apr_time_sec(dt));
         return(gop_success_status);
     }
 
     tbx_atomic_set(op->fd->user_mode, OS_MODE_PENDING);
     err = full_object_lock(FOL_USER, osf->os_lock_user, op->fd, op->mode, op->max_wait, 1);
-    if (err == 0) {
-        tbx_atomic_set(op->fd->user_mode, op->mode);
-    } else {
-        tbx_atomic_set(op->fd->user_mode, 0);
-    }
-
-finished:
     dt = apr_time_now() - dt;
-    if (err != 0) {  //** Either a timeout or abort occured
-        status = gop_failure_status;
-        tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: ERROR: LOCK fname=%s new_mode=%d old_mode=%d dt=%d\n",op->fd->opath, op->mode, umode, apr_time_sec(dt));
-    } else {
-        status = gop_success_status;
+    if (err == 0) {
         tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: LOCK fname=%s user_mode=%d dt=%d\n", op->fd->opath, op->mode, apr_time_sec(dt));
+        tbx_atomic_set(op->fd->user_mode, op->mode);
+        status = gop_success_status;
+    } else {
+        tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: ERROR: LOCK fname=%s new_mode=%d old_mode=%d dt=%d\n",op->fd->opath, op->mode, umode, apr_time_sec(dt));
+        tbx_atomic_set(op->fd->user_mode, 0);
+        status = gop_failure_status;
     }
 
     return(status);
@@ -6341,7 +6347,7 @@ gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
     gop_op_status_t status;
     fobj_lock_t *fol;
     fobj_lock_task_t *handle;
-    int slot;
+    int slot, found;
 
     if (op->mode & OS_MODE_READ_IMMEDIATE) return(gop_success_status);
 
@@ -6352,14 +6358,19 @@ gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
     apr_thread_mutex_unlock(osf->internal_lock[slot]);
     if (fol == NULL) {
         apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+        tbx_notify_printf(osf->olog, 1, op->fd->id, "ERROR: FLOCK: osfile_abort_lock_user_object_fn:  Missing FOL! fname=%s\n", op->fd->realpath);
         return(gop_failure_status);
     }
 
     //** Find the task in the pending list and remove it
     status = gop_failure_status;
     tbx_stack_move_to_top(fol->pending_stack);
+    found = 0;
     while ((handle = (fobj_lock_task_t *)tbx_stack_get_current_data(fol->pending_stack)) != NULL) {
         if (handle->fd->uuid == op->fd->uuid) {
+            found = 1;
+            tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: osfile_abort_lock_user_object_fn: Found handle fname=%s\n", op->fd->realpath);
+
             tbx_stack_delete_current(fol->pending_stack, 1, 0);
             status = gop_success_status;
             handle->abort = 1;
@@ -6370,6 +6381,8 @@ gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id)
     }
 
     apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
+
+    if (found == 0) tbx_notify_printf(osf->olog, 1, op->fd->id, "ERROR: FLOCK: osfile_abort_lock_user_object_fn: Missing pending task! fname=%s\n", op->fd->realpath);
 
     return(status);
 }
