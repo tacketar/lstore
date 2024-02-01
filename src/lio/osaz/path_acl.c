@@ -419,6 +419,7 @@ void osaz_pacl_destroy(lio_os_authz_t *az)
     apr_status_t value;
 
     log_printf(5, "Shutting down\n");
+    apr_thread_mutex_lock(osaz->lock);
     osaz->shutdown = 1;
     apr_thread_cond_broadcast(osaz->cond);
     apr_thread_mutex_unlock(osaz->lock);
