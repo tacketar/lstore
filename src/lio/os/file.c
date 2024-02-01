@@ -1582,6 +1582,7 @@ void _osf_update_open_fd_path_obj(lio_object_service_fn_t *os, const char *prefi
 
     n_old = strlen(prefix_old);
     do {
+        //** We always restart the iterator since we kick out when finished
         it = tbx_list_iter_search(osf->open_fd_obj, (char *)prefix_old, 0);
         tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
         cmp = mycompare(n_old, prefix_old, fname);
@@ -1597,10 +1598,6 @@ void _osf_update_open_fd_path_obj(lio_object_service_fn_t *os, const char *prefi
             //** Remove/add the new entry list entry
             tbx_list_iter_remove(&it);
             tbx_list_insert(osf->open_fd_obj, fnew, fd);
-
-            //** Need to restart the iter since we did an update
-            it = tbx_list_iter_search(osf->open_fd_obj, (char *)prefix_old, 0);
-            tbx_list_next(&it, (tbx_list_key_t **)&fname, (tbx_list_data_t **)&fd);
         }
     } while (cmp == 0);
 
