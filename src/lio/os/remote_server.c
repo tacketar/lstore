@@ -1265,7 +1265,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
 
         n=sizeof(intptr_t);
         log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", oo->key, n);
-        gop_mq_msg_append_mem(response, &(oo->key), sizeof(intptr_t), MQF_MSG_KEEP_DATA);
+        gop_mq_msg_append_mem(response, &(oo->key), sizeof(oo->key), MQF_MSG_KEEP_DATA);
     }
 
     //** Do some house cleaning
