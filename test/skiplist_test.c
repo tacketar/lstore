@@ -24,18 +24,33 @@
 #include <tbx/skiplist.h>
 #include <tbx/atomic_counter.h>
 
+//*************************************************
+
+tbx_sl_key_t *dup_int(tbx_sl_key_t *a)
+{
+    int n = *(int *)a;
+    int *p;
+
+    p = malloc(sizeof(int));
+    *p = n;
+
+    return(p);
+}
+
+//*************************************************
+
 int main(int argc, char **argv)
 {
-    int n_max, rnd_max, l_max, dummy, i, j, k, best, best_n, n, err, *key_list, *data_list;
-    int min_key, max_key;
+    int n_max, rnd_val_max, rnd_max, l_max, dummy, i, j, k, best, best_n, n, err, *key_list, *data_list, *found_list;
+    int min_key, max_key, rnd_min_delete, rnd_max_delete;
     double p;
     tbx_sl_t *sl;
     tbx_sl_iter_t *it;
     int *key, *data;
     int check_slot = 0;
 
-    if (argc < 4) {
-        printf("sk_test [-d log_level] n_max random_max l_max p\n");
+    if (argc < 7) {
+        printf("sk_test [-d log_level] rnd_val_max n_max random_max iter_min_delete inter_max_delete l_max p\n");
         exit(1);
     }
 
@@ -48,9 +63,15 @@ int main(int argc, char **argv)
         i++;
         tbx_set_log_level(j);
     }
+    rnd_val_max = atol(argv[i]);
+    i++;
     n_max = atol(argv[i]);
     i++;
     rnd_max = atol(argv[i]);
+    i++;
+    rnd_min_delete = atol(argv[i]);
+    i++;
+    rnd_max_delete = atol(argv[i]);
     i++;
     l_max = atol(argv[i]);
     i++;
@@ -59,7 +80,7 @@ int main(int argc, char **argv)
 
     check_slot = n_max / 2;
 
-    sl = tbx_sl_new_full(l_max, p, 1, &tbx_sl_compare_int, NULL, NULL, NULL);
+    sl = tbx_sl_new_full(l_max, p, 1, &tbx_sl_compare_int, dup_int, tbx_sl_free_simple, NULL);
 
     //** Make sure everything works fine with an empty list
     i = 12345;
@@ -72,19 +93,21 @@ int main(int argc, char **argv)
 
     key_list = (int *)malloc(sizeof(int)*n_max);
     data_list = (int *)malloc(sizeof(int)*n_max);
+    found_list = (int *)malloc(sizeof(int)*n_max);
 
     //** Insert phase
     min_key = max_key = -1;
 
     for (i=0; i<n_max; i++) {
-        key_list[i] = rand();
+        key_list[i] = rnd_val_max * (1.0*rand())/RAND_MAX;
         if (i>=(n_max-2)) key_list[i] = key_list[0];  //** Force dups
 
         if ((i==0) || (min_key > key_list[i])) min_key = key_list[i];
         if ((i==0) || (max_key < key_list[i])) max_key = key_list[i];
 
+        found_list[i] = 0;  //** Go ahead and clear the found array
         data_list[i] = i;
-        printf("inserting key[%d]=%d\n", i, key_list[i]);
+        printf("inserting i=%d key=%d\n", i, key_list[i]);
         err = tbx_sl_insert(sl, (tbx_sl_key_t *)&(key_list[i]), (tbx_sl_data_t *)&(data_list[i]));
         if (err != 0) {
             printf("ERROR inserting key_list[%d]=%d\n", i, key_list[i]);
@@ -95,6 +118,7 @@ int main(int argc, char **argv)
     printf("********** min_key=%d    max_key=%d **********\n", min_key, max_key);
 
     //**Check phase
+    printf("Checking for each key using an iterator\n");
     for (i=0; i<n_max; i++) {
         printf("Looking for key[%d]=%d\n", i, key_list[i]);
         tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&(key_list[i]), 0);
@@ -111,6 +135,32 @@ int main(int argc, char **argv)
             printf("ERROR locating key_list[%d]=%d\n", i, key_list[i]);
         } else {
             printf("Found key[%d]=%d key=%d data=%d\n", i, key_list[i], *key, *data);
+        }
+    }
+
+    //** Use the iterator to scan down through everything
+    printf("Walking the list of keys\n");
+    tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)NULL, 0);
+    err = tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
+    i = 0;
+    j = -1;
+    while (err == 0) {
+        printf("i=%d key=%d data=%d\n", i, *key, *data);
+        if (found_list[*data] != 0) {
+            printf("ERROR: already marked key! i=%d key=%d data=%d\n", i, *key, *data);
+        }
+        found_list[*data] = 1;
+        if (j > *key) {
+            printf("ERROR: prev key > curr key! prev=%d curr=%d\n", j, *key);
+        }
+        j = *key;
+
+        err = tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
+    }
+
+    for (i=0; i<n_max; i++) {
+        if (found_list[i] == 0) {
+            printf("ERROR: Skipped i=%d key=%d!\n", i, key_list[i]);
         }
     }
 
@@ -157,7 +207,7 @@ int main(int argc, char **argv)
     j = max_key - 1;
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, 0);
     tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
-    if (*key != max_key) {
+    if (*key < j) {
         printf("ERROR with last key query using max_key-1! max_key-1=%d got=%d\n", j, *key);
     }
 
@@ -165,7 +215,7 @@ int main(int argc, char **argv)
     j = max_key;
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, 0);
     tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
-    if (*key != max_key) {
+    if (*key != j) {
         printf("ERROR getting last key using max_key! max_key=%d got=%d\n", j, *key);
     }
 
@@ -201,7 +251,7 @@ int main(int argc, char **argv)
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, 0);
     tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
     printf("Checking for j=%d key_list[%d]=%d got key=%d\n", j, check_slot, key_list[check_slot], *key);
-    if (*key != key_list[check_slot]) {
+    if (*key < j) {
         printf("ERROR! key<j (%d<%d)!!!!!\n", *key, j);
     }
 
@@ -210,8 +260,8 @@ int main(int argc, char **argv)
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, -1);
     tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
     printf("Checking for j=%d key_list[%d]=%d got key=%d\n", j, check_slot, key_list[check_slot], *key);
-    if (*key != key_list[check_slot]) {
-        printf("ERROR! key>j (%d<%d)!!!!!\n", *key, j);
+    if (*key > j) {
+        printf("ERROR! key>j (%d>%d)!!!!!\n", *key, j);
     }
 
     printf("min_key:  Checking that round down works\n");
@@ -219,8 +269,8 @@ int main(int argc, char **argv)
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, -1);
     tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
     printf("Checking for j=%d min_key=%d got key=%d\n", j, min_key, *key);
-    if (*key != min_key) {
-        printf("ERROR! key>j (%d<%d)!!!!!\n", *key, j);
+    if (*key > j) {
+        printf("ERROR! key>j (%d>%d)!!!!!\n", *key, j);
     }
 
 
@@ -288,6 +338,27 @@ int main(int argc, char **argv)
         }
     }
 
+    //** Do iter removal/insertion
+    printf("Performing iterator remove/insertion using the range: %d..%d\n", rnd_min_delete, rnd_max_delete);
+    i = 0;
+    do {
+        n = rnd_min_delete;
+        tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&n, 0);
+        err = tbx_sl_next(it, (tbx_sl_key_t *)&key, (tbx_sl_data_t *)&data);
+        if ((key != NULL) && (*key >= rnd_min_delete) && (*key <= rnd_max_delete)) {
+            j = *key;
+            tbx_sl_iter_remove(it);
+            key_list[*data] = rnd_val_max * (1.0*rand())/RAND_MAX;
+            printf("iter remove remove_key=%d new_key=%d data=%d\n", j, key_list[*data], *data);
+
+            tbx_sl_insert(sl, (tbx_sl_key_t *)&(key_list[*data]), (tbx_sl_data_t *)data);
+        } else {
+            i = 1;
+        }
+    } while (i == 0);
+
+
+    printf("Deleting everything\n");
 
     //** Now delete everything manually
 //  for (i=0; i<n_max; i++) {
@@ -296,6 +367,13 @@ int main(int argc, char **argv)
         fflush(stdout);
         fflush(stderr);
         err = tbx_sl_remove(sl, (tbx_sl_key_t *)&(key_list[i]), (tbx_sl_data_t *)&(data_list[i]));
+        if (data_list[i] != i) {
+            printf("ERROR removing key_list[%d]=%d data_list[i]=%d\n", i, key_list[i], data_list[i]);
+            fflush(stdout);
+            fflush(stderr);
+        }
+        data_list[i] = -1;
+
         if (err != 0) {
             printf("ERROR removing key_list[%d]=%d\n", i, key_list[i]);
             fflush(stdout);
@@ -303,6 +381,10 @@ int main(int argc, char **argv)
         }
     }
 
+    //** Reset the data
+    for (i=0; i<n_max; i++) {
+        data_list[i] = i;
+    }
 
     //** Now insert a couple of elements and "empty and repeat"
     printf("Checking empty_skiplist\n");
@@ -344,6 +426,7 @@ int main(int argc, char **argv)
 
     free(key_list);
     free(data_list);
+    free(found_list);
 
     return(0);
 }
