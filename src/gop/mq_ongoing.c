@@ -41,7 +41,8 @@
 #include "mq_ongoing.h"
 
 //** Redefine this as empty to disable the heartbeat debug logging messages
-#define MQ_DEBUG(a) a
+#define MQ_DEBUG(...) __VA_ARGS__
+#define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__ )
 
 //***********************************************************************
 // ongoing_response_status - Handles a response that just returns the status
@@ -60,10 +61,10 @@ gop_op_status_t ongoing_response_status(void *task_arg, int tid)
     status = gop_mq_read_status_frame(gop_mq_msg_first(task->response), 0);
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
     if (status.op_status != OP_STATE_SUCCESS) {
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CLIENT: ERROR -- Got a failed heartbeat! status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
+        MQ_DEBUG_NOTIFY("ONGOING_CLIENT: ERROR -- Got a failed heartbeat! status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
     }
 
-    MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_HEARTBEAT_STATUS: status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);)
+    MQ_DEBUG_NOTIFY("ONGOING_HEARTBEAT_STATUS: status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
 
     return(status);
 }
@@ -172,10 +173,10 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         pending_end = gop_opque_tasks_left(q);
 
         if (pending_end > 1) {
-            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CLIENT: WARNING -- pending_start=%d sent=%d recved=%d pending_end=%d\n", pending_start, added, got, pending_end);
+            MQ_DEBUG_NOTIFY( "ONGOING_CLIENT: WARNING -- pending_start=%d sent=%d recved=%d pending_end=%d\n", pending_start, added, got, pending_end);
         }
 
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_HEARTBEAT: pending_start=%d sent=%d recved=%d pending_end=%d\n", pending_start, added, got, pending_end);)
+        MQ_DEBUG_NOTIFY( "ONGOING_HEARTBEAT: pending_start=%d sent=%d recved=%d pending_end=%d\n", pending_start, added, got, pending_end);
 
         now = apr_time_now();
         log_printf(5, "sleeping %d now=%" APR_TIME_T_FMT "\n", on->check_interval, now);
@@ -300,7 +301,7 @@ void gop_mq_ongoing_host_inc(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
     }
 
     oh->count++;
-    MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_INC -- host=%s count=%d\n", oh->id, oh->count);)
+    MQ_DEBUG_NOTIFY( "ONGOING_INC -- host=%s count=%d\n", oh->id, oh->count);
     apr_thread_mutex_unlock(on->lock);
 }
 
@@ -324,7 +325,7 @@ void gop_mq_ongoing_host_dec(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
     oh = apr_hash_get(table->table, id, id_len);  //** Look up the host
     if (oh != NULL) {
         oh->count--;
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_DEC -- host=%s count=%d\n", oh->id, oh->count);)
+        MQ_DEBUG_NOTIFY( "ONGOING_DEC -- host=%s count=%d\n", oh->id, oh->count);
         if ((oh->count <= 0) && (oh->in_progress == 0)) {  //** Can delete the entry
             apr_hash_set(table->table, id, id_len, NULL);
             free(oh->id);
@@ -512,7 +513,7 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
         ntasks++;
     }
 
-    MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CLOSE -- host=%s hb_count=%d ntasks=%d\n", oh->id, oh->hb_count, ntasks);)
+    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE -- host=%s hb_count=%d ntasks=%d\n", oh->id, oh->hb_count, ntasks);
     return(ntasks);
 }
 
@@ -558,11 +559,11 @@ void mq_ongoing_logout_cb(void *arg, gop_mq_task_t *task)
         apr_thread_mutex_unlock(mqon->lock);
         status =  (opque_waitall(q) == 0) ? gop_success_status : gop_failure_status;
         gop_opque_free(q, OP_DESTROY);
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_LOGOUT_CB: id=%s id_len=%d status=%d\n", id, fsize, status.op_status);
+        MQ_DEBUG_NOTIFY( "ONGOING_LOGOUT_CB: id=%s id_len=%d status=%d\n", id, fsize, status.op_status);
     } else {
         apr_thread_mutex_unlock(mqon->lock);
         status = gop_failure_status;
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_LOGOUT_CB: ERROR -- Unknown host! id=%s id_len=%d\n", id, fsize);
+        MQ_DEBUG_NOTIFY( "ONGOING_LOGOUT_CB: ERROR -- Unknown host! id=%s id_len=%d\n", id, fsize);
     }
 
     gop_mq_frame_destroy(fuid);
@@ -611,12 +612,12 @@ void mq_ongoing_cb(void *arg, gop_mq_task_t *task)
     oh = apr_hash_get(mqon->id_table, id, fsize);
     if (oh != NULL) {
         oh->hb_count++;
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CB -- heartbeat host=%s count=%d\n", oh->id, oh->hb_count);)
+        MQ_DEBUG_NOTIFY( "ONGOING_CB -- heartbeat host=%s count=%d\n", oh->id, oh->hb_count);
         status = gop_success_status;
         log_printf(2, "Updating heartbeat for %s hb=%d expire=" TT "\n", id, oh->heartbeat, oh->next_check);
     } else {
         status = gop_failure_status;
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_CB: ERROR -- heartbeat Unknown host! id=%s id_len=%d\n", id, fsize);
+        MQ_DEBUG_NOTIFY( "ONGOING_CB: ERROR -- heartbeat Unknown host! id=%s id_len=%d\n", id, fsize);
     }
     apr_thread_mutex_unlock(mqon->lock);
 
@@ -671,21 +672,21 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                     ((apr_time_t) apr_time_sec(oh->next_check)));
             if ((oh->next_check < now) && (oh->next_check > 0)) { //** Expired heartbeat so check if we shutdown everything associated with the connection
                 if (oh->hb_count == 0) {
-                    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: ERROR -- Failed heartbeat! Closing! id=%s\n", oh->id);
+                    MQ_DEBUG_NOTIFY( "ONGOING_SERVER: ERROR -- Failed heartbeat! Closing! id=%s\n", oh->id);
                     ntasks += _mq_ongoing_close(mqon, oh, q);
                     oh->next_check = 0;  //** Skip next time around
                 } else {
                     if (oh->hb_count <= 2) {   //** Throw a warning that we probably missed some HBs
                         if (tbx_notify_handle) {
-                            tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: WARNING -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
+                            _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "ONGOING_SERVER: WARNING -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
                         }
                     }
                     oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
-                    MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: Host heartbeat -- host=%s hb_count=%d next_check=" TT "\n", oh->id, oh->hb_count, oh->next_check);)
+                    MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Host heartbeat -- host=%s hb_count=%d next_check=" TT "\n", oh->id, oh->hb_count, oh->next_check);
                     oh->hb_count = 0;
                 }
             } else if (oh->next_check == 0) { //** See if everything has cleaned up
-                MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: Host cleanup -- host=%s hb_count=%d\n", oh->id, oh->hb_count);)
+                MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Host cleanup -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
                 if (apr_hash_count(oh->table) == 0) { //** Safe to clean up
                     apr_hash_set(mqon->id_table, key, klen, NULL);
                     free(oh->id);
@@ -703,7 +704,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
             }
         }
 
-        MQ_DEBUG(if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ONGOING_SERVER: Loop end\n");)
+        MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Loop end\n");
 
         //** Sleep until time for the next heartbeat or time to exit
         apr_thread_cond_timedwait(mqon->thread_cond, mqon->lock, timeout);

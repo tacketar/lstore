@@ -118,6 +118,7 @@ struct gop_mq_conn_t {  //** MQ connection container
     tbx_atomic_int_t shutdown; //** Flag for shutting down
     gop_mq_command_stats_t stats;//** Command stats
     apr_pool_t *mpool;       //** MEmory pool for connection/thread. APR mpools aren't thread safe!!!!!!!
+    uint64_t   counter;      //** Used as a UUID for monitoring tasks if enabled.
 };
 
 struct gop_mq_context_t {      //** Main MQ context
