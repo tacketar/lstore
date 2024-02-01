@@ -1077,11 +1077,6 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->ds_section);
 
-    if (_lc_object_destroy(lio->os_section) <= 0) {
-        os_destroy_service(lio->os);
-    }
-    free(lio->os_section);
-
     if (_lc_object_destroy(ESS_ONGOING_CLIENT) <= 0) {
         gop_mq_ongoing_t *on = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT);
         if (on != NULL) {  //** And also the ongoing client
@@ -1090,6 +1085,13 @@ void lio_destroy_nl(lio_config_t *lio)
         char *host_id = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);
         if (host_id) free(host_id);
     }
+
+    //** The OS should be destroyed AFTER the ongoing service since it's used by the onging
+    if (_lc_object_destroy(lio->os_section) <= 0) {
+        os_destroy_service(lio->os);
+    }
+    free(lio->os_section);
+
 
     if (_lc_object_destroy(lio->mq_section) <= 0) {  //** Destroy the MQ context
         //** Also shutdown the server portal and ongoing server if loaded
