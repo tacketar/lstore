@@ -536,6 +536,7 @@ void *mqs_flusher_thread(apr_thread_t *th, void *arg)
     mqs->expire = 0;  //** The new stream request will set this
     mqs->ready = 0;
     mqs->waiting = 0;
+    mqs->fid = NULL;
     tbx_pack_consumed(mqs->pack);
     apr_thread_cond_broadcast(mqs->cond);
 
