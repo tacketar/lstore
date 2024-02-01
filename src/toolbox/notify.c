@@ -58,6 +58,7 @@ struct tbx_notify_s { //** This is used for notifications
     struct tm tm_open;
     int pid_append;
     int exec_append;
+    int header_type;
 };
 
 struct tbx_notify_iter_s { //** Notification log iterator
@@ -101,10 +102,10 @@ void tbx_notify_open_check(tbx_notify_t *nlog, time_t *now, struct tm *tm_now)
 }
 
 //***********************************************************************
-// tbx_notify_vprintf - Logs an operation
+// _tbx_notify_vprintf - Logs an operation
 //***********************************************************************
 
-void tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fmt, va_list args)
+void _tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *fmt, va_list args)
 {
     char date[128];
     const char *uid;
@@ -122,7 +123,11 @@ void tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const
     uid = (user) ? user : "(null)";
     asctime_r(&tm_now, date);
     date[strlen(date)-1] = '\0';  //** Peel of the return
-    fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
+    if (nlog->header_type == 0) {
+        fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
+    } else {
+        fprintf(nlog->fd, "[%s (" TT ") %s tid=%ld %s:%d] ", date, now, uid, tbx_atomic_thread_id, fn, line);
+    }
 
     //** Print the user text
     vfprintf(nlog->fd, fmt, args);
@@ -137,7 +142,7 @@ failed:
 // tbx_notify_monitor_printf - Logs an operation
 //***********************************************************************
 
-void tbx_notify_monitor_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, va_list args)
+void _tbx_notify_monitor_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *mfmt, uint64_t id, const char *label, const char *efmt, va_list args)
 {
     char date[128];
     const char *uid;
@@ -155,7 +160,11 @@ void tbx_notify_monitor_vprintf(tbx_notify_t *nlog, int do_lock, const char *use
     uid = (user) ? user : "(null)";
     asctime_r(&tm_now, date);
     date[strlen(date)-1] = '\0';  //** Peel of the return
-    fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
+    if (nlog->header_type == 0) {
+        fprintf(nlog->fd, "[%s (" TT ") %s] ", date, now, uid);
+    } else {
+        fprintf(nlog->fd, "[%s (" TT ") %s tid=%ld %s:%d] ", date, now, uid, tbx_atomic_thread_id, fn, line);
+    }
 
     //** Print the monitor bits
     fprintf(nlog->fd, mfmt, id, label);
@@ -173,15 +182,15 @@ failed:
 }
 
 //***********************************************************************
-// tbx_notify_printf - Logs an operation
+// _tbx_notify_printf - Logs an operation
 //***********************************************************************
 
-void tbx_notify_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fmt, ...)
+void _tbx_notify_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *fmt, ...)
 {
     va_list args;
 
     va_start(args, fmt);
-    tbx_notify_vprintf(nlog, do_lock, user, fmt, args);
+    _tbx_notify_vprintf(nlog, do_lock, user, fn, line, fmt, args);
     va_end(args);
 }
 
@@ -189,12 +198,12 @@ void tbx_notify_printf(tbx_notify_t *nlog, int do_lock, const char *user, const 
 // tbx_notify_monitor_printf - Logs an operation
 //***********************************************************************
 
-void tbx_notify_monitor_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...)
+void _tbx_notify_monitor_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...)
 {
     va_list args;
 
     va_start(args, efmt);
-    tbx_notify_monitor_printf(nlog, do_lock, user, mfmt, id, label, efmt, args);
+    _tbx_notify_monitor_vprintf(nlog, do_lock, user, "dummy", -1234, mfmt, id, label, efmt, args);
     va_end(args);
 }
 
@@ -210,6 +219,11 @@ void tbx_notify_print_running_config(tbx_notify_t *nlog, FILE *fd, int print_sec
         fprintf(fd, "fname = %s\n", nlog->fname_from_config);
         fprintf(fd, "pid_append = %d\n", nlog->pid_append);
         fprintf(fd, "exec_append = %d\n", nlog->exec_append);
+        if (nlog->header_type == 0) {
+            fprintf(fd, "header = normal\n");
+        } else if (nlog->header_type == 1) {
+            fprintf(fd, "header = full\n");
+        }
         fprintf(fd, "# Working prefix: %s\n", nlog->fname);
     } else {
         fprintf(fd, "fname =   #Notification is disabled\n");
@@ -233,6 +247,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
     int n;
     uint64_t pid;
     char *fname;
+    char *header;
 
     tbx_type_malloc_clear(nlog, tbx_notify_t, 1);
     nlog->section = strdup(section);
@@ -247,6 +262,16 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
     nlog->fname_from_config = tbx_inip_get_string(ifd, section, "fname", "/lio/log/notify");
     if (strlen(nlog->fname_from_config) > 0) {
         nlog->fname = strdup(nlog->fname_from_config);
+
+        //** Check the header type
+        header = tbx_inip_get_string(ifd, section, "header", NULL);
+        nlog->header_type = 0;
+        if (header) {
+            if (strcmp(header, "full") == 0) {
+                nlog->header_type = 1;
+            }
+            free(header);
+        }
 
         //** See if we add the executable to the name
         nlog->exec_append = tbx_inip_get_integer(ifd, section, "exec_append", 0);

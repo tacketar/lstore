@@ -33,10 +33,10 @@ extern TBX_API tbx_notify_t *tbx_notify_handle;
 
 // Functions
 TBX_API void tbx_notify_print_running_config(tbx_notify_t *nlog, FILE *fd, int print_section_heading);
-TBX_API void tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fmt, va_list ap);
-TBX_API void tbx_notify_monitor_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, va_list ap);
-TBX_API void tbx_notify_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fmt, ...);
-TBX_API void tbx_notify_monitor_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...);
+TBX_API void _tbx_notify_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *fmt, va_list ap);
+TBX_API void _tbx_notify_monitor_vprintf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *mfmt, uint64_t id, const char *label, const char *efmt, va_list ap);
+TBX_API void _tbx_notify_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *fn, int line, const char *fmt, ...);
+TBX_API void _tbx_notify_monitor_printf(tbx_notify_t *nlog, int do_lock, const char *user, const char *mfmt, uint64_t id, const char *label, const char *efmt, ...);
 TBX_API tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *section);
 TBX_API void tbx_notify_destroy(tbx_notify_t *nlog);
 
@@ -44,6 +44,12 @@ TBX_API char *tbx_notify_iter_next(tbx_notify_iter_t *nli);
 TBX_API void tbx_notify_iter_current_time(tbx_notify_iter_t *nli, int *year, int *month, int *day, int *line);
 TBX_API tbx_notify_iter_t *tbx_notify_iter_create(char *prefix, int year, int month, int day, int line);
 TBX_API void tbx_notify_iter_destroy(tbx_notify_iter_t *nli);
+
+#define tbx_notify_monitor_vprintf(nlog, do_lock, user, mfmt, id, label, efmt, ap) _tbx_notify_monitor_vprintf(nlog, do_lock, user, __func__, __LINE__, mfmt, id, label, efmt, ap)
+#define tbx_notify_monitor_printf(nlog, do_lock, user, mfmt, id, label, efmt, ...) _tbx_notify_monitor_printf(nlog, do_lock, user, __func__, __LINE__, mfmt, id, label, efmt, ## __VA_ARGS__)
+
+#define tbx_notify_vprintf(nlog, do_lock, user, fmt, ap) _tbx_notify_vprintf(nlog, do_lock,  user, __func__, __LINE__, fmt, ap)
+#define tbx_notify_printf(nlog, do_lock, user, fmt, ...) _tbx_notify_printf(nlog, do_lock,  user, __func__, __LINE__, fmt ,##__VA_ARGS__)
 
 #ifdef __cplusplus
 }
