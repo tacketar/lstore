@@ -44,6 +44,8 @@
 
 #include "os.h"
 
+tbx_notify_t *os_notify_handle = NULL;   //** Generic notify handler for use by the OS
+
 //***********************************************************************
 // lio_os_glob2regex - Converts a string in shell glob notation to regex
 //***********************************************************************

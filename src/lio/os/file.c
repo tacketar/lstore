@@ -6788,6 +6788,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     apr_pool_destroy(osf->mpool);
 
+    if (osf->olog == os_notify_handle) os_notify_handle = NULL;  //** Clear the global handle if we own it
     if (osf->olog && (strcmp(osf->os_activity, "global") != 0)) tbx_notify_destroy(osf->olog);
     if (osf->os_activity) free(osf->os_activity);
     if (osf->authz_section) free(osf->authz_section);
@@ -7247,6 +7248,9 @@ next:
     if (strcmp(osf->os_activity, "global") != 0) {
         osf->olog = tbx_notify_create(fd, NULL, osf->os_activity);
     }
+
+    //** If no one else has installed anything go ahead and install ours
+    if (os_notify_handle == NULL) os_notify_handle = osf->olog;
 
     return(os);
 }

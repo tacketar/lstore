@@ -51,6 +51,8 @@ extern "C" {
 
 #define OS_CREDS_INI_TYPE 0  //** Load creds from file
 
+extern tbx_notify_t *os_notify_handle;  //** This is a generic notify handle for use by any OS
+
 struct lio_os_attr_list_t {
     int q_mode;
     char *attr;
