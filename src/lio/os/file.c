@@ -6724,7 +6724,7 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "max_copy = %d\n", osf->max_copy);
     fprintf(fd, "hardlink_dir_size = %d\n", osf->hardlink_dir_size);
     fprintf(fd, "authz = %s\n", osf->authz_section);
-    fprintf(fd, "log_activity = %s\n", osf->os_activity);
+    fprintf(fd, "log_activity = %s  # Use \"global\" to use the default handle\n", osf->os_activity);
 
     fprintf(fd, "shard_enable = %d\n", osf->shard_enable);
     if (osf->shard_enable) {
@@ -6748,7 +6748,7 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     fprintf(fd, "\n");
 
     //** Print the notification log section
-    tbx_notify_print_running_config(osf->olog, fd, 1);
+    if (strcmp(osf->os_activity, "global") != 0) tbx_notify_print_running_config(osf->olog, fd, 1);
 
     //** Print the AuthZ configuration
     osaz_print_running_config(osf->osaz, fd, 1);
@@ -6788,7 +6788,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     apr_pool_destroy(osf->mpool);
 
-    if (osf->olog) tbx_notify_destroy(osf->olog);
+    if (osf->olog && (strcmp(osf->os_activity, "global") != 0)) tbx_notify_destroy(osf->olog);
     if (osf->os_activity) free(osf->os_activity);
     if (osf->authz_section) free(osf->authz_section);
     if (osf->section) free(osf->section);
@@ -6868,6 +6868,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     osf->section = strdup(section);
 
     osf->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);
+    osf->olog = lio_lookup_service(ess, ESS_RUNNING, ESS_NOTIFY);
     osf->base_path = NULL;
     osf->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     if (fd == NULL) {
@@ -7241,8 +7242,11 @@ next:
             }
         }
     }
+
     //** Make the activity log
-    osf->olog = tbx_notify_create(fd, NULL, osf->os_activity);
+    if (strcmp(osf->os_activity, "global") != 0) {
+        osf->olog = tbx_notify_create(fd, NULL, osf->os_activity);
+    }
 
     return(os);
 }
