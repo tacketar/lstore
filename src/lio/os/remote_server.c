@@ -63,6 +63,9 @@
 #include "os/remote.h"
 #include "service_manager.h"
 
+#define OSRS_DEBUG(...) __VA_ARGS__
+#define OSRS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+
 #define FIXME_SIZE 1024*1024
 
 static lio_osrs_priv_t osrs_default_options = {
@@ -749,6 +752,7 @@ void osrs_remove_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
 
     log_printf(5, "Processing incoming request\n");
+    OSRS_DEBUG_NOTIFY("REMOVE: mq_count=" LU " START\n", task->uuid);
 
     //** Parse the command.
     msg = task->msg;
@@ -784,6 +788,8 @@ void osrs_remove_object_cb(void *arg, gop_mq_task_t *task)
 
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    OSRS_DEBUG_NOTIFY("REMOVE: mq_count=" LU " END\n", task->uuid);
 }
 
 //***********************************************************************
@@ -1230,6 +1236,8 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
     tbx_zigzag_decode(&(data[n]), fsize, &max_wait);
     log_printf(5, "fname=%s mode=%" PRId64 " max_wait=%" PRId64 "\n", src_name, mode, max_wait);
 
+    OSRS_DEBUG_NOTIFY("OBJECT_OPEN: mq_count=" LU " fname=%s START\n", task->uuid, src_name);
+
     fhb = mq_msg_pop(msg);  //** Heartbeat frame on success
     fhandle = mq_msg_pop(msg);  //** Handle for aborts
     if (creds != NULL) {
@@ -1282,6 +1290,8 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
 
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    OSRS_DEBUG_NOTIFY("OBJECT_OPEN: mq_count=" LU " END\n", task->uuid);
 }
 
 //***********************************************************************
@@ -1302,6 +1312,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
 
     log_printf(5, "Processing incoming request\n");
+    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " START\n", task->uuid);
 
     //** Parse the command.
     msg = task->msg;
@@ -1330,7 +1341,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
         gop_free(gop, OP_DESTROY);
     } else {
         log_printf(6, "ERROR missing host=%s\n", id);
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "osrs_close_object_cb: ERROR no matching ongoing object! host=%s\n", id);
+        if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "osrs_close_object_cb: ERROR no matching ongoing object! host=%s\n", id);
         status = gop_failure_status;
     }
 
@@ -1344,6 +1355,8 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
 
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " END\n", task->uuid);
 }
 
 //***********************************************************************
@@ -1408,6 +1421,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
 
     log_printf(5, "Processing incoming request\n");
+    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " START\n", task->uuid);
 
     //** Parse the command.
     msg = task->msg;
@@ -1433,7 +1447,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     //** Do the host lookup
     if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key)) == NULL) {
         log_printf(6, "ERROR missing host=%s\n", id);
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR missing host=%s\n", id);
+        if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "ERROR missing host=%s\n", id);
         status = gop_failure_status;
     } else {
         log_printf(6, "Found handle\n");
@@ -1479,6 +1493,8 @@ fail_fd:
 
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
+
+    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " END\n", task->uuid);
 }
 
 
@@ -1744,7 +1760,12 @@ void osrs_get_mult_attr_cb(void *arg, gop_mq_task_t *task)
 {
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
 
+    OSRS_DEBUG_NOTIFY("OS_GET_MULT_ATTR: mq_count=" LU " START\n", task->uuid);
+
     osrs_get_mult_attr_fn(os, task, 0);
+
+    OSRS_DEBUG_NOTIFY("OS_GET_MULT_ATTR: mq_count=" LU " END\n", task->uuid);
+
 }
 
 //***********************************************************************
