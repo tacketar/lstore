@@ -1229,7 +1229,8 @@ if (tbx_notify_handle) { tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_INCO
             //** It's up to the task to send any tracking information back.
             log_printf(5, "Submiting task for execution\n");
             task = gop_mq_task_new(c->pc->mqc, msg, NULL, c->pc, -1);
-            task->uuid = c->counter; c->counter++;
+            c->counter++;
+            task->uuid = c->counter;
             tbx_atomic_inc(c->pc->running);
             MQ_DEBUG_NOTIFY( "MQ_COUNT: mq_count=" LU " SUBMITTING\n", task->uuid);
             MQ_DEBUG(dts = apr_time_now());
