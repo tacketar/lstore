@@ -1798,21 +1798,19 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0; )
         MQ_DEBUG(nproc = nincoming = nprocessed = hb_check = 0; )
         if (k > 0) {  //** Got an event so process it
-            nproc = 0;
-            if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) { nproc = submit_max; finished += mqc_process_task(c, &npoll, &nproc); }
-            MQ_DEBUG(dt_task = apr_time_now();)
-
-            nprocessed += nproc;
-            total_proc += nproc;
-            //finished += mqc_process_task(c, &npoll, &nprocessed);
-            log_printf(5, "after process_task finished=%d\n", finished);
+            //** Process client requests
             nincoming = 0;
             if (pfd[PI_CONN].revents != 0) { nincoming = short_running_max; finished += mqc_process_incoming(c, &nincoming); }
             MQ_DEBUG(dt_incoming = apr_time_now();)
-
             nprocessed += nincoming;
             total_incoming += nincoming;
-            log_printf(5, "after process_incoming finished=%d\n", finished);
+
+            //** Send host responses
+            nproc = 0;
+            if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) { nproc = submit_max; finished += mqc_process_task(c, &npoll, &nproc); }
+            MQ_DEBUG(dt_task = apr_time_now();)
+            nprocessed += nproc;
+            total_proc += nproc;
         } else if (k < 0) {
             log_printf(0, "ERROR on socket uuid=%s errno=%d\n", c->mq_uuid, errno);
             tbx_log_flush();
@@ -1854,7 +1852,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
         MQ_DEBUG(te = apr_time_now();)
         MQ_DEBUG(if (dt_task > 0) { dt_incoming = dt_incoming - dt_task; dt_task = dt_task - ts; })
-        MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pdf[CONN]=%d npoll=%d n=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
+        MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pfd[CONN]=%d npoll=%d n=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
     } while (finished == 0);
 
 
