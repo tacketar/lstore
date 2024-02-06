@@ -64,8 +64,7 @@ void mqs_multipacket_create(gop_mq_stream_t *mqs)
     apr_thread_mutex_create(&(mqs->lock), APR_THREAD_MUTEX_DEFAULT, mqs->mpool);
     apr_thread_cond_create(&(mqs->cond), mqs->mpool);
 
-    if (mqs->server_portal) tbx_atomic_dec(mqs->server_portal->running);
-    mq_long_running_set(1);
+    gop_mq_long_running_set(mqs->server_portal, 1);
 }
 
 //***********************************************************************

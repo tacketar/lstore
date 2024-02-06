@@ -204,6 +204,9 @@ GOP_API void gop_mq_portal_remove(gop_mq_context_t *mqc, gop_mq_portal_t *p);
 GOP_API int gop_mq_submit(gop_mq_portal_t *p, gop_mq_task_t *task);
 GOP_API gop_mq_task_t *gop_mq_task_new(gop_mq_context_t *ctx, mq_msg_t *msg, gop_op_generic_t *gop, void *arg, int dt);
 
+GOP_API int gop_mq_long_running_get();
+GOP_API void gop_mq_long_running_set(gop_mq_portal_t *p, int n);
+
 // ********* Preprocessor constants
 #define MQF_VERSION_KEY        "LMQv100"
 #define MQF_VERSION_SIZE       7

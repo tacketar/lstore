@@ -163,7 +163,8 @@ struct gop_mq_portal_t {   //** Container for managing connections to a single h
     int bind_short_running_max;  //** Max number of short running tasks allowed to run at a time
     int socket_type;           //** Socket type
     int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
-    tbx_atomic_int_t running; //** Running tasks
+    tbx_atomic_int_t running;      //** Short Running tasks
+    tbx_atomic_int_t long_running; //** Long Running tasks
     uint64_t n_ops;            //** Operation count
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     tbx_stack_t *tasks;            //** List of tasks
@@ -180,9 +181,6 @@ struct gop_mq_portal_t {   //** Container for managing connections to a single h
     gop_mq_context_t *mqc;
     gop_mq_command_stats_t stats;//** Command stats
 };
-
-int mq_long_running_get();
-void mq_long_running_set(int n);
 
 int mq_task_set(gop_mq_task_t *task, gop_mq_context_t *ctx, mq_msg_t *msg, gop_op_generic_t *gop,  void *arg, int dt);
 void mq_task_destroy(gop_mq_task_t *task);

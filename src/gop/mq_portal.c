@@ -95,10 +95,10 @@ void mq_long_running_check()
 }
 
 //**************************************************************
-// mq_long_running_get - Returns the long running state value
+// gop_mq_long_running_get - Returns the long running state value
 //**************************************************************
 
-int mq_long_running_get()
+int gop_mq_long_running_get()
 {
     int *ptr = NULL;
 
@@ -112,17 +112,30 @@ int mq_long_running_get()
 
 
 //**************************************************************
-// mq_long_running_set - Sets the long running state
+// gop_mq_long_running_set - Sets the long running state
 //**************************************************************
 
-void mq_long_running_set(int n)
+void gop_mq_long_running_set(gop_mq_portal_t *p, int n)
 {
     int *ptr = NULL;
 
     apr_threadkey_private_get((void *)&ptr, _mq_long_running_key);
     if (ptr == NULL ) {
         ptr = (int *)malloc(sizeof(int));
+        *ptr = 0;
         apr_threadkey_private_set(ptr, _mq_long_running_key);
+    }
+
+    //** See if we need to adjust the running counts
+    if (p) {   //** IF no server portal then we can't do any inc/dec.  This implies it's a client portal
+        if (*ptr == 0) {
+            if (n == 1) {
+                tbx_atomic_dec(p->running);
+                tbx_atomic_inc(p->long_running);
+            }
+        } else { //** ptr == 1 currently
+            if (n == 0) tbx_atomic_dec(p->long_running);  //** The dec for short running is handled elsewhere
+        }
     }
 
     *ptr = n;
@@ -143,7 +156,7 @@ gop_mq_context_t *gop_mq_portal_mq_context(gop_mq_portal_t *p)
 
 char *gop_mq_id2str(char *id, int id_len, char *str, int str_len)
 {
-   FATAL_UNLESS(str_len > 2*id_len+1);
+    FATAL_UNLESS(str_len > 2*id_len+1);
     apr_base64_encode(str, id, id_len);
 
     return(str);
@@ -513,10 +526,10 @@ void *mqt_exec(apr_thread_t *th, void *arg)
 
     mq_task_destroy(task);
 
-    if (mq_long_running_get() == 0) {
+    if (gop_mq_long_running_get() == 0) {
         tbx_atomic_dec(p->running);
     } else {
-        mq_long_running_set(0);  //** Reset it for the next task
+        gop_mq_long_running_set(p, 0);  //** Reset it for the next task
         log_printf(1, "LONG RUNNING set!\n");
     }
     return(NULL);
@@ -1852,7 +1865,9 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
         MQ_DEBUG(te = apr_time_now();)
         MQ_DEBUG(if (dt_task > 0) { dt_incoming = dt_incoming - dt_task; dt_task = dt_task - ts; })
-        MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pfd[CONN]=%d npoll=%d n=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n", nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
+        MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pfd[CONN]=%d npoll=%d n=%d running=%d long_running=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n",
+                     nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, tbx_atomic_get(c->pc->running), tbx_atomic_get(c->pc->long_running),
+                     nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
     } while (finished == 0);
 
 
@@ -2269,6 +2284,9 @@ void _gop_mq_submit_op(void *arg, gop_op_generic_t *gop)
 
 void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_section_heading)
 {
+    apr_hash_index_t *hi;
+    gop_mq_portal_t *p;
+
     if (print_section_heading) fprintf(fd, "[%s]\n", mqc->section);
     fprintf(fd, "min_conn = %d\n", mqc->min_conn);
     fprintf(fd, "max_conn = %d\n", mqc->max_conn);
@@ -2283,6 +2301,26 @@ void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_sect
     fprintf(fd, "min_ops_per_sec = %lf\n", mqc->min_ops_per_sec);
     fprintf(fd, "bind_short_running_max = %d\n", mqc->bind_short_running_max);
     fprintf(fd, "socket_type = %d\n", mqc->socket_type);
+
+    //** Now cycle through listing the server/client portals
+    apr_thread_mutex_lock(mqc->lock);
+    p = NULL;  //** Just used as a 1st flag
+    for (hi=apr_hash_first(mqc->mpool, mqc->client_portals); hi != NULL; hi = apr_hash_next(hi)) {
+        if (p == NULL) fprintf(fd, "#MQ context CLIENT portals\n");
+        apr_hash_this(hi, NULL, NULL, (void **)&p);
+        fprintf(fd, "#  CLIENT: %s in_flight=%ld\n", p->host, tbx_atomic_get(p->running));
+    }
+    if (p == NULL) fprintf(fd, "#No MQ context CLIENT portals\n");
+
+    p = NULL;  //** Just used as a 1st flag
+    for (hi=apr_hash_first(mqc->mpool, mqc->server_portals); hi != NULL; hi = apr_hash_next(hi)) {
+        if (p == NULL) fprintf(fd, "#MQ context SERVER portals\n");
+        apr_hash_this(hi, NULL, NULL, (void **)&p);
+        fprintf(fd, "#  SERVER: %s in_flight=%ld in_flight_long=%ld\n", p->host, tbx_atomic_get(p->running), tbx_atomic_get(p->long_running));
+    }
+    if (p == NULL) fprintf(fd, "#No MQ context SERVER portals\n");
+    apr_thread_mutex_unlock(mqc->lock);
+
     fprintf(fd, "\n");
 }
 
