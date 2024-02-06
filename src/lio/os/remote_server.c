@@ -66,6 +66,8 @@
 #define OSRS_DEBUG(...) __VA_ARGS__
 #define OSRS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
 
+#define OSRS_LONG_RUNNING(p, mode)  if (mode & (OS_MODE_READ_BLOCKING|OS_MODE_WRITE_BLOCKING)) gop_mq_long_running_set(p, 1)
+
 #define FIXME_SIZE 1024*1024
 
 static lio_osrs_priv_t osrs_default_options = {
@@ -110,6 +112,7 @@ typedef struct {
 lio_object_service_fn_t *_os_global = NULL;  //** This is used for the signal
 
 static gop_op_status_t bad_creds_status = {.op_status = OP_STATE_FAILURE, .error_code = -ENOKEY };
+
 
 //***********************************************************************
 // osrs_print_active_table - Print the active table
@@ -1244,16 +1247,14 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
         gop_mq_get_frame(fhandle, (void **)&(ah.handle), &n);
         ah.handle_len = n;
         id = gop_mq_frame_strdup(fuid);
+        OSRS_LONG_RUNNING(osrs->server_portal, mode);
         ah.gop = os_open_object(osrs->os_child, creds, src_name, mode, id, &fd, max_wait);
         osrs_add_abort_handle(os, &ah);  //** Add us to the abort list
 
-        gop_waitall(ah.gop);
-
+        status = gop_sync_exec_status(ah.gop);
         osrs_remove_abort_handle(os, &ah);  //** Can remove us now since finished
 
         if (id != NULL) free(id);
-        status = gop_get_status(ah.gop);
-        gop_free(ah.gop, OP_DESTROY);
     } else {
         status = bad_creds_status;
     }
@@ -1471,6 +1472,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
         bpos += i;
         fsize -= i;
 
+        OSRS_LONG_RUNNING(osrs->server_portal, rw_mode);
         gop = os_lock_user_object(osrs->os_child, fd, rw_mode, timeout);
         ah.gop = gop;
         osrs_add_abort_handle(os, &ah);
