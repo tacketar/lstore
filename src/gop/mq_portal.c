@@ -48,8 +48,8 @@
 #define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
 
 //** Poll index for connection monitoring
-#define PI_CONN 0   //** Actual connection
-#define PI_EFD  1   //** Portal event FD for incoming tasks
+#define PI_EFD  0   //** Portal event FD for incoming tasks
+#define PI_CONN 1   //** Actual connection
 
 static gop_mq_context_t mqc_default_options = {
     .section = "mq_context",
@@ -1805,8 +1805,12 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     last_check = apr_time_now();
 
     do {
-        k = gop_mq_poll(pfd, npoll, heartbeat_ms);
-        log_printf(5, "pfd[EFD]=%d pdf[CONN]=%d npoll=%d n=%d errno=%d\n", pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, errno);
+        if (tbx_atomic_get(c->pc->running) < short_running_max) {   //** Normal mode
+            k = gop_mq_poll(pfd, npoll, heartbeat_ms);
+        } else {     //** We've reached saturation for incoming client tasks so don't check
+            k = gop_mq_poll(pfd, 1, heartbeat_ms);
+            pfd[PI_CONN].revents = 0;
+        }
 
         MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0; )
         MQ_DEBUG(nproc = nincoming = nprocessed = hb_check = 0; )
