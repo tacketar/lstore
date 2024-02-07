@@ -2633,8 +2633,8 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                 itl = &(it->level_info[it->curr_level]);
 
                                 //** Initialize the level for use
-                                strncpy(itl->path, fname, OS_PATH_MAX);
-                                strncpy(itl->realpath, rp, OS_PATH_MAX);
+                                strncpy(itl->path, fname, OS_PATH_MAX); itl->path[OS_PATH_MAX-1] = 0;
+                                strncpy(itl->realpath, rp, OS_PATH_MAX); itl->realpath[OS_PATH_MAX-1] = 0;
                                 itl->d = my_opendir(fullname, itl->fragment);
                             }
                         } else { //** Off the static table or on the last level.  From here on all hits are matches. Just have to check ftype
@@ -2663,7 +2663,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
                                     if (rmatch == 0) { //** IF a match return
                                         *myfname=strdup(fname);
-                                        strncpy(it->rp, rp, OS_PATH_MAX); it->realpath = it->rp;
+                                        strncpy(it->rp, rp, OS_PATH_MAX); it->rp[OS_PATH_MAX-1] = 0; it->realpath = it->rp;
                                         if (*prefix_len == 0) {
                                             *prefix_len = (it_top != NULL) ? strlen(it_top->path) : 0;
                                             if (*prefix_len == 0) *prefix_len = tweak;
@@ -2687,8 +2687,8 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                     //** Make a new level and initialize it for use
                                     if (it->curr_level < it->max_level) {
                                         tbx_type_malloc_clear(itl, osf_obj_level_t, 1);
-                                        strncpy(itl->realpath, rp, OS_PATH_MAX);
-                                        strncpy(itl->path, fname, OS_PATH_MAX);
+                                        strncpy(itl->realpath, rp, OS_PATH_MAX); itl->realpath[OS_PATH_MAX-1] = 0;
+                                        strncpy(itl->path, fname, OS_PATH_MAX); itl->path[OS_PATH_MAX-1] = 0;
                                         itl->d = my_opendir(fullname, itl->fragment);
                                         itl->curr_pos = my_telldir(itl->d);
                                         itl->firstpass = 1;
@@ -2707,7 +2707,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                                 if (*prefix_len == 0) *prefix_len = tweak;
                                             }
                                             *myfname=strdup(fname);
-                                            strncpy(it->rp, rp, OS_PATH_MAX); it->realpath = it->rp;
+                                            strncpy(it->rp, rp, OS_PATH_MAX); it->rp[OS_PATH_MAX-1] = '\0'; it->realpath = it->rp;
                                             log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                             if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
                                             strncpy(it->prev_match, itl->path, OS_PATH_MAX); it->prev_match[OS_PATH_MAX-1] = '\0';
