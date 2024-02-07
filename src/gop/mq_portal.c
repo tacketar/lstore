@@ -1805,7 +1805,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     last_check = apr_time_now();
 
     do {
-        if (tbx_atomic_get(c->pc->running) < short_running_max) {   //** Normal mode
+        if ((short_running_max < 0) || (tbx_atomic_get(c->pc->running) < short_running_max)) {   //** Normal mode
             k = gop_mq_poll(pfd, npoll, heartbeat_ms);
         } else {     //** We've reached saturation for incoming client tasks so don't check
             k = gop_mq_poll(pfd, 1, heartbeat_ms);
