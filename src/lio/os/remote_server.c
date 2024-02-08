@@ -1274,6 +1274,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
 
         n=sizeof(intptr_t);
         log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", oo->key, n);
+        OSRS_DEBUG_NOTIFY("OBJECT_OPEN: mq_count=" LU " key=%" PRIdPTR " fname=%s\n", task->uuid, oo->key, src_name);
         gop_mq_msg_append_mem(response, &(oo->key), sizeof(oo->key), MQF_MSG_KEEP_DATA);
     }
 
@@ -1313,7 +1314,6 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
 
     log_printf(5, "Processing incoming request\n");
-    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " START\n", task->uuid);
 
     //** Parse the command.
     msg = task->msg;
@@ -1331,6 +1331,8 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
 
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
+
+    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " START key=%" PRIdPTR "\n", task->uuid, key);
 
     //** Do the host lookup
     if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key)) != NULL) {
@@ -1357,7 +1359,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
-    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " END\n", task->uuid);
+    OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " END key=%" PRIdPTR "\n", task->uuid, key);
 }
 
 //***********************************************************************
@@ -1422,8 +1424,6 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
 
     log_printf(5, "Processing incoming request\n");
-    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " START\n", task->uuid);
-
     //** Parse the command.
     msg = task->msg;
     gop_mq_remove_header(msg, 0);
@@ -1444,6 +1444,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
 
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
+    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " START key=%" PRIdPTR "\n", task->uuid, key);
 
     //** Do the host lookup
     if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key)) == NULL) {
@@ -1496,7 +1497,7 @@ fail_fd:
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
-    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " END\n", task->uuid);
+    OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " END key=%" PRIdPTR "\n", task->uuid, key);
 }
 
 
