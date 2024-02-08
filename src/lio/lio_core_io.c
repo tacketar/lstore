@@ -108,9 +108,8 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
     char ppbuf[100];
     double d;
 
-    fprintf(fd, "LIO Open File list ----------------------\n");
-
     lio_lock(lc);
+    fprintf(fd, "LIO Open File list (%d) ----------------------\n", tbx_list_key_count(lc->open_index));
     it = tbx_list_iter_search(lc->open_index, NULL, 0);
     tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     while (fh != NULL) {
