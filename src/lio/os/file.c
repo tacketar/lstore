@@ -889,9 +889,10 @@ void fobj_lock_destroy(fobject_lock_t *fol)
 
 int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_mode, int max_wait)
 {
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
     tbx_pch_t task_pch;
     fobj_lock_task_t *handle;
-    int aborted, dummy, ontop;
+    int aborted, dummy;
     apr_time_t timeout = apr_time_make(max_wait, 0);
     apr_time_t dt, start_time;
     tbx_stack_ele_t *ele;
@@ -919,16 +920,13 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
     dummy = apr_time_sec(dt);
     log_printf(15, "CHECKING id=%s fname=%s mymode=%d read_count=%d write_count=%d handle=%p abort=%d uuid=" LU " dt=%d\n", fd->id, fd->opath, rw_mode, fol->read_count, fol->write_count, handle, aborted, fd->uuid, dummy);
 
-    ontop = 0;
     tbx_stack_move_to_top(fol->pending_stack);
     if (tbx_stack_get_current_ptr(fol->pending_stack) != ele) { //** I should be on top of the stack
         log_printf(0, "ERROR stack out of sync or aborted! fname=%s pending_size=%d me=%p top=%p\n", fd->opath, tbx_stack_count(fol->pending_stack), ele, tbx_stack_get_current_ptr(fol->pending_stack));
-        lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
         tbx_notify_printf(osf->olog, 1, fd->id, "fobj_wait: ERROR stack out of sync or aborted! fname=%s pending_size=%d me=%p top=%p\n", fd->opath, tbx_stack_count(fol->pending_stack), ele, tbx_stack_get_current_ptr(fol->pending_stack));
         aborted = 1;
     } else {
         aborted = handle->abort;  //** See if we are aborted
-        ontop = 1;    //** This is used to see if we should keep the chain going
 
         //** Remove myself
         tbx_stack_move_to_ptr(fol->pending_stack, ele);
@@ -941,7 +939,8 @@ int fobj_wait(fobject_lock_t *flock, fobj_lock_t *fol, osfile_fd_t *fd, int rw_m
     //** I'm off the stack so just free my handle and update the counter
     tbx_pch_release(flock->task_pc, &task_pch);
 
-    if ((aborted == 1) && (ontop == 0)) { //** Open was aborted. I've already removed myself from the que so just return
+    if (aborted == 1) { //** Open was aborted. I've already removed myself from the que so just return
+        tbx_notify_printf(osf->olog, 1, fd->id, "fobj_wait: ERROR aborted! fname=%s\n", fd->opath);
         return(1);
     }
 
