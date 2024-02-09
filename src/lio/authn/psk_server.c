@@ -301,7 +301,7 @@ void apsk_cred_destroy(lio_creds_t *c)
         //** Remove it from the ongoing if it's listed
         if (pc->hb) {
             key = *(intptr_t *)c;
-            gop_mq_ongoing_remove(ap->ongoing, pc->hb, pc->hb_len, key);
+            gop_mq_ongoing_remove(ap->ongoing, pc->hb, pc->hb_len, key, 1);
             free(pc->hb);
             pc->hb = NULL;
             pc->hb_len = 0;

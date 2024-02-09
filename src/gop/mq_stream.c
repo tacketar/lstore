@@ -558,6 +558,7 @@ void gop_mqs_server_more_cb(void *arg, gop_mq_task_t *task)
 {
     gop_mq_ongoing_t *ongoing = (gop_mq_ongoing_t *)arg;
     gop_mq_stream_t *mqs;
+    gop_mq_ongoing_handle_t ohandle;
     mq_msg_t *msg;
     gop_mq_frame_t *f, *fid, *fmqs, *fuid;
     unsigned char *data, *id, mode;
@@ -585,7 +586,7 @@ void gop_mqs_server_more_cb(void *arg, gop_mq_task_t *task)
     gop_mq_get_frame(fmqs, (void **)&data, &len);
     log_printf(5, "id_size=%d handle_len=%d\n", id_size, len);
     key = *(intptr_t *)data;
-    if ((mqs = gop_mq_ongoing_get(ongoing, (char *)id, id_size, key)) == NULL) {
+    if ((mqs = gop_mq_ongoing_get(ongoing, (char *)id, id_size, key, &ohandle)) == NULL) {
         log_printf(5, "Invalid handle!\n");
         goto fail;
     }
@@ -666,7 +667,7 @@ void gop_mqs_server_more_cb(void *arg, gop_mq_task_t *task)
     apr_thread_cond_broadcast(mqs->cond);
     apr_thread_mutex_unlock(mqs->lock);
 
-    gop_mq_ongoing_release(ongoing, (char *)id, id_size, key);  //** Do this to avoiud a deadlock on failure in mqs_on_fail()
+    gop_mq_ongoing_release(ongoing, &ohandle);  //** Do this to avoid a deadlock on failure in mqs_on_fail()
 
 fail:
     log_printf(5, "END msid=%d\n", err);
@@ -909,7 +910,7 @@ void gop_mq_stream_write_destroy(gop_mq_stream_t *mqs)
     }
 
     if (mqs->oo != NULL)  { //** In the ongoing table so remove us
-        gop_mq_ongoing_remove(mqs->ongoing, mqs->host_id, mqs->hid_len, mqs->oo->key);
+        gop_mq_ongoing_remove(mqs->ongoing, mqs->host_id, mqs->hid_len, mqs->oo->key, 1);
     }
 
     //** Clean up

@@ -1335,7 +1335,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " START key=%" PRIdPTR "\n", task->uuid, key);
 
     //** Do the host lookup
-    if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key)) != NULL) {
+    if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key, 0)) != NULL) {
         log_printf(6, "Found handle: handle=%p\n", handle);
 
         gop = os_close_object(osrs->os_child, handle);
@@ -1411,6 +1411,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     gop_mq_frame_t *fid, *fuid, *fhid, *fdata, *fabort;
+    gop_mq_ongoing_handle_t ohandle;
     osrs_abort_handle_t ah;
     gop_op_generic_t *gop;
     char *id, *fhandle;
@@ -1447,7 +1448,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " START key=%" PRIdPTR "\n", task->uuid, key);
 
     //** Do the host lookup
-    if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key)) == NULL) {
+    if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key, &ohandle)) == NULL) {
         log_printf(6, "ERROR missing host=%s\n", id);
         if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "ERROR missing host=%s\n", id);
         status = gop_failure_status;
@@ -1479,7 +1480,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
         osrs_add_abort_handle(os, &ah);
         status = gop_sync_exec_status(gop);
         osrs_remove_abort_handle(os, &ah);
-        gop_mq_ongoing_release(osrs->ongoing, id, idsize, key);
+        gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
 fail_fd:
         gop_mq_frame_destroy(fdata);
@@ -1580,6 +1581,7 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
     lio_creds_t *creds;
     char *id, *path;
     unsigned char *data;
+    gop_mq_ongoing_handle_t ohandle;
     int fsize, bpos, len, id_size, i;
     int64_t max_stream, timeout, n, v, nbytes;
     mq_msg_t *msg;
@@ -1635,7 +1637,7 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
 
     //** Now check if the handle is valid
     if (!is_immediate) {
-        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
+        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key, &ohandle)) == NULL) {
             log_printf(5, "Invalid handle!\n");
             goto fail_fd;
         }
@@ -1725,7 +1727,7 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
 
 fail_fd:
 fail:
-    if (fd != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key);
+    if (fd != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
     osrs_release_creds(os, creds);
 
@@ -1797,6 +1799,7 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
     lio_creds_t *creds;
     char *id;
     unsigned char *data;
+    gop_mq_ongoing_handle_t ohandle;
     int fsize, bpos, len, id_size, i;
     int64_t timeout, n, v, nbytes;
     mq_msg_t *msg, *response;
@@ -1850,7 +1853,7 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
 
     //** Now check if the handle is valid
     if (!is_immediate) {
-        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key)) == NULL) {
+        if ((fd = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key, &ohandle)) == NULL) {
           log_printf(5, "Invalid handle!\n");
             goto fail_fd;
         }
@@ -1926,7 +1929,7 @@ void osrs_set_mult_attr_fn(lio_object_service_fn_t *os, gop_mq_task_t *task, int
 
 fail_fd:
 fail:
-    if (fd != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key);
+    if (fd != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
     osrs_release_creds(os, creds);
 
@@ -2282,6 +2285,8 @@ void osrs_copy_mult_attr_cb(void *arg, gop_mq_task_t *task)
     char **key_src;
     char **key_dest;
     os_fd_t *fd_src, *fd_dest;
+    gop_mq_ongoing_handle_t ohandle_src;
+    gop_mq_ongoing_handle_t ohandle_dest;
     intptr_t fd_key_src, fd_key_dest;
 
     log_printf(5, "Processing incoming request\n");
@@ -2322,11 +2327,11 @@ void osrs_copy_mult_attr_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key_src=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key_src, len, id, id_size);
 
     //** Now check if the handles are valid
-    if ((fd_src = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_src)) == NULL) {
+    if ((fd_src = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_src, &ohandle_src)) == NULL) {
         log_printf(5, "Invalid SOURCE handle!\n");
         goto fail_fd;
     }
-    if ((fd_dest = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_dest)) == NULL) {
+    if ((fd_dest = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_dest, &ohandle_dest)) == NULL) {
         log_printf(5, "Invalid DEST handle!\n");
         goto fail_fd;
     }
@@ -2394,8 +2399,8 @@ void osrs_copy_mult_attr_cb(void *arg, gop_mq_task_t *task)
 fail_fd:
 fail:
 
-    if (fd_src != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key_src);
-    if (fd_dest != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key_dest);
+    if (fd_src != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle_src);
+    if (fd_dest != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle_dest);
 
     osrs_release_creds(os, creds);
 
@@ -2440,6 +2445,7 @@ void osrs_move_mult_attr_cb(void *arg, gop_mq_task_t *task)
     char *id;
     unsigned char *data;
     gop_op_generic_t *gop;
+    gop_mq_ongoing_handle_t ohandle;
     int fsize, bpos, len, id_size, i;
     int64_t timeout, n, v, nbytes;
     mq_msg_t *msg, *response;
@@ -2481,7 +2487,7 @@ void osrs_move_mult_attr_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key_src=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key_src, len, id, id_size);
 
     //** Now check if the handles are valid
-    if ((fd_src = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_src)) == NULL) {
+    if ((fd_src = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_src, &ohandle)) == NULL) {
         log_printf(5, "Invalid SOURCE handle!\n");
         goto fail_fd;
     }
@@ -2549,7 +2555,7 @@ void osrs_move_mult_attr_cb(void *arg, gop_mq_task_t *task)
 fail_fd:
 fail:
 
-    if (fd_src != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key_src);
+    if (fd_src != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
     osrs_release_creds(os, creds);
 
@@ -2592,6 +2598,7 @@ void osrs_symlink_mult_attr_cb(void *arg, gop_mq_task_t *task)
     char *id;
     unsigned char *data;
     gop_op_generic_t *gop;
+    gop_mq_ongoing_handle_t ohandle;
     int fsize, bpos, len, id_size, i;
     int64_t timeout, n, v, nbytes;
     mq_msg_t *msg, *response;
@@ -2635,7 +2642,7 @@ void osrs_symlink_mult_attr_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key_dest=%" PRIdPTR " len=%d id=%s id_len=%d\n", fd_key_dest, len, id, id_size);
 
     //** Now check if the handles are valid
-    if ((fd_dest = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_dest)) == NULL) {
+    if ((fd_dest = gop_mq_ongoing_get(osrs->ongoing, (char *)id, id_size, fd_key_dest, &ohandle)) == NULL) {
         log_printf(5, "Invalid SOURCE handle!\n");
         goto fail_fd;
     }
@@ -2717,7 +2724,7 @@ void osrs_symlink_mult_attr_cb(void *arg, gop_mq_task_t *task)
 fail_fd:
 fail:
 
-    if (fd_dest != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fd_key_dest);
+    if (fd_dest != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
     osrs_release_creds(os, creds);
 
@@ -3132,6 +3139,7 @@ void osrs_attr_iter_cb(void *arg, gop_mq_task_t *task)
     lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     gop_mq_frame_t *fid, *fcred, *fdata, *ffd, *fhid;
+    gop_mq_ongoing_handle_t ohandle;
     unsigned char *buffer;
     unsigned char tbuf[32];
     int v_size;
@@ -3191,7 +3199,7 @@ void osrs_attr_iter_cb(void *arg, gop_mq_task_t *task)
     log_printf(5, "PTR key=%p\n", key);
 
     //** Do the host lookup for the file handle
-    if ((handle = gop_mq_ongoing_get(osrs->ongoing, id, id_size, fhkey)) == NULL) {
+    if ((handle = gop_mq_ongoing_get(osrs->ongoing, id, id_size, fhkey, &ohandle)) == NULL) {
         log_printf(6, "ERROR missing host=%s\n", id);
     }
 
@@ -3269,7 +3277,7 @@ fail:
 
 finished:
 
-    if (handle != NULL) gop_mq_ongoing_release(osrs->ongoing, (char *)id, id_size, fhkey);
+    if (handle != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
     //** Clean up
     osrs_release_creds(os, creds);

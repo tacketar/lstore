@@ -392,7 +392,7 @@ gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_cl
 // gop_mq_ongoing_get - Retreives the handle if it's active
 //***********************************************************************
 
-void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key)
+void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key, gop_mq_ongoing_handle_t *ohandle)
 {
     gop_mq_ongoing_object_t *ongoing;
     gop_mq_ongoing_host_t *oh;
@@ -400,11 +400,15 @@ void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t 
 
     apr_thread_mutex_lock(mqon->lock);
 
+    memset(ohandle, 0, sizeof(gop_mq_ongoing_handle_t));
+
     //** Get the host entry
     oh = apr_hash_get(mqon->id_table, id, id_len);
+    ohandle->oh = oh;
     log_printf(6, "looking for host=%s len=%d oh=%p key=%" PRIdPTR "\n", id, id_len, oh, key);
     if (oh != NULL) {
         ongoing = apr_hash_get(oh->table, &key, sizeof(intptr_t));  //** Lookup the object
+        ohandle->oo = ongoing;
         if (ongoing != NULL) {
             log_printf(6, "Found!\n");
             ptr = ongoing->handle;
@@ -422,24 +426,24 @@ void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t 
 // gop_mq_ongoing_release - Releases the handle active handle
 //***********************************************************************
 
-void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key)
+void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, gop_mq_ongoing_handle_t *ohandle)
 {
-    gop_mq_ongoing_object_t *ongoing;
-    gop_mq_ongoing_host_t *oh;
+    gop_mq_ongoing_object_t *ongoing = ohandle->oo;
 
     apr_thread_mutex_lock(mqon->lock);
 
-    //** Get the host entry
-    oh = apr_hash_get(mqon->id_table, id, id_len);
-    log_printf(6, "looking for host=%s len=%d oh=%p key=%" PRIdPTR "\n", id, id_len, oh, key);
-    if (oh != NULL) {
-        ongoing = apr_hash_get(oh->table, &key, sizeof(intptr_t));  //** Lookup the object
-        if (ongoing != NULL) {
-            log_printf(6, "Found!\n");
-            ongoing->count--;
-            oh->hb_count++;  //** Add a heartbeat since we're using it
-            if (ongoing->count <= 0) apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
+    if ((ohandle->oh) && (ohandle->oo)) {
+        ongoing->count--;
+        ohandle->oh->hb_count++;  //** Add a heartbeat since we're using it
+        if (ongoing->count <= 0) {    //** No references
+            if (ongoing->remove == 1) { //** Flagged for removal
+                free(ongoing);
+            } else {
+                apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
+            }
         }
+    } else {
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: Invalid handle: oh=%p oo=%p\n", ohandle->oh, ohandle->oo);
     }
 
     apr_thread_mutex_unlock(mqon->lock);
@@ -451,7 +455,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
 // gop_mq_ongoing_remove - Removes an onging object from the tracking table
 //***********************************************************************
 
-void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key)
+void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key, int do_wait)
 {
     gop_mq_ongoing_object_t *ongoing;
     gop_mq_ongoing_host_t *oh;
@@ -467,13 +471,22 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
 
         ongoing = apr_hash_get(oh->table, &key, sizeof(intptr_t));  //** Lookup the object
         if (ongoing != NULL) {
-            log_printf(6, "Found handle\n");
             ptr = ongoing->handle;
-            while (ongoing->count > 0) {
-                apr_thread_cond_wait(mqon->object_cond, mqon->lock);
+            if (do_wait == 0) {
+                if (ongoing->count > 0) { //** Someone else has it so don't destroy it just yet
+                    apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);  //** But clear it
+                    ongoing->remove = 1;
+                } else {  //** Clear it and destroy it
+                    apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
+                    free(ongoing);
+                }
+            } else { //** Wait for the refs to clear
+                while (ongoing->count > 0) {
+                    apr_thread_cond_wait(mqon->object_cond, mqon->lock);
+                }
+                apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
+                free(ongoing);
             }
-            apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
-            free(ongoing);
         }
     }
 
