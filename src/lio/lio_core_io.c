@@ -1604,7 +1604,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
         //** Check again that no one else has opened the file
         lio_lock(lc);
 
-        //** see if there is a stat or other call getting the file size and wait if needed
+        //** See if there is a stat or other call getting the file size and wait if needed
         while (fh->quick_lock > 0) {
             lio_unlock(lc);
             usleep(10000);
@@ -1670,6 +1670,13 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     lio_lock(lc);  //** MAke sure no one else has opened the file while we were trying to close
     log_printf(1, "fname=%s ref_count=%d\n", fd->path, fh->ref_count);
+
+    //** See if there is a stat or other call getting the file size and wait if needed
+    while (fh->quick_lock > 0) {
+        lio_unlock(lc);
+        usleep(10000);
+        lio_lock(lc);
+     }
 
     fh->ref_count--;  //** Ready to tear down so go ahead and decrement and destroy the fh inside the lock if Ok
     if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
