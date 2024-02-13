@@ -94,6 +94,7 @@ struct lio_file_handle_t {  //** Shared file handle
     int ref_read;
     int remove_on_close;
     int is_special;
+    int quick_lock;         //** This is just used to keep the FH from being destroyed while checking. Protected by the lio_lock()
     ex_off_t readahead_end;
     tbx_atomic_int_t modified;
     tbx_list_t *write_table;

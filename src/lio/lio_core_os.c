@@ -156,9 +156,22 @@ ex_off_t lio_get_open_file_size(lio_config_t *lc, ex_id_t sid_ino, int do_lock)
     lio_file_handle_t *fh;
     ex_off_t n = -1;
 
+    //** Get the handle and flag that we need it for a short period
     if (do_lock) { lio_lock(lc); }
     fh = _lio_get_file_handle(lc, sid_ino);
-    if (fh) n = lio_size_fh(fh);
+    if (fh == NULL) {   //** Kick out if nothing to do
+        if (do_lock) { lio_unlock(lc); }
+        return(-1);
+    }
+    fh->quick_lock++;
+    if (do_lock) { lio_unlock(lc); }
+
+    //** Get the size outside the lock
+    n = lio_size_fh(fh);
+
+    //** Decr our quick lock
+    if (do_lock) { lio_lock(lc); }
+    fh->quick_lock--;
     if (do_lock) { lio_unlock(lc); }
 
     return(n);

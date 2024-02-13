@@ -106,22 +106,57 @@ void lio_open_files_info_fn(void *arg, FILE *fd)
     tbx_list_iter_t it;
     ex_id_t *fid;
     char ppbuf[100];
+    lio_file_handle_t **fh_table;
+    ex_off_t *size_table;
+    int i, n;
     double d;
 
     lio_lock(lc);
-    fprintf(fd, "LIO Open File list (%d) ----------------------\n", tbx_list_key_count(lc->open_index));
+
+    //** Make the work space
+    n = tbx_list_key_count(lc->open_index);
+    if (n == 0) {    //** Kick out if nothing to print
+        fprintf(fd, "LIO Open File list (0) ----------------------\n");
+        lio_unlock(lc);
+        return;
+    }
+    tbx_type_malloc_clear(fh_table, lio_file_handle_t *, n);
+    tbx_type_malloc_clear(size_table, ex_off_t, n);
+
+    //** Scan through the list flgging that we are doing a quick check
     it = tbx_list_iter_search(lc->open_index, NULL, 0);
     tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
+    n = 0;
     while (fh != NULL) {
-        d = segment_size(fh->seg);
         if (*fid == fh->ino) {
-            fprintf(fd, " ino=" XIDT " sid=" XIDT " fname=%s  size=%s  cnt=%d r_cnt=%d w_cnt=%d\n", fh->ino, fh->sid, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count, fh->ref_read, fh->ref_write);
+            fh->quick_lock++;
+            fh_table[n] = fh;
+            n++;
         }
         tbx_list_next(&it, (tbx_list_key_t *)&fid, (tbx_list_data_t **)&fh);
     }
     lio_unlock(lc);
 
+    //** Get all the sizes without the lock
+    for (i=0; i<n; i++) {
+        size_table[i] = lio_size_fh(fh_table[i]);
+    }
+
+    //** Print it all under the lock and release our quick_lock as we go
+    fprintf(fd, "LIO Open File list (%d) ----------------------\n", n);
+    lio_lock(lc);
+    for (i=0; i<n; i++) {
+        fh = fh_table[i];
+        d = size_table[i];
+        fh->quick_lock--;
+        fprintf(fd, " ino=" XIDT " sid=" XIDT " fname=%s  size=%s  cnt=%d r_cnt=%d w_cnt=%d quick_cnt=%d\n", fh->ino, fh->sid, fh->fname, tbx_stk_pretty_print_double_with_scale(1000, d, ppbuf), fh->ref_count, fh->ref_read, fh->ref_write, fh->quick_lock);
+    }
+    lio_unlock(lc);
     fprintf(fd, "\n");
+
+    //** Clean up;
+    free(fh_table);
+    free(size_table);
 }
 
 //***********************************************************************
@@ -623,7 +658,7 @@ gop_op_status_t lio_flock_fn(void *arg, int id)
     lio_fd_t *fd = op->fd;
     os_fd_t *ofd;
     gop_op_status_t status;
-    int err;
+    int err, close_mine;
 
     if (fd->ofd == NULL) { //** Need to open an OS FD for the lock
         err = gop_sync_exec(os_open_object(fd->lc->os, fd->creds, fd->path, OS_MODE_READ_IMMEDIATE, op->id, &ofd, op->timeout));
@@ -633,13 +668,17 @@ gop_op_status_t lio_flock_fn(void *arg, int id)
             return(status);
         }
 
+        close_mine = 0;
         lio_lock(fd->lc);  //** Do the check again with the lock to protect against race condition
         if (fd->ofd) {
-            gop_sync_exec(os_close_object(fd->lc->os, ofd));
+            close_mine = 1;
         } else {
             fd->ofd = ofd;
         }
         lio_unlock(fd->lc);
+
+        //** If needed close the one I just opened. We do this outside the lock t minimize contention
+        if (close_mine) gop_sync_exec(os_close_object(fd->lc->os, ofd));
     }
 
     //** Ok we have a valid OS FD now so try and do the lock
@@ -1564,6 +1603,14 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
         //** Check again that no one else has opened the file
         lio_lock(lc);
+
+        //** see if there is a stat or other call getting the file size and wait if needed
+        while (fh->quick_lock > 0) {
+            lio_unlock(lc);
+            usleep(10000);
+            lio_lock(lc);
+        }
+
         fh->ref_count--;  //** Remove ourselves and destroy fh within the lock
         if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
             lio_unlock(lc);
