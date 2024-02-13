@@ -354,11 +354,13 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
             tbx_log_flush();
             flush_list[i] = seg;
             s = (lio_cache_segment_t *)seg->priv;
-            s->cache_check_in_progress++;  //** Flag it as being checked
-            gop = cache_flush_range_gop(seg, s->c->da, 0, -1, s->c->timeout);
-            gop_set_myid(gop, i);
-            gop_opque_add(q, gop);
-            i++;
+            if (tbx_atomic_get(s->dirty_bytes) != 0) {     //** Only do a check if it's flagged as having dirty pages already
+                s->cache_check_in_progress++;  //** Flag it as being checked
+                gop = cache_flush_range_gop(seg, s->c->da, 0, -1, s->c->timeout);
+                gop_set_myid(gop, i);
+                gop_opque_add(q, gop);
+                i++;
+            }
 
             tbx_list_next(&it, (tbx_list_key_t **)&id, (tbx_list_data_t **)&seg);
         }
@@ -389,7 +391,6 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
         df = cp->max_bytes;
         df = c->stats.dirty_bytes / df;
         log_printf(15, "Dirty thread sleeping.  dirty fraction=%lf dirty bytes=" XOT " inprogress=%d\n", df, c->stats.dirty_bytes, cp->flush_in_progress);
-//     apr_thread_cond_timedwait(cp->dirty_trigger, c->lock, cp->dirty_max_wait);
     }
 
     log_printf(15, "Dirty thread Exiting\n");

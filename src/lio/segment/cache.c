@@ -1704,7 +1704,7 @@ void _cache_fix_null_page(lio_cache_t *c, lio_cache_page_t *p, int page_size)
 //  copy_page_data - Copies the page data to/from the user buffer
 //*******************************************************************************
 
-int copy_page_data(lio_segment_t *seg, dio_range_lock_t *rng, lio_cache_page_t *p, ex_off_t bpos_start, tbx_tbuf_t *buf, ex_off_t page_size, ex_off_t *nbytes)
+int copy_page_data(lio_segment_t *seg, dio_range_lock_t *rng, lio_cache_page_t *p, ex_off_t bpos_start, tbx_tbuf_t *buf, ex_off_t page_size, ex_off_t *nbytes, ex_off_t *dirty_delta)
 {
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
     ex_off_t bpos, len, poff;
@@ -1741,11 +1741,13 @@ int copy_page_data(lio_segment_t *seg, dio_range_lock_t *rng, lio_cache_page_t *
             if (is_dirty) {
                 p->bit_fields ^= C_ISDIRTY;  //** Clear it as dirty
                 s->c->fn.adjust_dirty(s->c, -page_size);
+                *dirty_delta -= page_size;
             }
         } else {
             if (!is_dirty) {
                 p->bit_fields |= C_ISDIRTY;  //** Mark it as dirty
                 s->c->fn.adjust_dirty(s->c, page_size);
+                *dirty_delta += page_size;
             }
         }
         tb_err = tbx_tbuf_copy(buf, bpos, &tb, poff, len, 1);
@@ -1768,7 +1770,7 @@ int copy_page_data(lio_segment_t *seg, dio_range_lock_t *rng, lio_cache_page_t *
 int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, dio_range_lock_t *rng, ex_off_t *lo_hole, ex_off_t *hi_hole, tbx_tbuf_t *buf, ex_off_t bpos_start, int *dirty_interior)
 {
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
-    ex_off_t lo_row, hi_row, *poff, prev_off, first_hole, last_hole, ncache, first_dirty;
+    ex_off_t lo_row, hi_row, *poff, prev_off, first_hole, last_hole, ncache, first_dirty, dirty_change;
     tbx_sl_iter_t it;
     lio_cache_page_t *p;
     int tb_err, err;
@@ -1806,6 +1808,7 @@ int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hint
 
     //** If we made it here then we have cache pages to check
     //** First step is to properly initialize the state
+    dirty_change = 0;
     tb_err = 0; ncache = 0;
     first_hole = -1;  last_hole = -1; prev_off = -1;
     first_dirty = -1;
@@ -1817,7 +1820,7 @@ int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hint
             if ((rng->rw_mode == CACHE_READ) && (p->bit_fields & C_ISDIRTY)) first_dirty = p->offset;
         }
 
-        tb_err += copy_page_data(seg, rng, p, bpos_start, buf, s->page_size, &ncache);
+        tb_err += copy_page_data(seg, rng, p, bpos_start, buf, s->page_size, &ncache, &dirty_change);
         prev_off = p->offset;
     } else { //** Can't use the page
         first_hole = 1;
@@ -1828,7 +1831,7 @@ int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hint
     while ((err = tbx_sl_next(&it, (tbx_sl_key_t **)&poff, (tbx_sl_data_t **)&p)) == 0) {
         if (*poff > rng->hi) break;  //** Kick out
         if ((p->bit_fields & C_EMPTY) == 0) { //** Got a valid page to process
-            tb_err += copy_page_data(seg, rng, p, bpos_start, buf, s->page_size, &ncache);  //** Copy the page
+            tb_err += copy_page_data(seg, rng, p, bpos_start, buf, s->page_size, &ncache, &dirty_change);  //** Copy the page
 
             if (p->offset != (prev_off + s->page_size)) { //** Missing a page
                 if (first_hole == -1) {
@@ -1849,6 +1852,15 @@ int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hint
     }
 
     cache_unlock(s->c);
+
+    //** See if we tweak the dirty pages for the segment
+    if (dirty_change) {
+        if (dirty_change < 0) {
+            tbx_atomic_sub(s->dirty_bytes, -dirty_change);
+        } else {
+            tbx_atomic_add(s->dirty_bytes, dirty_change);
+        }
+    }
 
     //** See if we read any data
     if (ncache == 0) {  //** nothing read
@@ -2365,13 +2377,14 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
     lio_cache_page_t *page;
     lio_cache_cond_t *cache_cond;
     int count, i, cow_hit;
-    ex_off_t min_off, max_off;
+    ex_off_t min_off, max_off, dirty_change;
 
     cache_lock(s->c);
     segment_lock(seg);
 
     min_off = s->total_size;
     max_off = -1;
+    dirty_change = 0;
 
     for (i=0; i<n_pages; i++) {
         page = page_list[i].p;
@@ -2399,12 +2412,14 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
             if ((page->bit_fields & C_ISDIRTY) == 0) {
                 s->c->fn.adjust_dirty(s->c, s->page_size);
                 page->bit_fields |= C_ISDIRTY;
+                dirty_change += s->page_size;
             }
         } else if (rw_mode == CACHE_FLUSH) {  //** Flush release so tweak dirty page info
             if (cow_hit == 0) {
                 if (page->bit_fields & C_ISDIRTY) {  //** Direct I/O could have flushed this page already and unset the dirty bit
                     s->c->fn.adjust_dirty(s->c, -s->page_size);
                     page->bit_fields ^= C_ISDIRTY;
+                    dirty_change -= s->page_size;
                 }
             }
         }
@@ -2434,6 +2449,15 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
 
     segment_unlock(seg);
     cache_unlock(s->c);
+
+    //** See if we tweak the dirty pages for the segment
+    if (dirty_change) {
+        if (dirty_change < 0) {
+            tbx_atomic_sub(s->dirty_bytes, -dirty_change);
+        } else {
+            tbx_atomic_add(s->dirty_bytes, dirty_change);
+        }
+    }
 
     if (max_off > -1) {  //** Got to flush some pages
         log_printf(5, "Looks like we need to do a manual flush.  min_off=" XOT " max_off=" XOT "\n", min_off, max_off);

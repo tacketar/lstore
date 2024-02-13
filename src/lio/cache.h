@@ -139,6 +139,7 @@ struct lio_cache_segment_t {
     int n_ppages;
     int ppages_used;
     int ppages_flushing;
+    tbx_atomic_int_t dirty_bytes;
     ex_off_t priority_counter;
     ex_off_t ppage_max;
     ex_off_t page_size;
