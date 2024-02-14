@@ -6029,16 +6029,18 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->path);
     ftype = lio_os_local_filetype(fname);
     if (ftype <= 0) {
+        _op_set_status(status, OP_STATE_FAILURE, ENOENT);
         free(op->path);
         op->path = NULL;  //** Make sure it's not accidentally freed twice
-        return(gop_failure_status);
+        return(status);
     }
 
     rp = (op->realpath) ? op->realpath : _osf_realpath(op->os, op->path, rpath, 1);
     if (osaz_object_access(osf->osaz, op->creds, op->ug, rp, op->mode) == 0)  {
+        _op_set_status(status, OP_STATE_FAILURE, EACCES);
         free(op->path);
         op->path = NULL;  //** Make sure it's not accidentally freed twice
-        return(gop_failure_status);
+        return(status);
     }
 
     tbx_type_malloc_clear(fd, osfile_fd_t, 1);
@@ -6067,7 +6069,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
         free(fd);
         free(op->path);
         op->path = NULL;  //** Make sure it's not accidentally freed twice
-        status = gop_failure_status;
+        _op_set_status(status, OP_STATE_FAILURE, ETIMEDOUT);
         return(status);
     } else {
         *(op->fd) = (os_fd_t *)fd;
@@ -6189,13 +6191,20 @@ gop_op_status_t osfile_close_object_fn(void *arg, int id)
             if (lstatus.op_status != OP_STATE_SUCCESS) {
                 tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE_FLOCK_PENDING: ERROR aborting lock! fname=%s\n", op->cfd->opath);
             } else {
-                umode = tbx_atomic_get(op->cfd->user_mode);
-                while (umode & OS_MODE_PENDING) {
-                    usleep(10000);
-                    umode = tbx_atomic_get(op->cfd->user_mode);
-                }
                 tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE_FLOCK_PENDING: fname=%s\n", op->cfd->opath);
             }
+
+            //** Got to wait for it to clear even if the abort failed. The flock could have squeaked in and removed
+            //** itself from the abort list but may not have yet updated the mode.
+            umode = tbx_atomic_get(op->cfd->user_mode);
+            while (umode & OS_MODE_PENDING) {
+                usleep(10000);
+                umode = tbx_atomic_get(op->cfd->user_mode);
+            }
+
+            //** Make sure we don't need to unlock if something squeaked in
+            umode = tbx_atomic_get(op->cfd->user_mode);
+            if (umode != 0) full_object_unlock(FOL_USER, osf->os_lock_user, op->cfd, umode, 1);
         } else {
             tbx_notify_printf(osf->olog, 1, op->cfd->id, "OBJECT_CLOSE_FLOCK: fname=%s user_mode=%d\n", op->cfd->opath, umode);
             //** Need to protect the realpath in the user unlock operation
