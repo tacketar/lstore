@@ -25,6 +25,7 @@
 #include <string.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/log.h>
+#include <tbx/random.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
@@ -33,8 +34,6 @@
 #include "gop/types.h"
 #include "mq_helpers.h"
 #include "mq_portal.h"
-
-static tbx_atomic_int_t _id_counter = 0;
 
 //***********************************************************************
 // mq_id_bytes - Returns hte number of bytes for the remote id.
@@ -63,17 +62,13 @@ int mq_id_bytes(char *host, int len)
 
 gop_mq_frame_t *mq_make_id_frame()
 {
-    tbx_atomic_int_t *id;
+    unsigned int *id;
 
-    tbx_type_malloc(id, tbx_atomic_int_t, 1);
+    tbx_type_malloc(id, unsigned int, 1);
 
-    *id = tbx_atomic_inc(_id_counter);
+    tbx_random_get_bytes(id, sizeof(unsigned int));
 
-    if (*id > 1000000000) {
-        tbx_atomic_set(_id_counter, 0);
-    }
-
-    return(gop_mq_frame_new(id, sizeof(tbx_atomic_int_t), MQF_MSG_AUTO_FREE));
+    return(gop_mq_frame_new(id, sizeof(unsigned int), MQF_MSG_AUTO_FREE));
 }
 
 
