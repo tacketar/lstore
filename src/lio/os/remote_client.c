@@ -174,6 +174,40 @@ typedef struct {
     uint64_t my_id;
 } osrc_set_regex_t;
 
+#define OSRC_DEBUG(...) __VA_ARGS__
+#define OSRC_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+#define OSRC_DEBUG_MQ_PRINTF(msg) { char _b64[1024]; if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, "OSRC_GOP id=%s\n", _print_mq_id(msg, _b64, 1024)); }
+
+//***********************************************************************
+//  _print_mq_id - Just gets the ID and size
+//***********************************************************************
+
+char *_print_mq_id(mq_msg_t *msg, char *buffer, int blen)
+{
+    char *id;
+    int len;
+    gop_mq_msg_iter_t *curr;
+    gop_mq_frame_t *f;
+
+    //** Skip the address
+    for (curr = gop_mq_msg_iter_first(msg); curr != NULL; curr = gop_mq_msg_iter_next(curr)) {
+        f = gop_mq_msg_iter_frame(curr);
+        gop_mq_get_frame(f, (void **)&id, &len);
+        if (len == 0) break;
+    }
+
+    //** Skip over he other frames
+    curr = gop_mq_msg_iter_next(curr);   //** Version frame
+    curr = gop_mq_msg_iter_next(curr);   //** MQ command frame
+
+    //** This is the ID frame
+    curr = gop_mq_msg_iter_next(curr);
+    f = gop_mq_msg_iter_frame(curr);
+    gop_mq_get_frame(f, (void **)&id, &len);
+
+    return(gop_mq_id2str(id, len, buffer, blen));
+}
+
 //***********************************************************************
 // osrc_add_creds - Adds the creds to the message
 //***********************************************************************
@@ -465,6 +499,8 @@ gop_op_generic_t *osrc_remove_object(lio_object_service_fn_t *os, lio_creds_t *c
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
@@ -720,6 +756,8 @@ gop_op_generic_t *osrc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:EXISTS path=%s", path);
@@ -789,6 +827,8 @@ gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds,
     osrc_add_creds(os, creds, msg);
     gop_mq_msg_append_mem(msg, (char *)path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, free, osrc->timeout);
@@ -867,6 +907,8 @@ gop_op_generic_t *osrc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
@@ -933,6 +975,8 @@ gop_op_generic_t *osrc_create_object_with_attrs(lio_object_service_fn_t *os, lio
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:CREATE_OBJECT type=%d path=%s", type, path);
@@ -967,6 +1011,8 @@ gop_op_generic_t *osrc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
         gop_mq_msg_append_mem(msg, id, strlen(id)+1, MQF_MSG_KEEP_DATA);
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1003,6 +1049,8 @@ gop_op_generic_t *osrc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:HARDLINK src_path=%s dest_path=%s", src_path, dest_path);
@@ -1032,6 +1080,8 @@ gop_op_generic_t *osrc_move_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop_mq_msg_append_mem(msg, src_path, strlen(src_path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, dest_path, strlen(dest_path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1092,6 +1142,8 @@ gop_op_generic_t *osrc_copy_mult_attrs_internal(lio_object_service_fn_t *os, osr
     gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -1199,6 +1251,8 @@ gop_op_generic_t *osrc_symlink_mult_attrs_internal(lio_object_service_fn_t *os, 
     gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -1498,6 +1552,8 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, free, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:GET_ATTRS");
@@ -1628,6 +1684,8 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -2372,6 +2430,8 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, max_wait);
     gop_set_private(gop, arg);
@@ -2401,15 +2461,14 @@ gop_op_generic_t *osrc_abort_open_object(lio_object_service_fn_t *os, gop_op_gen
     gop_mq_msg_append_mem(msg, arg->handle, strlen(arg->handle)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
 
     log_printf(5, "END\n");
 
     return(gop);
-
-
-//  return(os_abort_open_object(osrc->os_temp, gop));
 }
 
 
@@ -2463,6 +2522,8 @@ gop_op_generic_t *osrc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     gop_mq_msg_append_mem(msg, fd->data, fd->size, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_close_object, fd, NULL, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:CLOSE");
@@ -2508,6 +2569,8 @@ gop_op_generic_t *osrc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *of
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
+    OSRC_DEBUG_MQ_PRINTF(msg);
+
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, osrc->timeout);
     gop_set_private(gop, arg);
@@ -2530,6 +2593,8 @@ gop_op_generic_t *osrc_abort_lock_user_object(lio_object_service_fn_t *os, gop_o
     gop_mq_msg_append_mem(msg, OSR_ABORT_LOCK_USER_OBJECT_KEY, OSR_ABORT_LOCK_USER_OBJECT_SIZE, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, arg->handle, strlen(arg->handle)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
+
+    OSRC_DEBUG_MQ_PRINTF(msg);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
