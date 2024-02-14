@@ -2011,6 +2011,7 @@ no_args:
     }
 
     tbx_notify_handle = lio_gc->notify;   //** Set the global handle for notifications
+    if (os_notify_handle == NULL) os_notify_handle = tbx_notify_handle;
 
     if (path_is_literal) lio_gc->path_is_literal = path_is_literal;  //** See if the user specified literal paths
 
