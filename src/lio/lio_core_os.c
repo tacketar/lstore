@@ -296,9 +296,9 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     ex_id_t ino;
     char inode[32];
     char *val[_n_lio_create_keys];
-    gop_op_status_t status;
+    gop_op_status_t status, status2;
     int v_size[_n_lio_create_keys];
-    int err, ll;
+    int ll;
     int ex_key = 5;
 
     status = gop_success_status;
@@ -312,7 +312,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     if (op->type & OS_OBJECT_UNSUPPORTED_FLAG) {
         log_printf(ll, "ERROR: Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
         notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - Unsupported object type! ftype=%d fname=%s\n", op->type, op->src_path);
-        status = gop_failure_status;
+        _op_set_status(status, OP_STATE_FAILURE, EPERM);
         goto fail;
     }
 
@@ -321,37 +321,38 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         lio_os_path_split(op->src_path, &dir, &fname);
         log_printf(15, "dir=%s\n fname=%s\n", dir, fname);
 
-        err = gop_sync_exec(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
-        if (err != OP_STATE_SUCCESS) {
+        status = gop_sync_exec_status(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
+        if (status.op_status != OP_STATE_SUCCESS) {
             log_printf(ll, "ERROR: opening parent=%s\n", dir);
-            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - opening parent=%s\n", dir);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - opening parent=%s error_code=%d\n", dir, status.error_code);
             free(dir);
-            status = gop_failure_status;
             goto fail;
         }
         free(fname);
 
         v_size[0] = -op->lc->max_attr;
-        err = gop_sync_exec(os_get_attr(op->lc->os, op->creds, fd, "system.exnode", (void **)&(val[ex_key]), &(v_size[0])));
-        if (err != OP_STATE_SUCCESS) {
+        status = gop_sync_exec_status(os_get_attr(op->lc->os, op->creds, fd, "system.exnode", (void **)&(val[ex_key]), &(v_size[0])));
+        if (status.op_status != OP_STATE_SUCCESS) {
             log_printf(ll, "ERROR: getting parent exnode parent=%s\n", dir);
-            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn  - getting parent exnode parent=%s\n", dir);
-            free(dir);
-            status = gop_failure_status;
-            goto fail;
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn  - getting parent exnode parent=%s error_code=%d\n", dir, status.error_code);
         }
 
         //** Close the parent
-        err = gop_sync_exec(os_close_object(op->lc->os, fd));
-        if (err != OP_STATE_SUCCESS) {
+        status2 = gop_sync_exec_status(os_close_object(op->lc->os, fd));
+        if (status2.op_status != OP_STATE_SUCCESS) {
             log_printf(ll, "ERROR: closing parent fname=%s\n", dir);
-            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - closing parent fname=%s\n", dir);
-            free(dir);
-            status = gop_failure_status;
-            goto fail;
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - closing parent fname=%s error_code=%d\n", dir, status2.error_code);
         }
 
         free(dir);
+
+        //** See if we need to kick out
+        if (status.op_status != OP_STATE_SUCCESS) {
+            goto fail;
+        } else if (status2.op_status != OP_STATE_SUCCESS) {
+            status = status2;   //** Return our error code
+            goto fail;
+        }
     } else {
         val[ex_key] = op->ex;
     }
@@ -359,7 +360,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     if (val[ex_key] == NULL) { //** Oops no valid exnode!
         log_printf(0, "ERROR: No valid exnode could be located.  fname=%s\n", op->src_path);
         notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - No valid exnode could be located.  fname=%s\n", op->src_path);
-        status = gop_failure_status;
+        _op_set_status(status, OP_STATE_FAILURE, EBADE);
         goto fail;
     }
 
@@ -376,7 +377,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         if (lio_exnode_deserialize(ex, exp, op->lc->ess_nocache) != 0) {
             log_printf(ll, "ERROR: parsing parent exnode src_path=%s\n", op->src_path);
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - parsing parent exnode src_path=%s\n", op->src_path);
-            status = gop_failure_status;
+            _op_set_status(status, OP_STATE_FAILURE, EBADE);
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
             lio_exnode_destroy(ex);
@@ -384,10 +385,11 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         }
 
         //** Execute the clone operation
-        err = gop_sync_exec(lio_exnode_clone_gop(op->lc->tpc_unlimited, ex, op->lc->da, &cex, NULL, CLONE_STRUCTURE, op->lc->timeout));
-        if (err != OP_STATE_SUCCESS) {
+        status = gop_sync_exec_status(lio_exnode_clone_gop(op->lc->tpc_unlimited, ex, op->lc->da, &cex, NULL, CLONE_STRUCTURE, op->lc->timeout));
+        if (status.op_status != OP_STATE_SUCCESS) {
             log_printf(ll, "ERROR: cloning parent src_path=%s\n", op->src_path);
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - cloning parent src_path=%s\n", op->src_path);
+            if (status.error_code == 0) status.error_code = EFAULT;
             status = gop_failure_status;
             val[ex_key] = NULL;
             lio_exnode_exchange_destroy(exp);
