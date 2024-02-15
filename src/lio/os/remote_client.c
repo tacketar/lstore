@@ -2572,7 +2572,7 @@ gop_op_generic_t *osrc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *of
     OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, max_wait + 10);
     gop_set_private(gop, arg);
 
     return(gop);
