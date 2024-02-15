@@ -1527,8 +1527,10 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     //** Form the heartbeat and handle frames
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     if (is_immediate) {
+        OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: GET_ATTR: IMMEDIATE fname=%s\n", ma->path);
         gop_mq_msg_append_mem(msg, ma->path, strlen(ma->path)+1, MQF_MSG_KEEP_DATA);
     } else {
+        OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: GET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
         gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
     }
 
@@ -1551,8 +1553,6 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
-
-    OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: GET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, free, osrc->timeout);
@@ -1655,8 +1655,10 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     //** Form the heartbeat and handle frames
     gop_mq_msg_append_mem(msg, osrc->host_id, osrc->host_id_len, MQF_MSG_KEEP_DATA);
     if (is_immediate) {
+        OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: SET_ATTR: IMMEDIATE fname=%s\n", ma->path);
         gop_mq_msg_append_mem(msg, ma->path, strlen(ma->path)+1, MQF_MSG_KEEP_DATA);
     } else {
+        OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: SET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
         gop_mq_msg_append_mem(msg, ofd->data, ofd->size, MQF_MSG_KEEP_DATA);
     }
 
@@ -1684,8 +1686,6 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     gop_mq_msg_append_mem(msg, data, bpos, MQF_MSG_AUTO_FREE);
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
-
-    OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: SET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
