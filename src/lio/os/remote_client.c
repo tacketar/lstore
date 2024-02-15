@@ -176,7 +176,7 @@ typedef struct {
 
 #define OSRC_DEBUG(...) __VA_ARGS__
 #define OSRC_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
-#define OSRC_DEBUG_MQ_PRINTF(msg, fname) { char _b64[1024]; if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, "OSRC_GOP id=%s fname=%s\n", _print_mq_id(msg, _b64, 1024), fname); }
+#define OSRC_DEBUG_MQ_PRINTF(msg, fmt, ...) char _b64[1024]; if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, "OSRC_GOP id=%s " fmt, _print_mq_id(msg, _b64, 1024), ## __VA_ARGS__)
 
 //***********************************************************************
 //  _print_mq_id - Just gets the ID and size
@@ -499,7 +499,7 @@ gop_op_generic_t *osrc_remove_object(lio_object_service_fn_t *os, lio_creds_t *c
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -756,7 +756,7 @@ gop_op_generic_t *osrc_exists(lio_object_service_fn_t *os, lio_creds_t *creds, c
     gop_mq_msg_append_mem(msg, path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -828,7 +828,7 @@ gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds,
     gop_mq_msg_append_mem(msg, (char *)path, strlen(path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, free, osrc->timeout);
@@ -907,7 +907,7 @@ gop_op_generic_t *osrc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -975,7 +975,7 @@ gop_op_generic_t *osrc_create_object_with_attrs(lio_object_service_fn_t *os, lio
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1012,7 +1012,7 @@ gop_op_generic_t *osrc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, dest_path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "src=%s dest=%s\n", src_path, dest_path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1049,7 +1049,7 @@ gop_op_generic_t *osrc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, dest_path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "src=%s dest=%s\n", src_path, dest_path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1081,7 +1081,7 @@ gop_op_generic_t *osrc_move_object(lio_object_service_fn_t *os, lio_creds_t *cre
     gop_mq_msg_append_mem(msg, dest_path, strlen(dest_path)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, dest_path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "src=%s dest=%s\n", src_path, dest_path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -1143,7 +1143,7 @@ gop_op_generic_t *osrc_copy_mult_attrs_internal(lio_object_service_fn_t *os, osr
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -1252,7 +1252,7 @@ gop_op_generic_t *osrc_symlink_mult_attrs_internal(lio_object_service_fn_t *os, 
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -1552,7 +1552,7 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: GET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, free, osrc->timeout);
@@ -1685,7 +1685,7 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: SET_ATTR: fd=%" PRIdPTR "\n", *(intptr_t *)ofd->data);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
@@ -2361,6 +2361,8 @@ gop_op_status_t osrc_response_open(void *task_arg, int tid)
 
     log_printf(5, "START\n");
 
+    OSRC_DEBUG_MQ_PRINTF(task->response, "MISSNG\n");
+
     //** Parse the response
     gop_mq_remove_header(task->response, 1);
 
@@ -2371,6 +2373,8 @@ gop_op_status_t osrc_response_open(void *task_arg, int tid)
         gop_mq_get_frame(gop_mq_msg_next(task->response), (void **)&data, &(fd->size));
         tbx_type_malloc(fd->data, char, fd->size);
         memcpy(fd->data, data, fd->size);
+        OSRC_DEBUG_NOTIFY("OSRC_GOP: id=%s OPEN: fd=%" PRIdPTR " \n", _b64, *(intptr_t *)fd->data);
+
         *(arg->pfd) = fd;
         gop_mq_ongoing_host_inc(osrc->ongoing, osrc->remote_host, osrc->host_id, osrc->host_id_len, osrc->heartbeat);
     } else {
@@ -2430,7 +2434,7 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, path);
+    OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, max_wait);
@@ -2441,8 +2445,6 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     log_printf(5, "END\n");
 
     return(gop);
-
-//  return(os_open_object(osrc->os_temp, creds, path, mode, id, pfd, max_wait));
 }
 
 //***********************************************************************
@@ -2461,7 +2463,7 @@ gop_op_generic_t *osrc_abort_open_object(lio_object_service_fn_t *os, gop_op_gen
     gop_mq_msg_append_mem(msg, arg->handle, strlen(arg->handle)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
@@ -2485,6 +2487,8 @@ gop_op_status_t osrc_response_close_object(void *task_arg, int tid)
     gop_op_status_t status;
 
     log_printf(5, "START\n");
+
+    OSRC_DEBUG_MQ_PRINTF(task->response, "CLOSE: fd=%"PRIdPTR "\n", *(intptr_t *)fd->data);
 
     //** Parse the response
     gop_mq_remove_header(task->response, 1);
@@ -2522,7 +2526,7 @@ gop_op_generic_t *osrc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     gop_mq_msg_append_mem(msg, fd->data, fd->size, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "CLOSE: fd=%"PRIdPTR "\n", *(intptr_t *)fd->data);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_close_object, fd, NULL, osrc->timeout);
@@ -2569,7 +2573,7 @@ gop_op_generic_t *osrc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *of
 
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: FLOCK: fd=%" PRIdPTR " mode=%d max_wait=%d\n", *(intptr_t *)fd->data, rw_mode, max_wait);
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, max_wait + 10);
@@ -2594,7 +2598,7 @@ gop_op_generic_t *osrc_abort_lock_user_object(lio_object_service_fn_t *os, gop_o
     gop_mq_msg_append_mem(msg, arg->handle, strlen(arg->handle)+1, MQF_MSG_KEEP_DATA);
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
-    OSRC_DEBUG_MQ_PRINTF(msg, "MISSING");
+    OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, os, NULL, osrc->timeout);
