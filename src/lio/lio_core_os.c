@@ -320,6 +320,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     if (op->ex == NULL) {
         lio_os_path_split(op->src_path, &dir, &fname);
         log_printf(15, "dir=%s\n fname=%s\n", dir, fname);
+        free(fname);
 
         status = gop_sync_exec_status(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
         if (status.op_status != OP_STATE_SUCCESS) {
@@ -328,7 +329,6 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
             free(dir);
             goto fail;
         }
-        free(fname);
 
         v_size[0] = -op->lc->max_attr;
         status = gop_sync_exec_status(os_get_attr(op->lc->os, op->creds, fd, "system.exnode", (void **)&(val[ex_key]), &(v_size[0])));
