@@ -437,6 +437,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, gop_mq_ongoing_handle_t *oha
         ohandle->oh->hb_count++;  //** Add a heartbeat since we're using it
         if (ongoing->count <= 0) {    //** No references
             if (ongoing->remove == 1) { //** Flagged for removal
+                ohandle->oh->remove_pending--;  //** Remove the pending count
                 free(ongoing);
             } else {
                 apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
@@ -475,9 +476,13 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
             if (do_wait == 0) {
                 if (ongoing->count > 0) { //** Someone else has it so don't destroy it just yet
                     apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);  //** But clear it
-                    ongoing->remove = 1;
+                    if (ongoing->remove == 0) {
+                        ongoing->remove = 1;
+                        oh->remove_pending++;
+                    }
                 } else {  //** Clear it and destroy it
                     apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
+                    if (ongoing->remove) oh->remove_pending--;
                     free(ongoing);
                 }
             } else { //** Wait for the refs to clear
@@ -506,6 +511,7 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
     char *key;
     apr_ssize_t klen;
     gop_mq_ongoing_object_t *oo;
+    gop_mq_ongoing_handle_t *ohandle;
     gop_op_generic_t *gop;
     int ntasks;
 
@@ -517,10 +523,21 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
     for (hi = apr_hash_first(NULL, oh->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, (const void **)&key, &klen, (void **)&oo);
 
-        if (oo->auto_clean) apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
+        if (oo->auto_clean) {
+            apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
+            tbx_type_malloc_clear(ohandle, gop_mq_ongoing_handle_t, 1);
+            ohandle->oo = oo;
+            ohandle->oh = oh;
+            ohandle->oo->count++;  //** Add ourselves so we can do clean up if needed still
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE: oo->count=%d oo->remove=%d oh->remove_pending=%d\n", oo->count, oo->remove, oh->remove_pending);
+            if (oo->remove == 0) {
+                oo->remove = 1;
+                oh->remove_pending++;
+            }
 
+        }
         gop = oo->on_fail(oo->on_fail_arg, oo->handle);
-        gop_set_private(gop, (oo->auto_clean == 1) ? oo : NULL);
+        gop_set_private(gop, (oo->auto_clean == 1) ? ohandle : NULL);
         gop_opque_add(q, gop);
 
         ntasks++;
@@ -653,9 +670,9 @@ void mq_ongoing_cb(void *arg, gop_mq_task_t *task)
 void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
 {
     gop_mq_ongoing_t *mqon = (gop_mq_ongoing_t *)data;
+    gop_mq_ongoing_handle_t *ohandle;
     apr_hash_index_t *hi;
     gop_mq_ongoing_host_t *oh;
-    gop_mq_ongoing_object_t *oo;
     char *key;
     apr_ssize_t klen;
     apr_time_t now, timeout;
@@ -700,7 +717,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                 }
             } else if (oh->next_check == 0) { //** See if everything has cleaned up
                 MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Host cleanup -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
-                if (apr_hash_count(oh->table) == 0) { //** Safe to clean up
+                if ((apr_hash_count(oh->table) == 0) && (oh->remove_pending <= 0)) { //** Safe to clean up
                     apr_hash_set(mqon->id_table, key, klen, NULL);
                     free(oh->id);
                     apr_pool_destroy(oh->mpool);
@@ -709,12 +726,24 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
             }
         }
 
-        if (ntasks > 0) { //** Close some connections so wait for the tasks to complete
-            while ((gop = opque_waitany(q)) != NULL) {
-                oo = gop_get_private(gop);
-                if (oo) free(oo);
-                gop_free(gop, OP_DESTROY);
+        while ((gop = opque_get_next_finished(q)) != NULL) {
+            ohandle = gop_get_private(gop);
+            if (ohandle) {  //** Clean up
+                ohandle->oo->count--;   //** Dec our place holder to keep the oo and oh alive
+                if (ohandle->oo->count > 0) {   //** Somebody is still using it so flag it for release if needed. Shouldn't need to though.
+                    MQ_DEBUG_NOTIFY( "ONGOING_SERVER: oo->count=%d oo->remove=%d oh->remove_pending=%d\n", ohandle->oo->count, ohandle->oo->remove, ohandle->oh->remove_pending);
+                    if (ohandle->oo->remove == 0) {
+                        ohandle->oo->remove = 1;
+                        ohandle->oh->remove_pending++;
+                    }
+                } else if (ohandle->oo->remove) {   //** We're the last one so we can safely delete it
+                    MQ_DEBUG_NOTIFY( "ONGOING_SERVER: oo->count=%d oo->remove=%d oh->remove_pending=%d\n", ohandle->oo->count, ohandle->oo->remove, ohandle->oh->remove_pending);
+                    ohandle->oh->remove_pending--;
+                    free(ohandle->oo);
+                }
+                free(ohandle);
             }
+            gop_free(gop, OP_DESTROY);
         }
 
         MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Loop end\n");
@@ -728,12 +757,42 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
 
     log_printf(15, "CLEANUP\n");
 
-    ntasks = 0;
+    //** Submit all the remaining tasks
+    for (hi = apr_hash_first(NULL, mqon->id_table); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, (const void **)&key, &klen, (void **)&oh);
+        if (oh->next_check > 0) ntasks += _mq_ongoing_close(mqon, oh, q);  //** Only shut down pending hosts
+    }
+
+    //** Wait for them all to complete
+    apr_thread_mutex_unlock(mqon->lock);
+    opque_waitall(q);
+    apr_thread_mutex_lock(mqon->lock);
+
+    //** Clean up all the pending tasks
+    while ((gop = opque_waitany(q)) != NULL) {
+        ohandle = gop_get_private(gop);
+        if (ohandle) {  //** Clean up
+            ohandle->oo->count--;   //** Dec our place holder to keep the oo and oh alive
+            if (ohandle->oo->count > 0) {   //** Somebody is still using it so flag it for release
+                if (ohandle->oo->remove == 0) {
+                    ohandle->oo->remove = 1;
+                    ohandle->oh->remove_pending++;
+                }
+            } else if (ohandle->oo->remove) {   //** We're the last one so we can safely delete it
+                ohandle->oh->remove_pending--;
+                free(ohandle->oo);
+            }
+            free(ohandle);
+        }
+        gop_free(gop, OP_DESTROY);
+    }
+
+    //** Finally destroy everything
     for (hi = apr_hash_first(NULL, mqon->id_table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, (const void **)&key, &klen, (void **)&oh);
         if (oh->next_check > 0) ntasks += _mq_ongoing_close(mqon, oh, q);  //** Only shut down pending hosts
 
-        while (apr_hash_count(oh->table) > 0) {
+        while ((apr_hash_count(oh->table) > 0) || (oh->remove_pending > 0)) {
             n = apr_hash_count(oh->table);
             log_printf(5, "waiting on host=%s nleft=%d\n", oh->id, n);
             apr_thread_mutex_unlock(mqon->lock);
@@ -750,14 +809,6 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
     log_printf(15, "FINISHED\n");
 
     apr_thread_mutex_unlock(mqon->lock);
-
-    if (ntasks > 0) { //** Closed some connections with tasks so wait for them to complete
-        while ((gop = opque_waitany(q)) != NULL) {
-            oo = gop_get_private(gop);
-            if (oo) free(oo);
-            gop_free(gop, OP_DESTROY);
-        }
-    }
 
     log_printf(15, "EXITING\n");
 

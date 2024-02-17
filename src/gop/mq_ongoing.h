@@ -57,6 +57,7 @@ struct gop_mq_ongoing_host_t {
     char *id;
     int id_len;
     int hb_count;
+    int remove_pending;
     apr_hash_t *table;
     apr_pool_t *mpool;
 };
