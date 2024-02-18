@@ -54,6 +54,8 @@
 #include "lio.h"
 #include "os.h"
 
+#define CIO_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+
 //***********************************************************************
 // Core LIO I/O functionality
 //***********************************************************************
@@ -660,6 +662,8 @@ gop_op_status_t lio_flock_fn(void *arg, int id)
     gop_op_status_t status;
     int err, close_mine;
 
+    CIO_DEBUG_NOTIFY("FLOCK: fname=%s ofd=%p rw_lock=%d START\n", fd->path, fd->ofd, op->rw_lock);
+
     if (fd->ofd == NULL) { //** Need to open an OS FD for the lock
         err = gop_sync_exec(os_open_object(fd->lc->os, fd->creds, fd->path, OS_MODE_READ_IMMEDIATE, op->id, &ofd, op->timeout));
         if (err != OP_STATE_SUCCESS) {
@@ -681,9 +685,13 @@ gop_op_status_t lio_flock_fn(void *arg, int id)
         if (close_mine) gop_sync_exec(os_close_object(fd->lc->os, ofd));
     }
 
+    CIO_DEBUG_NOTIFY("FLOCK: fname=%s BEFORE os_lock_user_object\n", fd->path);
+
     //** Ok we have a valid OS FD now so try and do the lock
     op->lock_gop = os_lock_user_object(fd->lc->os, fd->ofd, op->rw_lock, op->timeout);
     status = gop_sync_exec_status(op->lock_gop);
+
+    CIO_DEBUG_NOTIFY("FLOCK: fname=%s status=%d error_code=%d END\n", fd->path, status.op_status, status.error_code);
 
     return(status);
 }
@@ -1179,6 +1187,8 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     status = gop_success_status;
 
+    CIO_DEBUG_NOTIFY("OPEN: fname=%s START\n", op->path);
+
     //** Check if it exists
     dtype = lio_exists(lc, op->creds, op->path);
 
@@ -1524,6 +1534,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     apr_time_t now;
     int n, modified, ftype, tier_change;
     double dt;
+
+    CIO_DEBUG_NOTIFY("CLOSE: fname=%s fname=%s ino=" XIDT " modified=" AIT " count=%d remove_on_close=%d START\n", fd->path, fd->fh->fname, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count, fd->fh->remove_on_close);
 
     log_printf(1, "path=%s fname=%s ino=" XIDT " modified=" AIT " count=%d remove_on_close=%d\n", fd->path, fd->fh->fname, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count, fd->fh->remove_on_close);
     tbx_log_flush();

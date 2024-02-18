@@ -46,6 +46,8 @@
 #include "lio.h"
 #include "os.h"
 
+#define COS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+
 #define _n_fsck_keys 4
 static char *_fsck_keys[] = { "system.owner", "system.inode", "system.exnode", "system.exnode.size" };
 
@@ -564,6 +566,8 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
     int err, v_size, ex_remove, vs[2], n;
     gop_op_status_t status = gop_success_status;
 
+    COS_DEBUG_NOTIFY("LIO_REMOVE_OBJECT_FN: fname=%s ftype=%d START\n", op->src_path, op->type);
+
     //** First remove and data associated with the object
     v_size = -op->lc->max_attr;
 
@@ -830,6 +834,8 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
     gop_op_status_t status, s2;
     int stype, dtype, n;
     unsigned int ui;
+
+    COS_DEBUG_NOTIFY("LIO_MOVE_OBJECT_FN: src=%s dest=%s START\n", op->src_path, op->dest_path);
 
     stype = lio_exists(op->lc, op->creds, op->src_path);
 
