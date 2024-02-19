@@ -430,6 +430,9 @@ char *lfs_pending_delete_mapping_get(lio_fuse_t *lfs, const char *path)
     lfs_pending_delete_t *map;
     char *mpath;
 
+    //** If disabled return
+    if (lfs->enable_pending_delete_relocate == 0) return((char *)path);
+
     //** See if there is anything to do
     if (tbx_atomic_get(lfs->n_pending_delete) == 0) return((char *)path);
 
@@ -1074,7 +1077,7 @@ int lfs_rename(const char *oldname, const char *newname, unsigned int flags)
 
     //** See if this is a .fuse_hidden rename
     cptr = rindex(newname, '/');
-    if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
+    if ((lfs->enable_pending_delete_relocate == 1) && (strncmp(cptr, "/.fuse_hidden", 13) == 0)) {
         err = lfs_pending_delete_relocate_object(lfs, oldname, newname);
     } else {
         err = lio_fs_rename(lfs->fs,  _get_fuse_ug(lfs, &ug, fuse_get_context()), oldname, newname);
@@ -1537,6 +1540,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     fprintf(fd, "enable_writeback_cache = %d\n", IS_CAP(FUSE_CAP_WRITEBACK_CACHE, lfs->conn->want));
 #endif
+    fprintf(fd, "enable_pending_delete_relocate = %d", lfs->enable_pending_delete_relocate);
     fprintf(fd, "pending_delete_prefix = %s\n", lfs->pending_delete_prefix);
     n = tbx_atomic_get(lfs->n_pending_delete);
     fprintf(fd, "n_pending_delete = %d\n", n);
@@ -1611,7 +1615,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
     lfs->mount_point = strdup(init_args->mount_point);
     lfs->mount_point_len = strlen(init_args->mount_point);
 
-    //** Most of the heavylifting is done in the filesystem object
+    //** Most of the heavy lifting is done in the filesystem object
     lfs->fs = lio_fs_create(lfs->lc->ifd, section, lfs->lc, getuid(), getgid());
 log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->fs_checks_acls = tbx_inip_get_integer(lfs->lc->ifd, section, "fs_checks_acls", 1);
@@ -1658,17 +1662,20 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
     apr_pool_create(&(lfs->mpool), NULL);
 
     //** Get the pending_delete info and set it up
+    lfs->enable_pending_delete_relocate = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_pending_delete_relocate", 1);
     lfs->pending_delete_prefix = tbx_inip_get_string(lfs->lc->ifd, section, "pending_delete_prefix", "/.lfs");
     lfs->pending_delete_prefix_len = strlen(lfs->pending_delete_prefix);
     apr_thread_mutex_create(&(lfs->lock), APR_THREAD_MUTEX_DEFAULT, lfs->mpool);
     lfs->pending_delete_table = apr_hash_make(lfs->mpool);
-    if (lio_exists(lfs->lc, lfs->lc->creds, lfs->pending_delete_prefix) == 0) {
-        err = lio_fs_mkdir(lfs->fs, NULL, lfs->pending_delete_prefix, 0);
-        if (err != 0) {
-            fprintf(stderr, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
-            log_printf(0, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
-            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
-            exit(1);
+    if (lfs->enable_pending_delete_relocate) {
+        if (lio_exists(lfs->lc, lfs->lc->creds, lfs->pending_delete_prefix) == 0) {
+            err = lio_fs_mkdir(lfs->fs, NULL, lfs->pending_delete_prefix, 0);
+            if (err != 0) {
+                fprintf(stderr, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+                log_printf(0, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+                notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, lfs->pending_delete_prefix);
+                exit(1);
+            }
         }
     }
 

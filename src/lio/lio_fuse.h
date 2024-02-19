@@ -47,6 +47,7 @@ struct lio_fuse_t {
     int fs_checks_acls;
     int no_cache_stat_if_file;
     int enable_flock;
+    int enable_pending_delete_relocate;
     int shutdown;
     int mount_point_len;
     lio_config_t *lc;
