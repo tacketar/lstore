@@ -55,6 +55,19 @@ void tbx_que_set_finished(tbx_que_t *q)
 
 //************************************************************************************
 
+int tbx_que_get_finished(tbx_que_t *q)
+{
+    int n;
+
+    apr_thread_mutex_lock(q->lock);
+    n = (q->finished == TBX_QUE_FINISHED) ? 1 : 0;
+    apr_thread_mutex_unlock(q->lock);
+
+    return(n);
+}
+
+//************************************************************************************
+
 int tbx_que_is_finished(tbx_que_t *q)
 {
     int done;

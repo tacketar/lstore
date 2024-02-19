@@ -36,6 +36,7 @@ typedef struct tbx_que_s tbx_que_t;
 
 TBX_API int tbx_que_count(tbx_que_t *q);
 TBX_API void tbx_que_set_finished(tbx_que_t *q);
+TBX_API int tbx_que_get_finished(tbx_que_t *q);
 TBX_API int tbx_que_is_finished(tbx_que_t *q);
 TBX_API tbx_que_t *tbx_que_create(int n_objects, int object_size);
 TBX_API void tbx_que_destroy(tbx_que_t *q);
