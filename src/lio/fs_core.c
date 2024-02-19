@@ -70,6 +70,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/fsuid.h>
+#include <tbx/apr_wrapper.h>
 #include <tbx/append_printf.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/assert_result.h>
@@ -81,6 +82,7 @@
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
+#include <tbx/que.h>
 #include <time.h>
 #include <unistd.h>
 #include <zlib.h>
@@ -169,10 +171,19 @@ typedef struct {
     int special;
 }  fs_open_file_t;
 
+typedef struct {  //** This is the que structure for prefetching
+    char *dentry;
+    char *symlink;
+    struct stat stat;
+} fs_dentry_stat_t;
+
 struct lio_fs_dir_iter_t {
     lio_fs_t *fs;
     os_object_iter_t *it;
     lio_os_regex_table_t *path_regex;
+    apr_pool_t *mpool;
+    apr_thread_t *worker_thread;
+    tbx_que_t *pipe;
     char *val[_inode_key_size_security];
     int v_size[_inode_key_size_security];
     char *dot_path;
@@ -181,6 +192,7 @@ struct lio_fs_dir_iter_t {
     fs_dir_entry_t dotdot_de;
     tbx_mon_object_t mo;
     int state;
+    int stat_symlink;
 };
 
 #define UG_GLOBAL 0
@@ -209,6 +221,7 @@ struct lio_fs_t {
     int _inode_key_size;
     int enable_fifo;
     int enable_socket;
+    int readdir_prefetch_size;
     ex_off_t copy_bufsize;
     tbx_atomic_int_t read_cmds_inflight;
     tbx_atomic_int_t read_bytes_inflight;
@@ -690,12 +703,58 @@ int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
 }
 
 //*************************************************************************
+// fs_readdir_thread  - Handles the prefetching of dentries
+//*************************************************************************
+
+void *fs_readdir_thread(apr_thread_t *th, void *data)
+{
+    lio_fs_dir_iter_t *dit = data;
+    fs_dentry_stat_t de;
+    char *fname;
+    int prefix_len, ftype;
+
+    //** Cycle until we hit the end or told to stop
+    while (tbx_que_get_finished(dit->pipe) == 0) {
+        tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
+        ftype = lio_next_object(dit->fs->lc, dit->it, &fname, &prefix_len);
+        tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
+        if (ftype <= 0) break; //** No more files
+
+        de.dentry = strdup(fname+prefix_len+1);
+        _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
+        free(fname);
+
+        tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK);
+    }
+
+    tbx_que_set_finished(dit->pipe);
+
+    return(NULL);
+}
+
+//*************************************************************************
 // lio_fs_closedir - Closes the opendir file handle
 //*************************************************************************
 
 int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 {
+    fs_dentry_stat_t de;
+    apr_status_t value;
+
     if (dit == NULL) return(-EBADF);
+
+    if (dit->worker_thread) {  //** Tell the worker to stop and wait for it to complete
+        tbx_que_set_finished(dit->pipe);  //** Make sure it's flaged as done
+        while (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {  //** And fetch everything
+            if (de.dentry) free(de.dentry);
+            if (de.symlink) free(de.symlink);
+        }
+
+        apr_thread_join(&value, dit->worker_thread);
+
+        tbx_que_destroy(dit->pipe);
+        apr_pool_destroy(dit->mpool);
+    }
 
     tbx_monitor_obj_destroy(&(dit->mo));
 
@@ -704,6 +763,7 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 
     if (dit->it) lio_destroy_object_iter(dit->fs->lc, dit->it);
     lio_os_regex_table_destroy(dit->path_regex);
+
     free(dit);
 
     return(0);
@@ -713,7 +773,7 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 // lio_fs_opendir - opendir call
 //*************************************************************************
 
-lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname)
+lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int stat_symlink)
 {
     lio_fs_dir_iter_t *dit;
     char path[OS_PATH_MAX];
@@ -732,6 +792,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     }
 
     dit->fs = fs;
+    dit->stat_symlink = stat_symlink;
     snprintf(path, OS_PATH_MAX, "%s/*", fname);
     dit->path_regex = lio_os_path_glob2regex(path);
 
@@ -772,6 +833,11 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
         return(NULL);
     }
 
+    //** Make the prefetch pool and thread
+    assert_result(apr_pool_create(&(dit->mpool), NULL), APR_SUCCESS);
+    dit->pipe = tbx_que_create(fs->readdir_prefetch_size, sizeof(fs_dentry_stat_t));
+    tbx_thread_create_assert(&(dit->worker_thread), NULL, fs_readdir_thread, (void *)dit, dit->mpool);
+
     tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
 
     return(dit);
@@ -781,10 +847,9 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 // lio_fs_readdir - Returns the next file in the directory
 //*************************************************************************
 
-int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink, int stat_symlink)
+int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink)
 {
-    int ftype, prefix_len;
-    char *fname;
+    fs_dentry_stat_t de;
 
     if (dit == NULL) {
         return(-EBADF);
@@ -804,19 +869,19 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     if (dit->state <= 2) return(0);  //** See if we have an early kickout
 
     //** If we made it here then grab the next file and look it up.
-    tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
-    ftype = lio_next_object(dit->fs->lc, dit->it, &fname, &prefix_len);
-    tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
-    if (ftype <= 0) { //** No more files
-        if (fname) free(fname);
-        return((ftype == 0) ? 1 : -EIO);
+    if (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {
+        *stat = de.stat;
+        if (symlink) {
+            *symlink = de.symlink;
+        } else if (de.symlink) {
+            free(de.symlink);
+        }
+        *dentry = de.dentry;
+
+        return(0);
     }
 
-    *dentry = strdup(fname+prefix_len+1);
-    _fs_parse_stat_vals(dit->fs, fname, stat, dit->val, dit->v_size, symlink, stat_symlink, 1);
-    free(fname);
-
-    return(0);
+    return(1);
 }
 
 //*************************************************************************
@@ -2713,6 +2778,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_socket = %d\n", fs->enable_socket);
     fprintf(fd, "xattr_error_for_hard_errors = %d\n", fs->xattr_error_for_hard_errors);
     fprintf(fd, "ug_mode = %s\n", _ug_mode_string[fs->ug_mode]);
+    fprintf(fd, "readdir_prefetch_size = %d\n", fs->readdir_prefetch_size);
     fprintf(fd, "n_merge = %d\n", fs->n_merge);
     fprintf(fd, "copy_bufsize = %s\n", tbx_stk_pretty_print_double_with_scale(1024, fs->copy_bufsize, ppbuf));
 
@@ -2787,6 +2853,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
 
     fs->n_merge = tbx_inip_get_integer(fd, fs->fs_section, "n_merge", 0);
     fs->copy_bufsize = tbx_inip_get_integer(fd, fs->fs_section, "copy_bufsize", 10*1024*1024);
+    fs->readdir_prefetch_size = tbx_inip_get_integer(fd, fs->fs_section, "readdir_prefetch_size", 1000);
 
     apr_pool_create(&(fs->mpool), NULL);
     apr_thread_mutex_create(&(fs->lock), APR_THREAD_MUTEX_DEFAULT, fs->mpool);

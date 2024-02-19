@@ -647,7 +647,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
 
     tbx_type_malloc_clear(dit, lfs_dir_iter_t, 1);
     dit->lfs = lfs;
-    dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname);
+    dit->fsit = lio_fs_opendir(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, 1);
     _lfs_hint_release(lfs, &ug);
 
     SHADOW_CODE(shadow_opendir(fname, dit);)
@@ -717,7 +717,7 @@ LFS_READDIR()
     for (;;) {
         //** If we made it here then grab the next file and look it up.
         tbx_type_malloc(de, lfs_dir_entry_t, 1);
-        err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->stat), NULL, 1);
+        err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->stat), NULL);
         if (err != 0) {   //** Nothing left to process
             free(de);
             return((err == 1) ? 0 : -EIO);
