@@ -1527,13 +1527,13 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     gop_op_status_t status;
     char *key[6] = {"system.exnode", "system.exnode.size", "os.timestamp.system.modify_data", NULL, NULL, NULL };
     char *val[6];
-    int err, v_size[6];
+    int err, v_size[6], i;
     char ebuf[128];
     lio_segment_errors_t serr;
     ex_off_t final_size;
     apr_time_t now;
     int n, modified, ftype, tier_change;
-    double dt;
+    double dt, dsec[3];
 
     CIO_DEBUG_NOTIFY("CLOSE: fname=%s fname=%s ino=" XIDT " modified=" AIT " count=%d remove_on_close=%d START\n", fd->path, fd->fh->fname, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count, fd->fh->remove_on_close);
 
@@ -1732,10 +1732,14 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     if (serr.hard) notify_printf(lc->notify, 1, fd->creds, "CLOSE_HARD_ERROR: fname=%s fd=" XIDT " hard_error=%d soft_error=%d\n", fd->path, fd->id, serr.hard, serr.soft);
 
 finished:
-    notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
-         " write_ops=" XOT " write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT "\n",
-         fd->path, fd->id, fd->tally_ops[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
-         fd->tally_ops[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1]);
+    for (i=0; i<3; i++) {
+        dsec[i] = fd->tally_dt[i];
+        dsec[i] /= APR_USEC_PER_SEC;
+    }
+    notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_dt=%lf read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
+         " write_ops=" XOT " write_dt=%lf  write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT " flush_ops=" XOT " flush_dt=%lf\n",
+         fd->path, fd->id, fd->tally_ops[0], dsec[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
+         fd->tally_ops[1], dsec[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1], fd->tally_ops[2], dsec[2]);
 
     if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
     if (fd->path != NULL) free(fd->path);

@@ -135,10 +135,11 @@ struct lio_fd_t {  //** Individual file descriptor
     int ftype;        //** File type
     ex_id_t  id;
     ex_off_t curr_offset;
-    ex_off_t tally_ops[2];
+    ex_off_t tally_ops[3];    //** 0=READ, 1=WRITE, 2=FLUSH
     ex_off_t tally_bytes[2];
     ex_off_t tally_error_ops[2];
     ex_off_t tally_error_bytes[2];
+    apr_time_t tally_dt[3];
 };
 
 wq_context_t *wq_context_create(lio_fd_t *fd, int max_tasks);

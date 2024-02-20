@@ -1309,6 +1309,7 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     nbytes = lio_read(fd, buf, size, off, fs->rw_hints);
     tbx_atomic_dec(fs->read_cmds_inflight);
     tbx_atomic_sub(fs->read_bytes_inflight, size);
+    fd->tally_dt[0] += (apr_time_now() - now);
 
     if (tbx_log_level() > 0) {
         t2 = size+off-1;
@@ -1333,6 +1334,7 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
 {
     ex_off_t n, nbytes, ret;
     int i;
+    apr_time_t now;
 
     nbytes = 0;
     for (i=0; i<iovcnt; i++) nbytes += iov[i].iov_len;
@@ -1340,11 +1342,13 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
     FS_MON_OBJ_CREATE_IRATE(nbytes, "FS_READV: n_iov=%d off=" OT " size=" XOT, iovcnt, offset, nbytes);
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
+    now = apr_time_now();
     tbx_atomic_inc(fs->read_cmds_inflight);
     tbx_atomic_add(fs->read_bytes_inflight, nbytes);
     n = lio_readv(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
     tbx_atomic_dec(fs->read_cmds_inflight);
     tbx_atomic_sub(fs->read_bytes_inflight, nbytes);
+    fd->tally_dt[0] += (apr_time_now() - now);
 
     ret = (n == nbytes) ? nbytes : 0;
 
@@ -1370,17 +1374,20 @@ int lio_fs_read_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex_
 {
     tbx_tbuf_t tbuf;
     int err;
+    apr_time_t now;
 
     FS_MON_OBJ_CREATE_IRATE(iov_nbytes, "FS_READ_EX: n_ex=%d n_iov=%d off[0]=" OT " size=" XOT, n_ex_iov, iovcnt, ex_iov[0].offset, iov_nbytes);
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
+    now = apr_time_now();
     tbx_atomic_inc(fs->read_cmds_inflight);
     tbx_atomic_add(fs->read_bytes_inflight, iov_nbytes);
     err = gop_sync_exec(lio_read_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
     tbx_atomic_dec(fs->read_cmds_inflight);
     tbx_atomic_sub(fs->read_bytes_inflight, iov_nbytes);
+    fd->tally_dt[0] += (apr_time_now() - now);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1422,8 +1429,10 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
     nbytes = lio_write(fd, (char *)buf, size, off, fs->rw_hints);
     tbx_atomic_dec(fs->write_cmds_inflight);
     tbx_atomic_sub(fs->write_bytes_inflight, size);
+    fd->tally_dt[1] += (apr_time_now() - now);
 
     dt = apr_time_now() - now;
+
     dt /= APR_USEC_PER_SEC;
     log_printf(2, "END fname=%s seg=" XIDT " size=" XOT " off=" XOT " nbytes=" XOT " dt=%lf\n", fd->path, segment_id(fd->fh->seg), t1, t2, nbytes, dt);
     tbx_log_flush();
@@ -1450,6 +1459,7 @@ ssize_t lio_fs_writev(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int i
 {
     ex_off_t n, nbytes, ret;
     int i;
+    apr_time_t now;
 
     nbytes = 0;
     for (i=0; i<iovcnt; i++) nbytes += iov[i].iov_len;
@@ -1457,11 +1467,13 @@ ssize_t lio_fs_writev(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int i
     FS_MON_OBJ_CREATE_IRATE(nbytes, "FS_WRITEV: n_iov=%d off=" OT " size=" XOT, iovcnt, offset, nbytes);
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
+    now = apr_time_now();
     tbx_atomic_inc(fs->write_cmds_inflight);
     tbx_atomic_add(fs->write_bytes_inflight, nbytes);
     n = lio_writev(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
     tbx_atomic_dec(fs->write_cmds_inflight);
     tbx_atomic_sub(fs->write_bytes_inflight, nbytes);
+    fd->tally_dt[1] += (apr_time_now() - now);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1478,17 +1490,20 @@ int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex
 {
     tbx_tbuf_t tbuf;
     int err;
+    apr_time_t now;
 
     FS_MON_OBJ_CREATE_IRATE(iov_nbytes, "FS_WRITE_EX: n_ex=%d n_iov=%d off[0]=" OT " size=" XOT, n_ex_iov, iovcnt, ex_iov[0].offset, iov_nbytes);
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
+    now = apr_time_now();
     tbx_atomic_inc(fs->write_cmds_inflight);
     tbx_atomic_add(fs->write_bytes_inflight, iov_nbytes);
     err = gop_sync_exec(lio_write_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
     tbx_atomic_dec(fs->write_cmds_inflight);
     tbx_atomic_sub(fs->write_bytes_inflight, iov_nbytes);
+    fd->tally_dt[1] += (apr_time_now() - now);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1517,6 +1532,9 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
+    fd->tally_dt[2] += (apr_time_now() - now);
+    fd->tally_ops[2]++;
+
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EIO");
         return(-EIO);
