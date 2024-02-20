@@ -1540,7 +1540,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     fprintf(fd, "enable_writeback_cache = %d\n", IS_CAP(FUSE_CAP_WRITEBACK_CACHE, lfs->conn->want));
 #endif
-    fprintf(fd, "enable_pending_delete_relocate = %d", lfs->enable_pending_delete_relocate);
+    fprintf(fd, "enable_pending_delete_relocate = %d\n", lfs->enable_pending_delete_relocate);
     fprintf(fd, "pending_delete_prefix = %s\n", lfs->pending_delete_prefix);
     n = tbx_atomic_get(lfs->n_pending_delete);
     fprintf(fd, "n_pending_delete = %d\n", n);
