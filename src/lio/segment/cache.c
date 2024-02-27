@@ -3254,7 +3254,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
         //** cache_rw_func() leading to a DIO deadlock
         j = (cop->skip_ppages == 0) ? cache_ppages_handle(seg, cop->da, cop->rw_mode, &lo, &hi, &len, &bpos2, cop->buf, &tb_err) : 0;
         if (j == 0) { //** Check if the ppages slurped it up
-            if ((s->c->min_direct > 0) && (len > s->c->min_direct) && ((ex_off_t)tbx_tbuf_size(cop->buf) >= len)) {  //** We have to acquire a lock for the I/O
+            if ((s->c->min_direct > 0) && (len >= s->c->min_direct) && ((ex_off_t)tbx_tbuf_size(cop->buf) >= len)) {  //** We have to acquire a lock for the I/O
                 dio_range_lock_set(&drng, cop->rw_mode, lo, hi, s->dio_execing, s->page_size);
                 dio_range_lock(seg, &drng);
                 j = cache_rw_direct(seg, cop->da, cop->rw_hints, cop->rw_mode, &lo, &hi, &len, &bpos2, cop->buf, &tb_err);
