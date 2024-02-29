@@ -771,7 +771,10 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
         free(fname);
 
-        tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK);
+        if (tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK) != 0) { //** Got an error which means we're got an finished command
+            if (de.dentry) free(de.dentry);
+            if (de.symlink) free(de.symlink);
+        }
     }
 
     tbx_que_set_finished(dit->pipe);
@@ -794,12 +797,13 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 
     if (dit->worker_thread) {  //** Tell the worker to stop and wait for it to complete
         tbx_que_set_finished(dit->pipe);  //** Make sure it's flaged as done
-        while (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {  //** And fetch everything
+        //** Fetch everything available
+        while (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {
             if (de.dentry) free(de.dentry);
             if (de.symlink) free(de.symlink);
         }
 
-        apr_thread_join(&value, dit->worker_thread);
+        apr_thread_join(&value, dit->worker_thread);  //** Wait for it to complete
 
         tbx_que_destroy(dit->pipe);
         apr_pool_destroy(dit->mpool);
@@ -941,7 +945,6 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
             free(de.symlink);
         }
         *dentry = de.dentry;
-
         tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_READDIR].finished);
 
         return(0);
