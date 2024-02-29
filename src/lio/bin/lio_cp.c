@@ -130,7 +130,7 @@ int main(int argc, char **argv)
     start_index = i;
 
     //** Make the iterator
-    n_paths = argc-start_index;
+    n_paths = argc-start_index - 1;  //** The last path is the destination
     if (n_paths <= 0) n_paths = 1;
     max_spawn = lio_parallel_task_count / n_paths;
     if (max_spawn <= 0) max_spawn = 1;
@@ -277,7 +277,7 @@ int main(int argc, char **argv)
             cp->src_tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (cp->src_tuple.is_lio == 0) {
                 lio_path_local_make_absolute(&cp->src_tuple);
-            } else if (cp->src_tuple.is_lio < 0) {   //** CAn't parse path so skip
+            } else if (cp->src_tuple.is_lio < 0) {   //** Can't parse path so skip
                 fprintf(stderr, "Unable to parse source path: %s\n", path);
                 free(path);
                 free(cp);
