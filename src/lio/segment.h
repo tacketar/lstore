@@ -78,11 +78,11 @@ int crypt_write_op_next_block(tbx_tbuf_t *tb, size_t pos, tbx_tbuf_var_t *tbv);
 
 // Preprocessor macros
 #define lio_segment_type(s) (s)->header.type
-// #define segment_clone(s, da, clone_ex, mode, attr, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->clone(s, da, clone_ex, mode, attr, to)
+#define segment_clone(s, da, clone_ex, mode, attr, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->clone(s, da, clone_ex, mode, attr, to)  //** FIXME after segment hints added
 #define segment_deserialize(s, id, exp) ((lio_segment_vtable_t *)(s)->obj.vtable)->deserialize(s, id, exp)
 #define segment_get_gop_header(seg) &((seg)->header)
 #define segment_lock(s) apr_thread_mutex_lock((s)->lock)
-// #define segment_remove(s, da, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->remove(s, da, to)
+#define segment_remove(s, da, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->remove(s, da, to) //** FIXME after segment hints added
 #define segment_serialize(s, exp) ((lio_segment_vtable_t *)(s)->obj.vtable)->serialize(s, exp)
 #define segment_set_header(seg, new_head) (seg)->header = *(new_head)
 #define segment_unlock(s) apr_thread_mutex_unlock((s)->lock)
