@@ -40,7 +40,7 @@
 // local_get - Get data from a local file
 //*************************************************************************
 
-int local_get(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len)
+int local_get(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t cp_hints)
 {
     FILE *fd;
     gop_op_status_t status;
@@ -52,7 +52,7 @@ int local_get(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t 
     }
 
     tbx_dio_init(fd);
-    status = gop_sync_exec_status(lio_cp_local2local_gop(fd, stdout, bufsize, buffer, offset, -1, len, 0, NULL, 0));
+    status = gop_sync_exec_status(lio_cp_local2local_gop(fd, stdout, bufsize, buffer, offset, -1, len, 0, cp_hints, NULL, 0));
     tbx_dio_finish(fd, 0);
 
     fclose(fd);
@@ -65,6 +65,7 @@ int local_get(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t 
 int main(int argc, char **argv)
 {
     ex_off_t bufsize, offset, len;
+    lio_copy_hint_t cp_hints = LIO_COPY_DIRECT_IO_READ;
     int err, err_close, ftype, i, start_index, start_option, return_code, enable_local;
     char *buffer;
     char *path;
@@ -91,6 +92,7 @@ int main(int argc, char **argv)
         printf("                         The default is to return the whole file.  Units are supported.\n");
         printf("                         If the length is -1 then the rest of the file is returned.\n");
         printf("    --local            - Enable reading of local files in addition to LStore files.\n");
+        printf("    --no-direct-io     - Disable using direct I/O. Only valid for reading a local file\n");
         printf("    src_file           - Source file\n");
         return(1);
     }
@@ -114,6 +116,9 @@ int main(int argc, char **argv)
             } else if (strcmp(argv[i], "--local") == 0) {
                 i++;
                 enable_local = 1;
+            } else if (strcmp(argv[i], "--no-direct_io") == 0) {
+                i++;
+                cp_hints &= ~LIO_COPY_DIRECT_IO_READ;
             }
 
         } while ((start_option - i < 0) && (i<argc));
@@ -136,7 +141,7 @@ int main(int argc, char **argv)
         free(path);
         if (tuple.is_lio == 0) {
             if (enable_local == 1) {
-                return_code = local_get(&tuple, bufsize, buffer, offset, len);
+                return_code = local_get(&tuple, bufsize, buffer, offset, len, cp_hints);
             } else {
                 fprintf(stderr, "Unable to parse path: %s\n", tuple.path);
                 return_code = EINVAL;
@@ -162,7 +167,7 @@ int main(int argc, char **argv)
         }
 
         //** Do the get
-        err = gop_sync_exec(lio_cp_lio2local_gop(fd, stdout, bufsize, buffer, offset, len, NULL));
+        err = gop_sync_exec(lio_cp_lio2local_gop(fd, stdout, bufsize, buffer, offset, len, cp_hints, NULL));
         if (err != OP_STATE_SUCCESS) {
             return_code = EIO;
             fprintf(stderr, "Failed reading data!  path=%s\n", tuple.path);

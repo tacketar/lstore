@@ -2093,12 +2093,11 @@ typedef struct {
     ex_off_t offset2;
     ex_off_t len;
     char *buffer;
-    lio_copy_hint_t hints;
+    lio_copy_hint_t cp_hints;
     lio_segment_rw_hints_t *rw_hints;
     int truncate;
     int which_align;    //** Also used as to control locking for lio_flush
 } lio_cp_fn_t;
-
 
 //***********************************************************************
 // local2local_real - Does the actual local2local copy operation
@@ -2113,6 +2112,11 @@ gop_op_status_t local2local_real(lio_cp_fn_t *op, char *buffer, ex_off_t bufsize
     gop_op_status_t status;
     apr_time_t loop_start;
     double dt_loop;
+    segment_copy_read_fn_t cp_read;
+    segment_copy_write_fn_t cp_write;
+
+    cp_read = (op->cp_hints & LIO_COPY_DIRECT_IO_READ) ? tbx_dio_read : tbx_normal_read;
+    cp_write = (op->cp_hints & LIO_COPY_DIRECT_IO_WRITE) ? tbx_dio_write : tbx_normal_write;
 
     //** Set up the buffers
     modulo = (op->which_align == 0) ? op->offset : op->offset2;
@@ -2165,7 +2169,7 @@ gop_op_status_t local2local_real(lio_cp_fn_t *op, char *buffer, ex_off_t bufsize
     if (nbytes > 0) nbytes -= rlen;
 
     loop_start = apr_time_now();
-    got = tbx_dio_read(op->sffd, rb, rlen, -1);
+    got = cp_read(op->sffd, rb, rlen, -1);
     if (got == -1) {
         log_printf(1, "ERROR from fread=%d  rlen=" XOT " got=" XOT "\n", errno, rlen, got);
         status = gop_failure_status;
@@ -2188,8 +2192,8 @@ gop_op_status_t local2local_real(lio_cp_fn_t *op, char *buffer, ex_off_t bufsize
         loop_start = apr_time_now();
 
         //** Start the write
-        err = tbx_dio_write(op->dffd, wb, wlen, -1);
-	if (err != wlen) {
+        err = cp_write(op->dffd, wb, wlen, -1);
+    	if (err != wlen) {
             log_printf(1, "ERROR write failed! wpos=" XOT " len=" XOT " err=" XOT " errno=%d ferror=%d\n", wpos, wlen, err, errno, ferror(op->dffd));
             goto finished;
         }
@@ -2202,7 +2206,7 @@ gop_op_status_t local2local_real(lio_cp_fn_t *op, char *buffer, ex_off_t bufsize
             rlen = (nbytes > bufsize) ? bufsize : nbytes;
         }
         if (rlen > 0) {
-            got = tbx_dio_read(op->sffd, rb, rlen, -1);
+            got = cp_read(op->sffd, rb, rlen, -1);
             if (got == -1) { //** Got an error
                 log_printf(1, "ERROR read failed and not EOF! errno=%d\n", errno);
                 goto finished;
@@ -2257,7 +2261,7 @@ gop_op_status_t lio_cp_local2local_fn(void *arg, int id)
 
 //***********************************************************************
 
-gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int truncate, lio_segment_rw_hints_t *rw_hints, int which_align)
+gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int truncate, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints, int which_align)
 {
     lio_cp_fn_t *op;
 
@@ -2271,6 +2275,7 @@ gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize,
     op->sffd = sfd;
     op->dffd = dfd;
     op->truncate = truncate;
+    op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
     op->which_align = which_align;
 
@@ -2293,6 +2298,9 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     ex_tbx_iovec_t iov;
     int nfd, localbuf;
     FILE *ffd = op->sffd;
+    segment_copy_read_fn_t cp_read;
+
+    cp_read = (op->cp_hints & LIO_COPY_DIRECT_IO_READ) ? tbx_dio_read : tbx_normal_read;
 
     localbuf = 0;
     buffer = op->buffer;
@@ -2324,7 +2332,7 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     got = (op->len != -1) ? op->len + op->offset : op->offset;
     if (got > lfh->lc->small_files_in_metadata_max_size) {  //** Goes in the segment
         lio_adjust_data_tier(op->dlfd, lfh->lc->small_files_in_metadata_max_size+1, 0);
-        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
+        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, cp_read, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
         goto cleanup;
     }
 
@@ -2335,7 +2343,7 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
         len = op->len-op->offset;
     }
 
-    got = tbx_dio_read(ffd, buffer, len, -1);
+    got = cp_read(ffd, buffer, len, -1);
     if ((got != len) || (max_eof == got)) { //** Hit the EOF so we can figure out how big things are
         off = got + op->offset;
         if (off <= lfh->lc->small_files_in_metadata_max_size) { //** Fits in the metadata
@@ -2378,7 +2386,7 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     if (status.op_status == OP_STATE_SUCCESS) {
         if (op->len != -1) op->len -= got;
         op->offset += got;
-        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
+        status = gop_sync_exec_status(segment_put_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, cp_read, ffd, lfh->seg, op->offset, op->len, bufsize, buffer, op->truncate, 3600));
     }
 
 cleanup:
@@ -2394,7 +2402,7 @@ cleanup:
 
 //***********************************************************************
 
-gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate, lio_segment_rw_hints_t *rw_hints)
+gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_cp_fn_t *op;
 
@@ -2407,6 +2415,7 @@ gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsiz
     op->sffd = sfd;
     op->dlfd = dfd;
     op->truncate = truncate;
+    op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
     return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_local2lio_fn, (void *)op, free, 1));
@@ -2418,7 +2427,7 @@ gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsiz
 //       metadata to a local file
 //***********************************************************************
 
-gop_op_status_t metadata_lio2local(lio_cp_fn_t *op)
+gop_op_status_t metadata_lio2local(lio_cp_fn_t *op, segment_copy_write_fn_t cp_write)
 {
     gop_op_status_t status = gop_success_status;
     ex_off_t got;
@@ -2427,7 +2436,7 @@ gop_op_status_t metadata_lio2local(lio_cp_fn_t *op)
 
     if (op->len == -1) op->len = lfh->data_size - op->offset;
     if ((op->offset > lfh->data_size) || ((op->offset + op->len) > lfh->data_size)) return(gop_failure_status);
-    got = tbx_dio_write(ffd, lfh->data + op->offset, op->len, -1);
+    got = cp_write(ffd, lfh->data + op->offset, op->len, -1);
     if (got != op->len) status = gop_failure_status;
     return(status);
 }
@@ -2444,7 +2453,9 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
     ex_off_t bufsize;
     lio_file_handle_t *lfh = op->slfd->fh;
     FILE *ffd = op->dffd;
+    segment_copy_write_fn_t cp_write;
 
+    cp_write = (op->cp_hints & LIO_COPY_DIRECT_IO_WRITE) ? tbx_dio_write : tbx_normal_write;
 
     if (lfh->data_size == -1) {   //** Data stored in the segment
         buffer = op->buffer;
@@ -2453,12 +2464,12 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
             tbx_type_malloc(buffer, char, bufsize+1);
         }
 
-        status = gop_sync_exec_status(segment_get_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, lfh->seg, ffd, op->offset, op->len, bufsize, buffer, 3600));
+        status = gop_sync_exec_status(segment_get_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, lfh->seg, cp_write, ffd, op->offset, op->len, bufsize, buffer, 3600));
 
         //** Clean up
         if (op->buffer == NULL) free(buffer);
     } else {  //** Stored as metadata
-        status = metadata_lio2local(op);
+        status = metadata_lio2local(op, cp_write);
     }
 
 
@@ -2469,7 +2480,7 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
 
 //***********************************************************************
 
-gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints)
+gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_cp_fn_t *op;
 
@@ -2481,6 +2492,7 @@ gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsiz
     op->len = len;
     op->slfd = sfd;
     op->dffd = dfd;
+    op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
     return(gop_tp_op_new(sfd->lc->tpc_unlimited, NULL, lio_cp_lio2local_fn, (void *)op, free, 1));
@@ -2630,7 +2642,7 @@ gop_op_status_t lio_cp_lio2lio_fn(void *arg, int id)
     segment_signature(dfh->seg, sig2, &used, sigsize);
 
     status = gop_failure_status;
-    if ((strcmp(sig1, sig2) == 0) && ((op->hints & LIO_COPY_INDIRECT) == 0)) {
+    if ((strcmp(sig1, sig2) == 0) && ((op->cp_hints & LIO_COPY_INDIRECT) == 0)) {
         status = gop_sync_exec_status(segment_clone(sfh->seg, dfh->lc->da, &(dfh->seg), CLONE_STRUCT_AND_DATA, NULL, dfh->lc->timeout));
     }
 
@@ -2659,7 +2671,7 @@ finished:
 
 //***********************************************************************
 
-gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int hints, lio_segment_rw_hints_t *rw_hints)
+gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_cp_fn_t *op;
 
@@ -2672,7 +2684,7 @@ gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufs
     op->len = len;
     op->slfd = sfd;
     op->dlfd = dfd;
-    op->hints = hints;
+    op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
     return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_lio2lio_fn, (void *)op, free, 1));
@@ -2695,6 +2707,8 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
 
     buffer = NULL;
 
+fprintf(stderr, "lio_file_copy_op. cp_hints=%d\n", cp->cp_hints);
+
     if (((cp->src_tuple.is_lio == 0) && (cp->dest_tuple.is_lio == 0)) && (cp->enable_local == 0)) {  //** Not allowed to both go to disk
         info_printf(lio_ifd, 0, "Both source(%s) and destination(%s) are local files! enable_local=%d\n", cp->src_tuple.path, cp->dest_tuple.path, cp->enable_local);
         return(gop_failure_status);
@@ -2705,7 +2719,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
     if (cp->src_tuple.is_lio == 0) {  //** Source is a local file and dest is lio (or local if enabled)
         ftype = lio_os_local_filetype(cp->src_tuple.path);
         sffd = tbx_io_fopen(cp->src_tuple.path, "r");
-        if (sffd) tbx_dio_init(sffd);
+        if ((sffd) && (cp->cp_hints & LIO_COPY_DIRECT_IO_READ)) tbx_dio_init(sffd);
 
         if (cp->dest_tuple.is_lio == 1) {
             info_printf(lio_ifd, 0, "copy %s %s@%s:%s\n", cp->src_tuple.path, an_cred_get_id(cp->dest_tuple.creds, NULL), cp->dest_tuple.lc->obj_name, cp->dest_tuple.path);
@@ -2718,7 +2732,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                 status = gop_failure_status;
             } else {
                 tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
-                status = gop_sync_exec_status(lio_cp_local2lio_gop(sffd, dlfd, cp->bufsize, buffer, 0, -1, 1, cp->rw_hints));
+                status = gop_sync_exec_status(lio_cp_local2lio_gop(sffd, dlfd, cp->bufsize, buffer, 0, -1, 1, cp->cp_hints, cp->rw_hints));
             }
             if (dlfd != NULL) {
                 close_status = gop_sync_exec_status(lio_close_gop(dlfd));
@@ -2730,13 +2744,14 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                     }
                 }
             }
-            if (sffd != NULL) { tbx_dio_finish(sffd, 0); tbx_io_fclose(sffd); }
+            if (sffd != NULL) { tbx_io_fclose(sffd); }
         } else if (cp->enable_local == 1) {  //** local2local copy
             info_printf(lio_ifd, 0, "copy %s %s\n", cp->src_tuple.path, cp->dest_tuple.path);
             ftype = os_local_filetype_stat(cp->src_tuple.path, &stat_link, &stat_object);
             already_exists = lio_os_local_filetype(cp->dest_tuple.path); //** Track if the file was already there for cleanup
             dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
-            if (dffd) tbx_dio_init(dffd);
+            if ((dffd) && (cp->cp_hints & LIO_COPY_DIRECT_IO_WRITE)) tbx_dio_init(dffd);
+info_printf(lio_ifd, 0, "DEBUG: after open -- copy %s %s\n", cp->src_tuple.path, cp->dest_tuple.path); tbx_info_flush(lio_ifd);
 
             //** Check if the src and dest are the same if so kick out
             if (realpath(cp->src_tuple.path, rp_src) == NULL) rp_src[0] = '\0';
@@ -2751,10 +2766,10 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                 status = gop_failure_status;
             } else {
                 tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
-                status = gop_sync_exec_status(lio_cp_local2local_gop(sffd, dffd, cp->bufsize, buffer, 0, 0, -1, 1, cp->rw_hints, 0));
+                status = gop_sync_exec_status(lio_cp_local2local_gop(sffd, dffd, cp->bufsize, buffer, 0, 0, -1, 1, cp->cp_hints, cp->rw_hints, 0));
             }
-            if (dffd != NULL) { tbx_dio_finish(dffd, 0); tbx_io_fclose(dffd); }
-            if (sffd != NULL) { tbx_dio_finish(sffd, 0); tbx_io_fclose(sffd); }
+            if (dffd != NULL) { tbx_io_fclose(dffd); }
+            if (sffd != NULL) { tbx_io_fclose(sffd); }
 
             if (status.op_status == OP_STATE_SUCCESS) {
                 if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
@@ -2769,7 +2784,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
 
         gop_sync_exec(lio_open_gop(cp->src_tuple.lc, cp->src_tuple.creds, cp->src_tuple.path, lio_fopen_flags("r"), NULL, &slfd, 60));
         dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
-        if (dffd) tbx_dio_init(dffd);
+        if ((dffd) && (cp->cp_hints & LIO_COPY_DIRECT_IO_WRITE)) tbx_dio_init(dffd);
 
         if ((dffd == NULL) || (slfd == NULL)) { //** Got an error
             if (slfd == NULL) info_printf(lio_ifd, 0, "ERROR: Failed opening source file!  path=%s\n", cp->src_tuple.path);
@@ -2777,10 +2792,10 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             status = gop_failure_status;
         } else {
             tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
-            status = gop_sync_exec_status(lio_cp_lio2local_gop(slfd, dffd, cp->bufsize, buffer, 0, -1, cp->rw_hints));
+            status = gop_sync_exec_status(lio_cp_lio2local_gop(slfd, dffd, cp->bufsize, buffer, 0, -1, cp->cp_hints, cp->rw_hints));
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
-        if (dffd != NULL) { tbx_dio_finish(dffd, 0); tbx_io_fclose(dffd); }
+        if (dffd != NULL) { tbx_io_fclose(dffd); }
         if (status.op_status == OP_STATE_SUCCESS) {
             if ((ftype & OS_OBJECT_EXEC_FLAG) != (already_exists & OS_OBJECT_EXEC_FLAG)) { //** Need to either set or unset the exec flag
                 already_exists = os_local_filetype_stat(cp->dest_tuple.path, &stat_link, &stat_object);
@@ -2816,7 +2831,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             status = gop_failure_status;
         } else {
             tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
-            status = gop_sync_exec_status(lio_cp_lio2lio_gop(slfd, dlfd, cp->bufsize, buffer, 0, 0, -1, cp->slow, cp->rw_hints));
+            status = gop_sync_exec_status(lio_cp_lio2lio_gop(slfd, dlfd, cp->bufsize, buffer, 0, 0, -1, cp->cp_hints, cp->rw_hints));
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
         if (dlfd != NULL) {
@@ -2965,7 +2980,8 @@ gop_op_status_t lio_path_copy_op(void *arg, int id)
         c->dest_tuple = cp->dest_tuple;
         c->dest_tuple.path = strdup(dname);
         c->bufsize = cp->bufsize;
-        c->slow = cp->slow;
+        c->cp_hints = cp->cp_hints;
+        c->rw_hints = cp->rw_hints;
         c->enable_local = cp->enable_local;
 
         gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, lio_file_copy_op, (void *)c, NULL, 1);
@@ -3098,7 +3114,6 @@ ex_off_t lio_size_fh(lio_file_handle_t *fh)
         }
         apr_thread_mutex_unlock(fh->lock);
     }
-    apr_thread_mutex_unlock(fh->lock);
 
     if (size <= 0) {
         n = segment_size(fh->seg);

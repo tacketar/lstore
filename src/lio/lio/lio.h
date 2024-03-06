@@ -49,6 +49,15 @@ typedef struct lio_path_tuple_t lio_path_tuple_t;
 typedef struct lio_unified_object_iter_t lio_unified_object_iter_t;
 struct stat;
 
+//enum lio_copy_hint_t {
+//    LIO_COPY_DIRECT          = 0,  // ** Normal depot->depot copy op
+//    LIO_COPY_INDIRECT        = 1,  // ** Make the data go through the client for lio2lio copies
+//    LIO_COPY_DIRECT_IO_READ  = 2,  // ** Use direct I/O for local reads
+//    LIO_COPY_DIRECT_IO_WRITE = 4,  // ** USe direct I/O for local writes
+//};
+
+//typedef enum lio_copy_hint_t lio_copy_hint_t;
+
 // Functions
 LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name);
 LIO_API void lio_destroy(lio_config_t *lio);
@@ -107,10 +116,10 @@ LIO_API lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *cre
 LIO_API int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, char **readlink);
 LIO_API void lio_stat_iter_destroy(lio_stat_iter_t *dit);
 LIO_API gop_op_generic_t *lio_close_gop(lio_fd_t *fd);
-LIO_API gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int hints, lio_segment_rw_hints_t *rw_hints);
-LIO_API gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints);
-LIO_API gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate, lio_segment_rw_hints_t *rw_hints);
-LIO_API gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int truncate, lio_segment_rw_hints_t *rw_hints, int which_align);
+LIO_API gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize, char *buffer, ex_off_t src_offset, ex_off_t dest_offset, ex_off_t len, int truncate, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints, int which_align);
 LIO_API lio_fsck_iter_t *lio_create_fsck_iter(lio_config_t *lc, lio_creds_t *creds, char *path, int owner_mode, char *owner, int exnode_mode);
 LIO_API os_object_iter_t *lio_create_object_iter(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, lio_os_regex_table_t *attr, int recurse_dpeth, os_attr_iter_t **it, int v_max);
 LIO_API os_object_iter_t *lio_create_object_iter_alist(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, int recurse_depth, char **key, void **val, int *v_size, int n_keys);
@@ -210,12 +219,6 @@ typedef enum lio_fsck_error_flags_t lio_fsck_error_flags_t;
 #define LIO_ILOCK_TRACK_MODE 2048    // **Internal tracking mode. Only acquire a global READ lock no matter if it's opened for writing
 #define LIO_RW_MODE       (LIO_READ_MODE|LIO_WRITE_MODE)
 
-enum lio_copy_hint_t {
-    LIO_COPY_DIRECT   = 0,
-    LIO_COPY_INDIRECT = 1,
-};
-typedef enum lio_copy_hint_t lio_copy_hint_t;
-
 // Global variables
 LIO_API extern lio_config_t *lio_gc;
 LIO_API extern tbx_log_fd_t *lio_ifd;
@@ -297,8 +300,8 @@ struct lio_cp_file_t {
     lio_path_tuple_t src_tuple;
     lio_path_tuple_t dest_tuple;
     ex_off_t bufsize;
-    int slow;
     int enable_local;
+    lio_copy_hint_t cp_hints;
 };
 
 struct lio_cp_path_t {
@@ -310,11 +313,13 @@ struct lio_cp_path_t {
     int dest_type;
     int obj_types;
     int max_spawn;
-    int slow;
     int enable_local;
     int force_dest_create;
     ex_off_t bufsize;
+    lio_copy_hint_t cp_hints;
+    lio_segment_rw_hints_t *rw_hints;
 };
+
 #ifdef __cplusplus
 }
 #endif

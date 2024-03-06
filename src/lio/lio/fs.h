@@ -80,10 +80,10 @@ LIO_API int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iov
 LIO_API int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd);
 LIO_API ex_off_t lio_fs_copy_file_range(lio_fs_t *fs, lio_fd_t *fd_in, off_t offset_in, lio_fd_t *fd_out, off_t offset_out, size_t size);
 LIO_API int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, const char *newname);
-LIO_API int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_local_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints);
-LIO_API int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_local_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, int do_truncate, lio_segment_rw_hints_t *rw_hints);
-LIO_API gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int do_slow_copy, int allow_local2local, lio_segment_rw_hints_t *rw_hints);
-LIO_API int lio_fs_copy(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int do_slow_copy, int allow_local2local, lio_segment_rw_hints_t *rw_hints);
+LIO_API int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_local_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_local_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, int do_truncate, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int allow_local2local, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
+LIO_API int lio_fs_copy(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int allow_local2local, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints);
 LIO_API int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, off_t new_size);
 LIO_API int lio_fs_ftruncate(lio_fs_t *fs, lio_fd_t *fd, off_t new_size);
 LIO_API int lio_fs_utimens(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, const struct timespec tv[2]);

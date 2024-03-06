@@ -60,6 +60,7 @@ void mangle_copy_path(lio_cp_path_t *cp)
 int main(int argc, char **argv)
 {
     int i, n, start_index, start_option, n_paths, n_errors, return_code, enable_local;
+    lio_copy_hint_t cp_hints = LIO_COPY_DIRECT|LIO_COPY_DIRECT_IO_READ|LIO_COPY_DIRECT_IO_WRITE;
     int max_spawn, stype, sflag, dflag;
     int obj_types = OS_OBJECT_ANY_FLAG;
     ex_off_t bufsize;
@@ -72,7 +73,6 @@ int main(int argc, char **argv)
     gop_opque_t *q = NULL;
     lio_path_tuple_t dtuple;
     int dtype, recurse_depth;
-    lio_copy_hint_t slow;
     gop_op_status_t status;
 
     recurse_depth = 10000;
@@ -83,12 +83,15 @@ int main(int argc, char **argv)
         printf("lio_cp LIO_COMMON_OPTIONS [-rd recurse_depth] [-b bufsize_mb] [-f] src_path1 .. src_pathN dest_path\n");
         lio_print_options(stdout);
         printf("\n");
-        printf("    -rd recurse_depth  - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
-        printf("    -b bufsize         - Buffer size to use for *each* transfer. Units supported (Default=%s)\n", tbx_stk_pretty_print_int_with_scale(bufsize, ppbuf));
-        printf("    -f                 - Force a slow or traditional copy by reading from the source and copying to the destination\n");
-        printf("    --local            - Enable copying local files to local disk.\n");
-        printf("    src_path*          - Source path glob to copy\n");
-        printf("    dest_path          - Destination file or directory\n");
+        printf("    -rd recurse_depth    - Max recursion depth on directories. Defaults to %d\n", recurse_depth);
+        printf("    -b bufsize           - Buffer size to use for *each* transfer. Units supported (Default=%s)\n", tbx_stk_pretty_print_int_with_scale(bufsize, ppbuf));
+        printf("    -f | --nodepot2depot - Force a slow or traditional copy by reading from the source and copying to the destination\n");
+        printf("    --local              - Enable copying local files to local disk.\n");
+        printf("    --no-direct-io       - Disable direct I/O for both reading and writing of local disks\n");
+        printf("    --no-direct-io-read  - Disable direct I/O for reading of local disks\n");
+        printf("    --no-direct-io-write - Disable direct I/O for writing of local disks\n");
+        printf("    src_path*            - Source path glob to copy\n");
+        printf("    dest_path            - Destination file or directory\n");
         printf("\n");
         printf("*** NOTE: It's imperative that the user@host:/path..., @:/path..., etc    ***\n");
         printf("***   be used since this signifies where the files come from.             ***\n");
@@ -103,17 +106,15 @@ int main(int argc, char **argv)
         return(EINVAL);
     }
 
-
     //*** Parse the args
     n_errors = 0;
-    slow = LIO_COPY_DIRECT;
     enable_local = 0;
     i=1;
     do {
         start_option = i;
-        if (strcmp(argv[i], "-f") == 0) {  //** Force a slow copy
+        if ((strcmp(argv[i], "-f") == 0) || (strcmp(argv[i], "--no-depot2depot") == 0)) { //** Force a slow copy
             i++;
-            slow = LIO_COPY_INDIRECT;
+            cp_hints |= LIO_COPY_INDIRECT;
         } else if (strcmp(argv[i], "-rd") == 0) { //** Recurse depth
             i++;
             recurse_depth = atoi(argv[i]);
@@ -125,6 +126,15 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "--local") == 0) {
             i++;
             enable_local = 1;
+        } else if (strcmp(argv[i], "--no-direct-io") == 0) {
+            i++;
+            cp_hints &= ~(LIO_COPY_DIRECT_IO_READ|LIO_COPY_DIRECT_IO_WRITE);
+        } else if (strcmp(argv[i], "--no-direct-io-read") == 0) {
+            i++;
+            cp_hints &= ~LIO_COPY_DIRECT_IO_READ;
+        } else if (strcmp(argv[i], "--no-direct-io-write") == 0) {
+            i++;
+            cp_hints &= ~LIO_COPY_DIRECT_IO_WRITE;
         }
     } while ((start_option < i) && (i<argc));
     start_index = i;
@@ -206,14 +216,14 @@ int main(int argc, char **argv)
         cp->obj_types = obj_types;
         cp->max_spawn = max_spawn;
         cp->bufsize = bufsize;
-        cp->slow = slow;
+        cp->cp_hints = cp_hints;
         cp->enable_local = enable_local;
 
         memset(&cpf, 0, sizeof(cpf));
         cpf.src_tuple = cp->src_tuple;
         cpf.dest_tuple = cp->dest_tuple;
         cpf.bufsize = cp->bufsize;
-        cpf.slow = cp->slow;
+        cpf.cp_hints = cp->cp_hints;
         cpf.enable_local = cp->enable_local;
         cpf.rw_hints = NULL;
 
@@ -291,7 +301,7 @@ int main(int argc, char **argv)
             cp->obj_types = obj_types;
             cp->max_spawn = max_spawn;
             cp->bufsize = bufsize;
-            cp->slow = slow;
+            cp->cp_hints = cp_hints;
             cp->enable_local = enable_local;
 
             gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, lio_path_copy_op, cp, NULL, 1);

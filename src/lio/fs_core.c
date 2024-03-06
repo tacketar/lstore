@@ -234,8 +234,9 @@ char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 #define FS_SLOT_SIZE         26
 
 static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "BG_READDIR", "STAT", "FLOCK", "MKDIR", "RMDIR", "RENAME",
-                                  "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
-                                  "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
+                                 "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
+                                 "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
+
 
 typedef struct {
     tbx_atomic_int_t submitted;
@@ -1779,7 +1780,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
 // lio_fs_lio2local - Copy a local file to LStore
 //*****************************************************************
 
-int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_local_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints)
+int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_local_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_fd_t *sfd;
     FILE *dfd;
@@ -1811,7 +1812,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     }
 
     //** Now do the actual copy
-    err = gop_sync_exec(lio_cp_lio2local_gop(sfd, dfd, bufsize, buf2, offset, len, rw_hints));
+    err = gop_sync_exec(lio_cp_lio2local_gop(sfd, dfd, bufsize, buf2, offset, len, hints, rw_hints));
     if (err == OP_STATE_SUCCESS) { //** See if we need to set the exec bits
         err = 0;
         ftype = lio_fs_exists(fs, src_lio_fname);
@@ -1843,7 +1844,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
 // lio_fs_local2lio - Copy an LStore file to the local file system
 //*****************************************************************
 
-int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_local_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, int do_truncate, lio_segment_rw_hints_t *rw_hints)
+int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_local_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, int do_truncate, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_fd_t *dfd;
     FILE *sfd;
@@ -1874,7 +1875,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     }
 
     //** Now do the actual copy
-    err = gop_sync_exec(lio_cp_local2lio_gop(sfd, dfd, bufsize, buf2, offset, len, do_truncate, rw_hints));
+    err = gop_sync_exec(lio_cp_local2lio_gop(sfd, dfd, bufsize, buf2, offset, len, do_truncate, hints, rw_hints));
     if (err == OP_STATE_SUCCESS) { //** See if we need to set the exec bits
         err = 0;
         stat(src_local_fname, &sbuf);
@@ -1896,7 +1897,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
 // lio_fs_lio2lio - Copy an LStore file to another LStore file
 //*****************************************************************
 
-int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_segment_rw_hints_t *rw_hints)
+int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_lio_fname, const char *dest_lio_fname, int bufsize, char *buffer, ex_off_t offset, ex_off_t len, lio_copy_hint_t hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_fd_t *dfd;
     lio_fd_t *sfd;
@@ -1926,7 +1927,7 @@ int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_
     }
 
     //** Now do the actual copy
-    err = gop_sync_exec(lio_cp_lio2lio_gop(sfd, dfd, bufsize, buf2, 0, offset, len, LIO_COPY_INDIRECT, rw_hints));
+    err = gop_sync_exec(lio_cp_lio2lio_gop(sfd, dfd, bufsize, buf2, 0, offset, len, hints, rw_hints));
     if (err == OP_STATE_SUCCESS) { //** See if we need to set the exec bits
         err = 0;
         ftype = lio_fs_exists(fs, src_lio_fname);
@@ -1948,7 +1949,7 @@ int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_
 // lio_fs_copy_gop - Copy file operation
 //*****************************************************************
 
-gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int do_slow_copy, int enable_local2local, lio_segment_rw_hints_t *rw_hints)
+gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int enable_local2local, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints)
 {
     lio_cp_file_t *cp;
     gop_op_generic_t *gop;
@@ -1979,8 +1980,8 @@ gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int sr
     cp->dest_tuple.is_lio = dest_is_lio;
     cp->dest_tuple.path = (char *)dest_fname;
     cp->bufsize = (bufsize <= 0) ? fs->copy_bufsize : bufsize;
-    cp->slow = do_slow_copy;
     cp->enable_local = enable_local2local;
+    cp->cp_hints = cp_hints;
     cp->rw_hints = rw_hints;
     gop = gop_tp_op_new(fs->lc->tpc_unlimited, NULL, lio_file_copy_op, (void *)cp, NULL, 1);
 
@@ -1991,12 +1992,12 @@ gop_op_generic_t *lio_fs_copy_gop(lio_fs_t *fs, lio_os_authz_local_t *ug, int sr
 // lio_fs_copy - Copy a file
 //*****************************************************************
 
-int lio_fs_copy(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int do_slow_copy, int enable_local2local, lio_segment_rw_hints_t *rw_hints)
+int lio_fs_copy(lio_fs_t *fs, lio_os_authz_local_t *ug, int src_is_lio, const char *src_fname, int dest_is_lio, const char *dest_fname, ex_off_t bufsize, int enable_local2local, lio_copy_hint_t cp_hints, lio_segment_rw_hints_t *rw_hints)
 {
     int err;
 
-    FS_MON_OBJ_CREATE("FS_COPY: fsrc=%s src_is_lio=%d fdest=%s dest_is_lio=%d slow_copy=%d bufsize=" XOT, src_fname, src_is_lio, dest_fname, dest_is_lio, do_slow_copy, bufsize);
-    err = gop_sync_exec(lio_fs_copy_gop(fs, ug, src_is_lio, src_fname, dest_is_lio, dest_fname, bufsize, do_slow_copy, enable_local2local, rw_hints));
+    FS_MON_OBJ_CREATE("FS_COPY: fsrc=%s src_is_lio=%d fdest=%s dest_is_lio=%d cp_hints=%d bufsize=" XOT, src_fname, src_is_lio, dest_fname, dest_is_lio, cp_hints, bufsize);
+    err = gop_sync_exec(lio_fs_copy_gop(fs, ug, src_is_lio, src_fname, dest_is_lio, dest_fname, bufsize, enable_local2local, cp_hints, rw_hints));
     FS_MON_OBJ_DESTROY();
     return((err == OP_STATE_SUCCESS) ? 0 : 1);
 }

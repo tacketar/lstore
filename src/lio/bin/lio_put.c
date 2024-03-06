@@ -41,7 +41,7 @@
 
 //*************************************************************************
 
-int local_put(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate)
+int local_put(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t offset, ex_off_t len, int truncate, lio_copy_hint_t cp_hints)
 {
     FILE *fd;
     gop_op_status_t status;
@@ -56,7 +56,7 @@ int local_put(lio_path_tuple_t *tuple, ex_off_t bufsize, char *buffer, ex_off_t 
     }
 
     tbx_dio_init(fd);
-    status = gop_sync_exec_status(lio_cp_local2local_gop(stdin, fd, bufsize, buffer, -1, offset, len, truncate, NULL, 1));
+    status = gop_sync_exec_status(lio_cp_local2local_gop(stdin, fd, bufsize, buffer, -1, offset, len, truncate, cp_hints, NULL, 1));
     tbx_dio_finish(fd, 0);
     fclose(fd);
 
@@ -75,6 +75,7 @@ int main(int argc, char **argv)
     char ppbuf[32];
     lio_path_tuple_t tuple;
     gop_op_status_t status;
+    lio_copy_hint_t cp_hints = LIO_COPY_DIRECT_IO_WRITE;
 
     bufsize = 20*1024*1024;
 
@@ -87,6 +88,7 @@ int main(int argc, char **argv)
         printf("                         If the length is -1 then all data is stored (default). Units are supported\n");
         printf("    --no-truncate      - Don't truncate the file. Defaults to truncating the file\n");
         printf("    --local            - Enable writing to a local file in addition to LStore file.\n");
+        printf("    --no-direct-io     - Disable using direct I/O. Only valid for reading a local file\n");
         printf("    dest_file          - Destination file\n");
         return(1);
     }
@@ -120,6 +122,9 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "--local") == 0) {
             i++;
             enable_local = 1;
+        } else if (strcmp(argv[i], "--no-direct_io") == 0) {
+            i++;
+            cp_hints &= ~LIO_COPY_DIRECT_IO_WRITE;
         }
     } while ((start_option - i < 0) && (i<argc));
     start_index = i;
@@ -138,7 +143,7 @@ int main(int argc, char **argv)
     tuple = lio_path_resolve(lio_gc->auto_translate, argv[start_index]);
     if (tuple.is_lio == 0) {
         if (enable_local == 1) {
-            err = local_put(&tuple, bufsize, buffer, offset, len, truncate);
+            err = local_put(&tuple, bufsize, buffer, offset, len, truncate, cp_hints);
         } else {
             fprintf(stderr, "Unable to parse path: %s\n", tuple.path);
             err = EINVAL;
@@ -168,7 +173,7 @@ int main(int argc, char **argv)
     }
 
     //** Do the put
-    err = gop_sync_exec(lio_cp_local2lio_gop(stdin, fd, bufsize, buffer, offset, len, truncate, NULL));
+    err = gop_sync_exec(lio_cp_local2lio_gop(stdin, fd, bufsize, buffer, offset, len, truncate, cp_hints, NULL));
     if (err != OP_STATE_SUCCESS) {
         info_printf(lio_ifd, 0, "Failed writing data!  path=%s\n", tuple.path);
     }

@@ -62,6 +62,8 @@ typedef struct {
     ex_off_t bufsize;
     int timeout;
     int truncate;
+    segment_copy_read_fn_t cp_read;
+    segment_copy_write_fn_t cp_write;
 } lio_segment_copy_gop_t;
 
 //***********************************************************************
@@ -70,7 +72,7 @@ typedef struct {
 
 lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_exchange_t *ex)
 {
-    char *type = NULL;
+    char *type = "NULL";
     char name[1024];
     segment_load_t *sload;
 
@@ -88,10 +90,11 @@ lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_e
     sload = lio_lookup_service(ess, SEG_SM_LOAD, type);
     if (sload == NULL) {
         log_printf(0, "load_segment:  No matching driver for type=%s  id=" XIDT "\n", type, id);
+        if (type) free(type);
         return(NULL);
     }
 
-    free(type);
+    if (type) free(type);
     return((*sload)(ess, id, ex));
 }
 
@@ -366,7 +369,7 @@ gop_op_status_t segment_get_gop_func(void *arg, int id)
 
         //** Start the write
         file_start = apr_time_now();
-        got = tbx_dio_write(sc->fd, wb, wlen, -1);
+        got = sc->cp_write(sc->fd, wb, wlen, -1);
         dt_file = apr_time_now() - file_start;
         dt_file /= (double)APR_USEC_PER_SEC;
         total += got;
@@ -412,7 +415,7 @@ fail:
 //      If len == -1 then all available data from src is copied
 //***********************************************************************
 
-gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, lio_segment_t *src_seg, FILE *fd, ex_off_t src_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int timeout)
+gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, lio_segment_t *src_seg, segment_copy_write_fn_t cp_write, FILE *fd, ex_off_t src_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int timeout)
 {
     lio_segment_copy_gop_t *sc;
 
@@ -427,6 +430,7 @@ gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
     sc->len = len;
     sc->bufsize = bufsize;
     sc->buffer = buffer;
+    sc->cp_write = cp_write;
 
     return(gop_tp_op_new(tpc, NULL, segment_get_gop_func, (void *)sc, free, 1));
 }
@@ -499,7 +503,7 @@ gop_op_status_t segment_put_gop_func(void *arg, int id)
     log_printf(0, "FILE fd=%p bufsize=" XOT " rlen=" XOT " nbytes=" XOT "\n", sc->fd, bufsize, rlen, nbytes);
 
     loop_start = apr_time_now();
-    got = tbx_dio_read(sc->fd, rb, rlen, -1);
+    got = sc->cp_read(sc->fd, rb, rlen, -1);
     dt_file = apr_time_now() - loop_start;
     dt_file /= (double)APR_USEC_PER_SEC;
 
@@ -541,7 +545,7 @@ gop_op_status_t segment_put_gop_func(void *arg, int id)
         }
         if (rlen > 0) {
             file_start = apr_time_now();
-            got = tbx_dio_read(sc->fd, rb, rlen, -1);
+            got = sc->cp_read(sc->fd, rb, rlen, -1);
             dt_file = apr_time_now() - file_start;
             dt_file /= (double)APR_USEC_PER_SEC;
             if (got == -1) {
@@ -577,7 +581,6 @@ gop_op_status_t segment_put_gop_func(void *arg, int id)
     }
 
 finished:
-//  status.error_code = rpos;
 
     return(status);
 }
@@ -589,7 +592,7 @@ finished:
 //      If len == -1 then all available data from src is copied
 //***********************************************************************
 
-gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, FILE *fd, lio_segment_t *dest_seg, ex_off_t dest_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int do_truncate, int timeout)
+gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *da, lio_segment_rw_hints_t *rw_hints, segment_copy_read_fn_t cp_read, FILE *fd, lio_segment_t *dest_seg, ex_off_t dest_offset, ex_off_t len, ex_off_t bufsize, char *buffer, int do_truncate, int timeout)
 {
     lio_segment_copy_gop_t *sc;
 
@@ -605,6 +608,7 @@ gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
     sc->bufsize = bufsize;
     sc->buffer = buffer;
     sc->truncate = do_truncate;
+    sc->cp_read = cp_read;
 
     return(gop_tp_op_new(tpc, NULL, segment_put_gop_func, (void *)sc, free, 1));
 }

@@ -45,8 +45,18 @@ typedef uint64_t ex_id_t;
 typedef ibp_tbx_iovec_t ex_tbx_iovec_t;
 typedef void segment_priv_t;
 
+
+enum lio_copy_hint_t {
+    LIO_COPY_DIRECT          = 0,  // ** Normal depot->depot copy op
+    LIO_COPY_INDIRECT        = 1,  // ** Make the data go through the client for lio2lio copies
+    LIO_COPY_DIRECT_IO_READ  = 2,  // ** Use direct I/O for local reads
+    LIO_COPY_DIRECT_IO_WRITE = 4,  // ** USe direct I/O for local writes
+};
+
+typedef enum lio_copy_hint_t lio_copy_hint_t;
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ^ ACCRE_LIO_EX3_ABSTRACT_H_INCLUDED ^ */ 
+#endif /* ^ ACCRE_LIO_EX3_ABSTRACT_H_INCLUDED ^ */
