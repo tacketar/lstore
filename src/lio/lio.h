@@ -97,6 +97,7 @@ struct lio_file_handle_t {  //** Shared file handle
     int quick_lock;         //** This is just used to keep the FH from being destroyed while checking. Protected by the lio_lock()
     ex_off_t readahead_end;
     tbx_atomic_int_t modified;
+    tbx_atomic_int_t is_stream_flushing_size;   //** Has the size based on the stream if it's flushing. 
     tbx_list_t *write_table;
 };
 
