@@ -209,33 +209,33 @@ char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 #define FS_SLOT_OPENDIR       2
 #define FS_SLOT_CLOSEDIR      3
 #define FS_SLOT_READDIR       4
-#define FS_SLOT_STAT          5
-#define FS_SLOT_FLOCK         6
-#define FS_SLOT_MKDIR         7
-#define FS_SLOT_RMDIR         8
-#define FS_SLOT_RENAME        9
-#define FS_SLOT_REMOVE       10
-#define FS_SLOT_CREATE       11
-#define FS_SLOT_GETXATTR     12
-#define FS_SLOT_SETXATTR     13
-#define FS_SLOT_RMXATTR      14
-#define FS_SLOT_LISTXATTR    15
-#define FS_SLOT_SYMLINK      16
-#define FS_SLOT_HARDLINK     17
-#define FS_SLOT_FLUSH        18
-#define FS_SLOT_TRUNCATE     19
-#define FS_SLOT_FREAD_OPS    20
-#define FS_SLOT_FWRITE_OPS   21
-#define FS_SLOT_FREAD_BYTES  22
-#define FS_SLOT_FWRITE_BYTES 23
-#define FS_SLOT_IO_DT        24
-#define FS_SLOT_PRINT        24
-#define FS_SLOT_SIZE         25
+#define FS_SLOT_BG_READDIR    5
+#define FS_SLOT_STAT          6
+#define FS_SLOT_FLOCK         7
+#define FS_SLOT_MKDIR         8
+#define FS_SLOT_RMDIR         9
+#define FS_SLOT_RENAME       10
+#define FS_SLOT_REMOVE       11
+#define FS_SLOT_CREATE       12
+#define FS_SLOT_GETXATTR     13
+#define FS_SLOT_SETXATTR     14
+#define FS_SLOT_RMXATTR      15
+#define FS_SLOT_LISTXATTR    16
+#define FS_SLOT_SYMLINK      17
+#define FS_SLOT_HARDLINK     18
+#define FS_SLOT_FLUSH        19
+#define FS_SLOT_TRUNCATE     20
+#define FS_SLOT_FREAD_OPS    21
+#define FS_SLOT_FWRITE_OPS   22
+#define FS_SLOT_FREAD_BYTES  23
+#define FS_SLOT_FWRITE_BYTES 24
+#define FS_SLOT_IO_DT        25
+#define FS_SLOT_PRINT        25
+#define FS_SLOT_SIZE         26
 
-static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "STAT", "FLOCK", "MKDIR", "RMDIR", "RENAME",
-                                 "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
-                                 "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
-
+static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "BG_READDIR", "STAT", "FLOCK", "MKDIR", "RMDIR", "RENAME",
+                                  "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
+                                  "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
 
 typedef struct {
     tbx_atomic_int_t submitted;
@@ -771,10 +771,12 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
         free(fname);
 
+        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_BG_READDIR].submitted);
         if (tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK) != 0) { //** Got an error which means we're got an finished command
             if (de.dentry) free(de.dentry);
             if (de.symlink) free(de.symlink);
         }
+        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_BG_READDIR].finished);
     }
 
     tbx_que_set_finished(dit->pipe);

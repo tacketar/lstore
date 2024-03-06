@@ -64,13 +64,17 @@ void _stream_flush(lio_fd_t *fd)
 {
     int err;
     ex_tbx_iovec_t iov;
+    ex_off_t n_stream;
 
     iov.offset = fd->fh->stream->offset;
     iov.len = fd->fh->stream->used;
     if (iov.len == 0) return;  //** Nothing to do so kick out
 
     tbx_monitor_obj_message(&fd->fh->mo, "_stream_flush");
+    n_stream = iov.offset + iov.len;  //** Get our size and post it while we flush
+    tbx_atomic_set(fd->fh->is_stream_flushing_size, n_stream);
     err = gop_sync_exec(segment_write(fd->fh->seg, fd->fh->lc->da, NULL, 1, &iov, &(fd->fh->stream->tbuf), 0, fd->fh->lc->timeout));
+    tbx_atomic_set(fd->fh->is_stream_flushing_size, 0);  //** Clear it when we're done
     fd->fh->stream->is_dirty = 0;
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR: WRITE_ERROR while flushing the stream at fname=%s sid=" XIDT " offset=" XOT " len=" XOT "\n", fd->fh->fname, segment_id(fd->fh->seg), fd->fh->stream->offset, fd->fh->stream->used);

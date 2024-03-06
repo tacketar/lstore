@@ -1737,7 +1737,7 @@ finished:
         dsec[i] /= APR_USEC_PER_SEC;
     }
     notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_dt=%lf read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
-         " write_ops=" XOT " write_dt=%lf  write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT " flush_ops=" XOT " flush_dt=%lf\n",
+         " write_ops=" XOT " write_dt=%lf write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT " flush_ops=" XOT " flush_dt=%lf\n",
          fd->path, fd->id, fd->tally_ops[0], dsec[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
          fd->tally_ops[1], dsec[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1], fd->tally_ops[2], dsec[2]);
 
@@ -3087,11 +3087,16 @@ ex_off_t lio_size_fh(lio_file_handle_t *fh)
     ex_off_t n_stream = -1;
     ex_off_t n;
 
-    apr_thread_mutex_lock(fh->lock);
-    if (fh->data_size >= 0) {
-        size = fh->data_size;
-    } else if ((fh->stream) && (fh->stream->offset_end > -1)) {
-        n_stream = fh->stream->offset_end + 1;
+    //** See if we are in the process of flushing a stream if so don't wait to finish just use what it says
+    n_stream = tbx_atomic_get(fh->is_stream_flushing_size);
+    if (n_stream == 0) {
+        apr_thread_mutex_lock(fh->lock);
+        if (fh->data_size >= 0) {
+            size = fh->data_size;
+        } else if ((fh->stream) && (fh->stream->offset_end > -1)) {
+            n_stream = fh->stream->offset_end + 1;
+        }
+        apr_thread_mutex_unlock(fh->lock);
     }
     apr_thread_mutex_unlock(fh->lock);
 
