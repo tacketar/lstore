@@ -2707,8 +2707,6 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
 
     buffer = NULL;
 
-fprintf(stderr, "lio_file_copy_op. cp_hints=%d\n", cp->cp_hints);
-
     if (((cp->src_tuple.is_lio == 0) && (cp->dest_tuple.is_lio == 0)) && (cp->enable_local == 0)) {  //** Not allowed to both go to disk
         info_printf(lio_ifd, 0, "Both source(%s) and destination(%s) are local files! enable_local=%d\n", cp->src_tuple.path, cp->dest_tuple.path, cp->enable_local);
         return(gop_failure_status);
@@ -2751,7 +2749,6 @@ fprintf(stderr, "lio_file_copy_op. cp_hints=%d\n", cp->cp_hints);
             already_exists = lio_os_local_filetype(cp->dest_tuple.path); //** Track if the file was already there for cleanup
             dffd = tbx_io_fopen(cp->dest_tuple.path, "w");
             if ((dffd) && (cp->cp_hints & LIO_COPY_DIRECT_IO_WRITE)) tbx_dio_init(dffd);
-info_printf(lio_ifd, 0, "DEBUG: after open -- copy %s %s\n", cp->src_tuple.path, cp->dest_tuple.path); tbx_info_flush(lio_ifd);
 
             //** Check if the src and dest are the same if so kick out
             if (realpath(cp->src_tuple.path, rp_src) == NULL) rp_src[0] = '\0';
