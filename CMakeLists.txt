@@ -300,6 +300,9 @@ if(BUILD_TESTS)
     add_executable(rw_test test/rw_test.c)
     target_link_libraries(rw_test pthread toolbox gop lio)
     target_include_directories(rw_test PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(log_test test/log_test.c)
+    target_link_libraries(log_test pthread toolbox gop lio)
+    target_include_directories(log_test PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
 
 
     add_executable(run-tests test/run-tests.c

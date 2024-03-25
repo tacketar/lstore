@@ -27,6 +27,7 @@
 #include <gop/gop.h>
 #include <gop/opque.h>
 #include <gop/tp.h>
+#include <lio/segment.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,6 +164,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
     n = 0;
     if (ir->lo <= r->hi) { //** Straddles boundary
         tbx_isl_remove(s->mapping, (tbx_sl_key_t *)&(ir->lo), (tbx_sl_key_t *)&(ir->hi), (tbx_sl_data_t *)ir);
+        log_printf(15, "i=%d truncating interval lo=" XOT " hi=" XOT " new=" XOT "\n", n, ir->lo, ir->hi, r->hi);
         ir->hi = r->hi;
         tbx_isl_insert(s->mapping, (tbx_sl_key_t *)&(ir->lo), (tbx_sl_key_t *)&(ir->hi), (tbx_sl_data_t *)ir);
 
@@ -171,6 +173,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
         tbx_isl_next(&it);
     } else {  //** Completely dropped
         r_table[n] = ir;
+        log_printf(15, "i=%d dropping interval lo=" XOT " hi=" XOT "\n", n, r_table[n]->lo, r_table[n]->hi);
         n++;
     }
 
@@ -261,6 +264,7 @@ int _slog_insert_range(lio_segment_t *seg, lio_slog_range_t *r)
             r->lo = ir->lo;
             r->data_offset = ir->data_offset;
             tbx_isl_remove(s->mapping, (tbx_sl_key_t *)&(ir->lo), (tbx_sl_key_t *)&(ir->hi), (tbx_sl_data_t *)ir);
+            free(ir);
         }
     }
 
@@ -276,10 +280,10 @@ int _slog_insert_range(lio_segment_t *seg, lio_slog_range_t *r)
 }
 
 //***********************************************************************
-// seglog_write_func - Does the actual log write operation
+// seglog_write_add_func - Does the actual log write operation by adding another entry
 //***********************************************************************
 
-gop_op_status_t seglog_write_func(void *arg, int id)
+gop_op_status_t seglog_write_add_func(void *arg, int id)
 {
     seglog_rw_t *sw = (seglog_rw_t *)arg;
     lio_seglog_priv_t *s = (lio_seglog_priv_t *)sw->seg->priv;
@@ -352,6 +356,113 @@ gop_op_status_t seglog_write_func(void *arg, int id)
 }
 
 //***********************************************************************
+// seglog_write_update_func - Just updates the data in the log. It doesn't
+//     touch the base or add another log entry.  This is used when the log
+//     is really being used as a recovery log.
+//***********************************************************************
+
+gop_op_status_t seglog_write_update_func(void *arg, int id)
+{
+    seglog_rw_t *sw = (seglog_rw_t *)arg;
+    lio_seglog_priv_t *s = (lio_seglog_priv_t *)sw->seg->priv;
+    tbx_isl_iter_t it;
+    lio_slog_range_t *ir;
+    gop_opque_t *q;
+    gop_op_generic_t *gop;
+    int i, err, n_iov, slot, nops;
+    gop_op_status_t status;
+    ex_off_t lo, hi, prev_end;
+    ex_off_t bpos, pos, range_offset;
+    ex_tbx_iovec_t *ex_iov, *iov;
+
+    q = gop_opque_new();
+    iov = sw->iov;
+
+    //** Do the mapping of where to retreive the data
+    segment_lock(sw->seg);
+
+    //** First figure out how many ex_iov's are needed
+    n_iov = 0;
+    for (i=0; i< sw->n_iov; i++) {
+        lo = iov[i].offset;
+        hi = lo + iov[i].len - 1;
+        n_iov += 2*tbx_isl_range_count(s->mapping, (tbx_sl_key_t *)&lo, (tbx_sl_key_t *)&hi) + 1;
+    }
+    n_iov += 10;  //** Just to be safe
+    tbx_type_malloc(ex_iov, ex_tbx_iovec_t, n_iov);
+
+    //** Now generate the actual task list
+    bpos = sw->boff;
+    slot = 0;
+    nops = 0;
+    for (i=0; i < sw->n_iov; i++) {
+        lo = iov[i].offset;
+        hi = lo + iov[i].len - 1;
+        pos = lo;
+        prev_end = -1;
+        it = tbx_isl_iter_search(s->mapping, (tbx_sl_key_t *)&lo, (tbx_sl_key_t *)&hi);
+        while ((ir = (lio_slog_range_t *)tbx_isl_next(&it)) != NULL) {
+            if (ir->lo > lo) {  //** Have a hole
+                prev_end = lo;
+                bpos = bpos + ir->lo - pos;
+                pos = ir->lo;
+            } else {  //** Read from log 1st
+                prev_end = ir->lo - 1;
+            }
+
+            if (ir->lo < lo) {  //** Need to read the middle portion
+                range_offset = lo - ir->lo;
+                ex_iov[slot].offset = ir->data_offset + range_offset;
+                if (ir->hi > hi) {  //** Straddles the range so get the rest
+                    ex_iov[slot].len = hi - pos + 1;
+                } else {  //** Read til the range end
+                    ex_iov[slot].len = ir->hi - pos + 1;
+                }
+                gop = segment_write(s->data_seg, sw->da, sw->rw_hints, 1, &(ex_iov[slot]), sw->buffer, bpos, sw->timeout);
+            } else if (ir->hi <= hi) {  //** Completely contained in r
+                ex_iov[slot].offset = ir->data_offset;
+                ex_iov[slot].len = ir->hi - pos + 1;
+                gop = segment_write(s->data_seg, sw->da, sw->rw_hints, 1, &(ex_iov[slot]), sw->buffer, bpos, sw->timeout);
+            } else {  //** Drop the last half
+                ex_iov[slot].offset = ir->data_offset;
+                ex_iov[slot].len = hi - pos + 1;
+                gop = segment_write(s->data_seg, sw->da, sw->rw_hints, 1, &(ex_iov[slot]), sw->buffer, bpos, sw->timeout);
+            }
+
+            nops++;
+            gop_opque_add(q, gop);
+            pos = pos + ex_iov[slot].len;
+            bpos = bpos + ex_iov[slot].len;
+            prev_end = ir->hi;
+            slot++;
+        }
+
+        if (prev_end == -1) { //** We have a hole again which falls through to the base which we are skipping
+            bpos = bpos + hi - lo + 1;
+        } else if (prev_end < hi) {    //** Check if we have an entry to write from the base on the end to skip
+            bpos = bpos + hi - (prev_end+1) + 1;
+        }
+    }
+
+    segment_unlock(sw->seg);
+
+    err = (nops == 0) ? OP_STATE_SUCCESS: opque_waitall(q);
+    if (err != OP_STATE_SUCCESS) {
+        status = gop_failure_status;
+        segment_lock(sw->seg);
+        s->hard_errors++;
+        segment_unlock(sw->seg);
+    } else {
+        status = gop_success_status;
+    }
+
+    gop_opque_free(q, OP_DESTROY);
+    free(ex_iov);
+
+    return(status);
+}
+
+//***********************************************************************
 // seglog_write - Performs a segment write operation
 //***********************************************************************
 
@@ -371,7 +482,16 @@ gop_op_generic_t *seglog_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 1;
-    gop = gop_tp_op_new(s->tpc, NULL, seglog_write_func, (void *)sw, free, 1);
+
+    if (rw_hints) {
+        if (rw_hints->log_write_update == 0) {
+            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, free, 1);
+        } else {
+            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_update_func, (void *)sw, free, 1);
+        }
+    } else {
+        gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, free, 1);
+    }
 
     return(gop);
 }
@@ -671,6 +791,7 @@ ex_off_t slog_changes(lio_segment_t *seg, ex_off_t lo, ex_off_t hi, tbx_stack_t 
 
 //***********************************************************************
 // seglog_clone_func - Clone data from the segment
+//     This clone tries to simplify the log by distilling any nested logs out.
 //***********************************************************************
 
 gop_op_status_t seglog_clone_func(void *arg, int id)
@@ -678,167 +799,71 @@ gop_op_status_t seglog_clone_func(void *arg, int id)
     seglog_clone_t *slc = (seglog_clone_t *)arg;
     lio_seglog_priv_t *ss = (lio_seglog_priv_t *)slc->sseg->priv;
     lio_seglog_priv_t *sd = (lio_seglog_priv_t *)slc->dseg->priv;
-    lio_segment_t *base;
-    gop_op_generic_t *gop;
-    ex_off_t nbytes_base, nbytes_log;
+    lio_segment_t *base, *table, *data;
     int bufsize = 50*1024*1024;
-    ex_off_t dt, pos, rpos, wpos, rlen, dlen;
-    tbx_tbuf_t *wbuf, *rbuf, *tmpbuf;
-    tbx_tbuf_t tbuf1, tbuf2;
-    int err, do_lio_segment_copy_gop;
+    int err;
     char *buffer = NULL;
-    slog_changes_t *clog;
-    gop_opque_t *q1 = NULL;
-    gop_opque_t *q2, *q;
-    tbx_stack_t *stack;
-    gop_op_status_t status;
+    gop_opque_t *q;
 
-    do_lio_segment_copy_gop = 0;
-    stack = NULL;
-    q2 = NULL;
-
-    q = gop_opque_new();
-    opque_start_execution(q);
-
-    //** SEe if we are using an old seg.  If so we need to trunc it first
+    //** See if we are using an old seg.  If so we need to trunc it first
     if (slc->trunc == 1) {
+        q = gop_opque_new();
         gop_opque_add(q, lio_segment_truncate(sd->table_seg, slc->da, 0, slc->timeout));
         gop_opque_add(q, lio_segment_truncate(sd->data_seg, slc->da, 0, slc->timeout));
         gop_opque_add(q, lio_segment_truncate(sd->base_seg, slc->da, 0, slc->timeout));
+        err = opque_waitall(q);
+        gop_opque_free(q, OP_DESTROY);
+
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(1, "Error truncating base of clone: src=" XIDT "\n", segment_id(slc->sseg));
+            return(gop_failure_status);
+        }
     }
+
+    //** Find all the bases for each part to simplify the clone
+    base = _slog_find_base(ss->base_seg);
+    table = _slog_find_base(ss->table_seg);
+    data = _slog_find_base(ss->data_seg);
 
     //** Go ahead and start cloning the log
-    gop_opque_add(q, segment_clone(ss->table_seg, slc->da, &(sd->table_seg), CLONE_STRUCTURE, slc->attr, slc->timeout));
-    gop_opque_add(q, segment_clone(ss->data_seg, slc->da, &(sd->data_seg), CLONE_STRUCTURE, slc->attr, slc->timeout));
-
-    //** Check and see how much data will be transferred if using base
-    base = _slog_find_base(ss->base_seg);
-
-    opque_waitall(q);
-
-    if (slc->mode == CLONE_STRUCTURE) {  //** Only cloning the structure
-        gop_opque_add(q, segment_clone(base, slc->da, &(sd->base_seg), CLONE_STRUCTURE, slc->attr, slc->timeout));
-    } else {
-        nbytes_base = segment_size(base);
-        stack = tbx_stack_new();
-        sd->file_size = segment_size(slc->sseg);
-        nbytes_log = slog_changes(slc->sseg, 0, sd->file_size, stack);
-
-        //** Make a crude estimate of the time.
-        //** I assume depot-depot copies are 5x faster than going through the client
-        //** Have to Read + write the log data hence the 2x below
-        dt = 2*nbytes_log + nbytes_base / 5;
-        log_printf(15, "dt=" XOT " nbytes_log=" XOT " nbytes_base=" XOT " ss->file_size=" XOT "\n", dt, nbytes_log, nbytes_base, ss->file_size);
-        if (dt > ss->file_size) {
-            do_lio_segment_copy_gop = 1;
-            gop_opque_add(q, segment_clone(base, slc->da, &(sd->base_seg), CLONE_STRUCTURE, slc->attr, slc->timeout));
-        }
+    if (gop_sync_exec(segment_clone(base, slc->da, &(sd->base_seg), CLONE_STRUCTURE, slc->attr, slc->timeout)) != OP_STATE_SUCCESS) {
+        log_printf(1, "Error cloning base:  src=" XIDT "\n", segment_id(slc->sseg));
+        goto base_fail;
+    }
+    if (gop_sync_exec(segment_clone(table, slc->da, &(sd->table_seg), CLONE_STRUCTURE, slc->attr, slc->timeout)) != OP_STATE_SUCCESS) {
+        log_printf(1, "Error cloning table:  src=" XIDT "\n", segment_id(slc->sseg));
+        goto table_fail;
+    }
+    if (gop_sync_exec(segment_clone(data, slc->da, &(sd->data_seg), CLONE_STRUCTURE, slc->attr, slc->timeout)) != OP_STATE_SUCCESS) {
+        log_printf(1, "Error cloning log data:  src=" XIDT "\n", segment_id(slc->sseg));
+        goto data_fail;
     }
 
-    //** Wait for the initial cloning to complete
-    err = opque_waitall(q);
 
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "Error during intial cloning phase:  src=" XIDT "\n", segment_id(slc->sseg));
-        if (stack != NULL) tbx_stack_free(stack, 1);
-        gop_opque_free(q, OP_DESTROY);
-        return(gop_failure_status);
-    }
-
-    //** Now copy the data if needed
-    if (do_lio_segment_copy_gop == 1) {  //** lio_segment_copy_gop() method
+    //** See if we need to clone the data
+    if (slc->mode == CLONE_STRUCT_AND_DATA) {
         tbx_type_malloc(buffer, char, bufsize);
-        gop_opque_add(q, lio_segment_copy_gop(ss->tpc, slc->da, NULL, slc->sseg, slc->dseg, 0, 0, ss->file_size, bufsize, buffer, 0, slc->timeout));
-    } else if (slc->mode == CLONE_STRUCT_AND_DATA) {  //** Use the incremental log+base method
-        //** First clone the base struct and data
-        gop_opque_add(q, segment_clone(base, slc->da, &(sd->base_seg), CLONE_STRUCT_AND_DATA, slc->attr, slc->timeout));
-
-        //** Now do the logs
-        //** Set up the buffers
-        tbx_type_malloc(buffer, char, 2*bufsize);
-        tbx_tbuf_single(&tbuf1, bufsize, buffer);
-        tbx_tbuf_single(&tbuf2, bufsize, &(buffer[bufsize]));
-        rbuf = &tbuf1;
-        wbuf = &tbuf2;
-        rlen = 0;
-        q1 = q;
-        q2 = gop_opque_new();
-        while ((clog = (slog_changes_t *)tbx_stack_get_current_data(stack)) != NULL) {
-            pos = 0;
-            rpos = clog->seg_offset;
-            wpos = clog->lo;
-            while (pos < clog->len) {
-                dlen = clog->len - pos;
-                ex_iovec_single(&(clog->rex), rpos, dlen);
-                gop = segment_read(clog->seg, slc->da, NULL, 1, &(clog->rex), rbuf, rlen, slc->timeout);
-                gop_opque_add(q1, gop);
-
-                ex_iovec_single(&(clog->wex), wpos, dlen);
-                gop = segment_write(clog->seg, slc->da, NULL, 1, &(clog->wex), wbuf, rlen, slc->timeout);
-                gop_opque_add(q2, gop);
-
-                pos += dlen;
-                rpos += dlen;
-                wpos += dlen;
-                rlen += dlen;
-
-                if (rlen <= 0) {  //** Time to flush the data
-                    err = opque_waitall(q1);  //** Wait for the data to be R/W
-                    gop_opque_free(q1, OP_DESTROY);  //** Free the space
-                    if (err != OP_STATE_SUCCESS) {
-                        log_printf(1, "Error during log copy phase:  src=" XIDT "\n", segment_id(slc->sseg));
-                        tbx_stack_free(stack, 1);
-                        free(buffer);
-                        gop_opque_free(q2, OP_DESTROY);
-                        return(gop_failure_status);
-                    }
-
-                    //** Swap the tasks and start executing them
-                    tmpbuf = rbuf;
-                    rbuf = wbuf;
-                    wbuf = tmpbuf;
-                    q1 = q2;
-                    q2 = gop_opque_new();  //** Make a new que but don't start execution.  Have to wait for the reads to finish
-                    opque_start_execution(q1);  //** Start the previous write tasks executing while we add read tasks to it
-
-                    rlen = 0;
-                }
-            }
-
-            tbx_stack_move_down(stack);
-        }
-
-    }
-
-    status = gop_success_status;
-    err = opque_waitall(q);
-    if (err != OP_STATE_SUCCESS) {
-        log_printf(1, "Error during log copy phase:  src=" XIDT "\n", segment_id(slc->sseg));
-        status = gop_failure_status;
-    }
-
-    //** Make sure we don't have an empty log
-    if (q2 != NULL) {
-        if (gop_opque_task_count(q2) > 0) {
-            err = opque_waitall(q2);  //** Wait for the data to be R/W
-            if (err != OP_STATE_SUCCESS) {
-                log_printf(1, "Error during log copy phase:  src=" XIDT "\n", segment_id(slc->sseg));
-                status = gop_failure_status;
-            }
+        err = gop_sync_exec(lio_segment_copy_gop(ss->tpc, slc->da, NULL, slc->sseg, slc->dseg, 0, 0, ss->file_size, bufsize, buffer, 0, slc->timeout));
+        free(buffer);
+        if (err != OP_STATE_SUCCESS) {
+            log_printf(1, "Error copying data during cloning:  src=" XIDT "\n", segment_id(slc->sseg));
+            goto data_fail;
         }
     }
 
-    //** Clean up
-    if (stack != NULL) tbx_stack_free(stack, 1);
-    if (buffer != NULL) free(buffer);
-    if (q2 == NULL) {
-        gop_opque_free(q, OP_DESTROY);
-    } else {
-        gop_opque_free(q1, OP_DESTROY);
-        gop_opque_free(q2, OP_DESTROY);
-    }
+    //** If we make it here then it was a success
+    return(gop_success_status);
 
-    return(status);
+data_fail:
+    segment_destroy(sd->data_seg);
+table_fail:
+    segment_destroy(sd->table_seg);
+base_fail:
+    segment_destroy(sd->base_seg);
+    sd->data_seg = NULL;
+    sd->table_seg = NULL;
+    sd->base_seg = NULL;
+    return(gop_failure_status);
 }
 
 //***********************************************************************
@@ -854,9 +879,7 @@ gop_op_generic_t *seglog_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     int use_existing = (*clone_seg != NULL) ? 1 : 0;
 
     //** Make the base segment
-//log_printf(0, " before clone create\n");
     if (use_existing == 0) *clone_seg = segment_log_create(seg->ess);
-//log_printf(0, " after clone create\n");
     clone = *clone_seg;
     sd = (lio_seglog_priv_t *)clone->priv;
 
@@ -915,7 +938,7 @@ gop_op_status_t seglog_truncate_func(void *arg, int id)
         table_offset = s->log_size;
         data_offset = s->data_size;
         tbx_type_malloc(r, lio_slog_range_t, 1);
-        r->lo = s->file_size - 1;
+        r->lo = s->file_size;
         r->hi = st->new_size - s->file_size;  //** On disk this is the len
         r->data_offset = data_offset;
         ex_iovec_single(&ex_iov_table, table_offset, sizeof(lio_slog_range_t));
@@ -932,12 +955,13 @@ gop_op_status_t seglog_truncate_func(void *arg, int id)
         s->log_size += sizeof(lio_slog_range_t);
         s->data_size += st->new_size - s->file_size;
 
+        r->hi = r->lo + r->hi - 1;  //** Need to make it so that r->hi is actually the end
     }
-    segment_unlock(st->seg);
 
     //** If nothing to do exit
     if (gop == NULL) {
         gop_opque_free(q, OP_DESTROY);
+        segment_unlock(st->seg);
         return(gop_success_status);
     }
 
@@ -945,21 +969,15 @@ gop_op_status_t seglog_truncate_func(void *arg, int id)
     err = opque_waitall(q);
     if (err != OP_STATE_SUCCESS) {
         status = gop_failure_status;
-        segment_lock(st->seg);
         s->hard_errors++;
-        segment_unlock(st->seg);
     } else {
         status = gop_success_status;
 
         //** Update the mappings
-        segment_lock(st->seg);
-        if (st->new_size < s->file_size) { //** Grow op so tweak the r
-            r->hi = r->lo + r->hi - 1;
-        }
-
         _slog_insert_range(st->seg, r);
-        segment_unlock(st->seg);
     }
+
+    segment_unlock(st->seg);
 
     gop_opque_free(q, OP_DESTROY);
 
@@ -1016,7 +1034,8 @@ gop_op_generic_t *seglog_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
 
     gop_opque_add(q, segment_inspect(s->table_seg, da, fd, mode, bufsize, args, timeout));
     gop_opque_add(q, segment_inspect(s->data_seg, da, fd, mode, bufsize, args, timeout));
-    gop_opque_add(q, segment_inspect(s->base_seg, da, fd, mode, bufsize, args, timeout));
+    if ((!args) || (args && (args->log_skip_base == 0))) gop_opque_add(q, segment_inspect(s->base_seg, da, fd, mode, bufsize, args, timeout));
+
     return(opque_get_gop(q));
 }
 
@@ -1149,7 +1168,7 @@ int seglog_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
 int seglog_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
 {
     lio_seglog_priv_t *s = (lio_seglog_priv_t *)seg->priv;
-    int bufsize=1024*1024;
+    int bufsize=10*1024;
     char segbuf[bufsize];
     char *etext;
     int sused;
@@ -1408,6 +1427,21 @@ lio_segment_t *slog_make(lio_service_manager_t *sm, lio_segment_t *table, lio_se
 }
 
 //***********************************************************************
+// lio_segment_log_replace_base - Replaces the baes for a log segment
+//***********************************************************************
+
+void lio_segment_log_replace_base(lio_segment_t *log, lio_segment_t *base, int destroy_old_base)
+{
+    lio_seglog_priv_t *s = (lio_seglog_priv_t *)log->priv;
+
+    if (destroy_old_base) {
+        tbx_obj_put(&(s->base_seg->obj));
+    }
+
+    s->base_seg = base;
+}
+
+//***********************************************************************
 // seglog_merge_with_base_func - Merges the log with the base
 //***********************************************************************
 
@@ -1449,7 +1483,7 @@ gop_op_status_t seglog_merge_with_base_func(void *arg, int id)
             len = sm->bufsize;
         }
 
-        if ((len > sm->bufsize) || ((pos+len) > sm->bufsize)) {  //** Buffer fill so flush it
+        if ((len > sm->bufsize) || ((pos+len) > sm->bufsize)) {  //** Buffer full so flush it
             log_printf(15, "i=%d flushing\n", i);
             err = opque_waitall(qin);
             if (err != OP_STATE_SUCCESS) {
@@ -1474,22 +1508,22 @@ gop_op_status_t seglog_merge_with_base_func(void *arg, int id)
             log_printf(15, "i=%d len>bufsize so chunking\n", i);
 
             for (bpos=0; bpos<len; bpos += sm->bufsize) {
-                blen = (bpos+sm->bufsize) > len ? len - bpos : len;
+                blen = (bpos+sm->bufsize) > len ? len - bpos : sm->bufsize;
                 ex_in[i].len = blen;
                 ex_out[i].len = blen;
-                log_printf(15, "i=%d bpos=" XOT " in.offset=" XOT " out.offset=" XOT " len=" XOT "\n", i, bpos, ex_in[i].len, ex_out[i].len, blen);
+                log_printf(15, "i=%d bpos=" XOT " in.offset=" XOT " out.offset=" XOT " len=" XOT "\n", i, bpos, ex_in[i].offset, ex_out[i].offset, blen);
 
-                gop = segment_read(s->data_seg, sm->da, NULL, 1, &(ex_in[i]), &tbuf, 0, sm->timeout);
-                gop_opque_add(qin, gop);
-                err = opque_waitall(qin);
+                err = gop_sync_exec(segment_read(s->data_seg, sm->da, NULL, 1, &(ex_in[i]), &tbuf, 0, sm->timeout));
                 if (err != OP_STATE_SUCCESS) {
                     segment_unlock(sm->seg);
                     log_printf(1, "seg=" XIDT " Error reading segment!\n", segment_id(sm->seg));
                     return(gop_failure_status);
                 }
 
-                gop = segment_write(s->base_seg, sm->da, NULL, 1, &(ex_out[i]), &tbuf, 0, sm->timeout);
-                gop_opque_add(qout, gop);
+                sm->buffer[blen] = 0;
+                log_printf(15, "i=%d bpos=" XOT " out.offset=" XOT " len=" XOT " data=%s\n", i, bpos, ex_out[i].offset, blen, sm->buffer);
+
+                err = gop_sync_exec(segment_write(s->base_seg, sm->da, NULL, 1, &(ex_out[i]), &tbuf, 0, sm->timeout));
                 if (err != OP_STATE_SUCCESS) {
                     segment_unlock(sm->seg);
                     log_printf(1, "seg=" XIDT " Error writing segment!\n", segment_id(sm->seg));
