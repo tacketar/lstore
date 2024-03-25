@@ -167,9 +167,11 @@ void _opque_cb(void *v, int mode)
     log_printf(15, "_opque_cb: qid=%d gid=%d success=%d gop_type(gop)=%d\n", gop_id(&(q->opque->op)), gop_id(gop), success.op_status, gop_get_type(gop));
 
 
-    //** It always goes on the finished list
-    tbx_stack_move_to_bottom(q->finished);
-    tbx_stack_insert_below(q->finished, gop);
+    //** It always goes on the finished list unless we have auto_destroy enabled
+    if (gop_get_auto_destroy(gop) == 0) {
+        tbx_stack_move_to_bottom(q->finished);
+        tbx_stack_insert_below(q->finished, gop);
+    }
 
     log_printf(15, "PUSH finished gid=%d qid=%d\n", gop_id(gop), gop_id(&(q->opque->op)));
     log_printf(15, "Printing finished stack for qid=%d\n", gop_id(&(q->opque->op)));
