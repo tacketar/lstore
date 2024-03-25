@@ -34,7 +34,7 @@ extern "C" {
 
 // Declare block size type flags
 typedef enum lio_segment_block_type_t lio_segment_block_type_t;
-enum lio_segemtn_block_type_t {
+enum lio_segment_block_type_t {
     LIO_SEGMENT_BLOCK_MIN     = 0,   // Minimum allowed block size
     LIO_SEGMENT_BLOCK_NATURAL = 1    // Natural block size for a client write
 };
@@ -55,18 +55,24 @@ typedef ex_off_t (*lio_segment_size_fn_t)(lio_segment_t *seg);
 typedef int (*lio_segment_serialize_fn_t)(lio_segment_t *seg, lio_exnode_exchange_t *exp);
 typedef int (*lio_segment_deserialize_fn_t)(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t *exp);
 typedef void (*lio_segment_destroy_fn_t)(lio_segment_t *seg);
+
 // FIXME: leaky
 typedef struct lio_seglog_priv_t lio_seglog_priv_t;
 typedef struct lio_slog_range_t lio_slog_range_t;
 typedef struct lio_seglun_priv_t lio_seglun_priv_t;
 
 // Functions
-// FIXME: leaky
+LIO_API void lio_segment_hint_init(lio_segment_rw_hints_t *rwh);
+LIO_API int lio_segment_hint_add(lio_segment_rw_hints_t *rwh, ex_id_t sid, void *data);
+LIO_API void lio_segment_hint_clear(lio_segment_rw_hints_t *rwh, int slot);
+LIO_API void *lio_segment_hint_search(lio_segment_rw_hints_t *rwh, ex_id_t sid, int *state);
+
 LIO_API int lio_cache_stats_get(lio_cache_t *c, lio_cache_stats_get_t *cs);
 LIO_API int lio_cache_stats_get_print(lio_cache_stats_get_t *cs, char *buffer, int *used, int nmax);
 LIO_API lio_cache_stats_get_t segment_lio_cache_stats_get(lio_segment_t *seg);
 LIO_API gop_op_generic_t *lio_segment_linear_make_gop(lio_segment_t *seg, data_attr_t *da, rs_query_t *rsq, int n_rid, ex_off_t block_size, ex_off_t total_size, int timeout);
-LIO_API gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_attr_t *da, ex_off_t bufsize, char *buffer, int truncate_old_log, int timeout);  //** Merges the current log with the base
+LIO_API gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_attr_t *da, ex_off_t bufsize, char *buffer, int truncate_old_log, int timeout);  // ** Merges the current log with the base
+LIO_API void lio_segment_log_replace_base(lio_segment_t *log, lio_segment_t *base, int destroy_old_base);
 
 // Preprocessor constants
 // FIXME: leaky
@@ -75,6 +81,7 @@ LIO_API gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_
 // Preprocessor macros
 #define segment_flush(s, da, lo, hi, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->flush(s, da, lo, hi, to)
 #define segment_id(s) (s)->header.id
+#define segment_type(s) (s)->header.type
 #define segment_inspect(s, da, fd, mode, bsize, query, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->inspect(s, da, fd, mode, bsize, query, to)
 #define segment_read(s, da, hints, n_iov, iov, tbuf, boff, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->read(s, da, hints, n_iov, iov, tbuf, boff, to)
 #define segment_signature(s, buffer, used, bufsize) ((lio_segment_vtable_t *)(s)->obj.vtable)->signature(s, buffer, used, bufsize)
@@ -83,6 +90,9 @@ LIO_API gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_
 #define segment_write(s, da, hints, n_iov, iov, tbuf, boff, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->write(s, da, hints, n_iov, iov, tbuf, boff, to)
 #define segment_block_size(s, btype) ((lio_segment_vtable_t *)(s)->obj.vtable)->block_size(s, btype)
 #define segment_tool(s, da, sid, stype, match_section, args_section, afd, dryrun, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->tool(s, da, sid, stype, match_section, args_section, afd, dryrun, to)
+#define segment_remove(s, da, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->remove(s, da, to)
+#define segment_clone(s, da, clone_ex, mode, attr, to) ((lio_segment_vtable_t *)(s)->obj.vtable)->clone(s, da, clone_ex, mode, attr, to)
+#define segment_destroy(s) tbx_obj_put(&((s)->obj))
 
 // Exported types. To be obscured
 struct lio_segment_vtable_t {

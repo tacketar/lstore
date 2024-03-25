@@ -52,10 +52,24 @@ extern "C" {
 #define SEG_SM_LOAD   "segment_load"
 
 
+typedef struct {
+    ex_id_t sid;
+    void *ptr;
+} seg_hint_entry_t;
+
+//** Targeted segment hints
+#define MAX_SEGMENT_HINT 10
+typedef struct {
+    int last_used;
+    seg_hint_entry_t hint[MAX_SEGMENT_HINT];
+} segment_hints_t;
 
 struct lio_segment_rw_hints_t {     //** Structure for contaiing hints to the various segment drivers
     int lun_max_blacklist;  //** Max number of devs to blacklist per stripe for performance
     int number_blacklisted;
+    int direct_io;          //** Use direct I/O for the operation bypassing going through the cache 1st
+    int log_write_update;   //** 0=Normal log write adding a new transaction, 1=Don't add a new transaction just update the exsiting ones
+    segment_hints_t shints;  //** Segment hints table
 };
 
 //#define inspect_printf(fd, ...) if ((fd) != NULL) fprintf(fd, __VA_ARGS__)

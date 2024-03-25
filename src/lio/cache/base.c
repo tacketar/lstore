@@ -68,6 +68,26 @@ void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
     c->da = da;
     c->timeout = timeout;
     c->default_page_size = 16*1024;
+
+    //** Set the stat types. CACHE_OP_TYPE_COUNT == 0 so just need to set the others
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].type = CACHE_OP_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].type = CACHE_OP_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].type = CACHE_OP_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].type = CACHE_OP_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_READ_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_WRITE_BYTES].type = CACHE_OP_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_IO_DT].type = CACHE_OP_TYPE_TIME_2;
 }
 
 //*************************************************************

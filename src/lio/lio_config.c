@@ -1046,12 +1046,20 @@ void lio_destroy_nl(lio_config_t *lio)
 {
     lc_object_container_t *lcc;
     lio_path_tuple_t *tuple;
+    lio_segment_t *seg;
 
     //** Update the lc count for the creds
     log_printf(1, "Destroying LIO context %s\n", lio->obj_name);
 
     if (_lc_object_destroy(lio->obj_name) > 0) {  //** Still in use so return.
         return;
+    }
+
+    //** Destroy the recovery log if it  exists
+    seg = lio_lookup_service(lio->ess, ESS_RUNNING, "recovery_segment");
+    remove_service(lio->ess, ESS_RUNNING, "recovery_segment");
+    if (seg) {
+        tbx_obj_put(&seg->obj);
     }
 
     //** The creds is a little tricky cause we need to get the tuple first
@@ -1214,6 +1222,8 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     gop_mq_portal_t *portal;
     lio_path_tuple_t *tuple;
     gop_mq_ongoing_t *on = NULL;
+    ex_id_t sid;
+    lio_segment_t *seg;
 
     //** Add the LC first cause it may already exist
     log_printf(1, "START: Creating LIO context %s\n", obj_name);
@@ -1545,6 +1555,19 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
 
     assert_result(apr_pool_create(&(lio->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(lio->lock), APR_THREAD_MUTEX_DEFAULT, lio->mpool);
+
+    //** Add the recovery log segment if available
+    sid = tbx_inip_get_integer(lio->ifd, section, "recovery_segment", -1);
+    if (sid > 0) {
+        lio_exnode_exchange_t ex;
+        ex.type = EX_TEXT;
+        ex.text.text = NULL;
+        ex.text.fd = lio->ifd;
+        seg = load_segment(lio->ess, sid, &ex);
+        if (seg) {
+            add_service(lio->ess, ESS_RUNNING, "recovery_segment", seg);
+        }
+    }
 
     //** Add ourselves to the info handler
     tbx_siginfo_handler_add(SIGUSR1, lio_open_files_info_fn, lio);
@@ -2079,11 +2102,11 @@ int lio_shutdown()
 
     lio_wq_shutdown();
 
-    cache_destroy(_lio_cache);
-    _lio_cache = NULL;
-
     lio_destroy(lio_gc);
     lio_gc = NULL;  //** Reset the global to NULL so it's not accidentally reused.
+
+    cache_destroy(_lio_cache);
+    _lio_cache = NULL;
 
     exnode_system_destroy();
 

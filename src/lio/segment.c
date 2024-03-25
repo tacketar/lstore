@@ -67,6 +67,83 @@ typedef struct {
 } lio_segment_copy_gop_t;
 
 //***********************************************************************
+// lio_segment_hint_init
+//***********************************************************************
+
+void lio_segment_hint_init(lio_segment_rw_hints_t *rwh)
+{
+    memset(&(rwh->shints), 0, sizeof(segment_hints_t));
+}
+
+//***********************************************************************
+// lio_segment_hint_add - Adds a segment to the table.
+//     Returns the slot on success and -1 if no slots are available
+//***********************************************************************
+
+int lio_segment_hint_add(lio_segment_rw_hints_t *rwh, ex_id_t sid, void *data)
+{
+    int i, slot;
+    segment_hints_t *sh = &(rwh->shints);
+
+    for (i=0; i<MAX_SEGMENT_HINT; i++) {
+        slot = (i+sh->last_used) % MAX_SEGMENT_HINT;
+        if (sh->hint[slot].sid == 0) {
+            sh->hint[slot].sid = sid;
+            sh->hint[slot].ptr = data;
+            sh->last_used = (slot < sh->last_used) ? MAX_SEGMENT_HINT-1 : slot;;
+            return(slot);
+        }
+    }
+
+    return(-1);
+}
+
+//***********************************************************************
+// lio_segment_hint_clear - Clears the segment slot
+//***********************************************************************
+
+void lio_segment_hint_clear(lio_segment_rw_hints_t *rwh, int slot)
+{
+    int i;
+    segment_hints_t *sh = &(rwh->shints);
+
+    //** Clear the hint
+    sh->hint[slot].sid = 0; sh->hint[slot].ptr = NULL;
+
+    //** See if we can contract where to look
+    for (i=sh->last_used; i>=0; i--) {
+        if (sh->hint[slot].sid != 0) {
+            sh->last_used = slot;
+            return;
+        }
+    }
+
+    return;
+}
+
+//***********************************************************************
+// lio_segment_hint_search - Searches for a hint mathcing the given sid.
+//   the hint pointer is returned.  The state is optionally returned
+//   allowing the ability to iterate over the table looking for additional matching hints
+//***********************************************************************
+
+void *lio_segment_hint_search(lio_segment_rw_hints_t *rwh, ex_id_t sid, int *state)
+{
+    int i, start;
+    segment_hints_t *sh = &(rwh->shints);
+
+    start = (state) ? *state : 0;
+    for (i=start; i<=sh->last_used; i++) {
+        if (sh->hint[i].sid == sid) {
+            if (state) *state = i;
+            return(sh->hint[i].ptr);
+        }
+    }
+
+    return(NULL);
+}
+
+//***********************************************************************
 // load_segment - Loads the given segment from the file/struct
 //***********************************************************************
 

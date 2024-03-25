@@ -49,6 +49,21 @@
 #include "ex3/types.h"
 #include "lio.h"
 
+#ifdef REALTIME_CACHE_STATS
+static char *_cache_op_stats_name[] = {
+          "Flush DIRTY Wakup",
+          "Flush DIRTY calls",    "Flush DIRTY get pages calls",   "Flush DIRTY pages",    "Flush DIRTY bytes",      "Flush DIRTY DT",          "Flush DIRTY get pages DT",
+          "Flush SEGMENT calls",  "Flush SEGMENT get pages calls", "Flush SEGMENT pages",  "Flush SEGMENT bytes",    "Flush SEGMENT DT",        "Flush SEGMENT get pages DT",
+          "Flush PARENT calls",   "Flush PARENT get pages calls",  "Flush PARENT pages",   "Flush PARENT bytes",     "Flush PARENT DT",         "Flush PARENT get pages DT",
+          "Release READ pages calls", "Release WRITE pages calls", "Release FLUSH pages calls", "Release READ pages PAGES", "Release WRITE pages PAGES", "Release FLUSH pages PAGES",
+          "Force page get calls", "Force page get DT",             "read_pages_get calls",  "write_pages_get calls", "Page get calls DT",
+          "Read ops",             "Write ops",                     "R/W time",
+          "CHILD last page trap", "CHILD Read ops",       "CHILD Read pages count",        "CHILD Read bytes",
+          "CHILD Write ops",      "CHILD Write pages count", "CHILD Write bytes",         "CHILD R/W time",
+          "DIRECT Read ops", "DIRECT Read bytes", "DIRECT Write ops", "DIRECT Write bytes", "DIRECT R/W time",
+          "Segment size calls",   "Segment block_size calls",      "Segment create calls",  "Segment destroy calls", "Segment truncate calls" };
+#endif
+
 //******************
 lio_cache_t *global_cache;
 //******************
@@ -93,19 +108,55 @@ void amp_cache_info_fn(void *arg, FILE *fd)
 {
     lio_cache_t *c = (lio_cache_t *)arg;
     lio_cache_amp_t *cp = (lio_cache_amp_t *)c->fn.priv;
-    char ppbuf[100];
+    char ppbuf1[100];
     double d;
-    int n;
+    int nused, nfree, n;
 
     fprintf(fd, "Cache Usage------------------------\n");
     cache_lock(c);
-    n = tbx_stack_count(cp->stack);
+    nused = tbx_stack_count(cp->stack);
+    nfree = tbx_stack_count(cp->free_pages);
     d = cp->bytes_used;
+    n = nused + nfree + cp->limbo_pages;
     if (n>0) d /= n;
-    fprintf(fd, "n_pages: %d\n", n);
-    fprintf(fd, "Used bytes: %s (" XOT ")\n", tbx_stk_pretty_print_double_with_scale(1024, cp->bytes_used, ppbuf), cp->bytes_used);
-    fprintf(fd, "Average page size: %s (%lf)\n", tbx_stk_pretty_print_double_with_scale(1024, d, ppbuf), d);
+    fprintf(fd, "Pages -- Used: %d  Free: %d   Limbo:%d   Total: %d\n", nused, nfree, cp->limbo_pages, n);
+    fprintf(fd, "Waiting: %d\n", tbx_stack_count(cp->waiting_stack));
+    fprintf(fd, "Pending free tasks: %d\n", tbx_stack_count(cp->pending_free_tasks));
+    fprintf(fd, "Dirty bytes: %s (" XOT ")\n", tbx_stk_pretty_print_double_with_scale(1024, c->stats.dirty_bytes, ppbuf1), c->stats.dirty_bytes);
+    fprintf(fd, "Used bytes: %s (" XOT ")\n", tbx_stk_pretty_print_double_with_scale(1024, cp->bytes_used, ppbuf1), cp->bytes_used);
+    fprintf(fd, "Average used page size: %s (%lf)\n", tbx_stk_pretty_print_double_with_scale(1024, d, ppbuf1), d);
     fprintf(fd, "\n");
+
+    //** Print the realtime stats
+#ifdef REALTIME_CACHE_STATS
+    ex_off_t submitted, finished, pending, errors;
+    char ppbuf2[100], ppbuf3[100];
+    int i, optype;
+
+    fprintf(fd, "Cache Counter stats ------------------------\n");
+    for (i=0; i<CACHE_OP_SLOTS_MAX; i++) {
+        finished = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].finished);
+        submitted = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].submitted);
+        errors = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].errors);
+        pending = submitted - finished;
+        optype = c->stats.op_stats.op[i].type;
+        if (optype == CACHE_OP_TYPE_COUNT) {
+            fprintf(fd, "    %30s[%02d]:  submitted=" XOT " finished=" XOT " pending=" XOT " errors=" XOT "\n", _cache_op_stats_name[i], i, submitted, finished, pending, errors);
+        } else if (optype == CACHE_OP_TYPE_BYTE) {
+            fprintf(fd, "    %30s[%02d]:  submitted=%s finished=%s pending=%s\n", _cache_op_stats_name[i], i,
+                tbx_stk_pretty_print_double_with_scale(1024, submitted, ppbuf1),
+                tbx_stk_pretty_print_double_with_scale(1024, finished, ppbuf2),
+                tbx_stk_pretty_print_double_with_scale(1024, pending, ppbuf3));
+        } else if (optype == CACHE_OP_TYPE_TIME_1) {
+            fprintf(fd, "    %30s[%02d]:  TIME=%s\n", _cache_op_stats_name[i], i, tbx_stk_pretty_print_time(submitted, 1, ppbuf1));
+        } else if (optype == CACHE_OP_TYPE_TIME_2) {
+            fprintf(fd, "    %30s[%02d]:  READ=%s  WRITE=%s\n", _cache_op_stats_name[i], i, tbx_stk_pretty_print_time(submitted, 1, ppbuf1), tbx_stk_pretty_print_time(finished, 1, ppbuf2));
+        }
+    }
+    fprintf(fd, "\n");
+#else
+    fprintf(fd, "Cache Counter stats DISABLED ------------------------\n");
+#endif
     cache_unlock(c);
 }
 
@@ -203,7 +254,7 @@ void _amp_free_page_push(lio_cache_t *c, lio_cache_page_t *p)
             return;
         }
     }
-    
+
     tbx_stack_push(cp->free_pages, p);
 }
 
@@ -223,10 +274,9 @@ void _amp_free_page_list_destroy(lio_cache_t *c)
         if (p->data[1].ptr) free(p->data[1].ptr);
         free(lp);
     }
-    
+
     tbx_stack_free(cp->free_pages, 1);
 }
-                        
 
 //*************************************************************************
 // _amp_max_bytes - REturns the max amount of space to use
@@ -309,6 +359,36 @@ lio_amp_page_stream_t *_amp_stream_get(lio_cache_t *c, lio_segment_t *seg, ex_of
     return(ps);
 }
 
+//*******************************************************************************
+// seg_dirty_flush_fn - Does the segmnet dirty flush
+//*******************************************************************************
+
+gop_op_status_t seg_dirty_flush_fn(void *arg, int id)
+{
+    lio_segment_t *seg = (lio_segment_t *)arg;
+    lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
+    lio_cache_t *c = s->c;
+    lio_cache_amp_t *cp = (lio_cache_amp_t *)c->fn.priv;
+    gop_op_status_t status;
+
+    //** Do the flush
+    status = gop_sync_exec_status(cache_flush_range_gop(seg, s->c->da, 0, -1, s->c->timeout, CACHE_OP_SLOT_FLUSH_DIRTY_CALL));
+
+    //** Update the counters
+    cache_lock(c);
+    s->dirty_flush_in_progress = 0;  //** If needed we can fire off a new dirty flush
+    s->cache_check_in_progress--;  //** Flag it as being finished
+    cp->dirty_bytes_flushing -= s->dirty_bytes_at_flush;
+
+    //** See if we wke up the dirty thread
+    if (cp->dirty_bytes_flushing <= cp->dirty_bytes_unmute) {
+        apr_thread_cond_broadcast(cp->dirty_trigger_unmute);
+    }
+    cache_unlock(c);
+
+    return(status);
+}
+
 //*************************************************************************
 // amp_dirty_thread - Thread to handle flushing due to dirty ratio
 //*************************************************************************
@@ -318,84 +398,69 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
     lio_cache_t *c = (lio_cache_t *)data;
     lio_cache_amp_t *cp = (lio_cache_amp_t *)c->fn.priv;
     double df;
-    int n, i;
+    int i;
     ex_id_t *id;
     lio_segment_t *seg;
     gop_opque_t *q;
     gop_op_generic_t *gop;
     lio_cache_segment_t *s;
     tbx_sl_iter_t it;
-    lio_segment_t **flush_list;
+    ex_off_t dirty_bytes;
 
     tbx_monitor_thread_create(MON_MY_THREAD, "amp_dirty_thread");
 
+    q = gop_opque_new();
+    opque_start_execution(q);
+
     cache_lock(c);
 
-    log_printf(15, "Dirty thread launched\n");
     while (c->shutdown_request == 0) {
         apr_thread_cond_timedwait(cp->dirty_trigger, c->lock, cp->dirty_max_wait);
-
+        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].submitted);
         df = cp->max_bytes;
         df = c->stats.dirty_bytes / df;
-
-        log_printf(15, "Dirty thread running.  dirty fraction=%lf dirty bytes=" XOT " inprogress=%d  cached segments=%d\n", df, c->stats.dirty_bytes, cp->flush_in_progress, tbx_list_key_count(c->segments));
-
-        cp->flush_in_progress = 1;
-        q = gop_opque_new();
-
-        n = tbx_list_key_count(c->segments);
-        tbx_type_malloc(flush_list, lio_segment_t *, n);
 
         it = tbx_list_iter_search(c->segments, NULL, 0);
         tbx_list_next(&it, (tbx_list_key_t **)&id, (tbx_list_data_t **)&seg);
         i = 0;
         while (id != NULL) {
-            log_printf(15, "Flushing seg=" XIDT " i=%d\n", *id, i);
-            tbx_log_flush();
-            flush_list[i] = seg;
             s = (lio_cache_segment_t *)seg->priv;
-            if (tbx_atomic_get(s->dirty_bytes) != 0) {     //** Only do a check if it's flagged as having dirty pages already
+            dirty_bytes = tbx_atomic_get(s->dirty_bytes);
+            if ((s->dirty_flush_in_progress == 0) && (dirty_bytes != 0)) {     //** Only do a check if it's flagged as having dirty pages already
+                gop = gop_tp_op_new(s->tpc_unlimited, NULL, seg_dirty_flush_fn, (void *)seg, NULL, 1);
                 s->cache_check_in_progress++;  //** Flag it as being checked
-                gop = cache_flush_range_gop(seg, s->c->da, 0, -1, s->c->timeout);
-                gop_set_myid(gop, i);
+                s->dirty_flush_in_progress = 1;  //** Flag us as being flushed so we skip it in the future
+                s->dirty_bytes_at_flush = dirty_bytes;
+                cp->dirty_bytes_flushing += dirty_bytes;
                 gop_opque_add(q, gop);
                 i++;
             }
 
             tbx_list_next(&it, (tbx_list_key_t **)&id, (tbx_list_data_t **)&seg);
         }
-        cache_unlock(c);
 
-        //** Flag the tasks as they complete
-        opque_start_execution(q);
-        while ((gop = opque_waitany(q)) != NULL) {
-            i = gop_get_myid(gop);
-            s = (lio_cache_segment_t *)flush_list[i]->priv;
-
-            log_printf(15, "Flush completed seg=" XIDT " i=%d\n", segment_id(flush_list[i]), i);
-            tbx_log_flush();
-            cache_lock(c);
-            s->cache_check_in_progress--;  //** Flag it as being finished
-            cache_unlock(c);
-
+        //** Reap any completed tasks
+        while ((gop = opque_get_next_finished(q)) != NULL) {
             gop_free(gop, OP_DESTROY);
         }
-        gop_opque_free(q, OP_DESTROY);
 
-
-        cache_lock(c);
-
-        cp->flush_in_progress = 0;
-        free(flush_list);
+        //** See if we should wait until some tasks complete
+        if (cp->dirty_bytes_flushing > cp->dirty_bytes_unmute) {
+            cp->flush_in_progress = 1;  //** Flag that we have a lot of pending data to flush
+            apr_thread_cond_wait(cp->dirty_trigger_unmute, c->lock);
+            cp->flush_in_progress = 0;  //** In theory it's Ok to try and flush again if needed
+        }
 
         df = cp->max_bytes;
         df = c->stats.dirty_bytes / df;
-        log_printf(15, "Dirty thread sleeping.  dirty fraction=%lf dirty bytes=" XOT " inprogress=%d\n", df, c->stats.dirty_bytes, cp->flush_in_progress);
+        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].finished);
+
     }
 
-    log_printf(15, "Dirty thread Exiting\n");
-
     cache_unlock(c);
+
+    opque_waitall(q);
+    gop_opque_free(q, OP_DESTROY);
 
     tbx_monitor_thread_destroy(MON_MY_THREAD);
 
@@ -414,7 +479,6 @@ void _amp_adjust_dirty(lio_cache_t *c, ex_off_t tweak)
     c->stats.dirty_bytes += tweak;
     if (c->stats.dirty_bytes > cp->dirty_bytes_trigger) {
         if (cp->flush_in_progress == 0) {
-            cp->flush_in_progress = 1;
             apr_thread_cond_signal(cp->dirty_trigger);
         }
     }
@@ -977,17 +1041,12 @@ ex_off_t _amp_attempt_free_mem(lio_cache_t *c, lio_segment_t *page_seg, ex_off_t
     lio_cache_page_t *p;
     lio_page_amp_t *lp;
     tbx_stack_ele_t *ele, *curr_ele;
-    gop_op_generic_t *gop;
     lio_amp_page_stream_t *ps;
     ex_off_t total_bytes, freed_bytes, pending_bytes;
-    ex_id_t *segid;
-    tbx_list_iter_t sit;
     int count, n;
     tbx_list_t *table;
     lio_page_table_t *ptable;
     tbx_pch_t pch, pt_pch;
-
-    log_printf(15, "START seg=" XIDT " bytes_to_free=" XOT " bytes_used=" XOT " stack_size=%d\n", segment_id(page_seg), bytes_to_free, cp->bytes_used, tbx_stack_count(cp->stack));
 
     freed_bytes = 0;
     pending_bytes = 0;
@@ -1004,9 +1063,6 @@ ex_off_t _amp_attempt_free_mem(lio_cache_t *c, lio_segment_t *page_seg, ex_off_t
         p = (lio_cache_page_t *)tbx_stack_ele_get_data(ele);
         lp = (lio_page_amp_t *)p->priv;
         s = (lio_cache_segment_t *)p->seg->priv;
-
-        log_printf(15, "checking page for release seg=" XIDT " p->offset=" XOT " bits=%d\n", segment_id(p->seg), p->offset, p->bit_fields);
-        tbx_log_flush();
 
         if ((p->bit_fields & C_TORELEASE) == 0) { //** Skip it if already flagged for removal
             if ((lp->bit_fields & (CAMP_OLD|CAMP_ACCESSED)) > 0) {  //** Already used once or cycled so ok to evict
@@ -1092,26 +1148,10 @@ ex_off_t _amp_attempt_free_mem(lio_cache_t *c, lio_segment_t *page_seg, ex_off_t
     }
 
 
-    //** Cycle through creating the flush calls if needed
-    sit = tbx_list_iter_search(table, tbx_list_first_key(table), 0);
-    tbx_list_next(&sit, (tbx_list_key_t **)&segid, (tbx_list_data_t **)&ptable);
-    if (ptable != NULL) {
-        while (ptable != NULL) {
-            if ((ptable->hi - ptable->lo) < 10*s->page_size) ptable->hi = ptable->lo + 10*s->page_size;
-            if (c->stats.dirty_bytes > cp->dirty_bytes_trigger) {
-                gop = cache_flush_range_gop(ptable->seg, s->c->da, 0, -1, s->c->timeout); //** to much is dirty so flush the whole file
-            } else {
-                gop = cache_flush_range_gop(ptable->seg, s->c->da, ptable->lo, ptable->hi + s->page_size - 1, s->c->timeout);
-            }
-            gop_auto_destroy_exec(gop);  //** Fire and forget mode.  This is because we may need range locks already locked leading to deadlock
-            tbx_pch_release(cp->free_page_tables, &(ptable->pch));
-            tbx_list_next(&sit, (tbx_list_key_t **)&segid, (tbx_list_data_t **)&ptable);
-        }
-
-        //** Clean up
-        tbx_sl_empty(table);
+    //** If we made it here we need to flush something
+    if (cp->flush_in_progress == 0) {
+        apr_thread_cond_signal(cp->dirty_trigger);
     }
-
 
     cp->bytes_used -= freed_bytes;  //** Update how much I directly freed
 
@@ -1348,7 +1388,7 @@ void _amp_miss_tag(lio_cache_t *c, lio_segment_t *seg, int mode, ex_off_t lo, ex
         *miss = off;
     } else {  //** For a write just trigger a dirty flush
         if (cp->flush_in_progress == 0) {
-            cp->flush_in_progress = 1;
+//FIXME            cp->flush_in_progress = 1;
             apr_thread_cond_signal(cp->dirty_trigger);
         }
     }
@@ -1442,7 +1482,8 @@ void amp_print_running_config(lio_cache_t *c, FILE *fd, int print_section_headin
     fprintf(fd, "type = %s\n", CACHE_TYPE_AMP);
     fprintf(fd, "max_bytes = %s\n", tbx_stk_pretty_print_int_with_scale(cp->max_bytes, text));
     fprintf(fd, "max_streams = %d\n", cp->max_streams);
-    fprintf(fd, "dirty_frarction = %lf\n", cp->dirty_fraction);
+    fprintf(fd, "dirty_fraction = %lf\n", cp->dirty_fraction);
+    fprintf(fd, "dirty_unmute_fraction = %lf\n", cp->dirty_unmute_fraction);
     fprintf(fd, "default_page_size = %s\n", tbx_stk_pretty_print_int_with_scale(c->default_page_size, text));
     fprintf(fd, "async_prefetch_threshold = %s\n", tbx_stk_pretty_print_int_with_scale(cp->async_prefetch_threshold, text));
     fprintf(fd, "dirty_max_wait = %ld #seconds\n", apr_time_sec(cp->dirty_max_wait));
@@ -1546,6 +1587,7 @@ lio_cache_t *amp_cache_create(void *arg, data_attr_t *da, int timeout)
     c->bytes_used = 0;
     c->prefetch_in_process = 0;
     c->dirty_fraction = amp_default_options.dirty_fraction;
+    c->dirty_unmute_fraction = amp_default_options.dirty_unmute_fraction;
     c->async_prefetch_threshold = amp_default_options.async_prefetch_threshold;
     c->min_prefetch_size = amp_default_options.min_prefetch_size;
     cache->n_ppages = cache_default_options.n_ppages;
@@ -1580,6 +1622,7 @@ lio_cache_t *amp_cache_create(void *arg, data_attr_t *da, int timeout)
     tbx_siginfo_handler_add(SIGUSR1, amp_cache_info_fn, cache);
 
     apr_thread_cond_create(&(c->dirty_trigger), cache->mpool);
+    apr_thread_cond_create(&(c->dirty_trigger_unmute), cache->mpool);
     tbx_thread_create_assert(&(c->dirty_thread), NULL, amp_dirty_thread, (void *)cache, cache->mpool);
 
     return(cache);
@@ -1596,6 +1639,7 @@ lio_cache_t *amp_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_attr
     lio_cache_amp_t *cp;
     int dt;
     char *v;
+    double frac;
 
     //** Create the default structure
     c = amp_cache_create(arg, da, timeout);
@@ -1613,6 +1657,9 @@ lio_cache_t *amp_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_attr
     cp->max_streams = tbx_inip_get_integer(fd, cp->section, "max_streams", cp->max_streams);
     cp->dirty_fraction = tbx_inip_get_double(fd, cp->section, "dirty_fraction", cp->dirty_fraction);
     cp->dirty_bytes_trigger = cp->dirty_fraction * cp->max_bytes;
+    frac = (cp->dirty_unmute_fraction != 0) ? cp->dirty_unmute_fraction : 0.75*cp->dirty_fraction;
+    cp->dirty_unmute_fraction = tbx_inip_get_double(fd, cp->section, "dirty_unmute_fraction", frac);
+    cp->dirty_bytes_unmute = cp->dirty_unmute_fraction * cp->max_bytes;
     c->default_page_size = tbx_inip_get_integer(fd, cp->section, "default_page_size", c->default_page_size);
     cp->async_prefetch_threshold = tbx_inip_get_integer(fd, cp->section, "async_prefetch_threshold", cp->async_prefetch_threshold);
     cp->min_prefetch_size = tbx_inip_get_integer(fd, cp->section, "min_prefetch_bytes", cp->min_prefetch_size);
