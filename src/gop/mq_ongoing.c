@@ -523,6 +523,7 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
     for (hi = apr_hash_first(NULL, oh->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, (const void **)&key, &klen, (void **)&oo);
 
+        ohandle = NULL;
         if (oo->auto_clean) {
             apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
             tbx_type_malloc_clear(ohandle, gop_mq_ongoing_handle_t, 1);
