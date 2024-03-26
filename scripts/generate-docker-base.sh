@@ -31,31 +31,24 @@ for DISTRO in "${DISTROS[@]}"; do
     RELEASE="${DISTRO##*-}"
     FROM="${PARENT}:${RELEASE}"
     ROCKSDB_MANUAL=""  #Default is to install it from a package
-    ADDITIONAL_PACKAGES=()
 
     mkdir -p $DISTRO
 
     GLOBAL_INSTALL=""
     case $PARENT in
-        centos|fedora|rockylinux)
+        centos|fedora)
             # Fedora claims:
             # Yum command has been deprecated, redirecting to
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
             # Should I rewrite this again to include dnf as a different packager
             # When does dnf first exist?
-            if [ "$PARENT" != "rockylinux" ]; then
-                ROCKSDB_MANUAL="1"
-            else
-                ADDITIONAL_PACKAGES+=( rocksdb-devel )
-            fi
+            ROCKSDB_MANUAL="1"
             PACKAGER="rpm"
             PACKAGE_PREFIX="RUN yum install -y"
             PACKAGE_POSTFIX="&& yum clean all"
             JAVA_INSTALL=""
-            if [ "$PARENT" == "centos" ]; then
+            if [ $PARENT == "centos" ]; then
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all"
-            elif [ "$PARENT" == "rockylinux" ]; then
-                GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all && dnf config-manager --set-enabled powertools && dnf update -y"
             else
                 # Fedora includes epel-releease already
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum clean all"
@@ -74,12 +67,11 @@ for DISTRO in "${DISTROS[@]}"; do
     esac
     case $PACKAGER in
         rpm)
-            ADDITIONAL_PACKAGES+=(
+            ADDITIONAL_PACKAGES=(
                                     apr-devel
                                     apr-util-devel
                                     autoconf
                                     ccache
-                                    cmake
                                     curl
                                     createrepo
                                     expat-devel
@@ -88,7 +80,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libacl-devel
                                     libsodium-devel
                                     openssl-devel
-                                    python3
+                                    python
                                     rsync
                                     tar
                                     wget
@@ -98,7 +90,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                 )
             ;;
         deb)
-            ADDITIONAL_PACKAGES+=(
+            ADDITIONAL_PACKAGES=(
                                     autoconf
                                     ca-certificates
                                     ccache
@@ -108,12 +100,12 @@ for DISTRO in "${DISTROS[@]}"; do
                                     dpkg-dev
                                     git-buildpackage
                                     git-core
+                                    libfuse-dev
                                     libacl1-dev
                                     libapr1-dev
                                     libaprutil1-dev
                                     libdistro-info-perl
                                     libexpat1-dev
-                                    libfuse3-dev
                                     librocksdb-dev
                                     libsodium-dev
                                     libssl-dev
@@ -121,6 +113,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libz-dev
                                     libzmq5-dev
                                     lsb-release
+                                    python
                                     rsync
                                     wget
                                 )
@@ -133,13 +126,10 @@ for DISTRO in "${DISTROS[@]}"; do
             ADDITIONAL_PACKAGES+=( clang )
             ;;
         vivid|wily|xenial|yakkety|jessie)
-            ADDITIONAL_PACKAGES+=( libtool-bin python )
+            ADDITIONAL_PACKAGES+=( libtool-bin )
             ;;
         focal)
-            ADDITIONAL_PACKAGES+=( libfuse3-dev python )
-            ;;
-        jammy)
-            ADDITIONAL_PACKAGES+=( libfuse3-dev python3 )
+            ADDITIONAL_PACKAGES+=( libfuse3-dev )
             ;;
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then

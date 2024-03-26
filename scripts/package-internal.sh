@@ -70,7 +70,9 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
         #This is is only way to get JErasure to build.
-        export JERASURE_CC=gcc
+        if [ "$PACKAGE_DISTRO" == "rockylinux-9" ]; then
+            export JERASURE_CC=gcc
+        fi
         ;;
     *)
         fatal "Unexpected distro name $PACKAGE_DISTRO"
@@ -81,6 +83,9 @@ fi
 # todo could probe this from docker variables
 REPO_BASE=$LSTORE_RELEASE_BASE/build/package/$PACKAGE_SUBDIR
 PACKAGE_BASE=/tmp/lstore-package
+
+note "Telling git that the $LSTORE_RELEASE_BASE is a legit repo location"
+git config --global --add safe.directory $LSTORE_RELEASE_BASE
 
 note "Beginning packaging at $(date) for $PACKAGE_SUBDIR"
 
