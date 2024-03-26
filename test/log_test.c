@@ -698,6 +698,7 @@ tbx_log_flush();
     segment_serialize(clone2, exp);
 
     //** Dump it to disk
+    fd = NULL;
     assert((fd = fopen("/tmp/clone_exact.ex3", "w")) != NULL);
     fprintf(fd, "%s\n", exp->text.text);
     fprintf(fd, "[view]\n");
