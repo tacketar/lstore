@@ -723,12 +723,15 @@ tbx_log_flush();
     segment_serialize(clone3, exp);
 
     //** Dump it to disk
+    fd = NULL;
     assert((fd = fopen("/tmp/clone.ex3", "w")) != NULL);
-    fprintf(fd, "%s\n", exp->text.text);
-    fprintf(fd, "[view]\n");
-    fprintf(fd, "default = " XOT "\n", segment_id(clone3));
-    fprintf(fd, "segment = " XOT "\n", segment_id(clone3));
-    fclose(fd);
+    if (fd != NULL) {
+        fprintf(fd, "%s\n", exp->text.text);
+        fprintf(fd, "[view]\n");
+        fprintf(fd, "default = " XOT "\n", segment_id(clone3));
+        fprintf(fd, "segment = " XOT "\n", segment_id(clone3));
+        fclose(fd);
+    }
 
     lio_exnode_exchange_destroy(exp);
 
