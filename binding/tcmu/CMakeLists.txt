@@ -9,24 +9,30 @@ include (Timestamp)
 TIMESTAMP(TCMUL_TIMESTAMP)
 
 find_package(TCMU REQUIRED)
+find_package(APR REQUIRED)
+find_package(APRUtil REQUIRED)
+find_package(ToolBox REQUIRED)
+find_package(GOP REQUIRED)
+find_package(IBP REQUIRED)
+find_package(LIO REQUIRED)
 
 set(TCMUL_OBJS
         src/handler_lstore.c
     )
 set(TCMUL_LIBS
-        toolbox
-        gop
-        ibp
-        lio
+        ${LIO_LIBRARY}
+        ${IBP_LIBRARY}
+        ${GOP_LIBRARY}
+        ${TOOLBOX_LIBRARY}
         ${APR_LIBRARY}
         ${APRUTIL_LIBRARY}
     )
 set(TCMUL_INC
         ${PROJECT_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/src/toolbox
-        ${CMAKE_SOURCE_DIR}/src/gop
-        ${CMAKE_SOURCE_DIR}/src/ibp
-        ${CMAKE_SOURCE_DIR}/src/lio
+        ${TOOLBOX_INCLUDE_DIR}
+        ${GOP_INCLUDE_DIR}
+        ${IBP_INCLUDE_DIR}
+        ${LIO_INCLUDE_DIR}
         ${APR_INCLUDE_DIR}
         ${APRUTIL_INCLUDE_DIR}
         ${TCMU_INCLUDE_DIR}

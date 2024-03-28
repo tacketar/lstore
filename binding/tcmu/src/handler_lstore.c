@@ -18,11 +18,11 @@
 //  tcmu_lstore - TCMU module supporting the use of LStore files as targets
 //***********************************************************************
 
-//#define _GNU_SOURCE
+#define _GNU_SOURCE
+#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -33,57 +33,43 @@
 #include <errno.h>
 #include <scsi/scsi.h>
 
+#include "libtcmu.h"
+#include "tcmur_device.h"
 #include "tcmu-runner.h"
 
-#include <gop/gop.h>
+//#include <gop/gop.h>
 #include <lio/lio.h>
+#include <lio/fs.h>
 #include <tbx/atomic_counter.h>
-#include <tbx/constructor_wrapper.h>
 #include <tbx/fmttypes.h>
 #include <tbx/type_malloc.h>
 #include "visibility.h"
 
-static void lstore_activate();
-static void lstore_deactivate();
 
-#ifdef ACCRE_CONSTRUCTOR_PREPRAGMA_ARGS
-#pragma ACCRE_CONSTRUCTOR_PREPRAGMA_ARGS(lstore_activate)
-#endif
-ACCRE_DEFINE_CONSTRUCTOR(lstore_activate)
-#ifdef ACCRE_CONSTRUCTOR_POSTPRAGMA_ARGS
-#pragma ACCRE_CONSTRUCTOR_POSTPRAGMA_ARGS(lstore_activate)
-#endif
-
-#ifdef ACCRE_DESTRUCTOR_PREPRAGMA_ARGS
-#pragma ACCRE_DESTRUCTOR_PREPRAGMA_ARGS(lstore_deactivate)
-#endif
-ACCRE_DEFINE_DESTRUCTOR(lstore_deactivate)
-#ifdef ACCRE_DESTRUCTOR_POSTPRAGMA_ARGS
-#pragma ACCRE_DESTRUCTOR_POSTPRAGMA_ARGS(lstore_deactivate)
-#endif
-
+// **SCSI additional sense codes.  from file_zbc.c in tcmu-runner source
+#define ASC_READ_ERROR                          0x1100
+#define ASC_WRITE_ERROR                         0x0C00
 
 TCMUL_API int handler_init(void);
 
 typedef struct {
    lio_fd_t *fd;
-   lio_config_t *lc;
-   lio_path_tuple_t tuple;
-   tbx_atomic_int_t in_flight;
 } tcmu_lstore_t;
+
+lio_fs_t *fs = NULL;  //** This is the FS handle used for all devices
 
 //***********************************************************************
 //  lstore_activate - Start LIO subsystem when loading the shared library
 //***********************************************************************
 
-static void lstore_activate()
+static int lstore_activate()
 {
-    int argc = 3;
+    int argc = 1;
     char **argv = malloc(sizeof(char *)*argc);
     argv[0] = "lio_tcmu";
-    argv[1] = "-c";
-    argv[2] = "/etc/lio/lio.cfg";
 
+fprintf(stderr, "AFTER apr_init\n"); fflush(stderr);
+    //** Do the normal init stuff
     lio_init(&argc, &argv);
     free(argv);
     if (!lio_gc) {
@@ -92,9 +78,19 @@ static void lstore_activate()
         exit(1);
     }
 
+
+    //** Create the default file system handler
+    fs = lio_fs_create(lio_gc->ifd, "lfs", lio_gc, getuid(), getgid());
+    if (!fs) {
+        fprintf(stderr, "ERROR: Unable to create the default fs!\n");
+        exit(2);
+    }
+
     log_printf(0,"Loaded\n");
 
     tbx_log_flush();
+
+    return(0);
 }
 
 //***********************************************************************
@@ -103,9 +99,38 @@ static void lstore_activate()
 
 static void lstore_deactivate()
 {
-    log_printf(0,"Unloaded\n");
-    tbx_log_flush();
+
+fprintf(stderr, "lstore_deactivate: START\n"); fflush(stderr);
+
+    if (fs) lio_fs_destroy(fs);
+
+fprintf(stderr, "lstore_deactivate: BEFORE shutdown\n"); fflush(stderr);
     lio_shutdown();
+
+fprintf(stderr, "lstore_deactivate: END\n"); fflush(stderr);
+
+//    apr_terminate();
+
+}
+
+//***********************************************************************
+//  cfgstring2fname - Takes the TCMU config string converts it to a filename
+//***********************************************************************
+
+const char *cfgstring2fname(const char *cfgstring, char **reason)
+{
+	char *fname;
+
+    fname = strchr(cfgstring, '/');
+    if (!fname) {
+        if (reason != NULL) {
+            if (asprintf(reason, "No path found") == -1) *reason = NULL;
+        }
+        return(NULL);
+    }
+    fname += 1; //** get past '/'
+
+    return(fname);
 }
 
 //***********************************************************************
@@ -114,28 +139,22 @@ static void lstore_deactivate()
 
 static bool lstore_check_config(const char *cfgstring, char **reason)
 {
-	char *fname;
+	const char *fname;
     int ftype;
-    lio_path_tuple_t tuple;
 
-    fname = strchr(cfgstring, '/');
+    fname = cfgstring2fname(cfgstring, reason);
     if (!fname) {
-        if (asprintf(reason, "No path found") == -1) *reason = NULL;
-        return false;
-    }
-    fname += 1; //** get past '/'
-
-    tuple = lio_path_resolve(lio_gc->auto_translate, fname);
-
-    ftype = lio_exists(lio_gc, lio_gc->creds, tuple.path);
-    if ((ftype & OS_OBJECT_FILE_FLAG) == 0) {
-        asprintf(reason, "Target file does not exists. target:%s\n", tuple.path);
         return false;
     }
 
-    log_printf(1, "cfgstring=%s fname=%s ftype=%d\n", cfgstring, tuple.path, ftype);
-
-    lio_path_release(&tuple);
+    ftype = lio_fs_exists(fs, fname);
+    if (ftype == 0) {
+        asprintf(reason, "Target file does not exists. target:%s\n", fname);
+        return false;
+    } else if ((ftype & OS_OBJECT_FILE_FLAG) == 0) {
+        asprintf(reason, "Target file is not a faile. target:%s\n", fname);
+        return false;
+    }
 
     return true;
 }
@@ -144,63 +163,37 @@ static bool lstore_check_config(const char *cfgstring, char **reason)
 //  lstore_open - Opens an existing target file
 //***********************************************************************
 
-static int lstore_open(struct tcmu_device *dev)
+static int lstore_open(struct tcmu_device *dev, bool reopen)
 {
     tcmu_lstore_t *ctx;
     int64_t size;
-    char *fname;
+    const char *fname;
     int block_size, lbas;
     int return_code;
 
     tbx_type_malloc_clear(ctx, tcmu_lstore_t, 1);
     return_code = 0;
-    ctx->lc = lio_gc;
 
-    tcmu_set_dev_private(dev, ctx);
+    tcmur_dev_set_private(dev, ctx);
 
-    fname = strchr(tcmu_get_dev_cfgstring(dev), '/');
-    log_printf(1, "START cfgstring=%s fname=%s\n", tcmu_get_dev_cfgstring(dev), fname);
+    fname = cfgstring2fname(tcmu_dev_get_cfgstring(dev), NULL);
     if (!fname) {
         tcmu_err("no configuration found in cfgstring\n");
         return_code = -EINVAL;
-        goto err2;
-    }
-    fname += 1; //** Move past the '/'
-
-    ctx->tuple = lio_path_resolve(lio_gc->auto_translate, fname);
-    if (ctx->tuple.is_lio < 0) {
-        tcmu_err("Unable to parse path\n");
-        log_printf(0, "Unable to parse path: %s\n", fname);
-        return_code = -EINVAL;
-        goto err1;
+        goto failed;
     }
 
-    gop_sync_exec(lio_open_gop(ctx->lc, ctx->lc->creds, ctx->tuple.path, lio_fopen_flags("r+"), NULL, &ctx->fd, 60));
+    ctx->fd = lio_fs_open(fs, NULL, fname, lio_fopen_flags("r+"));
     if (ctx->fd == NULL) {
         tcmu_err("Failed opening target!\n");
         return_code = -EREMOTEIO;
-        goto err1;
+        goto failed;
     }
-
-    lio_wq_enable(ctx->fd, 128);
-
-    block_size = 512;
-    tcmu_set_dev_block_size(dev, block_size);
-
-    size = tcmu_get_device_size(dev);
-    if (size < 0) {
-        tcmu_err("Could not get device size\n");
-        goto err1;
-    }
-    lbas = size/block_size;
-    tcmu_set_dev_num_lbas(dev, lbas);
 
     return(return_code);  //** Exit
 
     //** If we make it here there was an error
-err1:
-    lio_path_release(&ctx->tuple);
-err2:
+failed:
     free(ctx);
     return(return_code);
 }
@@ -211,91 +204,79 @@ err2:
 
 static void lstore_close(struct tcmu_device *dev)
 {
-    tcmu_lstore_t *ctx = tcmu_get_dev_private(dev);
+    tcmu_lstore_t *ctx = tcmur_dev_get_private(dev);
 
-    log_printf(1, "CLOSE\n");
-
-    gop_sync_exec(lio_close_gop(ctx->fd));
-
-    lio_path_release(&ctx->tuple);
+    lio_fs_close(fs, ctx->fd);
     free(ctx);
-
-    log_printf(1, "END\n"); tbx_log_flush();
 }
 
 //***********************************************************************
 //  lstore_readv - Read data from the target
 //***********************************************************************
 
-static int lstore_readv(struct tcmu_device *dev, struct tcmulib_cmd *cmd,
+static int lstore_readv(struct tcmu_device *dev, struct tcmur_cmd *rcmd,
                struct iovec *iov, size_t iov_cnt, size_t length, off_t offset)
 {
-    tcmu_lstore_t *ctx = tcmu_get_dev_private(dev);
+    tcmu_lstore_t *ctx = tcmur_dev_get_private(dev);
+    struct tcmulib_cmd *cmd = rcmd->lib_cmd;
     int ret, nbytes;
 
-    tbx_atomic_inc(ctx->in_flight);
-    nbytes = lio_readv(ctx->fd, iov, iov_cnt, length, offset, NULL);
-    log_printf(1, "READ n_iov=" ST " offset=" OT " len=" ST " nbytes=%d in_flight=" AIT "\n", iov_cnt, offset, length, nbytes, tbx_atomic_get(ctx->in_flight));
-    tbx_atomic_dec(ctx->in_flight);
+    nbytes = lio_fs_readv(fs, ctx->fd, iov, iov_cnt, offset);
     if ((unsigned int)nbytes != length) {
-    log_printf(1, "ERROR READ n_iov=" ST " offset=" OT " len=" ST " nbytes=%d in_flight=" AIT "\n", iov_cnt, offset, length, nbytes, tbx_atomic_get(ctx->in_flight));
+        log_printf(1, "ERROR READ n_iov=" ST " offset=" OT " len=" ST " nbytes=%d\n", iov_cnt, offset, length, nbytes);
         tcmu_err("read failed: %m\n");
-        ret = tcmu_set_sense_data(cmd->sense_buf, MEDIUM_ERROR, ASC_READ_ERROR, NULL);
+        ret = tcmu_sense_set_data(cmd->sense_buf, MEDIUM_ERROR, ASC_READ_ERROR);
     } else {
-        ret = SAM_STAT_GOOD;
+        ret = TCMU_STS_OK;
     }
 
-    cmd->done(dev, cmd, ret);
-    return(0);
+    return(ret);
 }
 
 //***********************************************************************
 //  lstore_writev - Read data from the target
 //***********************************************************************
 
-static int lstore_writev(struct tcmu_device *dev, struct tcmulib_cmd *cmd,
+static int lstore_writev(struct tcmu_device *dev, struct tcmur_cmd *rcmd,
 		     struct iovec *iov, size_t iov_cnt, size_t length,
 		     off_t offset)
 {
-    tcmu_lstore_t *ctx = tcmu_get_dev_private(dev);
+    tcmu_lstore_t *ctx = tcmur_dev_get_private(dev);
+    struct tcmulib_cmd *cmd = rcmd->lib_cmd;
     int nbytes, ret;
 
-tbx_atomic_inc(ctx->in_flight);
-    nbytes = lio_writev(ctx->fd, iov, iov_cnt, length, offset, NULL);
-    log_printf(1, "WRITE n_iov=" ST " offset=" OT " len=" ST " nbytes=%d in_flight=" AIT "\n", iov_cnt, offset, length, nbytes, tbx_atomic_get(ctx->in_flight));
-tbx_atomic_dec(ctx->in_flight);
+    nbytes = lio_fs_writev(fs, ctx->fd, iov, iov_cnt, offset);
 
     if ((unsigned int)nbytes != length) {
-    log_printf(1, "ERROR WRITE n_iov=" ST " offset=" OT " len=" ST " nbytes=%d in_flight=" AIT "\n", iov_cnt, offset, length, nbytes, tbx_atomic_get(ctx->in_flight));
+        log_printf(1, "ERROR WRITE n_iov=" ST " offset=" OT " len=" ST " nbytes=%d\n", iov_cnt, offset, length, nbytes);
         tcmu_err("read failed: %m\n");
-        ret = tcmu_set_sense_data(cmd->sense_buf, MEDIUM_ERROR, ASC_READ_ERROR, NULL);
+        ret = tcmu_sense_set_data(cmd->sense_buf, MEDIUM_ERROR, ASC_READ_ERROR);
     } else {
-        ret = SAM_STAT_GOOD;
+        ret = TCMU_STS_OK;
     }
 
-    cmd->done(dev, cmd, ret);
-    return(0);
+    return(ret);
 }
 
 //***********************************************************************
 // lstore_flush - Flush data to backing store
 //***********************************************************************
 
-static int lstore_flush(struct tcmu_device *dev, struct tcmulib_cmd *cmd)
+static int lstore_flush(struct tcmu_device *dev, struct tcmur_cmd *rcmd)
 {
-    tcmu_lstore_t *ctx = tcmu_get_dev_private(dev);
+    tcmu_lstore_t *ctx = tcmur_dev_get_private(dev);
+    struct tcmulib_cmd *cmd = rcmd->lib_cmd;
     int err, ret;
 
-    err = gop_sync_exec(lio_flush_gop(ctx->fd, 0, -1));
-    if (err != OP_STATE_SUCCESS) {
+    err = lio_fs_flush(fs, ctx->fd);
+    if (err != 0) {
         tcmu_err("Flush failed\n");
-        ret = tcmu_set_sense_data(cmd->sense_buf, MEDIUM_ERROR, ASC_WRITE_ERROR, NULL);
+        ret = tcmu_sense_set_data(cmd->sense_buf, MEDIUM_ERROR, ASC_WRITE_ERROR);
     } else {
-    	ret = SAM_STAT_GOOD;
+    	ret = TCMU_STS_OK;
     }
 
-    cmd->done(dev, cmd, ret);
-    return 0;
+    return(ret);
 }
 
 //***********************************************************************
@@ -316,6 +297,8 @@ static struct tcmur_handler lstore_handler = {
     .name = "LStore Handler",
     .subtype = "lstore",
     .nr_threads = 128,
+    .init = lstore_activate,
+    .destroy = lstore_deactivate
 };
 
 //***********************************************************************

@@ -26,6 +26,8 @@ the normal environment variables:
 ```
 LIO_OPTIONS="-d 1 -log /tmp/tcmu.log" tcmu-runner
 ```
+## Stopping tcmu-runner
+When running `tcmu-runner` interactively you can properly shut it down by issuing a SIGTERM to the process.
 
 ## Creating a backstore
 The frist step is to create an LStore file of the appropriate size.  The easist way to do it is using `truncate`
