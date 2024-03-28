@@ -1757,7 +1757,8 @@ int lio_init(int *argc, char ***argvp)
     gop_init_opque_system();  //** Initialize GOP.  This needs to be done after any fork() calls
     exnode_system_init();
 
-    tbx_set_log_level(-1);  //** Disables log output
+    tbx_set_log_level(-1);     //** Disables log output
+    tbx_log_open("stderr", 0); //** But if it's changed via an opt let's have a place to put the output
 
     //** Create the lio object container
     apr_pool_create(&_lc_mpool, NULL);
