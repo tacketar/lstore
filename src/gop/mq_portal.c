@@ -1989,7 +1989,7 @@ int mq_conn_create(gop_mq_portal_t *p, int dowait)
 
     for (retry=0; retry<3; retry++) {
         err = mq_conn_create_actual(p, dowait);
-        log_printf(1, "retry=%d err=%d host=%s\n", retry, err, p->host);
+        log_printf(2, "retry=%d err=%d host=%s\n", retry, err, p->host);
 
         if (err == 0) break;  //** Kick out if we got a good connection
         apr_sleep(apr_time_from_sec(2));
