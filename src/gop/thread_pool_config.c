@@ -314,13 +314,12 @@ void gop_tp_context_destroy(gop_thread_pool_context_t *tpc)
 
     tbx_siginfo_handler_remove(SIGUSR1, tp_siginfo_handler, tpc);
     gop_hp_context_destroy(tpc->pc);
-
     tbx_thread_pool_destroy(tpc->tp);
 
     if (tbx_atomic_dec(_tp_context_count) == 0) {
         if (_tp_stats > 0) thread_pool_stats_print(stderr);
-        apr_thread_mutex_destroy(_tp_lock);
-        apr_pool_destroy(_tp_pool);
+        apr_thread_mutex_destroy(_tp_lock); _tp_lock = NULL;
+        apr_pool_destroy(_tp_pool); _tp_pool = NULL;
     }
 
     if (tpc->name != NULL) free(tpc->name);
