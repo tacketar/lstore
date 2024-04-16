@@ -9,7 +9,7 @@
 #        Runs packaging for centos-7
 
 
-set -eu 
+set -eu
 ABSOLUTE_PATH=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)
 source $ABSOLUTE_PATH/functions.sh
 PACKAGE_EPOCH=$(date +%F-%H-%M-%S)
@@ -18,7 +18,7 @@ PACKAGE_EPOCH=$(date +%F-%H-%M-%S)
 # Argument parsing
 #
 PACKAGE_ARGS=""
-while getopts ":c:ht" opt; do
+while getopts ":c:htf" opt; do
     case $opt in
         c)
             PACKAGE_ARGS="$PACKAGE_ARGS -c $OPTARG"
@@ -26,9 +26,13 @@ while getopts ":c:ht" opt; do
         t)
             PACKAGE_ARGS="$PACKAGE_ARGS -t"
             ;;
+        f)
+            PACKAGE_ARGS="$PACKAGE_ARGS -f"
+            ;;
         \?|h)
-            1>&2 echo "Usage: $0 [-t] [-c ARGUMENT] [distribution ...]"
+            1>&2 echo "Usage: $0 [-t] [-f] [-c ARGUMENT] [distribution ...]"
             1>&2 echo "       -t: Produce static tarballs only"
+            1>&2 echo "       -f: Build libfuse from latest and statically link"
             1>&2 echo "       -c: Add ARGUMENT to cmake"
             exit 1
             ;;

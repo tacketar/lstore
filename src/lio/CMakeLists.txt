@@ -18,14 +18,23 @@ configure_file(${PROJECT_SOURCE_DIR}/config.h.in
 
 # Find dependencies.
 if(NOT USE_SUPERBUILD)
+    message(STTAUS "Not using superbuild")
     find_package(Jerasure REQUIRED)
     find_package(ToolBox REQUIRED)
     find_package(GOP REQUIRED)
     find_package(IBP REQUIRED)
     find_package(ZMQ REQUIRED)
-    find_package(FUSE3)
-    if (NOT HAS_FUSE3)
-        find_package(FUSE REQUIRED)
+
+    if (ENABLE_FUSE3_LIO)
+        find_package(FUSE3_LIO REQUIRED)
+    else()
+        find_package(FUSE3)
+        if (NOT HAS_FUSE3)
+            find_package(FUSE3_LIO)
+            if (NOT HAS_FUSE3)
+                find_package(FUSE REQUIRED)
+            endif()
+        endif()
     endif()
     find_package(RocksDB REQUIRED)
     find_package(LibSodium REQUIRED)
@@ -261,3 +270,7 @@ endforeach()
 foreach(f ${LSTORE_PROJECT_EXECUTABLES} trace_replay)
     set_target_properties(${f} PROPERTIES COMPILE_FLAGS "-DLSTORE_HACK_EXPORT" LINKER_LANGUAGE CXX)
 endforeach()
+
+
+#Add the bits to install the custom libfuse3-lio.so. This is a NULL op if there's nothing to do
+install(CODE "execute_process(COMMAND ${CMAKE_SOURCE_DIR}/scripts/copy_libfuse3-lio.sh /tmp)")

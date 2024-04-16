@@ -36,7 +36,7 @@ for DISTRO in "${DISTROS[@]}"; do
 
     GLOBAL_INSTALL=""
     case $PARENT in
-        centos|fedora)
+        rockylinux|centos|fedora)
             # Fedora claims:
             # Yum command has been deprecated, redirecting to
             #                   '/usr/bin/dnf groupinstall -y Development Tools'
@@ -44,11 +44,13 @@ for DISTRO in "${DISTROS[@]}"; do
             # When does dnf first exist?
             ROCKSDB_MANUAL="1"
             PACKAGER="rpm"
-            PACKAGE_PREFIX="RUN yum install -y"
+            PACKAGE_PREFIX="RUN yum install -y --allowerasing "
             PACKAGE_POSTFIX="&& yum clean all"
             JAVA_INSTALL=""
             if [ $PARENT == "centos" ]; then
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum install -y epel-release git && yum clean all"
+            elif [ $PARENT == "rockylinux" ]; then
+                GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && dnf config-manager --set-enabled crb && yum install -y epel-release git && yum clean all"
             else
                 # Fedora includes epel-releease already
                 GLOBAL_INSTALL="RUN yum groupinstall -y 'Development Tools' && yum clean all"
@@ -79,6 +81,8 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libtool
                                     libacl-devel
                                     libsodium-devel
+                                    meson
+                                    ninja-build
                                     openssl-devel
                                     python
                                     rsync
@@ -100,6 +104,8 @@ for DISTRO in "${DISTROS[@]}"; do
                                     dpkg-dev
                                     git-buildpackage
                                     git-core
+                                    meson
+                                    ninja-build
                                     libfuse-dev
                                     libacl1-dev
                                     libapr1-dev
@@ -113,7 +119,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     libz-dev
                                     libzmq5-dev
                                     lsb-release
-                                    python
+                                    python3
                                     rsync
                                     wget
                                 )
@@ -131,6 +137,9 @@ for DISTRO in "${DISTROS[@]}"; do
         focal)
             ADDITIONAL_PACKAGES+=( libfuse3-dev )
             ;;
+        9)
+            ADDITIONAL_PACKAGES+=( cmake )
+
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then
         PACKAGE_INSTALL=$PACKAGE_PREFIX
@@ -272,7 +281,7 @@ else
             OPT_JENKINS_SECRET="${JENKINS_SECRET}" ;;
         esac
     fi
-    
+
     OPT_JENKINS_AGENT_NAME=""
     if [ -n "$JENKINS_AGENT_NAME" ]; then
         case "$@" in
@@ -284,7 +293,7 @@ else
 
     #TODO: Handle the case when the command-line and Environment variable contain different values.
     #It is fine it blows up for now since it should lead to an error anyway.
-    
+
     exec java $JAVA_OPTS $JNLP_PROTOCOL_OPTS -cp /usr/share/jenkins/slave.jar hudson.remoting.jnlp.Main -headless $TUNNEL $URL $WORKDIR $OPT_JENKINS_SECRET $OPT_JENKINS_AGENT_NAME "$@"
 fi
 
