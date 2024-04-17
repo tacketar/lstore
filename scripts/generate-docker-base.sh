@@ -44,7 +44,11 @@ for DISTRO in "${DISTROS[@]}"; do
             # When does dnf first exist?
             ROCKSDB_MANUAL="1"
             PACKAGER="rpm"
-            PACKAGE_PREFIX="RUN yum install -y --allowerasing "
+            if [ "$PARENT" == "rockylinux" ]; then
+                PACKAGE_PREFIX="RUN yum install -y --allowerasing "
+            else
+                PACKAGE_PREFIX="RUN yum install -y "
+            fi
             PACKAGE_POSTFIX="&& yum clean all"
             JAVA_INSTALL=""
             if [ $PARENT == "centos" ]; then
@@ -74,6 +78,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     apr-util-devel
                                     autoconf
                                     ccache
+                                    cmake
                                     curl
                                     createrepo
                                     expat-devel
@@ -137,9 +142,6 @@ for DISTRO in "${DISTROS[@]}"; do
         focal)
             ADDITIONAL_PACKAGES+=( libfuse3-dev )
             ;;
-        9)
-            ADDITIONAL_PACKAGES+=( cmake )
-
     esac
     if [ "${#ADDITIONAL_PACKAGES[0]}" -ne 0 ]; then
         PACKAGE_INSTALL=$PACKAGE_PREFIX

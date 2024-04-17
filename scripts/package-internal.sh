@@ -7,7 +7,8 @@
 #
 # Preliminary bootstrapping
 #
-set -eux
+#set -eux
+set -ex
 ABSOLUTE_PATH=$(cd `dirname "${BASH_SOURCE[0]}"` && pwd)
 source $ABSOLUTE_PATH/functions.sh
 umask 0000
@@ -50,10 +51,12 @@ PACKAGE_SUBDIR=$PACKAGE_DISTRO
 REPO_BASE=$LSTORE_RELEASE_BASE/build/package/$PACKAGE_SUBDIR
 PACKAGE_BASE=/tmp/lstore-package
 
+cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-stock ${LSTORE_RELEASE_BASE}/lstore.spec
+
 #See if we build the latest libfuse
 if [ "${ENABLE_FUSE3_LIO}" == "on" ]; then
     export BUILD_FUSE3_LIO=on
-    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_FUSE3_LIO=on"
+    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_FUSE3_LIO=on -DENABLE_FUSE3_LIO=on"
 fi
 
 if [[ $TARBALL -eq 0 ]]; then
@@ -84,6 +87,7 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
         export INSTALL_YUM_RELEASE="on"
+        export BUILD_FUSE3_LIO="off"
         ;;
     rockylinux-*)
         PACKAGE_INSTALL="rpm -i"
@@ -111,6 +115,7 @@ if [ "$BUILD_FUSE3_LIO" == "on" ]; then
     rm -rf ${LSTORE_RELEASE_BASE}/build/src/libfuse3_lio*
     rm -rf ${LSTORE_RELEASE_BASE}/vendor/libfuse3_lio
     touch /tmp/build_fuse3_lio-${PACKAGE_SUFFIX}
+    cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-custom ${LSTORE_RELEASE_BASE}/lstore.spec
 fi
 
 note "Telling git that the $LSTORE_RELEASE_BASE is a legit repo location"
@@ -188,16 +193,16 @@ else
     cd $PACKAGE_BASE/build
     cmake $CMAKE_ARGS ..
     make $PACKAGE_SUFFIX VERBOSE=1
-(
-    umask 000
-    mkdir -p $PACKAGE_REPO
-    cp -r {,s}rpm_output/ $PACKAGE_REPO
-    chmod -R u=rwX,g=rwX,o=rwX $PACKAGE_REPO/*
-    # Update lstore-release if we built it
-    if test -n "$(shopt -s nullglob; set +u; echo lstore-release*.rpm)"; then
-        cp lstore-release*.rpm $REPO_BASE/lstore-release.rpm
-    fi
-)
+    (
+        umask 000
+        mkdir -p $PACKAGE_REPO
+        cp -r {,s}rpm_output/ $PACKAGE_REPO
+        chmod -R u=rwX,g=rwX,o=rwX $PACKAGE_REPO/*
+        # Update lstore-release if we built it
+        if test -n "$(shopt -s nullglob; set +u; echo lstore-release*.rpm)"; then
+            cp lstore-release*.rpm $REPO_BASE/lstore-release.rpm
+        fi
+    )
 fi
 
 set +x

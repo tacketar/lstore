@@ -255,7 +255,6 @@ if(REBUILD_DEPENDENCIES)
     add_dependencies(externals ${REBUILD_DEPENDENCIES})
     include_directories("${EXTERNAL_INSTALL_DIR}/include")
     link_directories("${EXTERNAL_INSTALL_DIR}/lib")
-    find_package(FUSE3_LIO)
 endif()
 
 # Pull in LStore modules
