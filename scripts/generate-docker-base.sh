@@ -111,7 +111,7 @@ for DISTRO in "${DISTROS[@]}"; do
                                     git-core
                                     meson
                                     ninja-build
-                                    libfuse-dev
+                                    libfuse3-dev
                                     libacl1-dev
                                     libapr1-dev
                                     libaprutil1-dev

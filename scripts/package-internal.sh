@@ -29,7 +29,7 @@ while getopts ":c:htf" opt; do
             ;;
         f)
             BUILD_LIBFUSE=1
-            CMAKE_ARGS="${CMAKE_ARGS} -DCMAKE_PREFIX_PATH=${LSTORE_RELEASE_BASE}/local"
+            CMAKE_ARGS="${CMAKE_ARGS}  -DENABLE_FUSE3_LIO=on -DCMAKE_PREFIX_PATH=${LSTORE_RELEASE_BASE}/local"
             export ENABLE_FUSE3_LIO=on
             echo "Building libfuse CMAKE_ARGS=${CMAKE_ARGS}"
             ;;
@@ -50,14 +50,6 @@ PACKAGE_SUBDIR=$PACKAGE_DISTRO
 # todo could probe this from docker variables
 REPO_BASE=$LSTORE_RELEASE_BASE/build/package/$PACKAGE_SUBDIR
 PACKAGE_BASE=/tmp/lstore-package
-
-cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-stock ${LSTORE_RELEASE_BASE}/lstore.spec
-
-#See if we build the latest libfuse
-if [ "${ENABLE_FUSE3_LIO}" == "on" ]; then
-    export BUILD_FUSE3_LIO=on
-    CMAKE_ARGS="$CMAKE_ARGS -DBUILD_FUSE3_LIO=on -DENABLE_FUSE3_LIO=on"
-fi
 
 if [[ $TARBALL -eq 0 ]]; then
     case $PACKAGE_DISTRO in
@@ -87,7 +79,6 @@ if [[ $TARBALL -eq 0 ]]; then
         PACKAGE_SUFFIX=rpm
         CMAKE_ARGS="$CMAKE_ARGS -DINSTALL_YUM_RELEASE=ON"
         export INSTALL_YUM_RELEASE="on"
-        export BUILD_FUSE3_LIO="off"
         ;;
     rockylinux-*)
         PACKAGE_INSTALL="rpm -i"
@@ -105,17 +96,23 @@ if [[ $TARBALL -eq 0 ]]; then
     esac
 fi
 
-rm /tmp/build_fuse3_lio-deb || echo "No earlier build_fuse3_lio-deb flag"
+rm /tmp/build_fuse3_lio-??? || echo "No earlier build_fuse3_lio-XXX flags"
 
-if [ "$BUILD_FUSE3_LIO" == "on" ]; then
-    #Clean up old installs
-    echo "Removing Old build of FUSE3"
-    rm -rf ${LSTORE_RELEASE_BASE}/vendor/libfuse3_lio
-    rm -rf ${LSTORE_RELEASE_BASE}/build/libfuse3_lio-prefix
-    rm -rf ${LSTORE_RELEASE_BASE}/build/src/libfuse3_lio*
-    rm -rf ${LSTORE_RELEASE_BASE}/vendor/libfuse3_lio
+if [ "$BUILD_LIBFUSE" == "1" ]; then
     touch /tmp/build_fuse3_lio-${PACKAGE_SUFFIX}
-    cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-custom ${LSTORE_RELEASE_BASE}/lstore.spec
+    echo "Building custom libfuse3-lio"
+    ${LSTORE_RELEASE_BASE}/scripts/build_libfuse3-lio.sh ${LSTORE_RELEASE_BASE}/build /usr
+    if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
+        cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-custom ${LSTORE_RELEASE_BASE}/lstore.spec
+    else
+        cp ${LSTORE_RELEASE_BASE}/debian/rules-custom ${LSTORE_RELEASE_BASE}/debian/rules
+    fi
+else
+    if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
+        cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-stock ${LSTORE_RELEASE_BASE}/lstore.spec
+    else
+        cp ${LSTORE_RELEASE_BASE}/debian/rules-stock ${LSTORE_RELEASE_BASE}/debian/rules
+    fi
 fi
 
 note "Telling git that the $LSTORE_RELEASE_BASE is a legit repo location"
