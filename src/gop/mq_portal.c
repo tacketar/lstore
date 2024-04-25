@@ -1868,7 +1868,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         }
 
         MQ_DEBUG(te = apr_time_now();)
-        MQ_DEBUG(if (dt_task > 0) { dt_incoming = dt_incoming - dt_task; dt_task = dt_task - ts; })
+        MQ_DEBUG(if (dt_task > 0) { dt_task = dt_task - dt_incoming; dt_incoming = dt_incoming - ts; })
         MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pfd[CONN]=%d npoll=%d n=%d running=%d long_running=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n",
                      nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, tbx_atomic_get(c->pc->running), tbx_atomic_get(c->pc->long_running),
                      nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
