@@ -53,6 +53,7 @@
 
 static gop_mq_context_t mqc_default_options = {
     .section = "mq_context",
+    .fname_errors = NULL,
     .socket_type = MQ_TRACE_ROUTER,
     .min_conn = 1,
     .max_conn = 1,
@@ -2262,6 +2263,7 @@ void gop_mq_destroy_context(gop_mq_context_t *mqc)
     apr_pool_destroy(mqc->mpool);
 
     if (mqc->section) free(mqc->section);
+    if (mqc->fname_errors) free(mqc->fname_errors);
     free(mqc);
 
     log_printf(5, "AFTER SLEEP2\n");
@@ -2292,6 +2294,7 @@ void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_sect
     gop_mq_portal_t *p;
 
     if (print_section_heading) fprintf(fd, "[%s]\n", mqc->section);
+    fprintf(fd, "fname_errors = %s\n", mqc->fname_errors);
     fprintf(fd, "min_conn = %d\n", mqc->min_conn);
     fprintf(fd, "max_conn = %d\n", mqc->max_conn);
     fprintf(fd, "min_threads = %d\n", mqc->min_threads);
@@ -2341,7 +2344,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
     tbx_type_malloc_clear(mqc, gop_mq_context_t, 1);
 
     mqc->section = strdup(section);
-    mqc->min_conn = tbx_inip_get_integer(ifd, section, "min_conn", mqc_default_options.min_conn);
+    mqc->fname_errors = tbx_inip_get_string(ifd, section, "fname_errors", mqc_default_options.fname_errors);
     mqc->max_conn = tbx_inip_get_integer(ifd, section, "max_conn", mqc_default_options.max_conn);
     mqc->min_threads = tbx_inip_get_integer(ifd, section, "min_threads", mqc_default_options.min_threads);
     mqc->max_threads = tbx_inip_get_integer(ifd, section, "max_threads", mqc_default_options.max_threads);

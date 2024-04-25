@@ -136,6 +136,7 @@ struct gop_mq_context_t {      //** Main MQ context
     int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     char *section;             //** Config section used
+    char *fname_errors;        //** Where to dump MQ or ongoing hard errors
     apr_thread_mutex_t *lock;  //** Context lock
     apr_pool_t *mpool;         //** Context memory pool
     tbx_atomic_int_t n_ops;        //** Operation count

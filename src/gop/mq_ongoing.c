@@ -31,6 +31,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
 #include <tbx/notify.h>
@@ -52,6 +53,8 @@ gop_op_status_t ongoing_response_status(void *task_arg, int tid)
 {
     gop_mq_task_t *task = (gop_mq_task_t *)task_arg;
     gop_op_status_t status;
+    char date[128];
+    FILE *fd = NULL;
 
     log_printf(5, "START\n");
 
@@ -62,6 +65,15 @@ gop_op_status_t ongoing_response_status(void *task_arg, int tid)
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
     if (status.op_status != OP_STATE_SUCCESS) {
         MQ_DEBUG_NOTIFY("ONGOING_CLIENT: ERROR -- Got a failed heartbeat! status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
+
+        //** See if we can log the error"
+        if (task->ctx->fname_errors) {
+            fd = fopen(task->ctx->fname_errors, "a");
+            if (fd) {
+                fprintf(fd, "%s -- ERROR: ONGOING_HEARTBEAT Failed!!\n", tbx_stk_pretty_print_time(apr_time_now(), 1, date));
+                fclose(fd);
+            }
+        }
     }
 
     MQ_DEBUG_NOTIFY("ONGOING_HEARTBEAT_STATUS: status.op_status=%d status.error_code=%d\n", status.op_status, status.error_code);
@@ -871,7 +883,7 @@ gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *
 
     if (mode & ONGOING_SERVER) {
         mqon->id_table = apr_hash_make(mqon->mpool);
-       FATAL_UNLESS(mqon->id_table != NULL);
+        FATAL_UNLESS(mqon->id_table != NULL);
 
         ctable = gop_mq_portal_command_table(server_portal);
         gop_mq_command_set(ctable, ONGOING_KEY, ONGOING_SIZE, mqon, mq_ongoing_cb);
