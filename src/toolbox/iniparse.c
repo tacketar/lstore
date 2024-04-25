@@ -131,12 +131,13 @@ void tbx_inip_group_set(tbx_inip_group_t *ig, char *value) {
 //     returned.  Otherwise NULL is returns.
 //***********************************************************************
 
-char *substitute_params(tbx_inip_file_t *fd, char *text)
+char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_error)
 {
     char *start, *end, *last, *dest, *c, *value, *newtext, *textend;
     char param[1024], subtext[1024];
     int n, ndest, nmax, changed, pid;
 
+    if (error) *error = 0;
     nmax = sizeof(subtext);
     textend = text + strlen(text);
     dest = subtext;
@@ -204,7 +205,13 @@ char *substitute_params(tbx_inip_file_t *fd, char *text)
             tbx_type_malloc(value, char, 20);
             snprintf(value, 20, "%ld", random());
         } else {    //** Look it up
-            value = tbx_inip_get_string(fd, PARAMS, param, NULL);
+            value = tbx_inip_get_string(fd, PARAMS, param, "_^MISSING-PARAM^_");
+            if (strcmp(value, "_^MISSING-PARAM^_") == 0) {
+                if (report_error) fprintf(stderr, "iniparse:  ERROR undefined parameter! parm=%s\n", param);
+                free(value);
+                value = NULL;
+                if (error) *error = 1;
+            }
         }
 
 finished:
@@ -243,19 +250,21 @@ finished:
 // resolve_params - Resolves the parameters
 //***********************************************************************
 
-void resolve_params(tbx_inip_file_t  *fd)
+int resolve_params(tbx_inip_file_t  *fd)
 {
-    int loop, n;
+    int loop, n, error, n_errors;
     char *str;
     tbx_inip_group_t  *g;
     tbx_inip_element_t  *ele;
+
+    n_errors = 0;
 
     //** Find the params section
     for (g = tbx_inip_group_first(fd); g != NULL; g = tbx_inip_group_next(g)) {
         if (strcmp(g->group, PARAMS) == 0) break;
     }
 
-    if (!g) return;  //** Nothing to do so kick out
+    if (!g) return(n_errors);;  //** Nothing to do so kick out
 
     //** We need to loop over the params repeatedly reapplying the substitions until
     //** nothing is done or we encounter a loop.  Fixed the number of iterations
@@ -263,20 +272,24 @@ void resolve_params(tbx_inip_file_t  *fd)
     for (loop=0; loop<20; loop++) {
         n = 0;
         for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
-            if ((str = substitute_params(fd, ele->key)) != NULL) {
+            if ((str = substitute_params(fd, ele->key, &error, 1)) != NULL) {
                 n++;
                 free(ele->key);
                 ele->key = str;
             }
-            if ((str = substitute_params(fd, ele->value)) != NULL) {
+            n_errors += error;
+            if ((str = substitute_params(fd, ele->value, &error, 1)) != NULL) {
                 n++;
                free(ele->value);
                ele->value = str;
             }
+            n_errors += error;
         }
 
         if (n == 0) break;  //** Nothing done so kick out
     }
+
+    return(n_errors);
 }
 
 
@@ -284,41 +297,47 @@ void resolve_params(tbx_inip_file_t  *fd)
 // tbx_inip_apply_params - Applies the parameters to all the groups and elements
 //***********************************************************************
 
-void tbx_inip_apply_params(tbx_inip_file_t  *fd)
+int tbx_inip_apply_params(tbx_inip_file_t  *fd)
 {
     tbx_inip_group_t  *g;
     tbx_inip_element_t  *ele;
     char *str;
+    int n_errors, error;
 
     fd->n_substitution_checks = 0;  //** Flag that we've applied the param substitutions
 
-    resolve_params(fd);
+    n_errors = resolve_params(fd);
 
     for (g = tbx_inip_group_first(fd); g != NULL; g = tbx_inip_group_next(g)) {
         if (g->substitution_check) {
-            if ((str = substitute_params(fd, g->group)) != NULL) {
+            if ((str = substitute_params(fd, g->group, &error, 1)) != NULL) {
                 free(g->group);
                 g->group = str;
             }
+            n_errors += error;
         }
 
         if (g->n_kv_substitution_check) {
             for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
                 if (ele->substitution_check) {
-                    if ((str = substitute_params(fd, ele->key)) != NULL) {
+                    if ((str = substitute_params(fd, ele->key, &error, 1)) != NULL) {
                         free(ele->key);
                         ele->key = str;
                     }
-                    if ((str = substitute_params(fd, ele->value)) != NULL) {
+                    n_errors += error;
+                    if ((str = substitute_params(fd, ele->value, &error, 1)) != NULL) {
                         free(ele->value);
                         ele->value = str;
                     }
+                    n_errors += error;
                 }
             }
         }
     }
 
     fd->n_substitution_checks = 0;  //** No need to run this again
+
+    return(n_errors);
 }
 
 //***********************************************************************
@@ -827,7 +846,7 @@ apr_time_t tbx_inip_get_time(tbx_inip_file_t *inip, const char *group, const cha
 
 //***********************************************************************
 
-char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *key, char *def)
+char *tbx_inip_get_string_full(tbx_inip_file_t *inip, const char *group, const char *key, char *def, int *error)
 {
     char *sub = NULL;
     char *value = def;
@@ -837,7 +856,7 @@ char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *
     if (ele != NULL) {
         value = ele->value;
     } else if (def != NULL) {
-        sub = substitute_params(inip, def);
+        sub = substitute_params(inip, def, error, (error) ? 0 : 1);
         value = (sub) ? sub : def;
     }
 
@@ -848,6 +867,10 @@ char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *
     return(ret);
 }
 
+char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *key, char *def)
+{
+    return(tbx_inip_get_string_full(inip, group, key, def, NULL));
+}
 
 //***********************************************************************
 //  inip_load - Loads the .ini file pointed to by the file descriptor
@@ -913,7 +936,12 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int r
     tbx_stack_free(bfd.include_paths, 1);
 
     if (inip && resolve_params) {
-        if (inip->n_substitution_checks) tbx_inip_apply_params(inip);  //** Apply the parameters
+        if (inip->n_substitution_checks) {
+            if (tbx_inip_apply_params(inip) != 0) {  //** Apply the parameters
+                tbx_inip_destroy(inip);   //** Got an undefined substition error
+                inip = NULL;
+            }
+        }
     }
 
     return(inip);

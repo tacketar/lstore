@@ -59,6 +59,7 @@ TBX_API double tbx_inip_get_double(tbx_inip_file_t *inip, const char *group, con
 TBX_API int64_t tbx_inip_get_integer(tbx_inip_file_t *inip, const char *group, const char *key, int64_t def);
 TBX_API apr_time_t tbx_inip_get_time(tbx_inip_file_t *inip, const char *group, const char *key, char *def);
 TBX_API char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *key, char *def);
+TBX_API char *tbx_inip_get_string_full(tbx_inip_file_t *inip, const char *group, const char *key, char *def, int *error);
 TBX_API int tbx_inip_group_count(tbx_inip_file_t *inip);
 TBX_API tbx_inip_group_t *tbx_inip_group_find(tbx_inip_file_t *inip, const char *name);
 TBX_API tbx_inip_group_t *tbx_inip_group_first(tbx_inip_file_t *inip);
@@ -75,7 +76,7 @@ TBX_API tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_
 TBX_API int tbx_inip_text2string_jail(const char *text, char **text_out, int *nbytes, const char *jail_prefix);
 TBX_API int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, const char *jail_prefix);
 TBX_API char *tbx_inip_serialize(tbx_inip_file_t *fd);
-TBX_API void tbx_inip_apply_params(tbx_inip_file_t  *fd);
+TBX_API int tbx_inip_apply_params(tbx_inip_file_t  *fd);
 
 //*** Hint routines
 TBX_API tbx_inip_hint_t *tbx_inip_hint_new(int op, char *section, int section_rank, char *key, int key_rank, char *value);

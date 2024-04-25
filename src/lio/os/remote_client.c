@@ -2857,6 +2857,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     lio_object_service_fn_t *os;
     lio_osrc_priv_t *osrc;
     char *str;
+    int error;
 
     log_printf(10, "START\n");
     if (section == NULL) section = osrc_default_options.section;
@@ -2878,10 +2879,9 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
         osrc->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     }
 
-
     osrc->timeout = tbx_inip_get_integer(fd, section, "timeout", osrc_default_options.timeout);
     osrc->heartbeat = tbx_inip_get_integer(fd, section, "heartbeat", osrc_default_options.heartbeat);
-    osrc->remote_host_string = tbx_inip_get_string(fd, section, "remote_address", osrc_default_options.remote_host_string);
+    osrc->remote_host_string = tbx_inip_get_string_full(fd, section, "remote_address", osrc_default_options.remote_host_string, &error);
     osrc->remote_host = gop_mq_string_to_address(osrc->remote_host_string);
 
     osrc->max_stream = tbx_inip_get_integer(fd, section, "max_stream", osrc_default_options.max_stream);

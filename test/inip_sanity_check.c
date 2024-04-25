@@ -98,7 +98,7 @@ void print_help()
 
 int main(int argc, char **argv)
 {
-    int err, do_print, i, start_option;
+    int n_errors, err, do_print, i, start_option;
     char *fname;
     tbx_inip_file_t *ifd;
     tbx_stack_t *hints;
@@ -110,6 +110,7 @@ int main(int argc, char **argv)
     err = 0;
     if (argc < 2) {
         print_help();
+        tbx_stack_free(hints, 1);
         return(1);
     }
 
@@ -136,6 +137,7 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[i], "-f2s") == 0) {  //** Just do a file to string conversion
             i++;
             print_file2string(argv[i], stdout);
+            tbx_stack_free(hints, 1);
             return(0);
         }
     } while ((start_option < i) && (i<argc));
@@ -149,6 +151,7 @@ int main(int argc, char **argv)
     ifd = tbx_inip_file_read(fname, 0);
     if (ifd == NULL) {
         fprintf(stderr, "ERROR: parsing file!\n");
+        tbx_stack_free(hints, 1);
         return(1);
     }
 
@@ -162,11 +165,16 @@ int main(int argc, char **argv)
 
     if (do_print & 2) print_file(ifd, stdout, "Hints applied version");
 
-    tbx_inip_apply_params(ifd);  //** Apply the paramters
-
-    if (do_print & 4) print_file(ifd, stdout, "Final version");
+    n_errors = tbx_inip_apply_params(ifd);  //** Apply the paramters
+    if (n_errors) {
+        err = 1;
+        fprintf(stderr, "ERROR: Undefined params! n_errors=%d\n", n_errors);
+    } else {
+        if (do_print & 4) print_file(ifd, stdout, "Final version");
+    }
 
     tbx_inip_destroy(ifd);
+
     return(err);
 }
 

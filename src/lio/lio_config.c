@@ -1210,7 +1210,7 @@ void lio_destroy(lio_config_t *lio)
 lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name)
 {
     lio_config_t *lio;
-    int n, cores, max_recursion;
+    int n, cores, max_recursion, err;
     char buffer[1024];
     void *cred_args[2];
     char *ctype, *stype;
@@ -1269,7 +1269,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->special_file_prefix = tbx_inip_get_string(lio->ifd, section, "special_file_prefix", lio_default_options.special_file_prefix);
 
     //** Get the mount's UUID. Most of the time this isn't set specifically in the section but instead stored as a parameter
-    stype = tbx_inip_get_string(lio->ifd, section, "uuid", "${uuid}");
+    stype = tbx_inip_get_string_full(lio->ifd, section, "uuid", "${uuid}", &err);
     if (stype[0] == '$') { //** Didn't get  one
         lio->uuid = -1;
     } else {
