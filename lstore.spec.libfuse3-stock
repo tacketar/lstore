@@ -1,8 +1,8 @@
 # -*- rpm-spec -*-
 %define _basename lstore
 # Allow the version to be overridden from the command line
-%define _dist_version 1.0.0
-%define _dist_release 1
+%define _dist_version 2.0.0
+%define _dist_release 2
 %define _version %{?my_version}%{?!my_version:%{_dist_version}}
 %define _release %{?my_release}%{?!my_release:%{_dist_release}}
 %define _prefix /usr
@@ -49,6 +49,35 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/*
 
 %changelog
+* Mon May  6 2024 Alan Tackett <alan.tackett@vanderbilt.edu> 2.0.0
+- Ability to bundle the latest libfuse3
+- User accounts added and path based ACLs
+- LFS Extended ACL support by mapping LStore credentials to local accounts
+- User R/W file locking across all processes attached to an LServer instance
+- Internal R/W file locking for tracking and synchronization between processes
+- Special file support -- FIFO and socket files. These don't cooredinate between LFS mounts and are just local
+- Ability to set file execute bit
+- Support for Rocky Linux 9
+- TCMUrunner support updated for using an LStore file as an iSCSI target
+- Extensive client and srver side logging to aid in troubleshooting with daily log rotation
+- More detailed state information related to open files and file system ops.
+- Low-level operations to track complex issues that can be enabled/disabled on the fly.
+- Updated log, mirror and cache segment drivers
+- Initial tooling for recovery log in case hard errors are encountered during writes - incomplete
+- LFS readdir processing moved to external thread for performance
+- Ability to have a local per file buffer to help get around small I/O for certain use cases.
+- Server side atomic create object routines
+- Properly characterizing long-running vs short tasks on the server to minimize threadpool blocking
+- Ability to dynamically rename an object -- file or directory -- and have it's open FD's and locks properly be tracked
+- Sharding of metadata directories in the LServer for increased IOPs performance
+- Added additional warming mode for large filesets. The new mode is a 2-phase process -- walking the FS and "baking".
+-  Walking can be a full normal walking of the FS or you can take an incrementatl from the last walk/inc
+- Server side tracking of open files and locks
+- Support for symlinks outside LFS
+- File system abstraction layer that mimics traditional POSIX calls, open, close, read, write, etc
+- Stdio wrapper for LD_PRELOAD applications
+- Tons of bug fixes and performance improvements
+- Small files can now be stored as metadata
 * Tue Mar 30 2021 Alan Tackett <alan.tackett@vanderbilt.edu> 1.0.0
 - Initial version with Path based ACLs and local GID->LIO account mappings for FUSE
 * Sat Apr 23 2016 Andrew Melo <andrew.m.melo@vanderbilt.edu> 0.5.1-1
