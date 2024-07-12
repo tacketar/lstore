@@ -37,7 +37,7 @@ make  %{?_smp_mflags}
 %install
 rm -rf $RPM_BUILD_ROOT
 make DESTDIR=$RPM_BUILD_ROOT install
-cp -a /usr/lib64/libfuse3-lio.so* ${RPM_BUILD_ROOT}/usr/lib64/
+#LIBFUSE3: cp -a /usr/lib64/libfuse3-lio.so* ${RPM_BUILD_ROOT}/usr/lib64/
 
 %clean
 rm -rf $RPM_BUILD_ROOT
