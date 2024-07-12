@@ -97,19 +97,19 @@ typedef enum lio_ex3_inspect_command_t lio_ex3_inspect_command_t;
 #define INSPECT_COMMAND_BITS (0xF)
 
 /* FIXME: this seems awfully scattered around. Try and solve this too */
-#define INSPECT_FORCE_REPAIR          (1 << 7)   //** Make the repair even if it leads to data loss
+#define INSPECT_FORCE_REPAIR          (1 << 7)   // ** Make the repair even if it leads to data loss
 
 #define SEG_SM_CREATE "segment_create"
 
-#define INSPECT_RESULT_FULL_CHECK   (1 << 9)    //** Full byte-level check performed
-#define INSPECT_RESULT_SOFT_ERROR   (1 << 10)  //** Soft errors found
-#define INSPECT_RESULT_HARD_ERROR   (1 << 11)   //** Hard errors found
+#define INSPECT_RESULT_FULL_CHECK   (1 << 9)    // ** Full byte-level check performed
+#define INSPECT_RESULT_SOFT_ERROR   (1 << 10)   // ** Soft errors found
+#define INSPECT_RESULT_HARD_ERROR   (1 << 11)   // ** Hard errors found
 
-#define INSPECT_SOFT_ERROR_FAIL       (1 << 8)   //** Treat soft errors as hard
-#define INSPECT_FORCE_RECONSTRUCTION  (1 << 9)   //** Don't use depot-depot copies for data movement.  Instead use reconstruction
-#define INSPECT_FAIL_ON_ERROR        (1 << 10)   //** Kick out if an unrecoverable error is hit
-#define INSPECT_FIX_READ_ERROR       (1 << 11)   //** Treat read errors as bad blocks for repair
-#define INSPECT_FIX_WRITE_ERROR      (1 << 12)   //** Treat write errors as bad blocks for repair
+#define INSPECT_SOFT_ERROR_FAIL       (1 << 8)  // ** Treat soft errors as hard
+#define INSPECT_FORCE_RECONSTRUCTION  (1 << 9)  // ** Don't use depot-depot copies for data movement.  Instead use reconstruction
+#define INSPECT_FAIL_ON_ERROR        (1 << 10)  // ** Kick out if an unrecoverable error is hit
+#define INSPECT_FIX_READ_ERROR       (1 << 11)  // ** Treat read errors as bad blocks for repair
+#define INSPECT_FIX_WRITE_ERROR      (1 << 12)  // ** Treat write errors as bad blocks for repair
 
 #define XIDT "%" PRIu64    //uint64_t
 #define XOT  "%" PRId64    //int64_t
@@ -133,17 +133,19 @@ struct lio_rid_inspect_tweak_t {
     apr_hash_t *pick_pool;
 };
 
+#define INSPECT_MAX_ROW_REPLACED 1024  // ** Max rows replaced that can be stored as args
+
 struct lio_inspect_args_t {
-    rs_query_t *query;   //** Generic extra query
-    gop_opque_t *qs;         //** Cleanup Que on success
-    gop_opque_t *qf;         //** Cleanup Que for failure
-    apr_hash_t *rid_changes;  //** List of RID space changes
-    apr_thread_mutex_t *rid_lock;     //** Lock for manipulating the rid_changes table
-    tbx_stack_t *bad_ranges;      //** List of bad byte ranges
-    int log_skip_base;          //** A log segment should go ahead and inspect it's base if 0
+    rs_query_t *query;       // ** Generic extra query
+    gop_opque_t *qs;         // ** Cleanup Que on success
+    gop_opque_t *qf;         // ** Cleanup Que for failure
+    apr_hash_t *rid_changes;  // ** List of RID space changes
+    apr_thread_mutex_t *rid_lock;     // ** Lock for manipulating the rid_changes table
+    tbx_stack_t *bad_ranges;      // ** List of bad byte ranges
+    int log_skip_base;          // ** A log segment should go ahead and inspect it's base if 0
     int n_dev_rows;
-    int dev_row_replaced[128];
-    apr_time_t expiration;      //** If non-zero then throw an error if the expiration is sthorter than this time.
+    int dev_row_replaced[1024];
+    apr_time_t expiration;      // ** If non-zero then throw an error if the expiration is sthorter than this time.
 };
 
 struct lio_exnode_text_t {

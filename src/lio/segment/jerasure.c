@@ -1077,8 +1077,13 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
                     child_replaced = 0;
                     log_printf(5, "n_dev_rows=%d\n", si->args->n_dev_rows);
                     for (i=0; i<si->args->n_dev_rows; i++) {
-                        log_printf(5, "dev_row_replaced[%d]=%d\n", i, si->args->dev_row_replaced[i]);
-                        if (si->args->dev_row_replaced[i] > child_replaced) child_replaced = si->args->dev_row_replaced[i];
+                        if (i >= INSPECT_MAX_ROW_REPLACED) {
+                            info_printf(si->fd, 1, XIDT ": ERROR: Too many rows!!!!!! i=%d INSPECT_MAX_ROW_REPLACED=%d\n", segment_id(si->seg), i, INSPECT_MAX_ROW_REPLACED);
+                            log_printf(0, XIDT ": ERROR: Too many rows!!!!!! i=%d INSPECT_MAX_ROW_REPLACED=%d\n", segment_id(si->seg), i, INSPECT_MAX_ROW_REPLACED);
+                        } else {
+                            log_printf(5, "dev_row_replaced[%d]=%d\n", i, si->args->dev_row_replaced[i]);
+                            if (si->args->dev_row_replaced[i] > child_replaced) child_replaced = si->args->dev_row_replaced[i];
+                        }
                     }
                     if (child_replaced > si->max_replaced) si->max_replaced = child_replaced;
 

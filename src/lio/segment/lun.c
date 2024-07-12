@@ -1942,6 +1942,11 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
     it = tbx_isl_iter_search(s->isl, (tbx_sl_key_t *)NULL, (tbx_sl_key_t *)NULL);
     for (b = (seglun_row_t *)tbx_isl_next(&it); b != NULL; b = (seglun_row_t *)tbx_isl_next(&it)) {
         drow++;
+        if (drow >= INSPECT_MAX_ROW_REPLACED) {
+            info_printf(si->fd, 1, XIDT ": ERROR: Too many rows!!!!!! drow=%d INSPECT_MAX_ROW_REPLACED=%d\n", segment_id(si->seg), drow, INSPECT_MAX_ROW_REPLACED);
+            log_printf(0, XIDT ": ERROR: Too many rows!!!!!! drow=%d INSPECT_MAX_ROW_REPLACED=%d\n", segment_id(si->seg), drow, INSPECT_MAX_ROW_REPLACED);
+            drow = INSPECT_MAX_ROW_REPLACED-1;  //** Make sure we don't overflow
+        }
         for (i=0; i < s->n_devices; i++) {
             block_status[i] = 0;
             block_expiration[i] = 0;
