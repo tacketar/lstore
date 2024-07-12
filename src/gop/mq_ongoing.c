@@ -103,8 +103,9 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
     gop_mq_msg_hash_t *remote_hash;
     apr_time_t now;
     apr_ssize_t id_len;
-    int n, k, pending_start, pending_end, added, got;
+    int n, k, pending_end, added, got;
     char *remote_host_string;
+    MQ_DEBUG(int pending_start;)
 
     tbx_monitor_thread_create(MON_MY_THREAD, "ongoing_heartbeat_thread");
 

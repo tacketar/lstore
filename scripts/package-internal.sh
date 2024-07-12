@@ -107,6 +107,9 @@ fi
 # Update the spec file with the CMake args
 if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
     cat ${LSTORE_RELEASE_BASE}/lstore.spec.in | sed -e "s,SED_CMAKE_EXTRA,${CMAKE_ARGS}," > ${LSTORE_RELEASE_BASE}/lstore.spec
+    if [ "$BUILD_LIBFUSE" == "1" ]; then
+        sed -i -e 's/#LIBFUSE3: //' ${LSTORE_RELEASE_BASE}/lstore.spec
+    fi
 else
     cat ${LSTORE_RELEASE_BASE}/debian/rules.in | sed "s|SED_EXTRA_ARGS|${CMAKE_ARGS}|" > ${LSTORE_RELEASE_BASE}/debian/rules
 fi
