@@ -22,7 +22,7 @@ limitations under the License.
 #define ACCRE_LIO_LIO_FUSE_H_INCLUDED
 
 #ifdef HAS_FUSE3
-    #define FUSE_USE_VERSION 30
+    #define FUSE_USE_VERSION (3*100 + 16)
     #include <fuse3/fuse.h>
 #else
     #define FUSE_USE_VERSION 26
