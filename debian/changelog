@@ -1,3 +1,7 @@
+lstore (2.0.1) stable; urgency=low
+  * Add changelog
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 10:26:24 AM CDT 2024
 
 lstore (2.0.0) unstable; urgency=medium
 
