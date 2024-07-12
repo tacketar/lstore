@@ -359,6 +359,7 @@ void lio_os_path_split(const char *mypath, char **dir, char **file)
     char *c;
     char *path;
 
+    *file = NULL;
     path = (char *)mypath;
 
 again:
@@ -414,6 +415,7 @@ again:
             path = strdup(path);
             path[n] = '\0';
             c = rindex(path, '/');
+            if (*file != NULL) free(*file);
             *file = strdup(c + 1);
         }
     }
