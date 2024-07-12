@@ -2708,6 +2708,8 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
             ostc_cache_process_attrs(it->os, *fname, &base, it->cp.key, it->cp.val, it->cp.v_size, it->n_keys);
         } else {
             ftype = -1;
+            if (*fname) free(*fname);
+            *fname = NULL;
             start_index = 0;  //** Also free the user requested attributes if they exist
         }
         //** We have to do a manual cleanup and can't call the CP destroy method
