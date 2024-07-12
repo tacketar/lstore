@@ -1,19 +1,25 @@
+lstore (2.0.4) stable; urgency=low
+  * Rework the way options are passed into the package builder
+  * Move the MQ and OS remote_server extended debugging is enabled
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 2024 11:14:23 -0500
+
 lstore (2.0.3) stable; urgency=medium
   * Fix memory leak in lio_os_path_split() when path has a trailing '/'
   * Fix memory leak in ostc_next_object() when there's an error in the namespace
   * Trap files with to many rows when repairing and throw an error
   
- -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 11:14:23 AM CDT 2024
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 2024 11:14:23 -0500
 
 lstore (2.0.2) stable; urgency=low
   * Change to use the latest version of FUSE -- 3.16
 
- -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 10:38:37 AM CDT 2024
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 2024 10:38:37 -0500
 
 lstore (2.0.1) stable; urgency=low
   * Add changelog
 
- -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 10:26:24 AM CDT 2024
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jul 12 2024 10:26:24 -0500
 
 lstore (2.0.0) unstable; urgency=medium
 

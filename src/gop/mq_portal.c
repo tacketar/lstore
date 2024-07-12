@@ -44,8 +44,13 @@
 #include "mq_helpers.h"
 #include "thread_pool.h"
 
-#define MQ_DEBUG(...) __VA_ARGS__
-#define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+#ifdef ENABLE_MQ_DEBUG
+    #define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+    #define MQ_DEBUG(...) __VA_ARGS__
+#else
+    #define MQ_DEBUG_NOTIFY(fmt, ...)
+    #define MQ_DEBUG(...)
+#endif
 
 //** Poll index for connection monitoring
 #define PI_EFD  0   //** Portal event FD for incoming tasks
@@ -1730,7 +1735,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 {
     gop_mq_conn_t *c = (gop_mq_conn_t *)data;
     int k, npoll, err, finished, nprocessed, nproc, nincoming, slow_exit, oops;
-    int short_running_max, submit_max, i, hb_check;
+    int short_running_max, submit_max, i;
     long int heartbeat_ms;
     int64_t total_proc, total_incoming;
     gop_mq_pollitem_t pfd[3];
@@ -1739,6 +1744,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     apr_status_t dummy;
     char v;
     MQ_DEBUG(apr_time_t ts, te, dt_task, dt_incoming, dt_hb;)
+    MQ_DEBUG(int hb_check;)
     MQ_DEBUG(int nice_priority = 0;)
 
     //**Adjust the priority if requested

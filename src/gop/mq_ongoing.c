@@ -41,9 +41,13 @@
 #include "mq_helpers.h"
 #include "mq_ongoing.h"
 
-//** Redefine this as empty to disable the heartbeat debug logging messages
-#define MQ_DEBUG(...) __VA_ARGS__
-#define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__ )
+#ifdef ENABLE_MQ_DEBUG
+    #define MQ_DEBUG(...) __VA_ARGS__
+    #define MQ_DEBUG_NOTIFY(fmt, ...) if (tbx_notify_handle) _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__ )
+#else
+    #define MQ_DEBUG_NOTIFY(fmt, ...)
+    #define MQ_DEBUG(...)
+#endif
 
 //***********************************************************************
 // ongoing_response_status - Handles a response that just returns the status
@@ -111,7 +115,7 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         now = apr_time_now() - apr_time_from_sec(5);  //** Give our selves a little buffer
         log_printf(5, "Loop Start now=" TT "\n", apr_time_now());
         added = 0;
-        pending_start = gop_opque_tasks_left(q);
+        MQ_DEBUG(pending_start = gop_opque_tasks_left(q);)
         for (hit = apr_hash_first(NULL, on->table); hit != NULL; hit = apr_hash_next(hit)) {
             apr_hash_this(hit, (const void **)&remote_hash, &id_len, (void **)&table);
 

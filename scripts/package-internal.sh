@@ -102,17 +102,13 @@ if [ "$BUILD_LIBFUSE" == "1" ]; then
     touch /tmp/build_fuse3_lio-${PACKAGE_SUFFIX}
     echo "Building custom libfuse3-lio"
     ${LSTORE_RELEASE_BASE}/scripts/build_libfuse3-lio.sh ${LSTORE_RELEASE_BASE}/build /usr
-    if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
-        cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-custom ${LSTORE_RELEASE_BASE}/lstore.spec
-    else
-        cp ${LSTORE_RELEASE_BASE}/debian/rules-custom ${LSTORE_RELEASE_BASE}/debian/rules
-    fi
+fi
+
+# Update the spec file with the CMake args
+if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
+    cat ${LSTORE_RELEASE_BASE}/lstore.spec.in | sed -e "s,SED_CMAKE_EXTRA,${CMAKE_ARGS}," > ${LSTORE_RELEASE_BASE}/lstore.spec
 else
-    if [ "${PACKAGE_SUFFIX}" == "rpm" ]; then
-        cp ${LSTORE_RELEASE_BASE}/lstore.spec.libfuse3-stock ${LSTORE_RELEASE_BASE}/lstore.spec
-    else
-        cp ${LSTORE_RELEASE_BASE}/debian/rules-stock ${LSTORE_RELEASE_BASE}/debian/rules
-    fi
+    cat ${LSTORE_RELEASE_BASE}/debian/rules.in | sed "s|SED_EXTRA_ARGS|${CMAKE_ARGS}|" > ${LSTORE_RELEASE_BASE}/debian/rules
 fi
 
 note "Telling git that the $LSTORE_RELEASE_BASE is a legit repo location"

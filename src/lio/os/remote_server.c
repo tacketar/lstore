@@ -63,8 +63,13 @@
 #include "os/remote.h"
 #include "service_manager.h"
 
-#define OSRS_DEBUG(...) __VA_ARGS__
-#define OSRS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+#ifdef ENABLE_OSRS_DEBUG
+    #define OSRS_DEBUG(...) __VA_ARGS__
+    #define OSRS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+#else
+    #define OSRS_DEBUG(...)
+    #define OSRS_DEBUG_NOTIFY(fmt, ...)
+#endif
 
 #define OSRS_LONG_RUNNING(p, mode)  if (mode & (OS_MODE_READ_BLOCKING|OS_MODE_WRITE_BLOCKING)) gop_mq_long_running_set(p, 1)
 
