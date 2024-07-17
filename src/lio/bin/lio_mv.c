@@ -26,6 +26,7 @@
 #include <string.h>
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
+#include <tbx/normalize_path.h>
 #include <tbx/random.h>
 #include <tbx/stdinarray_iter.h>
 #include <tbx/type_malloc.h>
@@ -51,7 +52,7 @@ gop_op_status_t mv_fn(void *arg, int id)
     mv_t *mv = (mv_t *)arg;
     os_object_iter_t *it;
     int ftype, prefix_len, slot, count, nerr;
-    char dname[OS_PATH_MAX];
+    char dname[OS_PATH_MAX], npath[OS_PATH_MAX];
     char **src_fname;
     gop_op_generic_t *gop;
     gop_opque_t *q;
@@ -59,6 +60,9 @@ gop_op_status_t mv_fn(void *arg, int id)
 
     log_printf(15, "START src=%s dest=%s\n", mv->src_tuple.path, mv->dest_tuple.path);
     tbx_log_flush();
+
+    //** Normalize the destination path
+    mv->dest_tuple.path = tbx_normalize_path(mv->dest_tuple.path, npath);
 
     status = gop_success_status;
 
