@@ -3908,6 +3908,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     osfile_open_op_t op_open;
     osfile_fd_t *osfd;
 
+    did_lock = 0;
     err_cnt = 0;
     status = gop_failure_status;
 
@@ -4563,6 +4564,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     int err, did_lock;
     gop_op_status_t status;
 
+    did_lock = 0;
     rename_errno = 0;
     if ((osaz_object_remove(osf->osaz, creds, NULL,  _osf_realpath(os, src_path, srpath, 1)) == 0) ||
             (osaz_object_create(osf->osaz, creds, NULL, _osf_realpath(os, dest_path, drpath, 0)) == 0)) {
