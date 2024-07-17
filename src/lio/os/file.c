@@ -1,5 +1,4 @@
 /*
-
    Copyright 2016 Vanderbilt University
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,6 +67,8 @@
 #include "os/file.h"
 #include "osaz/fake.h"
 
+tbx_notify_t *rlog; //REMOVE ME BEFORE COMMIT!!!!! USED FOR DEBUGGING ONLY
+
 static lio_osfile_priv_t osf_default_options = {
     .section = "os_file",
     .base_path = "/lio/osfile",
@@ -86,7 +87,31 @@ static lio_osfile_priv_t osf_default_options = {
     .max_copy = 1024*1024,
     .hardlink_dir_size = 256,
     .authz_section = NULL,
+    .relocate_namespace_attr_to_shard = 1,
+    .relocate_min_size = 1024*1024,
+    .rebalance_notify_section = "rebalance_notify",
+    .rebalance_config_fname = "/tmp/rebalance.cfg",
+    .rebalance_section = "rebalance",
+    .delta_fraction = 0.05
 };
+
+typedef struct {
+    ex_off_t used;
+    ex_off_t free;
+    ex_off_t total;
+    ex_off_t lo_target;
+    ex_off_t hi_target;
+    double   used_fraction;
+    int      converged;
+    int      prefix_len;
+} shard_stats_t;
+
+typedef struct {
+    int all_converged;
+    int namespace_to_shard;
+    int last_shard;
+    shard_stats_t shard[];
+} shard_rebalance_t;
 
 typedef struct {
     DIR *d;
@@ -335,7 +360,41 @@ typedef struct {
 
 #define osf_obj_lock(lock)  apr_thread_mutex_lock(lock)
 #define osf_obj_unlock(lock)  apr_thread_mutex_unlock(lock)
+#define REBALANCE_LOCK(os, osf, path, didlock) \
+    {  \
+        did_lock = 0; \
+        if (osf->rebalance_running == 1) { \
+            rebalance_update_count(os, path, 1); \
+            apr_thread_mutex_lock(osf->rebalance_lock); \
+            did_lock = 1; \
+        } \
+     }
+#define REBALANCE_2LOCK(os, osf, path1, path2, didlock) \
+    {  \
+        did_lock = 0; \
+        if (osf->rebalance_running == 1) { \
+            apr_thread_mutex_lock(osf->rebalance_lock); \
+            rebalance_update_count(os, path1, 0); \
+            rebalance_update_count(os, path2, 0); \
+            did_lock = 1; \
+        } \
+     }
+#define REBALANCE_4LOCK(os, osf, path1, path2, path3, path4, didlock) \
+    {  \
+        did_lock = 0; \
+        if (osf->rebalance_running == 1) { \
+            apr_thread_mutex_lock(osf->rebalance_lock); \
+            rebalance_update_count(os, path1, 0); \
+            rebalance_update_count(os, path2, 0); \
+            rebalance_update_count(os, path3, 0); \
+            rebalance_update_count(os, path4, 0); \
+            did_lock = 1; \
+        } \
+     }
+#define REBALANCE_UNLOCK(osf, didlock) { if (did_lock) apr_thread_mutex_unlock(osf->rebalance_lock); }
 
+
+void rebalance_update_count(lio_object_service_fn_t *os, const char *path, int do_lock);
 int osf_realpath_lock(osfile_fd_t *fd);
 void osf_internal_fd_lock(lio_object_service_fn_t *os, osfile_fd_t *fd);
 void osf_internal_fd_unlock(lio_object_service_fn_t *os, osfile_fd_t *fd);
@@ -451,6 +510,10 @@ int _copy_symlink(lio_object_service_fn_t *os, const char *spath, const char *dp
 
 //*************************************************************
 // rename_dir - Rename a directory which crosses file systems
+//    NOTE: This routine DOES NOT recurse into subdirectories.
+//          It's designed to move a file attr directory between shards.
+//          Namespace directory renames never cross shards since
+//          only the namespace entry is renamed and the attr shard is not touched.
 //*************************************************************
 
 int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
@@ -462,8 +525,6 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
     char fname[OS_PATH_MAX];
     char dname[OS_PATH_MAX];
     struct dirent *entry;
-
-    err = 0;
 
     //** 1st make the dest directory
     err = tbx_io_mkdir(dobj, DIR_PERMS);
@@ -484,6 +545,7 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
     }
 
     //** No iterate over all the objects
+    errno = 0;  //** Got to clear it for detecting an error
     while ((entry = tbx_io_readdir(dirfd)) != NULL) {
         if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) continue;
         snprintf(fname, OS_PATH_MAX, "%s/%s", sobj, entry->d_name);
@@ -504,16 +566,25 @@ int rename_dir(lio_object_service_fn_t *os, const char *sobj, const char *dobj)
                 goto cleanup;
             }
         }
+        errno = 0;  //** Got to clear it for detecting an error
+    }
+
+    //** See if we got a readdir error to handle
+    if (errno != 0) {
+        err = errno;
+        log_printf(0, "ERROR: readdir src=%s dest=%s errno=%d\n", fname, dname, err);
+        notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) readdir errno=%d\n", sobj, dobj, err);
+        goto cleanup;
     }
 
     //** Everything was good so remove the source
     tbx_io_closedir(dirfd);
     err_cnt = osf_purge_dir(os, sobj, 0);
     err_cnt += safe_remove(os, sobj);
-    if (err_cnt) {
+    if (err_cnt) {  //** These are soft errors
         notify_printf(osf->olog, 1, NULL, "ERROR: RENAME_DIR(%s, %s) error removing source.\n", sobj, dobj);
     }
-    return(err_cnt);
+    return(err);
 
 cleanup:    //** This is where we jump to to cleanup a failed rename
     tbx_io_closedir(dirfd);
@@ -524,7 +595,6 @@ cleanup:    //** This is where we jump to to cleanup a failed rename
     }
     return(err);
 }
-
 
 //*************************************************************
 // rename_object - Renames the object. It will do file copying if needed
@@ -2437,12 +2507,19 @@ int osf_is_dir_empty(char *path)
     d = tbx_io_opendir(path);
     if (d == NULL) return(1);
 
+    errno = 0;
     while ((empty == 1) && ((entry = tbx_io_readdir(d)) != NULL)) {
         if ( ! ((strcmp(entry->d_name, FILE_ATTR_PREFIX) == 0) ||
-                (strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0)) ) empty = 0;
+            (strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0)) ) {
+            empty = 0;
+            break;
+        }
+        errno = 0;
     }
 
-    if (empty == 0) log_printf(15, "path=%s found entry=%s\n", path, entry->d_name);
+    if (errno != 0) empty = 0;  //** Got a readdir error
+
+    if (empty == 0) { log_printf(15, "path=%s found entry=%s\n", path, entry->d_name); }
     tbx_io_closedir(d);
 
     return(empty);
@@ -3112,6 +3189,12 @@ int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
     DIR *d;
     struct dirent *entry;
 
+    if (strlen(path) < SAFE_MIN_LEN) {
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- Looks like a bad path!!!!\n", path);
+        log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- Looks like a bad path!!!!!!\n", path);
+        return(1);
+    }
+
     err = 0;
     err_cnt = 0;
     d = opendir(path);
@@ -3122,6 +3205,7 @@ int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
         return(1);
     }
 
+    errno = 0;
     while ((entry = readdir(d)) != NULL) {
         if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) continue;
         snprintf(fname, OS_PATH_MAX, "%s/%s", path, entry->d_name);
@@ -3148,6 +3232,11 @@ int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
 
     closedir(d);
 
+    if (errno != 0) {
+        err_cnt++;
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d readdir failed errno=%d\n", path, depth, errno);
+        log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d readdir failed errno=%d\n", path, depth, errno);
+    }
     return(err_cnt);
 }
 
@@ -3390,7 +3479,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
 {
     osfile_mk_mv_rm_t *op = (osfile_mk_mv_rm_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-    int ftype, inode_len;
+    int ftype, inode_len, did_lock;
     char fname[OS_PATH_MAX];
     char rp[OS_PATH_MAX];
     char inode[64];
@@ -3403,6 +3492,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
 
     lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
+    REBALANCE_LOCK(op->os, osf, rp, did_lock);
 
     inode[0] = '0'; inode[1] = '\0'; inode_len = sizeof(inode);
     if (ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {  //** Regular file so rm the attributes dir and the object
@@ -3412,6 +3502,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     } else {  //** Directory so make sure it's empty
         if (osf_is_empty(fname) != 1) {
             osf_obj_unlock(lock);
+            REBALANCE_UNLOCK(osf, did_lock);
             notify_printf(osf->olog, 1, op->creds, "ERROR: REMOVE(%d, %s, UNKNOWN)  Oops! Trying to remove a non-empty dir!\n", ftype, op->src_path);
             return(gop_failure_status);
         }
@@ -3432,6 +3523,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     if (etext) free(etext);
 
     osf_obj_unlock(lock);
+    REBALANCE_UNLOCK(osf, did_lock);
 
     return(status);
 }
@@ -3809,6 +3901,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     char *mkey[m_key_max];
     void *mval[m_key_max];
     int mv_size[m_key_max];
+    int did_lock;
     apr_thread_mutex_t *lock = NULL;
     gop_op_status_t status, op_status;
     osfile_attr_op_t op_attr;
@@ -3830,6 +3923,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     if (op->no_lock == 0) {
         lock = osf_retrieve_lock(op->os, rpath, NULL);
         osf_obj_lock(lock);
+        REBALANCE_LOCK(op->os, osf, rpath, did_lock);
     }
 
     if (op->type & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SOCKET_FLAG|OS_OBJECT_FIFO_FLAG)) {
@@ -3840,7 +3934,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 err = tbx_io_mknod(fname, S_IFIFO|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH, dev);  //** For sockets we just set the flag that it's a socket. It's up to the higher level routines to make it work
             }
             if (err == -1) {
-                if (op->no_lock == 0) osf_obj_unlock(lock);
+                if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- mknod failed fname=%s\n", op->type, etext1, etext2, fname);
                 goto failure;
             }
@@ -3849,7 +3943,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             fd = tbx_io_open(fname, O_EXCL|O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
             if (fd == -1) {
                 status.error_code = errno;
-                if (op->no_lock == 0) osf_obj_unlock(lock);
+                if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- open failed. Most likely the file exists fname=%s errno=%d\n", op->type, etext1, etext2, fname, status.error_code);
                 goto failure;
             }
@@ -3871,7 +3965,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
             err_cnt += safe_remove(op->os, fname);
             free(dir);
             free(base);
-            if (op->no_lock == 0) osf_obj_unlock(lock);
+            if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
             goto failure;
         } else {
             free(dir);
@@ -3881,7 +3975,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         err = mkdir(fname, DIR_PERMS);
         if (err != 0) {
             eno = errno;
-            if (op->no_lock == 0) osf_obj_unlock(lock);
+            if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
             status.error_code = eno;
             notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making dir object fname=%s errno=%d\n", op->type, etext1, etext2, fname, eno);
             goto failure;
@@ -3901,7 +3995,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 eno = errno;
                 log_printf(0, "Error creating object shard attr directory! path=%s full=%s errno=%d\n", op->src_path, sattr, eno);
                 err_cnt += safe_remove(op->os, fname);
-                if (op->no_lock == 0) osf_obj_unlock(lock);
+                if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir sattr=%s errno=%d\n", op->type, etext1, etext2, sattr, eno);
                 goto failure;
             }
@@ -3913,7 +4007,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
                 err_cnt += safe_remove(op->os, fname);
                 err_cnt += safe_remove(op->os, sattr);
-                if (op->no_lock == 0) osf_obj_unlock(lock);
+                if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory shard fattr dir symlink sattr=%s fattr=%s errno=%d\n", op->type, etext1, etext2, sattr, fattr, eno);
                 goto failure;
             }
@@ -3923,14 +4017,14 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
                 eno = errno;
                 log_printf(0, "Error creating object attr directory! path=%s full=%s errno=%d\n", op->src_path, fattr, eno);
                 err_cnt += safe_remove(op->os, fname);
-                if (op->no_lock == 0) osf_obj_unlock(lock);
+                if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
                 notify_printf(osf->olog, 1, op->creds, "ERROR: CREATE(%d, %s, %s) -- failed making directory fattr dir fattr=%s errno=%d\n", op->type, etext1, etext2, fattr, eno);
                 goto failure;
             }
         }
     }
 
-    if (op->no_lock == 0) osf_obj_unlock(lock);
+    if (op->no_lock == 0) { REBALANCE_UNLOCK(osf, did_lock); osf_obj_unlock(lock); }
 
     if (op->n_keys == 0) goto success;        //** Kick out if no attrs to set.
 
@@ -4077,7 +4171,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     char dfname[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
     apr_thread_mutex_t *lock;
-    int err, eno;
+    int err, eno, did_lock;
 
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
 
@@ -4095,10 +4189,12 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
 
     lock = osf_retrieve_lock(op->os, rpath, NULL);
     osf_obj_lock(lock);
+    REBALANCE_LOCK(op->os, osf, rpath, did_lock);
 
     status = osfile_create_object_fn(&dop, id);
     if (status.op_status != OP_STATE_SUCCESS) {
         osf_obj_unlock(lock);
+        REBALANCE_UNLOCK(osf, did_lock);
         log_printf(15, "Failed creating the dest object: %s\n", op->dest_path);
         notify_printf(osf->olog, 1, op->creds, "ERROR: SYMLINK(%s, %s)  osfile_create_object_fn error\n", etext1, etext2);
         if (etext1) free(etext1);
@@ -4133,6 +4229,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     if (etext2) free(etext2);
 
     osf_obj_unlock(lock);
+    REBALANCE_UNLOCK(osf, did_lock);
 
     return((err == 0) ? gop_success_status : gop_failure_status);
 }
@@ -4325,7 +4422,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     char rp_src[OS_PATH_MAX];
     char rp_dest[OS_PATH_MAX];
     char *sapath, *dapath, *link_path;
-    int err, ftype;
+    int err, ftype, did_lock;
 
     if ((osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp_src, 1), OS_MODE_READ_IMMEDIATE) < 2) ||
             (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rp_dest, 0)) == 0)) return(gop_failure_status);
@@ -4375,6 +4472,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     } else {
         apr_thread_mutex_lock(hlock);
     }
+    REBALANCE_2LOCK(op->os, osf, rp_dest, link_path, did_lock);
 
     //** Hardlink the proxy
     if (link(link_path, dfname) != 0) {
@@ -4408,6 +4506,7 @@ gop_op_status_t osfile_hardlink_object_fn(void *arg, int id)
     if (etext2) free(etext2);
 
 finished:
+    REBALANCE_UNLOCK(osf, did_lock);
     apr_thread_mutex_unlock(hlock);
     if (hslot != dslot)  apr_thread_mutex_unlock(dlock);
     free(link_path);
@@ -4461,11 +4560,10 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     char srpath[OS_PATH_MAX];
     char drpath[OS_PATH_MAX];
     char *dir, *base;
-    int err;
+    int err, did_lock;
     gop_op_status_t status;
 
     rename_errno = 0;
-
     if ((osaz_object_remove(osf->osaz, creds, NULL,  _osf_realpath(os, src_path, srpath, 1)) == 0) ||
             (osaz_object_create(osf->osaz, creds, NULL, _osf_realpath(os, dest_path, drpath, 0)) == 0)) {
         status = gop_failure_status;
@@ -4479,6 +4577,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     if (dolock == 1) {
         ilock = ilock_table;
         n_locks = osf_match_open_fd_lock(os, srpath, drpath, src_path, dest_path, max_locks, &ilock, 1);
+        REBALANCE_4LOCK(os, osf, srpath, drpath, src_path, dest_path, did_lock);
     }
 
     snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, src_path);
@@ -4553,6 +4652,7 @@ fail:
         }
         osf_match_open_fd_unlock(os, n_locks, ilock);
         if (ilock != ilock_table) free(ilock);
+        REBALANCE_UNLOCK(osf, did_lock);
     }
 
     if (err == 0) {
@@ -5352,13 +5452,14 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
 {
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-    int err, i, atype, n_locks;
+    int err, i, atype, n_locks, did_lock;
     apr_thread_mutex_t *lock_table[op->n+1];
     gop_op_status_t status;
 
     status = gop_success_status;
 
     osf_multi_attr_lock(op->os, op->creds, op->fd, op->key, op->n, 0, lock_table, &n_locks);
+    REBALANCE_2LOCK(op->os, osf, op->fd->object_name, op->fd->realpath, did_lock);
 
     err = 0;
     for (i=0; i<op->n; i++) {
@@ -5368,6 +5469,7 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
     os_log_warm_if_needed(osf->olog, op->creds, op->fd->realpath, op->fd->ftype, op->n, op->key, op->v_size);
 
     osf_multi_unlock(lock_table, n_locks);
+    REBALANCE_UNLOCK(osf, did_lock);
 
     if (err != 0) status = gop_failure_status;
 
@@ -5432,7 +5534,7 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
 {
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
-    int err, i, atype, n_locks;
+    int err, i, atype, n_locks, did_lock;
     apr_thread_mutex_t *lock_table[op->n+1];
     gop_op_status_t status;
     osfile_fd_t *fd;
@@ -5468,6 +5570,7 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
 
     //** Set the attributes
     osf_multi_attr_lock(op->os, op->creds, fd, op->key, op->n, 0, lock_table, &n_locks);
+    REBALANCE_2LOCK(op->os, osf, fd->object_name, fd->realpath, did_lock);
 
     err = 0;
     for (i=0; i<op->n; i++) {
@@ -5476,6 +5579,7 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
 
     os_log_warm_if_needed(osf->olog, op->creds, fd->realpath, fd->ftype, op->n, op->key, op->v_size);
 
+    REBALANCE_UNLOCK(osf, did_lock);
     osf_multi_unlock(lock_table, n_locks);
 
     //** Close the file
@@ -6693,6 +6797,964 @@ void osfile_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 }
 
 //***********************************************************************
+// get_shard_usage - Gets the shard usage
+//***********************************************************************
+
+void get_shard_usage(lio_object_service_fn_t *os, shard_stats_t *shard_info, double *average_usage)
+{
+    lio_osfile_priv_t *osf = os->priv;
+    int i, good;
+    double used, total, avg, lo_avg, hi_avg;
+    ex_off_t bs;
+    struct statfs sbuf;
+
+    used = total = 0;
+    good = 0;
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        if (statfs(osf->shard_prefix[i], &sbuf) == 0) {
+            bs = sbuf.f_bsize;
+            shard_info[i].total = sbuf.f_blocks * bs;
+            shard_info[i].free = sbuf.f_bfree * bs;
+            shard_info[i].used = shard_info[i].total - shard_info[i].free;
+            total += shard_info[i].total;
+            used += shard_info[i].used;
+            avg = shard_info[i].total;
+            avg  = shard_info[i].used / avg;
+            shard_info[i].used_fraction = avg;
+            good++;
+        } else {
+            tbx_notify_printf(osf->rebalance_log, 1,  "", "i=%d SHARD=%s ERROR with statfs=%d\n", i, osf->shard_prefix[i], errno);
+        }
+    }
+
+    //** Get the NS info
+    i = osf->n_shard_prefix;
+    if (statfs(osf->base_path, &sbuf) == 0) {
+        bs = sbuf.f_bsize;
+        shard_info[i].total = sbuf.f_blocks * bs;
+        shard_info[i].free = sbuf.f_bfree * bs;
+        shard_info[i].used = shard_info[i].total - shard_info[i].free;
+        avg = shard_info[i].total;
+        avg  = shard_info[i].used / avg;
+        shard_info[i].used_fraction = avg;
+    } else {
+        tbx_notify_printf(osf->rebalance_log, 1,  "", "Namespace ERROR with statfs=%d\n", i, osf->n_shard_prefix, errno);
+    }
+
+    //** Calculate the average target
+    avg = used / total;
+    if (average_usage) *average_usage = avg;
+
+    //** And adjust the targets
+    lo_avg = avg - osf->delta_fraction;
+    if (lo_avg < 0) lo_avg = 0;
+    hi_avg = avg + osf->delta_fraction;
+    if (hi_avg > 1) hi_avg = 1;
+
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        shard_info[i].lo_target = lo_avg * shard_info[i].total;
+        shard_info[i].hi_target = hi_avg * shard_info[i].total;
+    }
+}
+
+//***********************************************************************
+// print_shard_usage - Dumps the shard usage to the notify log
+//***********************************************************************
+
+void print_shard_usage(lio_object_service_fn_t *os, shard_stats_t *shard_info, double average_usage)
+{
+    lio_osfile_priv_t *osf = os->priv;
+    int i;
+    char pp1[256], pp2[256], pp3[256];
+
+
+    tbx_notify_printf(osf->rebalance_log, 1,  "", "Shard state. n_shards=%d Average usage: %3.2lf%%\n", osf->n_shard_prefix, 100*average_usage);
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        tbx_notify_printf(osf->rebalance_log, 1,  "", "    %d: SHARD=%s Used: %s  Free: %s  Total: %s  %%Used: %3.2lf Converged: %d\n",
+                i, osf->shard_prefix[i], tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].used, pp1),
+                tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].free, pp2),
+                tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].total, pp3),
+                100.0*shard_info[i].used_fraction, shard_info[i].converged);
+    }
+
+    //** Print the NS as well
+    i = osf->n_shard_prefix;
+    tbx_notify_printf(osf->rebalance_log, 1,  "", "   NS: PATH=%s Used: %s  Free: %s  Total: %s  %%Used: %3.2lf\n",
+            osf->base_path, tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].used, pp1),
+            tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].free, pp2),
+            tbx_stk_pretty_print_double_with_scale(1024, shard_info[i].total, pp3),
+            100.0*shard_info[i].used_fraction);
+
+}
+
+
+//***********************************************************************
+// rebalance_load - Loads the rebalance options.
+//***********************************************************************
+
+void rebalance_load(lio_object_service_fn_t *os, tbx_inip_file_t *fd, const char *section)
+{
+    lio_osfile_priv_t *osf = os->priv;
+    char *str;
+
+    osf->relocate_namespace_attr_to_shard = tbx_inip_get_integer(fd, section, "relocate_namespace_attr_to_shard",osf->relocate_namespace_attr_to_shard);
+    osf->relocate_min_size = tbx_inip_get_integer(fd, section, "relocate_min_size",osf->relocate_min_size);
+    osf->delta_fraction = tbx_inip_get_double(fd, section, "delta_fraction",osf->delta_fraction);
+    str = tbx_inip_get_string(fd, section, "rebalance_notify_section", NULL);
+    if (str != NULL) {
+        if (osf->rebalance_notify_section) free(osf->rebalance_notify_section);
+        osf->rebalance_notify_section = str;
+    }
+}
+
+//***********************************************************************
+// rebalance_update_count - This updates the modify count if the object
+//     touches the current rebalance directory.
+//***********************************************************************
+
+void rebalance_update_count(lio_object_service_fn_t *os, const char *path, int do_lock)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    char *ptr;
+
+
+    if (do_lock) apr_thread_mutex_lock(osf->rebalance_lock);
+    if (osf->rebalance_path == NULL) goto finished;
+    if (strncmp(path, osf->rebalance_path, osf->rebalance_path_len) != 0) goto finished;
+
+    //** Prefix matches if we made it here
+    if (path[osf->rebalance_path_len] == '\0') goto hit;  //** They are touching the directory itself
+    if (path[osf->rebalance_path_len] != '/') goto finished; //** False alarm. Just a directory with a similar name
+
+    //** Just need to check if this is the target or are we nesting deeper
+    ptr = index(path + osf->rebalance_path_len + 1, '/');   //** Find the next object
+    if (ptr != NULL) {    //** We have a '/' so see if it's a dummy
+        if (ptr[1] != '\0')  goto finished;  //** We have extra characters after the "/" so the terminal is a deeper dir
+    }  //** If ptr == NULL then we have a hit on an object in the directory
+
+hit:
+    osf->rebalance_count++;
+finished:
+    if (do_lock) apr_thread_mutex_unlock(osf->rebalance_lock);
+}
+
+//***********************************************************************
+// udate_shard_state - Checks to see if the shard is balanced
+//***********************************************************************
+
+int update_shard_state(lio_object_service_fn_t *os, shard_stats_t *shard_usage)
+{
+    shard_usage->converged = ((shard_usage->used >= shard_usage->lo_target) && (shard_usage->used <= shard_usage->hi_target)) ? 1 : 0;
+    return(shard_usage->converged);
+}
+
+//***********************************************************************
+// check_if_balanced - Does a check to see if the shards are balanced
+//***********************************************************************
+
+int check_if_balanced(lio_object_service_fn_t *os, shard_stats_t *shard_usage)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i, is_balanced;
+
+    is_balanced = 0;
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        is_balanced += update_shard_state(os, shard_usage + i);
+    }
+
+    return((is_balanced == osf->n_shard_prefix) ? 1 : 0);
+}
+
+//***********************************************************************
+//  rebalance_find_destintation - Finds a suitable shard to shuffle the attr directory to
+//***********************************************************************
+
+int rebalance_find_destination(lio_object_service_fn_t *os, shard_stats_t *shard_usage, double average_used, int from, ex_off_t nbytes, int *seed)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i, start, slot;
+
+    //** Get the starting point
+    start = ((*seed >= 0) && (*seed < osf->n_shard_prefix)) ? *seed : 0;
+
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        slot = (start + i) % osf->n_shard_prefix;
+        if ((slot != from) && (shard_usage[slot].converged == 0)) {
+            if ((shard_usage[slot].used + nbytes) < shard_usage[slot].hi_target) {
+                *seed = (slot + 1) % osf->n_shard_prefix;  //** Update the seed to the next shard
+                return(slot);
+            }
+        }
+    }
+
+    //** If we made it here there are no good shards
+    return(-1);
+}
+
+//***********************************************************************
+// du_dir - Caclulates the disk usage in the given directory
+//***********************************************************************
+
+ex_off_t du_dir(lio_object_service_fn_t *os, const char *base_path)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    ex_off_t total;
+    DIR *dirfd, *dirfd2;
+    struct dirent *entry;
+    tbx_stack_t *stack;
+    char path[OS_PATH_MAX];
+    char *dir_prefix;
+    struct stat sbuf;
+    int err;
+
+    //** Main processing loop
+    dir_prefix = NULL;
+    total = 0;
+    stack = tbx_stack_new();
+    if ((dirfd = tbx_io_opendir(base_path)) == NULL) {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: du_dir: Unable to open base path: %s\n", base_path);
+        notify_printf(osf->olog, 1, NULL, "ERROR: du_dir: Unable to open base path: %s\n", base_path);
+        total = -1;
+        goto finished;
+    } else {
+        tbx_stack_push(stack, strdup(base_path));
+        tbx_stack_push(stack, dirfd);
+    }
+
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        errno = 0;
+        while ((entry = tbx_io_readdir(dirfd)) != NULL) {
+            if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) { errno = 0; continue; }
+            snprintf(path, sizeof(path)-1, "%s/%s", dir_prefix, entry->d_name); path[sizeof(path)-1] = '\0';
+            if (lstat(path, &sbuf) != 0) { //** Got an error so kick out
+                tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: du_dir: Unable to stat path: %s\n", path);
+                notify_printf(osf->olog, 1, NULL, "ERROR: du_dir: Unable to stat path: %s\n", path);
+                total = -1;
+                goto finished;
+            }
+
+            total += sbuf.st_size;
+
+            if (entry->d_type == DT_DIR) {  //** Got a directory so push it on the stack and recurse
+                snprintf(path, sizeof(path)-1, "%s/%s", dir_prefix, entry->d_name);
+                if ((dirfd2 = tbx_io_opendir(path)) == NULL) {
+                    tbx_notify_printf(osf->rebalance_log, 1,"", "ERROR: Unable to open path: %s\n", path);
+                    notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unable to open base path: %s\n", path);
+                    total = -1;
+                    goto finished;
+                } else {
+                    //** Push the current directory, ie the parent onto the stack
+                    tbx_stack_push(stack, dir_prefix);
+                    tbx_stack_push(stack, dirfd);
+
+                    //** And reset things to the child we are recuring into
+                    dir_prefix = strdup(path);
+                    dirfd = dirfd2;
+                }
+            }
+
+            errno = 0;
+        }
+
+        err = errno;  //** This is from the readdir
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+        dir_prefix = NULL;
+
+        if (err != 0) {
+            tbx_notify_printf(osf->rebalance_log, 1,"", "ERROR: readdir error! base_path=%s errno=%d\n", base_path, err);
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: raddir error! base_path: %s errno=%d\n", base_path, err);
+            total = -1;
+            goto finished;
+        }
+    }
+
+    //** Cleanup
+finished:
+    //** Cleanup the stack
+    if (dir_prefix) {
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+    }
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+    }
+    tbx_stack_free(stack, 0);
+
+    return(total);
+}
+
+//***********************************************************************
+// copy_dir - Recurseively copies the directory
+//***********************************************************************
+
+ex_off_t copy_dir(lio_object_service_fn_t *os, const char *src_path, const char *dest_path)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    ex_off_t total;
+    DIR *dirfd, *dirfd2;
+    struct dirent *entry;
+    tbx_stack_t *stack;
+    char spath[OS_PATH_MAX];
+    char dpath[OS_PATH_MAX];
+    char *dir_prefix, *dest_prefix;
+    struct stat sbuf;
+    int err, eno;
+
+    memset(&sbuf, 0, sizeof(sbuf));
+    dir_prefix = NULL;
+    dest_prefix = NULL;
+
+    //** Main processing loop
+    stack = tbx_stack_new();
+    if ((dirfd = tbx_io_opendir(src_path)) == NULL) {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir: Unable to open base path: %s\n", src_path);
+        notify_printf(osf->olog, 1, NULL, "ERROR: copy_dir: Unable to open base path: %s\n", src_path);
+        total = -1;
+        goto finished;
+    } else {
+        //** Make the dest directory
+        err = tbx_io_mkdir(dest_path, DIR_PERMS);
+        if (err != 0) {
+            err = errno;
+            log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", src_path, dest_path, err);
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE copy_dir error creating rename dest dir errno=%d\n", src_path, dest_path, err);
+            tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir error creating rename dest dir errno=%d\n", src_path, dest_path, err);
+            total = -1;
+            tbx_io_closedir(dirfd);
+            goto finished;
+        }
+
+        tbx_stack_push(stack, strdup(dest_path));
+        tbx_stack_push(stack, strdup(src_path));
+        tbx_stack_push(stack, dirfd);
+    }
+
+    total = 0;
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the source prefix
+        dest_prefix = tbx_stack_pop(stack);  //** and the destination prefix
+        errno = 0;
+        while ((entry = tbx_io_readdir(dirfd)) != NULL) {
+            if ((strcmp(".", entry->d_name) == 0) || (strcmp("..", entry->d_name) == 0)) { errno = 0; continue; }
+            snprintf(spath, sizeof(spath)-1, "%s/%s", dir_prefix, entry->d_name); spath[sizeof(spath)-1] = '\0';
+            snprintf(dpath, sizeof(dpath)-1, "%s/%s", dest_prefix, entry->d_name); dpath[sizeof(dpath)-1] = '\0';
+            if (lstat(spath, &sbuf) != 0) { //** Got an error so kick out
+                tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir: Unable to stat spath: %s\n", spath);
+                notify_printf(osf->olog, 1, NULL, "ERROR: du_dir: Unable to stat spath: %s\n", spath);
+                total = -1;
+                goto finished;
+            }
+
+            total += sbuf.st_size;
+
+            if (entry->d_type == DT_DIR) {  //** Got a directory so push it on the stack and recurse
+                err = tbx_io_mkdir(dpath, DIR_PERMS);
+                if (err != 0) {
+                    err = errno;
+                    log_printf(0, "ERROR creating new dest subdirectory! src=%s dest=%s errno=%d\n", spath, dpath, err);
+                    notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE copy_dir error creating new dest subdir spath=%s dpath=%s errno=%d\n", spath, dpath, err);
+                    tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir error creating new dest subdir spath=%s dpath=%s errno=%d\n", spath, dpath, err);
+                    total = -1;
+                    goto finished;
+                }
+
+                if ((dirfd2 = tbx_io_opendir(spath)) == NULL) {
+                    tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: Unable to open path: %s\n", spath);
+                    notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unable to open base path: %s\n", spath);
+                    total = -1;
+                    goto finished;
+                } else {
+                    //** Push the current directory, ie the parent onto the stack
+                    tbx_stack_push(stack, dest_prefix);
+                    tbx_stack_push(stack, dir_prefix);
+                    tbx_stack_push(stack, dirfd);
+
+                    //** And reset things to the child we are recuring into
+                    dest_prefix = strdup(dpath);
+                    dir_prefix = strdup(spath);
+                    dirfd = dirfd2;
+                }
+            } else if (entry->d_type == DT_LNK) { //** Symlink
+                err = _copy_symlink(os, spath, dpath);
+                if (err) {
+                    total = -1;
+                    goto finished;
+                }
+            } else if (entry->d_type == DT_REG) { //** Symlink
+                err = _copy_file(os, spath, dpath);
+                if (err) {
+                    total = -1;
+                    goto finished;
+                }
+            } else {
+                notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unknown file type path=%s d_type=%d\n", spath, entry->d_type);
+                tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: Unknown file type path=%s d_type=%d\n", spath, entry->d_type);
+                total = -1;
+                goto finished;
+            }
+
+            errno = 0;
+        }
+
+        eno = errno;
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+        free(dest_prefix);
+        dir_prefix = NULL;
+
+        if (eno != 0) {
+            tbx_notify_printf(osf->rebalance_log, 1,"", "ERROR: readdir error! src_path=%s errno=%d\n", src_path, eno);
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: raddir error! src_path: %s errno=%d\n", src_path, eno);
+            total = -1;
+            goto finished;
+        }
+
+    }
+
+    //** Cleanup
+finished:
+    //** Cleanup the stack
+    if (dir_prefix) {
+        tbx_io_closedir(dirfd);
+        free(dest_prefix);
+        free(dir_prefix);
+    }
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        dest_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+        free(dest_prefix);
+    }
+    tbx_stack_free(stack, 0);
+
+    if (total < 0) {
+        osf_purge_dir(os, dest_path, 2);
+    }
+
+    return(total);
+}
+
+//***********************************************************************
+// shuffle_between_shards - Shuffles data between shards
+//***********************************************************************
+
+int shuffle_between_shards(lio_object_service_fn_t *os, shard_stats_t *shard_usage, double average_used, int from, int to, ex_off_t nbytes, const char *path, const char *slink)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    char dpath[OS_PATH_MAX], lockpath[OS_PATH_MAX];
+    ex_id_t xid;
+    int part, err;
+
+    //** Make the new shard destination path using a random number
+    tbx_random_get_bytes(&xid, sizeof(xid));
+    part = xid % osf->shard_splits;
+    snprintf(dpath, OS_PATH_MAX, "%s/%d/" XIDT, osf->shard_prefix[to], part, xid);
+
+    //** Do the locking book keeping
+    //** Peel off the attr prefix and also the base path
+    part = strlen(path + osf->file_path_len);
+    snprintf(lockpath, sizeof(lockpath)-1, "%s", path + osf->file_path_len);
+    lockpath[part - FILE_ATTR_PREFIX_LEN-1] = '\0';
+
+    //** Do the bookkeeping for other threads to track activity
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    osf->rebalance_path = lockpath;
+    osf->rebalance_path_len = strlen(lockpath);
+    osf->rebalance_count = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    //** Do the copy
+    err = copy_dir(os, slink, dpath);
+    if (err < 0) goto failed;
+
+    //** Copy was fine so see if we can swing the pointer
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    if (osf->rebalance_count == 0) {  //** No activity so safe to swing the pointer
+        //** Remove the old symlink
+        err = tbx_io_remove(path);
+        if (err) {
+           err = errno;
+           notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED removing old symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+           tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED removing old symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+           err = -1;
+           apr_thread_mutex_unlock(osf->rebalance_lock);
+           goto failed;
+        }
+
+        //** And make the new symlink
+        err = tbx_io_symlink(dpath, path);
+        if (err) {
+           err = errno;
+           notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED swinging symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+           tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED swinging symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+           err = -1;
+
+           //** We had an error so put back in place the old link
+            err = tbx_io_symlink(slink, path);
+            if (err) {
+               err = errno;
+               notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED placing the original symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+               tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED placing the original symlink path=%s oldlink=%s newlink=%s errno=%d\n", path, slink, dpath, err);
+               err = -2;
+            }
+            apr_thread_mutex_unlock(osf->rebalance_lock);
+            goto failed;
+        }
+    } else {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "SHUFFLE_ABORT_DIR: path=%s\n", path);
+        err = -1;  //** Abort the copy and clean up
+    }
+
+    //** Clear the bookkeeping
+    osf->rebalance_path = NULL;
+    osf->rebalance_count = 0;
+    osf->rebalance_path_len = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    if (err < 0) goto failed;  //** See if we should abort
+
+    //** Remove the source
+    osf_purge_dir(os, slink, 2);
+    safe_remove(os, slink);
+
+    //** Update the shard usage
+    shard_usage[from].used -= nbytes;
+    shard_usage[to].used += nbytes;
+    update_shard_state(os, &(shard_usage[to]));
+
+    //** Print the log entry
+    tbx_notify_printf(osf->rebalance_log, 1, "", "SHUFFLE: from:%d to:%d nbytes:%s attr_ns:%s attr_old:%s attr_new:%s\n",
+        from, to, tbx_stk_pretty_print_double_with_scale(1024, nbytes, lockpath), path, slink, dpath);
+
+    return(0);
+
+failed:
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    osf->rebalance_path = NULL;
+    osf->rebalance_count = 0;
+    osf->rebalance_path_len = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    osf_purge_dir(os, dpath, 2);
+    safe_remove(os, dpath);
+
+    return((err == -2) ? 1 : 0);
+}
+
+//***********************************************************************
+// shuffle_from_namespace - Shuffle the attr directory off the namespace and to a shard
+//***********************************************************************
+
+int shuffle_from_namespace(lio_object_service_fn_t *os, shard_rebalance_t *rinfo, double average_used, char *dir_prefix, struct dirent *entry, int *seed)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    shard_stats_t *shard_usage = rinfo->shard;
+    char dpath[OS_PATH_MAX], lockpath[OS_PATH_MAX], spath[OS_PATH_MAX];
+    char tpath[OS_PATH_MAX];
+    ex_id_t xid;
+    ex_off_t nbytes;
+    int part, err, to;
+
+    //** Make the source path
+    snprintf(spath, OS_PATH_MAX, "%s/%s", dir_prefix, entry->d_name); spath[sizeof(spath)-1] = '\0';
+
+    //** Get the space used
+    nbytes = du_dir(os, spath);
+    if (nbytes <= 0) return(0);
+
+    //** Find a destination
+    if (rinfo->all_converged == 0) { //** Not all converged so find a destination
+        to = rebalance_find_destination(os, shard_usage, average_used, -1, nbytes, seed);
+        if (to == -1) {    //** Fully converged so just pick one
+            rinfo->all_converged = 1;
+            rinfo->last_shard = (rinfo->last_shard+1) % osf->n_shard_prefix;
+            to = rinfo->last_shard;
+        }
+    } else {   //** All converged so just round robin between the shards
+        rinfo->last_shard = (rinfo->last_shard+1) % osf->n_shard_prefix;
+        to = rinfo->last_shard;
+    }
+
+    //** Make the new shard destination path using a random number
+    tbx_random_get_bytes(&xid, sizeof(xid));
+    part = xid % osf->shard_splits;
+    snprintf(dpath, OS_PATH_MAX, "%s/%d/" XIDT, osf->shard_prefix[to], part, xid); dpath[sizeof(dpath)-1] = '\0';
+    snprintf(tpath, OS_PATH_MAX, "%s/%s-" XIDT, dir_prefix, entry->d_name, xid); spath[sizeof(spath)-1] = '\0';
+
+    //** Do the locking book keeping
+    //** Peel off the attr prefix
+    part = strlen(spath + osf->file_path_len);
+    snprintf(lockpath, sizeof(lockpath)-1, "%s", spath + osf->file_path_len);
+    lockpath[part - FILE_ATTR_PREFIX_LEN-1] = '\0';
+
+    //** Do the bookkeeping for other threads to track activity
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    osf->rebalance_path = lockpath;
+    osf->rebalance_path_len = strlen(lockpath);
+    osf->rebalance_count = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    //** Do the copy
+    err = copy_dir(os, spath, dpath);  //** err == bytes copied or negative on error
+    if (err < 0) goto failed;
+
+    //** Copy was fine so see if we can swing the pointer
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    if (osf->rebalance_count == 0) {  //** No activity so safe to swing the pointer
+        //** Rename the original
+        err = tbx_io_rename(spath, tpath);
+        if (err) {
+           err = errno;
+           notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED creating symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+           tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED creating symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+           err = 1;
+           goto oops;
+        }
+
+        //** And add the symlink
+        err = tbx_io_symlink(dpath, spath);
+        if (err) {
+            err = errno;
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED creating symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+            tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED creating symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+
+            err = tbx_io_rename(tpath, spath);
+            if (err) {
+                err = errno;
+                notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: FAILED UNDOING rename creating symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+                tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: FAILED UNDOING rename symlink path=%s tmplink=%s newlink=%s errno=%d\n", spath, tpath, dpath, err);
+                err = 2;
+            } else {
+                err = 1;  //** Reset the err to force a cleanup
+            }
+        }
+    } else {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "SHUFFLE_ABORT_DIR: path=%s\n", spath);
+        err = 1;  //** Abort the copy and clean up
+    }
+
+oops:
+    //** Clear the bookkeeping
+    osf->rebalance_path = NULL;
+    osf->rebalance_count = 0;
+    osf->rebalance_path_len = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    if (err != 0) goto failed;  //** See if we should abort
+
+    //** Remove the source
+    osf_purge_dir(os, tpath, 2);
+    safe_remove(os, tpath);
+
+    //** Update the shard usage
+    shard_usage[to].used += nbytes;
+    update_shard_state(os, &(shard_usage[to]));
+
+    //** Print the log entry
+    tbx_notify_printf(osf->rebalance_log, 1, "", "SHUFFLE: from:NS to:%d nbytes:%s attr_ns:%s attr_old:%s attr_new:%s\n",
+        to, tbx_stk_pretty_print_double_with_scale(1024, nbytes, tpath), spath, spath, dpath);
+
+    return(0);
+
+failed:
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    osf->rebalance_path = NULL;
+    osf->rebalance_count = 0;
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+
+    if (err != 0) {
+        osf_purge_dir(os, dpath, 2);
+        safe_remove(os, dpath);
+    }
+
+    return((err == 2) ? 1 : 0);
+}
+
+//***********************************************************************
+// shuffle_if_needed - Checks to see if we need to shuffle the metadata directory
+//      and if needed does the shuffling
+//      Returns 1 if finished
+//***********************************************************************
+
+int shuffle_if_needed(lio_object_service_fn_t *os, shard_rebalance_t *rinfo, double average_used, char *dir_prefix, struct dirent *entry, int *seed)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    int i, from, to, nbytes, retry, done;
+    shard_stats_t *shard_usage = rinfo->shard;
+    char path[OS_PATH_MAX];
+    char slink[OS_PATH_MAX];
+
+    done = 0;
+
+    //** Got an entry on the namespace device and the caller has decided we want to shuffle it
+    if (entry->d_type == DT_DIR) {
+        if (rinfo->namespace_to_shard > 0) {
+            done = shuffle_from_namespace(os, rinfo, average_used, dir_prefix, entry, seed);
+        } else {     //** Not sharding NS entries
+            done = 0;
+        }
+        return(done);
+    }
+
+    //** If we made it here we have a symlink to a shard
+    if (rinfo->namespace_to_shard == 3) {  //** Only shuffling from NS so ignore the already sharded path
+        return(0);
+    } else if (rinfo->all_converged == 1) {  //** All shards have converged
+        if (rinfo->namespace_to_shard < 2) {  //** Doing opportunistic namespace shuffling or no NS suffling
+            return(1);     //** Finished
+        } else {          //** Want to walk the whole file system shuffling data of the namespace
+            return(0);    //** Kick out but keep walking
+        }
+    }
+
+    //** Not converged so try and shuffle the shard to another one
+    //** Get the symlink
+    snprintf(path, sizeof(path)-1, "%s/%s", dir_prefix, entry->d_name); path[sizeof(path)-1] = '\0';
+    i = readlink(path, slink, sizeof(slink)-1);
+    if (i <= 0) {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "WARNING: Unable to read shard symlink: namespace:%s\n", path);
+        notify_printf(osf->olog, 1, NULL, "WARNING: Unable to read shard symlink: namespace:%s\n", path);
+        return(0);
+    }
+    slink[i] = '\0';  //** We have to NULL terminate it ourselves
+
+    //** Find the shard
+    from = -1;
+    for (i=0; i<osf->n_shard_prefix; i++) {
+        if (strncmp(slink, osf->shard_prefix[i], shard_usage[i].prefix_len) == 0) { //** Got a match
+            from = i;
+            break;
+        }
+    }
+
+    if (from == -1) { //** Unknown prefix so log it and kick out
+        tbx_notify_printf(osf->rebalance_log, 1, "", "WARNING: Unknown shard prefix: namespace:%s symlink=%s\n", path, slink);
+        notify_printf(osf->olog, 1, NULL, "WARNING: Unknown shard prefix: namespace:%s symlink=%s\n", path, slink);
+        return(0);
+    }
+
+    //** Check if it's converged
+    if ((shard_usage[from].used <= shard_usage[from].lo_target) || (shard_usage[from].converged == 1)) return(0);  //** Kick out if underused or converged
+
+    //** Get the space used
+    nbytes = du_dir(os, path);
+    if (nbytes < osf->relocate_min_size) return(0);  //** To small so skip
+
+    //** Find a target shard
+    retry = 1;
+
+again:
+    to = rebalance_find_destination(os, shard_usage, average_used, from, nbytes, seed);
+    if (to == -1) { //** No suitable target so check if we are finished
+        get_shard_usage(os, shard_usage, &average_used);  //** Reload the usage
+        i = check_if_balanced(os, shard_usage);  //** And check if done
+        if (i == 1) {    //** Everything is balanced so see if we continue just shuffling the NS
+            rinfo->all_converged = 1;
+            if (rinfo->namespace_to_shard < 2) {  //** Doing opportunistic namespace shuffling or no NS suffling
+                return(1);     //** Finished
+            }
+            return(0);    //** Kick out but keep walking
+        }
+        if (retry) {   //** Try again since the 1st loop could have been a false converged since it's live
+            retry = 0;
+            goto again;
+        }
+
+        tbx_notify_printf(osf->rebalance_log, 1, "", "WARNING: Can't find a destination! namespace:%s symlink=%s\n", path, slink);
+        notify_printf(osf->olog, 1, NULL, "REBALANCE: WARNING: Can't find a destination! namespace:%s symlink=%s\n", path, slink);
+        return(0);
+    }
+
+    //** Do the move
+    done = shuffle_between_shards(os, shard_usage, average_used, from, to, nbytes, path, slink);
+
+    return(done);
+}
+
+//***********************************************************************
+// rebalance_thread - Does the sharding data rebalancing
+//***********************************************************************
+
+void *rebalance_thread(apr_thread_t *th, void *data)
+{
+    lio_object_service_fn_t *os = data;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    tbx_inip_file_t *ifd;
+    tbx_notify_t *notify;
+    shard_rebalance_t *rinfo;
+    shard_stats_t *shard_usage;
+    double average_used, target_average_used;
+    tbx_stack_t *stack;
+    char path[OS_PATH_MAX];
+    char *dir_prefix;
+    DIR *dirfd, *dirfd2;
+    int i, finished, seed;
+    struct dirent *entry;
+    apr_time_t check_interval, next_check;
+
+    //** Make the shard rebalance info
+    i = sizeof(shard_rebalance_t) + (osf->n_shard_prefix+1)*sizeof(shard_stats_t);
+    rinfo = malloc(i);
+    memset(rinfo, 0, i);
+    shard_usage = rinfo->shard;
+
+    //** Load the new params if they exist.  Otherwise we just use what's already configured
+    ifd = tbx_inip_file_read(osf->rebalance_config_fname, 0);
+    if (ifd) {
+        rebalance_load(os, ifd, osf->rebalance_section);
+    }
+    rinfo->namespace_to_shard = osf->relocate_namespace_attr_to_shard;  //** Copy the NS sharding mode
+
+    //** Make the logging device
+    notify = tbx_notify_create(ifd, NULL, osf->rebalance_notify_section);
+    tbx_inip_destroy(ifd);  //** Go ahead and close the ifd
+    if (notify == NULL) {
+        notify_printf(osf->olog, 1, NULL, "WARNING: Missing rebalance_notify_section=%s Falling back to using the OS notify log device!!\n", osf->rebalance_notify_section);
+        osf->rebalance_log = osf->olog;
+    }
+    osf->rebalance_log = notify;
+
+    //** Get the current shard sizes
+    for (i=0; i<osf->n_shard_prefix; i++) {   //** Record how long they are for matches
+        shard_usage[i].prefix_len = strlen(osf->shard_prefix[i]);
+    }
+    get_shard_usage(os, shard_usage, &average_used);
+    check_if_balanced(os, shard_usage);
+
+    //** Log the initial state
+    tbx_notify_printf(osf->rebalance_log, 1, "", "Shard rebalancing options\n");
+    tbx_notify_printf(osf->rebalance_log, 1, "", "    relocate_namespace_attr_to_shard = %d # 0=No relocation, 1=Relocate but converge normally, 2=Walk whole FS and relocate, 3=Walk whole FS but ONLY move NS metadata to shards\n", 
+            osf->relocate_namespace_attr_to_shard);
+     tbx_notify_printf(osf->rebalance_log, 1, "", "    relocate_min_size = %s\n",  tbx_stk_pretty_print_int_with_scale(osf->relocate_min_size, path));
+     tbx_notify_printf(osf->rebalance_log, 1, "", "    delta_fraction = %lf\n", osf->delta_fraction);
+
+    tbx_notify_printf(osf->rebalance_log, 1, "", "\n");
+    print_shard_usage(os, shard_usage, average_used);
+    tbx_notify_printf(osf->rebalance_log, 1, "", "----------------------------------------------------\n");
+    tbx_notify_printf(osf->rebalance_log, 1, "", "\n");
+
+    //** Main processing loop
+    stack = tbx_stack_new();
+    if ((dirfd = tbx_io_opendir(osf->file_path)) == NULL) {
+        tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: Unable to open base path: %s\n", osf->file_path);
+        notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unable to open base path: %s\n", osf->file_path);
+        tbx_stack_free(stack, 0);
+    } else {
+        tbx_stack_push(stack, strdup(osf->file_path));
+        tbx_stack_push(stack, dirfd);
+    }
+
+    seed = 0;  //** Set the initial seed
+    target_average_used = average_used + osf->delta_fraction;
+    check_interval = apr_time_from_sec(10);
+    next_check = check_interval + apr_time_now();
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        errno = 0;
+        while ((entry = tbx_io_readdir(dirfd)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0) {
+                errno = 0;
+                continue;
+            } else if (strcmp(entry->d_name, "..") == 0) {
+                errno = 0;
+                continue;
+            } else if (strcmp(entry->d_name, FILE_ATTR_PREFIX) == 0) {  //** Got a file attr directory
+                if (entry->d_type == DT_LNK) { //** Got a symbolic link
+                    finished = shuffle_if_needed(os, rinfo, target_average_used, dir_prefix, entry, &seed);
+                    if (finished) goto finished;
+                } else if ((entry->d_type == DT_DIR) && (osf->relocate_namespace_attr_to_shard > 0)) { //** It's a normal directory
+                    finished = shuffle_if_needed(os, rinfo, target_average_used, dir_prefix, entry, &seed);
+                    if (finished) goto finished;
+                }
+            } else if (entry->d_type == DT_DIR) {  //** Got a directory so push it on the stack and recurse
+                snprintf(path, sizeof(path)-1, "%s/%s", dir_prefix, entry->d_name);
+                if ((dirfd2 = tbx_io_opendir(path)) == NULL) {
+                    tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: Unable to open path: %s\n", path);
+                    notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unable to open base path: %s\n", path);
+                } else {
+                    //** Push the current directory, ie the parent onto the stack
+                    tbx_stack_push(stack, dir_prefix);
+                    tbx_stack_push(stack, dirfd);
+
+                    //** And reset things to the child we are recuring into
+                    dir_prefix = strdup(path);
+                    dirfd = dirfd2;
+                }
+            }
+
+            errno = 0;
+        }
+
+        if (errno != 0) {
+            tbx_notify_printf(osf->rebalance_log, 1,"", "ERROR: readdir error! dir_prefix=%s errno=%d\n", dir_prefix, errno);
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: raddir error! dir_prefix: %s errno=%d\n", dir_prefix, errno);
+            goto finished;
+        }
+
+        if (apr_time_now() > next_check) { //** Checking if finished
+            next_check = apr_time_now() + check_interval;
+            get_shard_usage(os, shard_usage, &average_used);
+            if (check_if_balanced(os, shard_usage) == 1) {
+                goto finished;
+            } else {
+                //** See if we have a request to kick out
+                apr_thread_mutex_lock(osf->rebalance_lock);
+                finished = osf->rebalance_running;
+                apr_thread_mutex_unlock(osf->rebalance_lock);
+                if (finished == -1) {
+                    tbx_notify_printf(osf->rebalance_log, 1, "", "FINISHED: Rebalance exited early by user request\n", path);
+                    notify_printf(osf->olog, 1, NULL, "REBALANCE: Rebalance existed early by user request\n", path);
+                    goto finished;
+                }
+            }
+        }
+
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+        dir_prefix = NULL;
+    }
+
+    //** Cleanup
+finished:
+    tbx_notify_printf(osf->rebalance_log, 1, "", "\n");
+    tbx_notify_printf(osf->rebalance_log, 1, "", "----------------------------------------------------\n");
+    tbx_notify_printf(osf->rebalance_log, 1, "", "Rebalance finished\n");
+    tbx_notify_printf(osf->rebalance_log, 1, "", "\n");
+    notify_printf(osf->olog, 1, NULL, "REBALANCE: Rebalance finished\n");
+    get_shard_usage(os, shard_usage, &average_used);
+    check_if_balanced(os, shard_usage);
+    print_shard_usage(os, shard_usage, average_used);
+
+    //** Cleanup the stack
+    if (dir_prefix) {
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+    }
+    while ((dirfd = tbx_stack_pop(stack)) != NULL) {
+        dir_prefix = tbx_stack_pop(stack);  //** Also get the prefix
+        tbx_io_closedir(dirfd);
+        free(dir_prefix);
+    }
+    tbx_stack_free(stack, 0);
+
+    //** And tidy up
+    apr_thread_mutex_lock(osf->rebalance_lock);
+    osf->rebalance_log = NULL;
+    osf->rebalance_running = 0;
+    if (notify) tbx_notify_destroy(notify);
+    apr_thread_mutex_unlock(osf->rebalance_lock);
+    free(rinfo);
+
+    return(NULL);
+}
+
+
+//***********************************************************************
 // osfile_print_open_fd - Prints the open file list
 //***********************************************************************
 
@@ -6724,6 +7786,8 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int i;
+    char pp[4096];
+    apr_status_t value;
 
     if (print_section_heading) fprintf(fd, "[%s]\n", osf->section);
     fprintf(fd, "type = %s\n", OS_TYPE_FILE);
@@ -6740,6 +7804,50 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
         fprintf(fd, "#n_shard_prefix = %d\n", osf->n_shard_prefix);
         for (i=0; i<osf->n_shard_prefix; i++) {
             fprintf(fd, "shard_prefix = %s\n", osf->shard_prefix[i]);
+        }
+
+        fprintf(fd, "relocate_namespace_attr_to_shard = %d # 0=No relocation, 1=Relocate but converge normally, 2=Walk whole FS and relocate, 3=Walk whole FS but ONLY move NS metadata to shards\n", 
+            osf->relocate_namespace_attr_to_shard);
+        fprintf(fd, "relocate_min_size = %s\n",  tbx_stk_pretty_print_int_with_scale(osf->relocate_min_size, pp));
+        fprintf(fd, "delta_fraction = %lf\n", osf->delta_fraction);
+        fprintf(fd, "rebalance_notify_section = %s\n", osf->rebalance_notify_section);
+        fprintf(fd, "rebalance_config_fname = %s #touch %s-enable to start a rebalance or touch %s-disable to stop rebalancing and then trigger a state dump\n",
+             osf->rebalance_config_fname, osf->rebalance_config_fname, osf->rebalance_config_fname);
+        fprintf(fd, "rebalance_section = %s\n", osf->rebalance_section);
+
+        //** Check for a trigger
+        if (osf->rebalance_running == 0) {
+            snprintf(pp, sizeof(pp), "%s-enable", osf->rebalance_config_fname); pp[sizeof(pp)-1] = '\0';
+            if (lio_os_local_filetype(pp) != 0) {
+                fprintf(fd, "# Starting rebalance\n");
+
+                if (osf->rebalance_thread) {  //** See if we need to clear up an old run
+                    apr_thread_join(&value, osf->rebalance_thread);
+                    osf->rebalance_thread = NULL;
+                }
+
+                remove(pp); //** Remove the trigger file.  If it fails it's Ok
+
+                //** NOTE: osf->mpool should be protected by a lock but it's only used at create/destroy and here which is interrupt driven
+                //**       so only a single instance is using the mpool at a time
+                apr_thread_mutex_lock(osf->rebalance_lock);   //** We set the running flag here to prevent a race condition doing it in the thread
+                osf->rebalance_running = 1;
+                apr_thread_mutex_unlock(osf->rebalance_lock);
+                tbx_thread_create_assert(&(osf->rebalance_thread), NULL, rebalance_thread, (void *)os, osf->mpool);
+            } else {
+                fprintf(fd, "# No rebalance running\n");
+            }
+        } else {
+            snprintf(pp, sizeof(pp), "%s-disable", osf->rebalance_config_fname); pp[sizeof(pp)-1] = '\0';
+            if (lio_os_local_filetype(pp) != 0) {
+                fprintf(fd, "# Stopping rebalance\n");
+                apr_thread_mutex_lock(osf->rebalance_lock);
+                osf->rebalance_running = -1;   //** This is the trigger to shutdown
+                apr_thread_mutex_unlock(osf->rebalance_lock);
+                remove(pp); //** Remove the trigger file.  If it fails it's Ok
+            } else {
+                fprintf(fd, "# Rebalance currently running\n");
+            }
         }
 
     }
@@ -6773,11 +7881,21 @@ void osfile_destroy(lio_object_service_fn_t *os)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int i;
+    apr_status_t value;
+
+    if (osf->rebalance_thread) {  //** See if we need to clear up an old run
+        apr_thread_join(&value, osf->rebalance_thread);
+        osf->rebalance_thread = NULL;
+    }
 
     for (i=0; i<osf->internal_lock_size; i++) {
         apr_thread_mutex_destroy(osf->internal_lock[i]);
     }
     free(osf->internal_lock);
+
+    if (osf->rebalance_notify_section) free(osf->rebalance_notify_section);
+    if (osf->rebalance_config_fname) free(osf->rebalance_config_fname);
+    if (osf->rebalance_section) free(osf->rebalance_section);
 
     fobj_lock_destroy(osf->os_lock);
     fobj_lock_destroy(osf->os_lock_user);
@@ -6854,7 +7972,6 @@ void osf_load_shard_prefix(lio_object_service_fn_t *os, tbx_inip_file_t *fd, con
     tbx_stack_free(stack, 0);
 }
 
-
 //***********************************************************************
 //  object_service_file_create - Creates a file backed OS
 //***********************************************************************
@@ -6926,6 +8043,15 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
             }
         }
 
+        //** Load a default set of rebalance options
+        osf->relocate_namespace_attr_to_shard = osf_default_options.relocate_namespace_attr_to_shard;
+        osf->relocate_min_size = osf_default_options.relocate_min_size;
+        osf->delta_fraction = osf_default_options.delta_fraction;
+        osf->rebalance_notify_section = strdup(osf_default_options.rebalance_notify_section);
+        osf->rebalance_config_fname = tbx_inip_get_string(fd, section, "rebalance_config_fname", osf_default_options.rebalance_config_fname);
+        osf->rebalance_section = tbx_inip_get_string(fd, section, "rebalance_section", osf_default_options.rebalance_section);
+        rebalance_load(os, fd, section);
+
         //** Get all the parallel iter values if enabled
         osf->piter_enable = tbx_inip_get_integer(fd, section, "piter_enable", osf_default_options.piter_enable);  //** Enable parallel iterators
         if (osf->piter_enable) {
@@ -6975,6 +8101,7 @@ next:
     for (i=0; i<osf->internal_lock_size; i++) {
         apr_thread_mutex_create(&(osf->internal_lock[i]), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
     }
+    if (osf->shard_enable) apr_thread_mutex_create(&(osf->rebalance_lock), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
 
     osf->os_lock = fobj_lock_create();
     osf->os_lock_user = fobj_lock_create();

@@ -82,7 +82,19 @@ struct lio_osfile_priv_t {
     int n_piter_attr_size;
     int shard_splits;
     int n_shard_prefix;
+    int relocate_namespace_attr_to_shard;
+    int relocate_min_size;
+    int rebalance_running;
+    int rebalance_count;
+    int rebalance_path_len;
+    double delta_fraction;
     tbx_atomic_int_t hardlink_count;
+    apr_thread_t *rebalance_thread;
+    tbx_notify_t *rebalance_log;
+    char *rebalance_path;
+    char *rebalance_notify_section;
+    char *rebalance_section;
+    char *rebalance_config_fname;
     char **shard_prefix;
     char *base_path;
     char *file_path;
@@ -92,6 +104,7 @@ struct lio_osfile_priv_t {
     char *authz_section;
     char *os_activity;
     tbx_notify_t *olog;
+    tbx_notify_t *rlog;
     gop_thread_pool_context_t *tpc;
     apr_thread_mutex_t **internal_lock;
     lio_os_authz_t *osaz;
@@ -102,6 +115,7 @@ struct lio_osfile_priv_t {
     tbx_list_t *open_fd_obj;
     tbx_list_t *open_fd_rp;
     apr_thread_mutex_t *open_fd_lock;
+    apr_thread_mutex_t *rebalance_lock;
     fobject_lock_t *os_lock;
     fobject_lock_t *os_lock_user;
     lio_os_virtual_attr_t lock_va;
