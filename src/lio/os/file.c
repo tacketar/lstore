@@ -32,6 +32,7 @@
 #include <gop/gop.h>
 #include <gop/tp.h>
 #include <gop/types.h>
+#include <lio/lio.h>
 #include <regex.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -355,6 +356,10 @@ typedef struct {
     DIR *ad;
     char *ad_path;
     os_object_iter_t *it;
+    ex_off_t n_objects_processed_dir;
+    ex_off_t n_objects_bad_dir;
+    ex_off_t n_objects_processed_file;
+    ex_off_t n_objects_bad_file;
     int mode;
 } osfile_fsck_iter_t;
 
@@ -6732,8 +6737,12 @@ int osfile_next_fsck(lio_object_service_fn_t *os, os_fsck_iter_t *oit, char **ba
     while ((atype = osf_next_fsck(oit, &fname)) != 0) {
         if (atype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG)) {   //** File object
             err = osf_fsck_check_file(it->os, it->creds, fname, OS_FSCK_MANUAL);
+            it->n_objects_processed_file++;
+            if (err) it->n_objects_bad_file++;
         } else {   //** Directory object
             err = osf_fsck_check_dir(it->os, it->creds, fname, OS_FSCK_MANUAL);
+            it->n_objects_processed_dir++;
+            if (err) it->n_objects_bad_dir++;
         }
 
         if (err != OS_FSCK_GOOD) {
@@ -6785,6 +6794,12 @@ void osfile_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 
     os_destroy_object_iter(os, it->it);
 
+    //** Go ahead and dump some stats
+    info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
+    info_printf(lio_ifd, 0, "Directories -- Total: " XOT "  Bad: " XOT "\n", it->n_objects_processed_dir, it->n_objects_bad_dir);
+    info_printf(lio_ifd, 0, "Files       -- Total: " XOT "  Bad: " XOT "\n", it->n_objects_processed_file, it->n_objects_bad_file);
+    info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
+    
     if (it->ad != NULL) closedir(it->ad);
     if (it->ad_path != NULL) {
         log_printf(15, "free(ad_path=%s)\n", it->ad_path);
