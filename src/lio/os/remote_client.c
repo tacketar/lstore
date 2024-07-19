@@ -1413,7 +1413,9 @@ int osrc_store_val(gop_mq_stream_t *mqs, int src_size, void **dest, int *v_size)
     char *buf;
 
     if (*v_size >= 0) {
-        if (*v_size < src_size) {
+        if (src_size < 0) {    //** Doesn't exist so just store the size
+            *v_size = src_size;
+        } else if (*v_size < src_size) {
             *v_size = -src_size;
             gop_mq_stream_read(mqs, NULL, src_size);  //** This drops the values
             return(1);
