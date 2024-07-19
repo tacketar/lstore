@@ -24,8 +24,6 @@ if [ ! -e ${NAMESPACE_PREFIX} ]; then
 fi
 
 WORK_DIR=/tmp/fsck-hardlinks
-TO_ORPHANED=${DIR}/to-orphaned.sh
-FROM_ORPHANED=${DIR}/from-orphaned.sh
 
 DEDUP=dedup.sh
 RM=/usr/bin/rm
@@ -38,7 +36,6 @@ HARDLINK_FILES_BROKEN=${WORK_DIR}/hardlink-files-broken.log
 HARDLINK_ATTRS_BROKEN=${WORK_DIR}/hardlink-attrs-broken.log
 HARDLINK_PAIRED=${WORK_DIR}/hardlink-paired.log
 HARDLINK_ORPHANED=${WORK_DIR}/hardlink-orphaned.log
-
 TO_BROKEN_LOG=${WORK_DIR}/to-broken.log
 FROM_BROKEN_LOG=${WORK_DIR}/from-broken.log
 TO_ORPHANED_LOG=${WORK_DIR}/to-orphaned.log
@@ -67,11 +64,15 @@ dump_hardlink_info() {
     find ${hpath}/* -maxdepth 0 -type f 2>/dev/null | xargs -P1 -I{} basename {} > ${HARDLINK_LOCAL_FILES}
 
     #Now do the same for the attribute dirs
-    find ${hpath}/_^FA^_/* -maxdepth 0 -type d 2>/dev/null |  sed 's/.*_^FA^_//g' > ${HARDLINK_LOCAL_ATTRS}
+    find ${hpath}/_^FA^_/* -maxdepth 0 2>/dev/null | xargs -P1 basename 2>/dev/null | grep -F _^FA^_ | cut -f3 -d_ > ${HARDLINK_LOCAL_ATTRS}
 
     #Sort the good and bad
     cat ${HARDLINK_LOCAL_FILES} ${HARDLINK_LOCAL_ATTRS} | sort | uniq -c | grep ' 1 ' | awk '{print $2}' > ${HARDLINK_LOCAL_BROKEN}
     cat ${HARDLINK_LOCAL_FILES} ${HARDLINK_LOCAL_ATTRS} | sort | uniq -c | grep -v ' 1 ' | awk '{print $2}' > ${HARDLINK_LOCAL_PAIRED}
+
+    paired=$(wc -l ${HARDLINK_LOCAL_PAIRED} | awk '{print $1}')
+    broken=$(wc -l ${HARDLINK_LOCAL_BROKEN} | awk '{print $1}')
+    echo "   Broken: ${broken} Paired: ${paired}"
 
     #Now separate out the bad based on how it's broken
     ${DEDUP} ${HARDLINK_LOCAL_FILES} ${HARDLINK_LOCAL_PAIRED} | awk -v prefix="${hpath}" '{print prefix"/"$1}' >> ${HARDLINK_FILES_BROKEN}
@@ -87,6 +88,7 @@ find_broken() {
 
     echo "Finding broken hardlinks"
     for path in $( ls -d ${NAMESPACE_PREFIX}/hardlink/* | grep -v _^FA^_); do
+#path=/backend/toplvl/hardlink/11
         echo "Processing ${path}"
         dump_hardlink_info ${path}
     done
@@ -291,7 +293,7 @@ hardlink_help() {
     echo "    --to-broken        - Take the broken hardlinks and move them to the broken directories for later removal"
     echo "    --from-broken      - Move broken hardlinks back to their original location"
     echo "    --purge-broken     - Permanently remove broken hardlinks. This can not be undone"
-    echo "    -y                 - The options supporting this flag require ask for an affirmation before continuing unless this flag is provided"
+    echo "    -y                 - The options supporting this flag ask for an affirmation before continuing unless this flag is provided"
     echo ""
     echo "Namespace prefix: ${NAMESPACE_PREFIX}"
     echo "Output files are in ${WORK_DIR}"

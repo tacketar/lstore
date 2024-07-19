@@ -118,15 +118,17 @@ from_orphaned() {
 }
 
 #Dump all the sharded attribute directories '_^FA^_'
+#Normally we just shard whole directorires attributes leaving the file stub back in the namespace.
 dump_namespace_file_shards() {
     local f
     find ${NAMESPACE_PREFIX}/file/ -name _^FA^_ -type l | while read f; do sdump ${f}; done > ${NAMESPACE_FILE_SHARDS}
 }
 
 #Same but for the hardlinks in the namespace
+# For hardlinks each hardlinked *file* object directory is sharded to a hardlink shard attr directory.
 dump_namespace_hardlink_shards() {
     local f
-    find ${NAMESPACE_PREFIX}/hardlink/ -name _^FA^_ -type l | grep -v orphaned | while read f; do sdump ${f}; done > ${NAMESPACE_HARDLINK_SHARDS}
+    find ${NAMESPACE_PREFIX}/hardlink/ -type l | grep -v orphaned | while read f; do sdump ${f}; done > ${NAMESPACE_HARDLINK_SHARDS}
 }
 
 #Shortcut to do both namespace used shards
@@ -157,9 +159,9 @@ find_orphaned() {
 
     ${DEDUP} ${SHARDS_FOUND} ${NAMESPACE_USED_SHARDS} > ${SHARDS_UNUSED}
 
-    echo "Namespace shards used: $(wc -l ${NAMESPACE_USED_SHARDS}) (${NAMESPACE_USED_SHARDS})"
-    echo "Shard prefixes found: $(wc -l ${SHARDS_FOUND}) (${SHARDS_FOUND})"
-    echo "Unused shards: $(wc -l ${SHARDS_UNUSED}) (${SHARDS_UNUSED})"
+    echo "Namespace shards used: $(wc -l ${NAMESPACE_USED_SHARDS})"
+    echo "Shard prefixes found: $(wc -l ${SHARDS_FOUND})"
+    echo "Unused shards: $(wc -l ${SHARDS_UNUSED})"
 }
 
 #Move to orphaned directory
