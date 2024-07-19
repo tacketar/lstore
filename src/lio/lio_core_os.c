@@ -48,8 +48,8 @@
 
 #define COS_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
 
-#define _n_fsck_keys 4
-static char *_fsck_keys[] = { "system.owner", "system.inode", "system.exnode", "system.exnode.size" };
+#define _n_fsck_keys 5
+static char *_fsck_keys[] = { "system.owner", "system.inode", "system.exnode", "system.exnode.size", "system.exnode.data" };
 
 #define _n_lio_file_keys 7
 #define _n_lio_dir_keys 6
@@ -1915,7 +1915,7 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
     int state, err, srepair, index, vs, ex_index;
     char *dir, *file, ssize[128], *v;
     ex_id_t ino;
-    ex_off_t nbytes;
+    ex_off_t attr_size, md_size, seg_size;
     lio_exnode_exchange_t *exp;
     lio_exnode_t *ex, *cex;
     lio_segment_t *seg;
@@ -2088,29 +2088,56 @@ exnode_again:
         goto finished;
     }
 
+    //** Verify the size
+    //** Fetch the size stored in system.exnode.size
     index = 3;
     v = val[index];
-    vs= v_size[index];
-    if (vs <= 0) {  //** No size of correct if they want to
-        if (srepair == LIO_FSCK_SIZE_REPAIR) {
+    vs = v_size[index];
+    if (vs <= 0) {
+        attr_size = -1;
+    } else {
+        sscanf(v, XOT, &attr_size);
+    }
+
+    //** Get the size from system.exnode.data
+    index = 4;
+    md_size = v_size[index];
+    if (md_size < 0) md_size = 0;
+
+    //** From the segment itself
+    seg_size = segment_size(seg);
+
+    if (srepair != LIO_FSCK_SIZE_REPAIR) {
+        if (attr_size < 0) {
             state |= LIO_FSCK_MISSING_EXNODE_SIZE;
-            goto finished;
         }
-        sprintf(ssize, I64T, segment_size(seg));
-        lio_setattr(lc, creds, path, NULL, "system.exnode.size", (void *)ssize, strlen(ssize));
+        if (seg_size == 0) {  //** Stored as metadata
+            if (attr_size != md_size) { //** Mismatch so store it
+                state |= LIO_FSCK_SIZE_MISMATCH;
+            }
+        } else if (md_size == 0) {  //** Stored in the exnode
+            if (attr_size != seg_size) { //** Mismatch so store it
+                state |= LIO_FSCK_SIZE_MISMATCH;
+            }
+        }
         goto finished;
     }
 
-    //** Verify the size
-    sscanf(v, XOT, &nbytes);
-    if (nbytes != segment_size(seg)) {
-        if (srepair == LIO_FSCK_SIZE_REPAIR) {
-            state |= LIO_FSCK_MISSING_EXNODE_SIZE;
-            goto finished;
+    //** If we made it here we're going to try and do a repair
+    if (seg_size == 0) {  //** Stored as metadata
+        if (attr_size != md_size) { //** Mismatch so store it
+            sprintf(ssize, I64T, md_size);
+            lio_setattr(lc, creds, path, NULL, "system.exnode.size", (void *)ssize, strlen(ssize));
         }
-        sprintf(ssize, I64T, segment_size(seg));
-        lio_setattr(lc, creds, path, NULL, "system.exnode.size", (void *)ssize, strlen(ssize));
+    } else if (md_size == 0) {  //** Stored in the exnode
+        if (attr_size != seg_size) { //** Mismatch so store it
+            sprintf(ssize, I64T, seg_size);
+            lio_setattr(lc, creds, path, NULL, "system.exnode.size", (void *)ssize, strlen(ssize));
+        }
+    } else {  //** Got a size mismatvch and we don't handle those
+        state |= LIO_FSCK_SIZE_MISMATCH;
     }
+
 
     //** Clean up
 finished:
@@ -2143,7 +2170,7 @@ gop_op_status_t lio_fsck_gop_fn(void *arg, int id)
 
     if (op->ftype == 0) { //** No file
         status = gop_failure_status;
-        status.error_code = LIO_FSCK_MISSING;
+        status.error_code = LIO_FSCK_MISSING_FILE;
         return(status);
     }
 

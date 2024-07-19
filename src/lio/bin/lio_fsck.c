@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     owner_mode = LIO_FSCK_MANUAL;
     owner = NULL;
     exnode_mode = 0;
-    size_mode = 0;
+    size_mode = LIO_FSCK_SIZE_REPAIR;
     i=1;
     do {
         start_option = i;
@@ -159,7 +159,8 @@ int main(int argc, char **argv)
         info_printf(lio_ifd, 0, "owner_mode=%d exnode_mode=%d size_mode=%d (%d=manual, %d=parent, %d=delete, %d=user, %d=repair)\n",
                     owner_mode, exnode_mode, size_mode, LIO_FSCK_MANUAL, LIO_FSCK_PARENT, LIO_FSCK_DELETE, LIO_FSCK_USER, LIO_FSCK_SIZE_REPAIR);
     }
-    info_printf(lio_ifd, 0, "Possible error states: %d=missing owner, %d=missing exnode, %d=missing size, %d=missing inode\n", LIO_FSCK_MISSING_OWNER, LIO_FSCK_MISSING_EXNODE, LIO_FSCK_MISSING_EXNODE_SIZE, LIO_FSCK_MISSING_INODE);
+    info_printf(lio_ifd, 0, "Possible error states: %d=missing owner, %d=missing exnode, %d=missing size, %d=missing inode %d=missing file entry %d=size mismatch\n", 
+        LIO_FSCK_MISSING_OWNER, LIO_FSCK_MISSING_EXNODE, LIO_FSCK_MISSING_EXNODE_SIZE, LIO_FSCK_MISSING_INODE, LIO_FSCK_MISSING_FILE, LIO_FSCK_SIZE_MISMATCH);
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
     tbx_info_flush(lio_ifd);
 

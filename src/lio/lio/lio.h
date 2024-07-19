@@ -201,7 +201,8 @@ enum lio_fsck_error_flags_t {
     LIO_FSCK_MISSING_EXNODE    =  (1 << 1),
     LIO_FSCK_MISSING_EXNODE_SIZE = (1 << 2),
     LIO_FSCK_MISSING_INODE     =  (1 << 3),
-    LIO_FSCK_MISSING           =  (1 << 4),
+    LIO_FSCK_MISSING_FILE      =  (1 << 4),
+    LIO_FSCK_SIZE_MISMATCH     =  (1 << 5),
 };
 typedef enum lio_fsck_error_flags_t lio_fsck_error_flags_t;
 
