@@ -6589,24 +6589,27 @@ int osf_fsck_check_dir(lio_object_service_fn_t *os, lio_creds_t *creds, char *fn
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char *faname;
-    char rpath[OS_PATH_MAX];
-    int ftype;
+    char rpath[OS_PATH_MAX], fullname[OS_PATH_MAX];
+    int ftype, fatype;
 
     //** Check if we can access it.  If not flag success and return
     if (osaz_object_access(osf->osaz, creds,NULL,  _osf_realpath(os, fname, rpath, 1), OS_MODE_READ_IMMEDIATE) != 2) return(OS_FSCK_GOOD);
 
+    snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fname);
+    ftype = lio_os_local_filetype(fullname);
+
     //** Make sure the FA directory exists
     faname = object_attr_dir(os, osf->file_path, fname, OS_OBJECT_DIR_FLAG);
-    ftype = lio_os_local_filetype(faname);
-    log_printf(15, "fname=%s faname=%s ftype=%d\n", fname, faname, ftype);
-    if ((ftype & OS_OBJECT_DIR_FLAG) == 0) {
+    fatype = lio_os_local_filetype(faname);
+    log_printf(15, "fname=%s faname=%s ftype=%d fatype=%d\n", fname, faname, ftype, fatype);
+    if ((fatype & OS_OBJECT_DIR_FLAG) == 0) {
         if (dofix == OS_FSCK_MANUAL) {
             free(faname);
             return(OS_FSCK_MISSING_ATTR);
         }
         if (dofix == OS_FSCK_REMOVE) {
             //** Remove the FA dir
-            osf_object_remove(os, fname, 0);
+            osf_object_remove(os, fullname, ftype);
             free(faname);
             return(OS_FSCK_GOOD);
         }
