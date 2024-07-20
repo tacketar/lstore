@@ -3378,9 +3378,11 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path, int ftype)
         log_printf(15, "file or link removal\n");
         if (ftype & OS_OBJECT_HARDLINK_FLAG) {  //** If this is the last hardlink we need to remove the hardlink inode as well
             memset(&s, 0, sizeof(s));
-            stat(path, &s);
-            if (s.st_nlink <= 2) {  //** Yep we have to remove it
+            lstat(path, &s);   //** If it's a symlink we want the details on the link and NOT what it points to
+            if (s.st_nlink == 2) { //** We remove it
                 hard_inode = resolve_hardlink(os, path, 0);
+            } else if (s.st_nlink == 1) { //** Remove fattr dir  since it's a symlink to a hardlink
+                ftype ^= OS_OBJECT_HARDLINK_FLAG;
             }
         }
 
@@ -4374,7 +4376,7 @@ failed_1:
 
 
 //***********************************************************************
-// resolve_hardlink - DEtermines which object in the hard link dir the object
+// resolve_hardlink - Determines which object in the hard link dir the object
 //  points to
 //***********************************************************************
 
@@ -4394,6 +4396,7 @@ char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_pref
     n = readlink(hpath, buffer, OS_PATH_MAX-1);
     if (n <= 0) {
         log_printf(0, "Readlink error!  src_path=%s hpath=%s\n", src_path, hpath);
+        if (hpath) free(hpath);
         return(NULL);
     }
     free(hpath);
@@ -4403,6 +4406,10 @@ char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_pref
 
     hpath = buffer;
     tmp = strstr(hpath, FILE_ATTR_PREFIX "/" FILE_ATTR_PREFIX);
+    if (tmp == NULL) {
+        log_printf(0, "ERROR: fullname=%s link=%s  Missing hardlink prefix!!!!\n", src_path, buffer);
+        return(NULL);
+    }
     n = FILE_ATTR_PREFIX_LEN + 1 + FILE_ATTR_PREFIX_LEN;
     for (i=0; tmp[i+n] != 0; i++) tmp[i] = tmp[i+n];
     tmp[i] = 0;
