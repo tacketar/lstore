@@ -590,6 +590,7 @@ int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat
     err = lstat(path, stat_object);  //** Assume it's not a symlink
     if (err == 0) {
         if (S_ISLNK(stat_object->st_mode)) {
+            if (stat_object->st_nlink > 1) ftype = OS_OBJECT_HARDLINK_FLAG;
             *stat_link = *stat_object;  //** Got a symlink so track it
             err = stat(path, stat_object);
             ftype |= OS_OBJECT_SYMLINK_FLAG;
