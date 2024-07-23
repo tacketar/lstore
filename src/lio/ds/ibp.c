@@ -57,6 +57,7 @@ int _ds_ibp_do_init = 1;
 
 static lio_ds_ibp_priv_t ibp_default_options = {
     .section = "ibp",
+    .ignore_remove = 0,
     .warm_duration = 604800,
     .warm_interval = 3600,
     .attr_default = {
@@ -670,8 +671,14 @@ gop_op_generic_t *ds_ibp_remove(lio_data_service_fn_t *dsf, data_attr_t *dattr, 
 {
     lio_ds_ibp_priv_t *ds = (lio_ds_ibp_priv_t *)(dsf->priv);
     lio_ds_ibp_attr_t *attr = (lio_ds_ibp_attr_t *)dattr;
+    lio_ds_ibp_op_t *iop;
 
-    lio_ds_ibp_op_t *iop = ds_ibp_op_create(ds, attr);
+    if (ds->ignore_remove) {    //** We're ignoring remove allocation requests
+        return(gop_dummy(gop_success_status));
+    }
+
+    //** If we made it here then it's a normal remove op
+    iop = ds_ibp_op_create(ds, attr);
 
     //** Create the op
     iop->gop = ibp_remove_gop(ds->ic, cap, timeout);
@@ -1030,6 +1037,10 @@ lio_data_service_fn_t *ds_ibp_create(void *arg, tbx_inip_file_t *ifd, char *sect
     memset(&(ds->attr_default), 0, sizeof(lio_ds_ibp_attr_t));
     ds->attr_default.attr.duration = tbx_inip_get_integer(ifd, section, "duration", ibp_default_options.attr_default.attr.duration);
 
+    //** See  if we are ignoring ibp_remove requests
+    ds->ignore_remove = tbx_inip_get_integer(ifd, section, "ignore_remove", ibp_default_options.ignore_remove);
+
+    //** Get the internal warmer options
     ds->warm_interval = tbx_inip_get_integer(ifd, section, "warm_interval", ibp_default_options.warm_interval);
     ds->warm_duration = tbx_inip_get_integer(ifd, section, "warm_duration", ibp_default_options.warm_duration);
 

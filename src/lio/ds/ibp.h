@@ -63,6 +63,7 @@ struct lio_ds_ibp_priv_t {
     char *section;
     lio_ds_ibp_attr_t attr_default;
     ibp_context_t *ic;
+    int ignore_remove;    //** If set then ds_remove() requests are ignored
 
     //** These are all for the warmer
     apr_pool_t *pool;
