@@ -58,14 +58,17 @@
 char *lio_get_shortcut(char *label)
 {
     char fname[4096];
+    char fname_home[4096];
     char *home, *shortcut;
     tbx_inip_file_t *ifd;
+    struct stat sbuf;
 
     //** 1st check the user local known_hosts
     home = getenv("HOME");
     if (home == NULL) goto next;
-    snprintf(fname, sizeof(fname), "%s/.lio/known_hosts", home);
-    ifd = tbx_inip_file_read(fname, 1);
+    snprintf(fname_home, sizeof(fname), "%s/.lio/known_hosts", home);
+    if (stat(fname_home, &sbuf) != 0) goto next;  //** File is missing
+    ifd = tbx_inip_file_read(fname_home, 1);
     if (ifd == NULL) goto next;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
     tbx_inip_destroy(ifd);
@@ -74,12 +77,20 @@ char *lio_get_shortcut(char *label)
 next:
     //** No luck so look in the global location
     snprintf(fname, sizeof(fname), "%s", "/etc/lio/known_hosts");
+    if (stat(fname, &sbuf) != 0) goto oops;  //** File is missing
     ifd = tbx_inip_file_read(fname, 1);
-    if (ifd == NULL) return(NULL);
+    if (ifd == NULL) goto oops;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
     tbx_inip_destroy(ifd);
 
+    if (shortcut == NULL) {
+        fprintf(stderr, "ERROR: Missing shortcut: %s\n", label);
+    }
     return(shortcut);
+
+oops:
+    fprintf(stderr, "ERROR: Unable to load a known hosts file: %s  or  %s\n", fname_home, fname);
+    return(NULL);
 }
 
 //***********************************************************************

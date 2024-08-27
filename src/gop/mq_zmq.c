@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <sys/errno.h>
 #include <sys/signal.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
 #include <tbx/random.h>
@@ -34,6 +36,7 @@
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
+
 
 #include "mq_portal.h"
 #include "mq_helpers.h"
@@ -62,6 +65,7 @@ void encrypt_socket(gop_mq_socket_t *socket, char *id, int server_mode)
     char *home, *section, *etext, *key, *key_prefix;
     tbx_inip_file_t *ifd;
     int k, retry;
+    struct stat sbuf;
 
     key_prefix = getenv(LIO_ENV_KEY_PREFIX);
     retry = 0;
@@ -85,7 +89,7 @@ again:
         }
     }
 
-    ifd = tbx_inip_file_read(fname, 1);
+    ifd = (stat(fname, &sbuf) == 0) ? tbx_inip_file_read(fname, 1) : NULL;
     if (!ifd) {
         if ((!server_mode) || (retry == 0)) {  //** Let's try again
             if (key_prefix) {
