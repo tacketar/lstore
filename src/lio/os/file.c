@@ -5486,7 +5486,7 @@ gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id)
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     int err, i, atype, n_locks, did_lock;
-    apr_thread_mutex_t *lock_table[op->n+1];
+    apr_thread_mutex_t *lock_table[op->n+2];  //** Need space for each attr(could be symlinked) and the original path and realpath
     gop_op_status_t status;
 
     status = gop_success_status;
@@ -5568,7 +5568,7 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)op->os->priv;
     int err, i, atype, n_locks, did_lock;
-    apr_thread_mutex_t *lock_table[op->n+1];
+    apr_thread_mutex_t *lock_table[op->n+2];  //** Need space for potentail symlink attrs and object + realapth
     gop_op_status_t status;
     osfile_fd_t *fd;
     osfile_open_op_t op_open;
