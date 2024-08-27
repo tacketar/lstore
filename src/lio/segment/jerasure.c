@@ -278,7 +278,7 @@ int jerase_control_check(lio_erasure_plan_t *plan, int chunk_size, int n_devs, i
 
 int jerase_brute_recurse(int level, int *index, lio_erasure_plan_t *plan, int chunk_size, int n_devs, int n_parity, int n_bad_devs, int *badmap, char **ptr, char **eptr, char **pwork, char *magic)
 {
-    int i, start, n, nbytes;
+    int i, missing, start, n, nbytes;
     char *tptr[n_parity];
     char logbuf[4096];
     if (level == n_bad_devs) {  //** Do an erasure check
@@ -295,10 +295,12 @@ int jerase_brute_recurse(int level, int *index, lio_erasure_plan_t *plan, int ch
         logbuf[0] = 0;
         nbytes = 0;
         tbx_append_printf(logbuf, &nbytes, sizeof(logbuf), "jerase_control_check=%d devmap: ", n);
+        missing=0;
         for (i=0; i<n_devs; i++) {
             tbx_append_printf(logbuf, &nbytes, sizeof(logbuf), " %d", badmap[i]);
+            if (badmap[i] != 0) missing++;
         }
-        log_printf(1, "%s\n", logbuf);
+        log_printf(1, "%s  missing=%d\n", logbuf, missing);
 
         for (i=0; i<n_bad_devs; i++) {  //** Restore the original pointers
             ptr[index[i]] = tptr[i];
@@ -357,7 +359,7 @@ gop_op_status_t segjerase_inspect_full_func(void *arg, int id)
     gop_opque_t *q;
     lio_ex3_inspect_command_t ic;
     bool do_fix;
-    int i, err, j, k, d, nstripes, total_stripes, stripe, bufstripes, n_empty, retry;
+    int i, err, j, k, d, nstripes, total_stripes, stripe, bufstripes, n_empty, retry, missing;
     int  fail_quick, n_iov, good_magic, unrecoverable_count, bad_count, repair_errors, erasure_errors;
     int magic_count[s->n_devs], match, index, magic_used;
     int magic_devs[s->n_devs*s->n_devs];
@@ -593,9 +595,12 @@ retry:
 
 
                         tbx_append_printf(stripe_msg[2], &stripe_used[2], stripe_buffer_size, "Recoverable same magic. devmap:");
+                        missing = 0;
                         for (d=0; d<s->n_devs; d++) {
                             tbx_append_printf(stripe_msg[2], &stripe_used[2], stripe_buffer_size, " %d", badmap[d]);
+                            if (badmap[d] != 0) missing++;
                         }
+                        tbx_append_printf(stripe_msg[2], &stripe_used[2], stripe_buffer_size, "  missing=%d", missing);
                         stripe_error[2] = 1;
 
                         tbx_append_printf(stripe_msg[2], &stripe_used[2], stripe_buffer_size, "\nPrinting magic table --n_magic=%d\n",magic_used);
@@ -655,10 +660,12 @@ next:  //** Jump to here if an empty stripe
 
                 if ((stripe+i-1 != last_bad) || (memcmp(badmap_last, badmap, sizeof(int)*s->n_devs) != 0)) {
                     tbx_append_printf(print_buffer, &used, sizeof(print_buffer), XIDT ": [DEVMAP] stripe=%d   devmap:", segment_id(si->seg), stripe+i);
+                    missing = 0;
                     for (k=0; k<s->n_devs; k++) {
                         tbx_append_printf(print_buffer, &used, sizeof(print_buffer), " %d", badmap[k]);
+                        if (badmap[k] != 0) missing++;
                     }
-                    info_printf(si->fd, 1, "%s\n", print_buffer);
+                    info_printf(si->fd, 1, "%s  missing=%d\n", print_buffer, missing);
                     memcpy(badmap_last, badmap, sizeof(int)*s->n_devs);
                 }
                 last_bad = stripe+i;
