@@ -1264,11 +1264,12 @@ int osf_compact_ilocks(int n_locks, int *ilock)
 void osf_multi_attr_lock(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *fd, char **key, int n_keys, int first_link, apr_thread_mutex_t **lock_table, int *n_locks)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int i, j, n, len, atype, small_slot, small_index, max_index;
+    int i, j, k, n, atype, small_slot, small_index, max_index, err;
     int slot_rp, slot_obj;
     int lock_slot[n_keys+2];
     char linkname[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
+    char *ptr;
 
     //** Always get the primary object_name and RP since the calling program expects the RP to be locked as well
 try_again:
@@ -1286,19 +1287,37 @@ try_again:
         n++;
     }
 
-    log_printf(15, "lock_slot[0]=%d n=%d fname=%s rp=%s\n", lock_slot[0], n, fd->opath, fd->realpath);
+    log_printf(15, "lock_slot[0]=%d n_keys=%d n=%d fname=%s rp=%s\n", lock_slot[0], n_keys, n, fd->opath, fd->realpath);
 
     //** Now cycle through the attributes starting with the 1 that triggered the call
     linkname[sizeof(linkname)-1] = 0;
     for (i=first_link; i<n_keys; i++) {
-        len = osf_resolve_attr_path(os, fd->attr_dir, linkname, fd->object_name, key[i], fd->ftype, &atype, 20);
-        log_printf(15, "i=%d len=%d fname=%s key=%s linkname=%s\n", i, len, fd->opath, key[i], linkname);
-        if ((atype & OS_OBJECT_SYMLINK_FLAG) && (len > 0)) {
-            j=len-1;  //** Peel off the key name.  We only need the parent object path
+        err = osf_resolve_attr_path(os, fd->attr_dir, linkname, fd->object_name, key[i], fd->ftype, &atype, 20);
+        log_printf(15, "i=%d n=%d err=%d fname=%s key=%s linkname=%s\n", i, n, err, fd->opath, key[i], linkname);
+        j = strlen(linkname)-1;
+        if ((atype & OS_OBJECT_SYMLINK_FLAG) && (err == 0) && (j > 0)) {
+            //** Peel off the key name.  We only need the parent object path
             while (linkname[j] != '/' && (j>0)) {
                 j--;
             }
             linkname[j] = 0;
+            //** Make sure we have the appropriate sequence: _^FA^_/_^FA^_ to extract
+            ptr = strstr(linkname, "/" FILE_ATTR_PREFIX "/" FILE_ATTR_PREFIX);
+            if (ptr == NULL) {
+                log_printf(0, "ERROR: Malformed attribute symlink! fname=%s rp=%s key=%s linkname=%s\n", fd->opath, fd->realpath, key[i], linkname);
+                notify_printf(osf->olog, 1, NULL, "ERROR: Malformed attribute symlink! fname=%s rp=%s key=%s linkname=%s\n", fd->opath, fd->realpath, key[i], linkname);
+                continue;    //** Skip to the next attr
+            }
+
+            //** Now shift the object name
+            k=2*FILE_ATTR_PREFIX_LEN+1;
+            j = 1;  //** Keep the initial '/'
+            while (ptr[k+j] != '\0') {
+                ptr[j] = ptr[k+j];
+                j++;
+            }
+            ptr[j] = '\0';
+
             lock_table[n] = osf_retrieve_lock(os, _osf_realpath(os, linkname + osf->file_path_len, rpath, 1), &lock_slot[n]);
             log_printf(15, "checking n=%d key=%s lname=%s lrp=%s lock_slot=%d j=%d\n", n, key[i], linkname, rpath, lock_slot[n], j);
 
@@ -5122,7 +5141,7 @@ gop_op_status_t osf_get_ma_links(void *arg, int id, int first_link)
 {
     osfile_attr_op_t *op = (osfile_attr_op_t *)arg;
     int err, i, atype, n_locks;
-    apr_thread_mutex_t *lock_table[op->n+1];
+    apr_thread_mutex_t *lock_table[op->n+2];
     gop_op_status_t status;
 
     status = gop_success_status;
