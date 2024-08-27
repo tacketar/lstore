@@ -785,7 +785,11 @@ gop_op_status_t inspect_task(void *arg, int id)
     }
 
     if (w->exnode == NULL) {
-        msg = " No exnode!";
+        if (w->ftype & OS_OBJECT_BROKEN_LINK_FLAG) {
+            msg = " WARN: Broken symlink!";
+        } else {
+            msg = " No exnode!";
+        }
         status = gop_failure_status;
         goto fini_1;
     }
@@ -809,7 +813,7 @@ gop_op_status_t inspect_task(void *arg, int id)
     tbx_log_flush();
     if (ptr != NULL) {
         apr_thread_mutex_unlock(lock);
-        info_printf(lfd, 0, "Skipping file %s (ftype=%d). Already loaded/processed.\n", w->tuple.path, w->ftype);
+        info_printf(lfd, 0, "WARN: Skipping file %s (ftype=%d). Already loaded/processed.\n", w->tuple.path, w->ftype);
         free(dsegid);
         free(w->exnode);
         status = gop_failure_status;
