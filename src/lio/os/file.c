@@ -3224,8 +3224,8 @@ int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth)
     d = opendir(path);
     if (d == NULL) {
         eno = errno;
-        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed on fname=%s errno=%d\n", path, depth, fname, eno);
-        log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed on fname=%s errno=%d\n", path, depth, fname, eno);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed! errno=%d\n", path, depth, eno);
+        log_printf(0, "ERROR: OSF_PURGE_DIR(%s) -- depth=%d opendir failed on errno=%d\n", path, depth, eno);
         return(1);
     }
 
