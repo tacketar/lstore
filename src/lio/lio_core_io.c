@@ -1171,6 +1171,32 @@ int special_open(lio_fd_t *fd, int flags, int is_special, ex_id_t ino)
 
 //*************************************************************************
 
+void _open_exists_inode(lio_config_t *lc, lio_creds_t *creds, const char *fname, int *ftype, ex_id_t *inode)
+{
+    char *keys[2] = { "os.type", "system.inode" };
+    char *val[2];
+    int v_size[2];
+    int err;
+    v_size[0] = -lc->max_attr; v_size[1] = -lc->max_attr;
+    val[0] = NULL; val[1] = NULL;
+
+    *ftype = 0;
+    *inode = 0;
+    err = lio_get_multiple_attrs(lc, creds, fname, NULL, keys, (void **)val, v_size, 2, 1);
+    if (err != OP_STATE_SUCCESS) goto finished;
+
+    if (val[0] != NULL) sscanf(val[0], "%d", ftype);
+
+    if (val[1] != NULL) sscanf(val[1], XIDT, inode);
+
+finished:
+    if (val[0] != NULL) free(val[0]);
+    if (val[1] != NULL) free(val[1]);
+    return;
+}
+
+//*************************************************************************
+
 gop_op_status_t lio_myopen_fn(void *arg, int id)
 {
     lio_fd_op_t *op = (lio_fd_op_t *)arg;
@@ -1184,13 +1210,15 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     gop_op_status_t status;
     int dtype, err, exec_flag, is_special, rw_mode, do_lock, ilock_mode;
     lio_segment_errors_t serr;
+    int ocl_slot = -1;
 
     status = gop_success_status;
 
     CIO_DEBUG_NOTIFY("OPEN: fname=%s START\n", op->path);
 
     //** Check if it exists
-    dtype = lio_exists(lc, op->creds, op->path);
+//    dtype = lio_exists(lc, op->creds, op->path);
+    _open_exists_inode(lc, op->creds, op->path, &dtype, &ino);
 
     exec_flag = (LIO_EXEC_MODE & op->mode) ? OS_OBJECT_EXEC_FLAG : 0;  //** Peel off the exec flag for use on new files only
     do_lock = (LIO_ILOCK_MODE|LIO_ILOCK_TRACK_MODE) & op->mode;
@@ -1208,7 +1236,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             } else {
                 dtype = OS_OBJECT_FILE_FLAG;
             }
-            status = gop_sync_exec_status(lio_create_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id));
+            status = gop_sync_exec_status(lio_create_inode_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id, &ino));
             if (status.op_status != OP_STATE_SUCCESS) {
                 if (status.error_code) {
                     info_printf(lio_ifd, 1, "ERROR creating file(%s) errno=%d!\n", op->path, status.error_code);
@@ -1287,8 +1315,12 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         }
     }
 
+    //** Lock the Open/Close lock to sync
+    ocl_slot = ino % lc->open_close_lock_size;
+    apr_thread_mutex_lock(lc->open_close_lock[ocl_slot]);
     exnode = NULL;
     if (lio_load_file_handle_attrs(lc, op->creds, fd->path, op->id, fd->ofd, &ino, &exnode, &data, &data_size) != 0) {
+        apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
         log_printf(1, "ERROR loading attributes! fname=%s\n", op->path);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
@@ -1305,6 +1337,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     if (dtype & (OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) {
         is_special = (dtype & OS_OBJECT_FIFO_FLAG) ? OS_OBJECT_FIFO_FLAG : OS_OBJECT_SOCKET_FLAG;
         if (special_open(fd, op->mode, is_special, ino) != 0) {
+            apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
             log_printf(0, "ERROR: Failed opening the special file! fname=%s is_special=%d\n", fd->path, is_special);
             if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
             free(fd);
@@ -1326,6 +1359,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     //** Load the exnode and get the default view ID
     exp = lio_exnode_exchange_text_parse(exnode);
     if (exnode_exchange_get_default_view_id(exp) == 0) {  //** Make sure the vid is valid.
+        apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
         log_printf(1, "ERROR loading exnode! fname=%s\n", op->path);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
@@ -1343,6 +1377,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     log_printf(2, "fname=%s fh=%p\n", op->path, fh);
 
     if (fh != NULL) { //** Already open so just increment the ref count and return a new fd
+        apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
         fh->ref_count++;
         fd->fh = fh;
         if (rw_mode == LIO_READ_MODE) {
@@ -1407,7 +1442,6 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     }
 
     fh->sid = segment_id(fh->seg);
-
     tbx_monitor_object_fill(&(fh->mo), MON_INDEX_LIO, fh->sid);
     tbx_monitor_obj_create(&(fh->mo), "OPEN: fname=%s mode=%d", op->path, op->mode);
     tbx_monitor_obj_reference(&(fh->mo), &(fh->seg->header.mo));
@@ -1437,6 +1471,9 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     _lio_add_file_handle(lc, fh);
 
     fsize = lio_size(fd);  //** Get the size before we get the lock since it also does a lock
+
+    apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
+    lio_unlock(lc);
 
     apr_thread_mutex_lock(fh->lock);  //** Lock the fh while we finish up
     lio_unlock(lc);  //** Now we can release the lock
@@ -1475,6 +1512,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 cleanup:  //** We only make it here on a failure
     log_printf(1, "ERROR in cleanup! fname=%s\n", op->path);
 
+    if (ocl_slot != -1) apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
     lio_unlock(lc);
 
     notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=ERROR\n", op->path, op->mode);
@@ -1532,7 +1570,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     lio_segment_errors_t serr;
     ex_off_t final_size;
     apr_time_t now;
-    int n, modified, ftype, tier_change;
+    int n, modified, ftype, tier_change, ocl_slot;
     double dt, dsec[3];
 
     CIO_DEBUG_NOTIFY("CLOSE: fname=%s fname=%s ino=" XIDT " modified=" AIT " count=%d remove_on_close=%d START\n", fd->path, fd->fh->fname, fd->fh->ino, tbx_atomic_get(fd->fh->modified), fd->fh->ref_count, fd->fh->remove_on_close);
@@ -1541,6 +1579,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     tbx_log_flush();
 
     status = gop_success_status;
+    ocl_slot = -1;
 
     //** Get the handles
     fh = fd->fh;
@@ -1566,6 +1605,10 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     lio_unlock(lc);
 
     final_size = lio_size_fh(fh);  //** Get this before we engage the lock since it also uses it
+
+    //** Lock the Open/Close lock to sync
+    ocl_slot = fh->ino % lc->open_close_lock_size;
+    apr_thread_mutex_lock(lc->open_close_lock[ocl_slot]);
 
     //** Flush and truncate everything which could take some time
     apr_thread_mutex_lock(fh->lock);  //** Lock the fh while we finish up
@@ -1625,6 +1668,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
         fh->ref_count--;  //** Remove ourselves and destroy fh within the lock
         if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
+            apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
             lio_unlock(lc);
             goto finished;
         }
@@ -1633,6 +1677,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
         tbx_monitor_obj_ungroup(&(fh->mo), &(fh->seg->header.mo));
         lio_exnode_destroy(fh->ex);
         _lio_remove_file_handle(lc, fh);
+        apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
         lio_unlock(lc);
 
         tbx_monitor_obj_destroy(&(fh->mo));
@@ -1692,6 +1737,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     fh->ref_count--;  //** Ready to tear down so go ahead and decrement and destroy the fh inside the lock if Ok
     if (fh->ref_count > 0) {  //** Somebody else opened it while we were flushing buffers
+        apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);  //** We can release the open/close sync lock now since the exnode attrs are updated
         lio_unlock(lc);
         goto finished;
     }
@@ -1700,6 +1746,8 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     now = apr_time_now();
     lio_exnode_destroy(fh->ex); //** This is done in the lock to make sure the exnode isn't loaded twice
     _lio_remove_file_handle(lc, fh);
+
+    apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);  //** We can release the open/close sync lock now since the exnode attrs are updated
 
     lio_unlock(lc);
 

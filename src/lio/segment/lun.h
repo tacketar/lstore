@@ -24,6 +24,7 @@
 #include <gop/opque.h>
 #include <lio/blacklist.h>
 #include <tbx/fmttypes.h>
+#include <tbx/interval_skiplist.h>
 
 #include "ex3.h"
 #include "ex3/types.h"
@@ -38,6 +39,10 @@ extern "C" {
 lio_segment_t *segment_lun_load(void *arg, ex_id_t id, lio_exnode_exchange_t *ex);
 lio_segment_t *segment_lun_create(void *arg);
 int seglun_row_decompose_test();
+
+void lun_global_state_create(int n_max_retry);
+void lun_global_state_destroy();
+void lun_global_print_running_stats(void *unused, FILE *fd, int print_section_heading);
 
 struct lio_seglun_priv_t {
     ex_off_t used_size;

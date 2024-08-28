@@ -69,6 +69,7 @@
 #include "rs.h"
 #include "rs/simple.h"
 #include "service_manager.h"
+#include "segment/lun.h"
 
 typedef struct {
     int count;
@@ -212,6 +213,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "notify = %s\n", lio->notify_section);
     fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
     fprintf(fd, "monitor_enable = %d  #touch %s-enable to start logging or touch %s-disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
+    fprintf(fd, "#lun_max_retry_size = ....  #See the LUN global retry stats below for the value\n");
     lio_print_flag_service(lio->ess, ESS_RUNNING, fd);
     fprintf(fd, "\n");
 
@@ -223,6 +225,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     rs_print_running_config(lio->rs, fd, 1);
     authn_print_running_config(lio->authn, fd, 1);
     tbx_notify_print_running_config(lio->notify, fd, 1);
+    lun_global_print_running_stats(NULL, fd, 1);
 
     memory_usage_dump(fd);
 }
@@ -1181,6 +1184,7 @@ void lio_destroy_nl(lio_config_t *lio)
     }
 
     if (lio->host_id) free(lio->host_id);
+    if (lio->open_close_lock) free(lio->open_close_lock);
 
     apr_thread_mutex_destroy(lio->lock);
     apr_pool_destroy(lio->mpool);
@@ -1210,7 +1214,7 @@ void lio_destroy(lio_config_t *lio)
 lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name)
 {
     lio_config_t *lio;
-    int n, cores, max_recursion, err;
+    int i, n, cores, max_recursion, err;
     char buffer[1024];
     void *cred_args[2];
     char *ctype, *stype;
@@ -1555,6 +1559,17 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
 
     assert_result(apr_pool_create(&(lio->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(lio->lock), APR_THREAD_MUTEX_DEFAULT, lio->mpool);
+
+    //** Make the open/close coordination locks
+    lio->open_close_lock_size = tbx_inip_get_integer(lio->ifd, section, "open_close_lock_size", 1000);
+    if (lio->open_close_lock_size <= 0) {
+        log_printf(0, "ERROR:  Invalid open_close_lock_size! got=%d should be greater than zero!  Adjusting to 1000\n", lio->open_close_lock_size);
+        fprintf(stderr, "ERROR:  Invalid open_close_lock_size! got=%d should be greater than zero!  Adjusting to 1000\n", lio->open_close_lock_size);
+    }
+    tbx_type_malloc_clear(lio->open_close_lock, apr_thread_mutex_t *, lio->open_close_lock_size);
+    for (i=0; i<lio->open_close_lock_size; i++) {
+        apr_thread_mutex_create(&(lio->open_close_lock[i]), APR_THREAD_MUTEX_DEFAULT, lio->mpool);
+    }
 
     //** Add the recovery log segment if available
     sid = tbx_inip_get_integer(lio->ifd, section, "recovery_segment", -1);
@@ -2057,6 +2072,10 @@ no_args:
     i = tbx_inip_get_integer(lio_gc->ifd, section_name, "wq_n", 5);
     lio_wq_startup(i);
 
+    //** Get the LUN retry size and set it up
+    i = tbx_inip_get_integer(lio_gc->ifd, section_name, "lun_retry_max_size", 250);
+    lun_global_state_create(i);
+
     //** See if we run a remote config server
     remote_config = tbx_inip_get_string(lio_gc->ifd, section_name, "remote_config", NULL);
     lio_gc->rc_section = remote_config;
@@ -2102,6 +2121,7 @@ int lio_shutdown()
     if (lio_gc->rc_section) free(lio_gc->rc_section);
 
     lio_wq_shutdown();
+    lun_global_state_destroy();
 
     lio_destroy(lio_gc);
     lio_gc = NULL;  //** Reset the global to NULL so it's not accidentally reused.

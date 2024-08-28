@@ -90,6 +90,7 @@ typedef struct {
     char *dest_path;
     char *id;
     char *ex;
+    ex_id_t *inode;
     int type;
 } lio_mk_mv_rm_t;
 
@@ -427,6 +428,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     ino = 0;
     generate_ex_id(&ino);
     snprintf(inode, 32, XIDT, ino);
+    if (op->inode) *op->inode = ino;
     val[4] = inode;
     v_size[4] = strlen(inode);
     v_size[ex_key] = strlen(val[ex_key]);
@@ -449,6 +451,26 @@ fail:
     if (val[ex_key] != NULL) free(val[ex_key]);
 
     return(status);
+}
+
+//*************************************************************************
+//  lio_create_inode_gop - Generate a create object task and also returns the inode number
+//*************************************************************************
+
+gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode)
+{
+    lio_mk_mv_rm_t *op;
+
+    tbx_type_malloc_clear(op, lio_mk_mv_rm_t, 1);
+
+    op->lc = lc;
+    op->creds = creds;
+    op->src_path = strdup(path);
+    op->type = type;
+    op->inode = inode;
+    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_create_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
 //*************************************************************************

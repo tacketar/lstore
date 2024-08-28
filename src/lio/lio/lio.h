@@ -124,6 +124,7 @@ LIO_API lio_fsck_iter_t *lio_create_fsck_iter(lio_config_t *lc, lio_creds_t *cre
 LIO_API os_object_iter_t *lio_create_object_iter(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, lio_os_regex_table_t *attr, int recurse_dpeth, os_attr_iter_t **it, int v_max);
 LIO_API os_object_iter_t *lio_create_object_iter_alist(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, int recurse_depth, char **key, void **val, int *v_size, int n_keys);
 LIO_API gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id);
+LIO_API gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode);
 LIO_API gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id);
 LIO_API void lio_destroy_fsck_iter(lio_config_t *lc, lio_fsck_iter_t *oit);
 LIO_API void lio_destroy_object_iter(lio_config_t *lc, os_object_iter_t *it);
@@ -242,6 +243,7 @@ struct lio_config_t {
     data_attr_t *da;
     tbx_inip_file_t *ifd;
     tbx_list_t *open_index;
+    apr_thread_mutex_t **open_close_lock;
     lio_creds_t *creds;
     tbx_notify_t *notify;
     apr_thread_mutex_t *lock;
@@ -274,6 +276,7 @@ struct lio_config_t {
     ex_off_t stream_buffer_total_size;
     ex_off_t small_files_in_metadata_max_size;
     ex_off_t uuid;
+    int open_close_lock_size;
     int path_is_literal;
     int host_id_len;
     int calc_adler32;

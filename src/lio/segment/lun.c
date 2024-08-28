@@ -40,8 +40,8 @@
 #include <sodium.h>
 #include <zmq.h>
 #include <tbx/append_printf.h>
-#include <tbx/assert_result.h>
 #include <tbx/atomic_counter.h>
+#include <tbx/assert_result.h>
 #include <tbx/fmttypes.h>
 #include <tbx/iniparse.h>
 #include <tbx/interval_skiplist.h>
@@ -146,6 +146,135 @@ typedef struct {
     int c_ex;
     int retries;
 } lun_rw_row_t;
+
+//** This is for the global LUN stats tracking retries
+typedef struct {   //** Retry entrt
+    ex_id_t sid;  //** Segment
+    apr_time_t t;      //** Time added
+    char *cap;         //** Cap used
+} lun_retry_t;
+
+typedef struct {
+    apr_pool_t *mpool;
+    apr_thread_mutex_t *lock;
+    int n_max_retry;    //** Max number of slots
+    int slot_retry;     //** Current slot
+    int used_retry;
+    lun_retry_t retry[];
+} lun_global_state_t;
+
+lun_global_state_t *lun_global = NULL;
+
+//***********************************************************************
+//  lun_global_state_create - Creates the global state structure
+//***********************************************************************
+
+void lun_global_state_create(int n_max_retry)
+{
+    lun_global_state_t *lg = NULL;
+    int n;
+
+    if (lun_global != NULL) return;  //** Kick out if already set up
+
+    n = sizeof(lun_global_state_t) + n_max_retry*sizeof(lun_retry_t);
+    lg = malloc(n);
+    memset(lg, 0, n);
+
+    assert_result(apr_pool_create(&(lg->mpool), NULL), APR_SUCCESS);
+    apr_thread_mutex_create(&(lg->lock), APR_THREAD_MUTEX_DEFAULT, lg->mpool);
+    lg->n_max_retry = n_max_retry;
+    lg->slot_retry = 0;
+    lg->used_retry = 0;
+
+    if (lun_global == NULL) lun_global = lg;
+
+    if (lun_global != lg) {  //** IF different then someone else beat us to it.
+        apr_pool_destroy(lg->mpool);
+        free(lg);
+    }
+}
+
+//***********************************************************************
+// lun_global_state_destroy - Destroy the LUN state info
+//***********************************************************************
+
+void lun_global_state_destroy()
+{
+    int i, n;
+
+    if (lun_global == NULL) return;
+
+    //** Cleanup the caps
+    apr_thread_mutex_lock(lun_global->lock);
+    n = (lun_global->used_retry >= lun_global->n_max_retry) ? lun_global->n_max_retry : lun_global->used_retry;
+    for (i=0; i<n; i++) {
+        if (lun_global->retry[i].cap) free(lun_global->retry[i].cap);
+    }
+    apr_thread_mutex_unlock(lun_global->lock);
+
+    //** Free the emmory
+    apr_pool_destroy(lun_global->mpool);
+    free(lun_global);
+    lun_global = NULL;
+}
+
+//***********************************************************************
+// lun_global_retry_add - Adds an etry to the global retry list
+//***********************************************************************
+
+void lun_global_retry_add(ex_id_t sid, char *cap)
+{
+    int n;
+
+    if (lun_global == NULL) return;
+
+    apr_thread_mutex_lock(lun_global->lock);
+    n = lun_global->slot_retry;
+    if (lun_global->retry[n].cap) free(lun_global->retry[n].cap);
+    lun_global->retry[n].t = apr_time_now();
+    lun_global->retry[n].sid = sid;
+    lun_global->retry[n].cap = strdup(cap);
+
+    n++;
+    lun_global->used_retry++;
+    lun_global->slot_retry = n % lun_global->n_max_retry;
+
+    apr_thread_mutex_unlock(lun_global->lock);
+}
+
+//***********************************************************************
+// lun_global_print_running_state - Dumps the LUN stat info
+//***********************************************************************
+void lun_global_print_running_stats(void *unused, FILE *fd, int print_section_heading)
+{
+    int i, j, k, n;
+    lun_retry_t *r;
+
+    char pptime[128];
+
+    if (lun_global == NULL) return;
+
+    apr_thread_mutex_lock(lun_global->lock);
+    fprintf(fd, "LUN retry stats...  n_max_retry=%d used_retry=%d slot_retry=%d now=%s\n", lun_global->n_max_retry,
+        lun_global->used_retry, lun_global->slot_retry, tbx_stk_pretty_print_time(apr_time_now(), 1, pptime));
+
+    n = (lun_global->used_retry >= lun_global->n_max_retry) ? lun_global->n_max_retry : lun_global->used_retry;
+    if (lun_global->used_retry >= lun_global->n_max_retry) {
+        k = lun_global->slot_retry;
+        n = lun_global->n_max_retry;
+    } else {
+        k = 0;
+        n = lun_global->used_retry;
+    }
+    for (i=0; i<n; i++) {
+        j = (k + i) % lun_global->n_max_retry;
+        r = &(lun_global->retry[j]);
+        fprintf(fd, "   i=%d time=%s sid=" XIDT " cap=%s\n", i, tbx_stk_pretty_print_time(r->t, 1, pptime), r->sid, r->cap);
+    }
+    fprintf(fd, "\n");
+    apr_thread_mutex_unlock(lun_global->lock);
+}
+
 
 //***********************************************************************
 // _slun_perform_remap - Does a cap remap
@@ -1490,6 +1619,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                 //** Make the new GOP
                 block = rwb_table[j].block;
                 if (rw_mode == 0) {
+                    lun_global_retry_add(segment_id(seg), (char *)ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ));
                     if (rwb_table[j].crwb.n_ex == 1) {
                         gop = ds_read(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_READ),
                                       rwb_table[j].crwb.ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
@@ -1498,6 +1628,7 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                                        rwb_table[j].crwb.n_ex, rwb_table[j].crwb.ex_iov, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
                     }
                 } else {
+                    lun_global_retry_add(segment_id(seg), (char *)ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE));
                     if (rwb_table[j].crwb.n_ex == 1) {
                         gop = ds_write(block->data->ds, da, ds_get_cap(block->data->ds, block->data->cap, DS_CAP_WRITE),
                                        rwb_table[j].crwb.ex_iov[0].offset, &(rwb_table[j].buffer), 0, rwb_table[j].len, timeout);
