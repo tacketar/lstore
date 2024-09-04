@@ -202,6 +202,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
     fprintf(fd, "tpc_cache = %d\n", lio->tpc_cache_count);
     fprintf(fd, "blacklist= %s\n", lio->blacklist_section);
+    fprintf(fd, "open_close_lock_size = %d\n", lio->open_close_lock_size);
     fprintf(fd, "mq = %s\n", lio->mq_section);
     fprintf(fd, "ds = %s\n", lio->ds_section);
     fprintf(fd, "rs = %s\n", lio->rs_section);
