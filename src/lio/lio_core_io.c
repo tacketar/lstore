@@ -1217,7 +1217,6 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     CIO_DEBUG_NOTIFY("OPEN: fname=%s START\n", op->path);
 
     //** Check if it exists
-//    dtype = lio_exists(lc, op->creds, op->path);
     _open_exists_inode(lc, op->creds, op->path, &dtype, &ino);
 
     exec_flag = (LIO_EXEC_MODE & op->mode) ? OS_OBJECT_EXEC_FLAG : 0;  //** Peel off the exec flag for use on new files only
@@ -1604,11 +1603,11 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     }
     lio_unlock(lc);
 
-    final_size = lio_size_fh(fh);  //** Get this before we engage the lock since it also uses it
-
     //** Lock the Open/Close lock to sync
     ocl_slot = fh->ino % lc->open_close_lock_size;
     apr_thread_mutex_lock(lc->open_close_lock[ocl_slot]);
+
+    final_size = lio_size_fh(fh);  //** Get this before we engage the lock since it also uses it
 
     //** Flush and truncate everything which could take some time
     apr_thread_mutex_lock(fh->lock);  //** Lock the fh while we finish up
