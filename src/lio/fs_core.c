@@ -153,6 +153,8 @@ static tbx_atomic_int_t _fs_atomic_counter = 0;
 #define _inode_key_size_core 8
 #define _inode_key_size_security 11
 #define _inode_key_os_realpath_index 7
+
+//** NOTE: lio_fs_stat uses the array just for the system.inode which it assumes is stored in the 1st slot
 static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath", "system.posix_acl_default", "security.selinux", "system.posix_acl_access" };
 
 #define _tape_key_size  2
@@ -644,6 +646,8 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     char *val[_inode_key_size_security];
     int v_size[_inode_key_size_security], i, err, lflags;
     fs_open_file_t *fop;
+    ex_id_t inode;
+    int hit, ocl_slot;
 
     FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
 
@@ -656,7 +660,23 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 
     tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].submitted);
 
+    //** Get the inode if it exists
+    //** Assumes the system.inode is in slot 0 in the _inode_keys
+    v_size[0] = -fs->lc->max_attr;
+    err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, 1, 0);
+    hit = 0;
+    if (err == OP_STATE_SUCCESS) {
+        hit = 1;
+        if (val[0] != NULL) {
+            sscanf(val[0], XIDT, &inode);
+            free(val[0]);
+        }
+        ocl_slot = inode % fs->lc->open_close_lock_size;
+        apr_thread_mutex_lock(fs->lc->open_close_lock[ocl_slot]);
+    }
+
     for (i=0; i<fs->_inode_key_size; i++) v_size[i] = -fs->lc->max_attr;
+
     if (fs->enable_internal_lock_mode == 0) {
         err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
     } else {
@@ -670,7 +690,12 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
             err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
         }
     }
+
     if (err != OP_STATE_SUCCESS) {
+        if (hit == 1) {  //** Unlock if needed
+            apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
+        }
+
         tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
         tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
@@ -680,6 +705,10 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     //** The whole remote fetch and merging with open files is locked to
     //** keep quickly successive stat calls to not get stale information
     _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 1);
+
+    if (hit == 1) {  //** Unlock if needed
+        apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
+    }
 
     tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
 

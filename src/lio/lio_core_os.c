@@ -59,6 +59,7 @@ static char *_lio_create_keys[] = { "system.owner", "os.timestamp.system.create"
                                     "os.timestamp.system.modify_attr", "system.inode", "system.exnode", "system.exnode.size"
                                   };
 
+//** NOTE: the _lio_stat_keys it is assumed the system.inode is in the 1st slot
 #define _lio_stat_keys_size 7
 char *_lio_stat_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link" };
 
@@ -1736,14 +1737,31 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
     char *slink;
     char rpath[OS_PATH_MAX];
     ex_id_t ino;
+    int hit, ocl_slot;
 
     log_printf(1, "fname=%s\n", fname);
     tbx_log_flush();
+
+    //** Get the inode if it exists
+    //** Assumes the system.inode is in slot 0 in the _inode_keys
+    v_size[0] = -lc->max_attr;
+    err = lio_get_multiple_attrs(lc, creds, fname, NULL, _lio_stat_keys, (void **)val, v_size, 1, 0);
+    hit = 0;
+    if (err == OP_STATE_SUCCESS) {
+        hit = 1;
+        if (val[0] != NULL) {
+            sscanf(val[0], XIDT, &ino);
+            free(val[0]);
+        }
+        ocl_slot = ino % lc->open_close_lock_size;
+        apr_thread_mutex_lock(lc->open_close_lock[ocl_slot]);
+    }
 
     for (i=0; i<_lio_stat_key_size; i++) v_size[i] = -lc->max_attr;
     err = lio_get_multiple_attrs(lc, creds, fname, NULL, _lio_stat_keys, (void **)val, v_size, _lio_stat_key_size, no_cache_stat_if_file);
 
     if (err != OP_STATE_SUCCESS) {
+        if (hit == 1) apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);  //** Unlock if needed
         return(-ENOENT);
     }
     slink = NULL;
@@ -1764,18 +1782,18 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
        lio_update_stat_open_file_size(lc, stat->st_ino, stat, 1);
     }
 
+    if (hit == 1) apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);  //** Unlock if needed
+
     if (readlink) {
         *readlink = slink;
     } else if (slink) {
         free(slink);
     }
 
-
     log_printf(1, "END fname=%s err=%d\n", fname, err);
     tbx_log_flush();
 
     return(0);
-
 }
 
 //***********************************************************************
