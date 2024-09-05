@@ -1795,7 +1795,7 @@ again:
 int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     struct stat s;
     int  bufsize, err;
     uint64_t dt;
@@ -1803,6 +1803,8 @@ int va_create_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
     char fullname[OS_PATH_MAX];
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
+
+    if (fd->object_name == NULL) { *v_size = -1; return(1); }
 
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
 
@@ -1842,7 +1844,7 @@ int va_realpath_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     struct stat s;
     char buffer[32*1024];
     int err, n, offset;
@@ -1850,14 +1852,14 @@ int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
 
+    if (fd->object_name == NULL) { osf_store_val(NULL, 0, val, v_size); return(1); }
+
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
 
     err = lstat(fullname, &s);
     if (err == 0) {
         if (S_ISLNK(s.st_mode) == 0) {
-            *v_size = 0;
-            *val = NULL;
-            return(0);
+            return(osf_store_val(NULL, 0, val, v_size));
         }
 
         n = readlink(fullname, buffer, sizeof(buffer)-1);
@@ -1875,9 +1877,7 @@ int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
         }
     }
 
-    *v_size = 0;
-
-    return(0);
+    return(osf_store_val(NULL, 0, val, v_size));
 }
 
 //***********************************************************************
@@ -1888,13 +1888,15 @@ int va_link_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 int va_link_count_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     struct stat s;
     char buffer[32];
     int err, n;
     char fullname[OS_PATH_MAX];
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
+
+    if (fd->object_name == NULL) { osf_store_val(NULL, 0, val, v_size); return(1); }
 
     //** Protect the object_name via a lock
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
@@ -1923,12 +1925,14 @@ int va_link_count_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *o
 int va_type_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int ftype, bufsize;
     char buffer[32];
     char fullname[OS_PATH_MAX];
 
     *atype = OS_OBJECT_VIRTUAL_FLAG;
+
+    if (fd->object_name == NULL) { osf_store_val(NULL, 0, val, v_size); return(1); }
 
     snprintf(fullname, OS_PATH_MAX, "%s%s", osf->file_path, fd->object_name);
 
@@ -2002,7 +2006,7 @@ void _lock_get_attr(fobj_lock_t *fol, char *buf, int *used, int bufsize, int is_
 int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     fobj_lock_t *fol;
     int used;
     int bufsize = 10*1024;
@@ -2017,8 +2021,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
     fol = (fd->fol[FOL_OS]) ? fd->fol[FOL_OS] : tbx_list_search(osf->os_lock->fobj_table, fd->realpath);
     if (fol == NULL) {
-        *val = NULL;
-        *v_size = 0;
+        osf_store_val(NULL, 0, val, v_size);
         apr_thread_mutex_unlock(osf->os_lock->fobj_lock);
         return(0);
     }
@@ -2051,7 +2054,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *key, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     fobj_lock_t *fol;
     int used;
     int bufsize = 10*1024;
@@ -2067,8 +2070,7 @@ int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
     fol = (fd->fol[FOL_USER]) ? fd->fol[FOL_USER] : tbx_list_search(osf->os_lock_user->fobj_table, fd->realpath);
 
     if (fol == NULL) {
-        *val = NULL;
-        *v_size = 0;
+        osf_store_val(NULL, 0, val, v_size);
         apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
         return(0);
     }
@@ -2101,7 +2103,7 @@ int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 int va_attr_type_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     lio_os_virtual_attr_t *va;
     int ftype, bufsize, n;
     char *key;
@@ -2118,6 +2120,7 @@ int va_attr_type_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
     if (va != NULL) {
         ftype = OS_OBJECT_VIRTUAL_FLAG;
     } else {
+        if (fd->attr_dir == NULL) { osf_store_val(NULL, 0, val, v_size); return(1); }
         snprintf(fullname, OS_PATH_MAX, "%s/%s", fd->attr_dir, key);
         ftype = lio_os_local_filetype(fullname);
         if (ftype & OS_OBJECT_BROKEN_LINK_FLAG) ftype = ftype ^ OS_OBJECT_BROKEN_LINK_FLAG;
@@ -2139,7 +2142,7 @@ int va_attr_type_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
 int va_attr_link_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     lio_os_virtual_attr_t *va;
     tbx_list_iter_t it;
     struct stat s;
@@ -2177,13 +2180,13 @@ int va_attr_link_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
 
 
     //** Now check the normal attributes
+    if (fd->attr_dir == NULL) { osf_store_val(NULL, 0, val, v_size); return(1); }
     snprintf(fullname, OS_PATH_MAX, "%s/%s", fd->attr_dir, key);
 
     err = lstat(fullname, &s);
     if (err == 0) {
         if (S_ISLNK(s.st_mode) == 0) {
-            *v_size = 0;
-            return(0);
+            return(osf_store_val(NULL, 0, val, v_size));
         }
 
         buffer[0] = 0;
@@ -2196,9 +2199,7 @@ int va_attr_link_get_attr(lio_os_virtual_attr_t *myva, lio_object_service_fn_t *
         }
     }
 
-    *v_size = 0;
-
-    return(0);
+   return(osf_store_val(NULL, 0, val, v_size));
 }
 
 //***********************************************************************
@@ -2213,6 +2214,8 @@ int va_timestamp_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
     char *key;
     int64_t curr_time;
     int n;
+
+    if (fd->object_name == NULL) { *atype = OS_OBJECT_VIRTUAL_FLAG;  return(1); }
 
     n = (int)(long)va->priv;  //** HACKERY ** to get the attribute prefix length
     key = &(fullkey[n+1]);
@@ -2277,7 +2280,7 @@ int va_timestamp_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 int va_timestamp_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     char buffer[OS_PATH_MAX];
     char *key;
     int n;
@@ -2349,7 +2352,7 @@ int va_append_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, l
         *atype |= OS_OBJECT_VIRTUAL_FLAG;
     } else {  //** No attribute specified so nothing to do
         *atype = OS_OBJECT_VIRTUAL_FLAG;
-        *v_size = 0;
+        osf_store_val(NULL, 0, val, v_size);
         n = 0;
     }
 
@@ -2374,7 +2377,7 @@ int va_null_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 int va_null_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void **val, int *v_size, int *atype)
 {
     *atype = OS_OBJECT_VIRTUAL_FLAG;
-    *v_size = 0;
+    osf_store_val(NULL, 0, val, v_size);
     return(0);
 }
 
@@ -5045,6 +5048,8 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     char fname[OS_PATH_MAX];
     int n, bsize, err;
 
+    if (ofd->object_name == NULL) { *atype = 0; osf_store_val(NULL, 0, val, v_size); return(1); }
+
     err = 0;
     if (osaz_attr_access(osf->osaz, creds, ug, ofd->realpath, attr, OS_MODE_READ_BLOCKING, &filter) == 0) {
         *atype = 0;
@@ -5732,7 +5737,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
 os_attr_iter_t *osfile_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, lio_os_regex_table_t *attr, int v_max)
 {
     osfile_fd_t *fd = (osfile_fd_t *)ofd;
-    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)fd->os->priv;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_attr_iter_t *it;
 
     tbx_type_malloc_clear(it, osfile_attr_iter_t, 1);
