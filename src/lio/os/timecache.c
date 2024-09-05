@@ -1483,7 +1483,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
     err = gop_sync_exec(os_open_object(ostc->os_child, creds, fname, OS_MODE_READ_IMMEDIATE, id, &fd, max_wait));
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR opening object=%s\n", path);
-        return(-1);
+        goto OOPS;
     }
 
     //** IF the attribute doesn't exist *val == NULL an *v_size = 0
@@ -1509,6 +1509,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
         }
     }
 
+OOPS:
     ostc_attr_cacheprep_destroy(&cp);
     free(fname);
     if (v_size[0] > 0) free(val_array[0]);
