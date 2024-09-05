@@ -663,6 +663,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     //** Get the inode if it exists
     //** Assumes the system.inode is in slot 0 in the _inode_keys
     v_size[0] = -fs->lc->max_attr;
+    val[0] = NULL;
     err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, 1, 0);
     hit = 0;
     if (err == OP_STATE_SUCCESS) {

@@ -1745,6 +1745,7 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
     //** Get the inode if it exists
     //** Assumes the system.inode is in slot 0 in the _inode_keys
     v_size[0] = -lc->max_attr;
+    val[0] = NULL;
     err = lio_get_multiple_attrs(lc, creds, fname, NULL, _lio_stat_keys, (void **)val, v_size, 1, 0);
     hit = 0;
     if (err == OP_STATE_SUCCESS) {
