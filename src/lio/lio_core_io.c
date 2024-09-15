@@ -1471,18 +1471,20 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     fsize = lio_size(fd);  //** Get the size before we get the lock since it also does a lock
 
-    apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
-    lio_unlock(lc);
-
     apr_thread_mutex_lock(fh->lock);  //** Lock the fh while we finish up
-    lio_unlock(lc);  //** Now we can release the lock
+    apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);  //** Unlock the inode
+    lio_unlock(lc);  //** Now we can release the lock since we have the fh locked and added to the open files
 
     *op->fd = fd;
 
     if ((op->mode & LIO_WRITE_MODE) > 0) {  //** For write mode we check for a few more flags
         if ((op->mode & LIO_TRUNCATE_MODE) > 0) { //** See if they want the file truncated also
             status = gop_sync_exec_status(lio_truncate_full_gop(fd, 0, 0));
-            if (status.op_status != OP_STATE_SUCCESS) goto cleanup;
+            if (status.op_status != OP_STATE_SUCCESS) {   //** The truncate failed on a depot but the internal structs are correct
+                log_printf(1, "ERROR with lio_truncate! fname=%s\n", op->path);
+                status = gop_success_status;  //** Clear the error
+            }
+
 
             //** We just truncated the file and removed all the allocations so let's update the exnode in the lserver
             memset(&serr, 0, sizeof(serr));  //** There aren't any errors to post
