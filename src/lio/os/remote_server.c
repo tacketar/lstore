@@ -113,6 +113,10 @@ typedef struct {
     gop_op_generic_t *gop;
 } spin_hb_t;
 
+typedef struct {
+    intptr_t key;
+    int count;
+} pending_lock_entry_t;
 
 lio_object_service_fn_t *_os_global = NULL;  //** This is used for the signal
 
@@ -306,6 +310,80 @@ gop_op_status_t osrs_perform_abort_handle(lio_object_service_fn_t *os, char *han
 
     return(status);
 }
+
+//***********************************************************************
+// close_can_fail_check
+//***********************************************************************
+
+int close_can_fail_check(void *arg, void *handle, int count)
+{
+    lio_object_service_fn_t *os = (lio_object_service_fn_t *)arg;
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    pending_lock_entry_t *entry;
+    intptr_t key;
+
+    if (handle == NULL) return(1);
+
+    key = *(intptr_t *)&handle;
+    apr_thread_mutex_lock(osrs->lock);
+    entry = apr_hash_get(osrs->pending_lock_table, &key, sizeof(key));
+    apr_thread_mutex_unlock(osrs->lock);
+
+    if (entry) {
+        if (count > entry->count) {
+            return(0);
+        } else {
+            return(1);
+        }
+    }
+
+    //** We default to failing and defer to when the oo->count is 0
+    return(0);
+}
+
+//***********************************************************************
+//  pending_lock_inc - Increments the pending lock in case of a failure
+//***********************************************************************
+
+pending_lock_entry_t *pending_lock_inc(lio_object_service_fn_t *os, os_fd_t *fd)
+{
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+    intptr_t key;
+    pending_lock_entry_t *entry;
+
+    key = *(intptr_t *)&fd;
+    apr_thread_mutex_lock(osrs->lock);
+    entry = apr_hash_get(osrs->pending_lock_table, &key, sizeof(key));
+    if (entry == NULL) {
+        tbx_type_malloc_clear(entry, pending_lock_entry_t, 1);
+        entry->key = key;
+        entry->count = 0;
+        apr_hash_set(osrs->pending_lock_table, &(entry->key), sizeof(intptr_t), entry);
+    }
+    entry->count++;
+
+    apr_thread_mutex_unlock(osrs->lock);
+
+    return(entry);
+}
+
+//***********************************************************************
+//  pending_lock_dec - Decrements the pending lock in case of a failure
+//***********************************************************************
+
+void pending_lock_dec(lio_object_service_fn_t *os, pending_lock_entry_t *entry)
+{
+    lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
+
+    apr_thread_mutex_lock(osrs->lock);
+    entry->count--;
+    if (entry->count == 0) {
+       apr_hash_set(osrs->pending_lock_table, &(entry->key), sizeof(entry->key), NULL);
+       free(entry);
+    }
+    apr_thread_mutex_unlock(osrs->lock);
+}
+
 
 //***********************************************************************
 // osrs_exists_cb - Processes the object exists command
@@ -1275,7 +1353,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
         log_printf(5, "handle=%s\n", handle);
         log_printf(5, "handle_len=%d\n", handle_len);
         tbx_random_get_bytes(&rkey, sizeof(rkey));
-        oo = gop_mq_ongoing_add(osrs->ongoing, 1, handle, handle_len, rkey, (void *)fd, (gop_mq_ongoing_fail_fn_t)osrs->os_child->close_object, osrs->os_child);
+        oo = gop_mq_ongoing_add(osrs->ongoing, 1, handle, handle_len, rkey, (void *)fd, (gop_mq_ongoing_fail_fn_t)osrs->os_child->close_object, osrs->os_child, close_can_fail_check, os);
 
         n=sizeof(intptr_t);
         log_printf(5, "PTR key=%" PRIdPTR " len=%d\n", oo->key, n);
@@ -1340,7 +1418,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
     OSRS_DEBUG_NOTIFY("OBJECT_CLOSE: mq_count=" LU " START key=%" PRIdPTR "\n", task->uuid, key);
 
     //** Do the host lookup
-    if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key, 0)) != NULL) {
+    if ((handle = gop_mq_ongoing_remove(osrs->ongoing, id, fsize, key, 1)) != NULL) {
         log_printf(6, "Found handle: handle=%p\n", handle);
 
         gop = os_close_object(osrs->os_child, handle);
@@ -1428,6 +1506,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     intptr_t key;
     mq_msg_t *msg, *response;
     gop_op_status_t status;
+    pending_lock_entry_t *entry;
 
     log_printf(5, "Processing incoming request\n");
     //** Parse the command.
@@ -1483,7 +1562,9 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
         gop = os_lock_user_object(osrs->os_child, fd, rw_mode, timeout);
         ah.gop = gop;
         osrs_add_abort_handle(os, &ah);
+        entry = pending_lock_inc(os, fd);  //** We track pending locks in case of a dead client to properly order the FD closing
         status = gop_sync_exec_status(gop);
+        pending_lock_dec(os, entry);
         osrs_remove_abort_handle(os, &ah);
         gop_mq_ongoing_release(osrs->ongoing, &ohandle);
 
@@ -1733,7 +1814,6 @@ void osrs_get_mult_attr_fn(void *arg, gop_mq_task_t *task, int is_immediate)
 fail_fd:
 fail:
     if (fd != NULL) gop_mq_ongoing_release(osrs->ongoing, &ohandle);
-
     osrs_release_creds(os, creds);
 
     gop_mq_frame_destroy(ffd);
@@ -3545,6 +3625,10 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
 {
     lio_osrs_priv_t *osrs = (lio_osrs_priv_t *)os->priv;
     osrs_active_t *a;
+    apr_hash_index_t *hi;
+    const void *id;
+    apr_ssize_t id_len;
+    int *count;
 
     //** Remove the server portal if needed)
     if (osrs->hostname) {
@@ -3569,12 +3653,18 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     tbx_stack_free(osrs->active_lru, 0);
     //** The active_table hash gets destroyed when the pool is destroyed.
 
+    //** Free the pending_lock_table
+    for (hi = apr_hash_first(NULL, osrs->pending_lock_table); hi != NULL; hi = apr_hash_next(hi)) {
+        apr_hash_this(hi, &id, &id_len, (void **)&count);
+        if (count) free(count);
+        apr_hash_set(osrs->pending_lock_table, id, id_len, NULL);
+    }
+
     //** Shutdown the child OS
     os_destroy_service(osrs->os_child);
 
     //** Now do the normal cleanup
     apr_pool_destroy(osrs->mpool);
-
 
     free(osrs->section);
     free(osrs->os_local_section);
@@ -3698,7 +3788,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
 
      //** Make the ongoing checker if needed or use the global one
      if (osrs->hostname) {
-        osrs->ongoing = gop_mq_ongoing_create(osrs->mqc, osrs->server_portal, osrs->ongoing_interval, ONGOING_SERVER);
+        osrs->ongoing = gop_mq_ongoing_create(osrs->mqc, osrs->server_portal, osrs->ongoing_interval, ONGOING_SERVER, osrs->tpc);
         FATAL_UNLESS(osrs->ongoing != NULL);
 
         //** This is to handle client stream responses
@@ -3716,8 +3806,9 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     //** This is for the active tables
     osrs->fname_active = tbx_inip_get_string(fd, section, "active_output", osrs_default_options.fname_active);
     osrs->max_active = tbx_inip_get_integer(fd, section, "active_size", osrs_default_options.max_active);
-    osrs->active_table = apr_hash_make(osrs->mpool);
+    osrs->pending_lock_table = apr_hash_make(osrs->mpool);
     osrs->active_lru = tbx_stack_new();
+    osrs->active_table = apr_hash_make(osrs->mpool);
 
     _os_global = os;
     tbx_siginfo_handler_add(SIGUSR1, osrs_siginfo_fn, os);

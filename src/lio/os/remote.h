@@ -116,10 +116,11 @@ struct lio_osrs_priv_t {
     apr_thread_mutex_t *abort_lock;
     apr_thread_cond_t *cond;
     apr_pool_t *mpool;
+    apr_hash_t *pending_lock_table; //** Tracks locks we are waiting on
     apr_hash_t *active_table;   //** Queryable active table
-    tbx_stack_t *active_lru;        //** LRU sorted active table
-    gop_mq_context_t *mqc;          //** Portal for connecting to he remote OS server
-    gop_mq_ongoing_t *ongoing;      //** Ongoing open files or iterators
+    tbx_stack_t *active_lru;    //** LRU sorted active table
+    gop_mq_context_t *mqc;      //** Portal for connecting to he remote OS server
+    gop_mq_ongoing_t *ongoing;  //** Ongoing open files or iterators
     apr_hash_t *abort;          //** Abort open handles
     apr_hash_t *spin;           //** Abort spin handles
     char *hostname;             //** Addres to bind to
