@@ -235,6 +235,7 @@ struct lio_config_t {
     lio_authn_t *authn;
     gop_thread_pool_context_t *tpc_unlimited;
     gop_thread_pool_context_t *tpc_cache;
+    gop_thread_pool_context_t *tpc_ongoing;
     gop_mq_context_t *mqc;
     lio_service_manager_t *ess;
     lio_service_manager_t *ess_nocache;  // ** Copy of ess but missing cache.  Kind of a kludge...
@@ -260,6 +261,7 @@ struct lio_config_t {
     char *rs_section;
     char *tpc_unlimited_section;
     char *tpc_cache_section;
+    char *tpc_ongoing_section;
     char *cache_section;
     char *creds_name;
     char *creds_user;
@@ -286,6 +288,7 @@ struct lio_config_t {
     int anonymous_creation;
     int auto_translate;
     int tpc_unlimited_count;
+    int tpc_ongoing_count;
     int tpc_cache_count;
     int tpc_max_recursion;
     int init_complete;

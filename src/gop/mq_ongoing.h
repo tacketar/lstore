@@ -73,6 +73,7 @@ struct gop_mq_ongoing_t {
     apr_thread_t *ongoing_heartbeat_thread;
     gop_mq_context_t *mqc;
     gop_mq_portal_t *server_portal;
+    gop_thread_pool_context_t *tp_fail;
     int check_interval;
     int shutdown;
     int send_divisor;

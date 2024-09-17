@@ -75,6 +75,7 @@ int host_id_len = 13;
 
 mq_pipe_t control_efd[2];
 int shutdown_everything = 0;
+gop_thread_pool_context_t *tp = NULL;
 
 //***********************************************************************
 // client_read_stream - Reads the incoming data stream
@@ -373,7 +374,7 @@ void *client_test_thread(apr_thread_t *th, void *arg)
     mqc = client_make_context();
 
     //** Make the ongoing checker
-    client_ongoing = gop_mq_ongoing_create(mqc, NULL, ongoing_client_interval, ONGOING_CLIENT);
+    client_ongoing = gop_mq_ongoing_create(mqc, NULL, ongoing_client_interval, ONGOING_CLIENT, tp);
     assert(client_ongoing != NULL);
 
     log_printf(0, "START basic stream tests\n");
@@ -606,7 +607,7 @@ void *server_test_thread(apr_thread_t *th, void *arg)
     server_portal = gop_mq_portal_create(mqc, server_host_string, MQ_CMODE_SERVER);
 
     //** Make the ongoing checker
-    server_ongoing = gop_mq_ongoing_create(mqc, server_portal, ongoing_server_interval, ONGOING_SERVER);
+    server_ongoing = gop_mq_ongoing_create(mqc, server_portal, ongoing_server_interval, ONGOING_SERVER, tp);
     assert(server_ongoing != NULL);
 
     //** Install the commands
@@ -733,6 +734,8 @@ int main(int argc, char **argv)
     if (logfile != NULL) tbx_log_open(logfile, 0);
     if (lsize != 0) tbx_set_log_maxsize(lsize);
 
+    tp = gop_tp_context_create("TP", 1, 100, 10);
+
     tbx_set_log_level(ll);
 
     //** Make the test_data to pluck info from
@@ -766,6 +769,8 @@ int main(int argc, char **argv)
 
     gop_mq_pipe_destroy(ctx, control_efd);
     gop_mq_socket_context_destroy(ctx);
+
+    gop_tp_context_destroy(tp);
 
     apr_thread_mutex_destroy(lock);
     apr_thread_cond_destroy(cond);

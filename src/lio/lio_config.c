@@ -98,6 +98,7 @@ lio_config_t lio_default_options = {
     .tpc_unlimited_count = 300,
     .tpc_max_recursion = 10,
     .tpc_cache_count = 100,
+    .tpc_ongoing_count = 100,
     .blacklist_section = NULL,
     .monitor_fname = "/tmp/lio.mon",
     .monitor_enable = 0,
@@ -199,6 +200,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "stream_buffer_total_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_total_size, text));
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
     fprintf(fd, "tpc_unlimited = %d\n", lio->tpc_unlimited_count);
+    fprintf(fd, "tpc_ongoing = %d  # Only used for ongoing in SERVER mode\n", lio->tpc_ongoing_count);
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
     fprintf(fd, "tpc_cache = %d\n", lio->tpc_cache_count);
     fprintf(fd, "blacklist= %s\n", lio->blacklist_section);
@@ -1178,6 +1180,11 @@ void lio_destroy_nl(lio_config_t *lio)
     }
     free(lio->tpc_cache_section);
 
+    if (_lc_object_destroy(lio->tpc_ongoing_section) <= 0) {
+        gop_tp_context_destroy(lio->tpc_ongoing);
+    }
+    free(lio->tpc_ongoing_section);
+
     if (lio->special_file_prefix) free(lio->special_file_prefix);
     if (lio->monitor_fname) {
         tbx_monitor_destroy();
@@ -1337,6 +1344,27 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     }
     add_service(lio->ess, ESS_RUNNING, ESS_TPC_CACHE, lio->tpc_cache);
 
+    //** Also need to do the ongoing fail pool for any ONGOING_SERVER objects
+    cores = tbx_inip_get_integer(lio->ifd, section, "tpc_ongoing", lio_default_options.tpc_ongoing_count);
+    if (cores < 1.1*max_recursion) cores += max_recursion;
+    lio->tpc_ongoing_count = cores;
+    sprintf(buffer, "tpc-ongoing:%d", cores);
+    stype = buffer;
+    lio->tpc_ongoing_section = strdup(stype);
+    lio->tpc_ongoing = _lc_object_get(stype);
+    if (lio->tpc_ongoing == NULL) {  //** Need to load it
+        lio->tpc_ongoing = gop_tp_context_create("ONGOING", 0, cores, max_recursion);  //** No need for any standby threads
+        if (lio->tpc_ongoing == NULL) {
+            log_printf(0, "Error loading tpc_ongoing threadpool!  n=%d\n", cores);
+            fprintf(stderr, "ERROR createing tpc_ongoing threadpool! n=%d\n", cores);
+            fflush(stderr);
+            abort();
+        }
+
+        _lc_object_put(stype, lio->tpc_ongoing);  //** Add it to the table
+    }
+    add_service(lio->ess, ESS_RUNNING, ESS_TPC_ONGOING, lio->tpc_ongoing);
+
 
     stype = tbx_inip_get_string(lio->ifd, section, "mq", lio_default_options.mq_section);
     lio->mq_section = stype;
@@ -1355,7 +1383,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         _lc_object_put(stype, lio->mqc);  //** Add it to the table
 
         //** Add the shared ongoing object
-        on = gop_mq_ongoing_create(lio->mqc, NULL, 5, ONGOING_CLIENT);
+        on = gop_mq_ongoing_create(lio->mqc, NULL, 5, ONGOING_CLIENT, lio->tpc_ongoing);
         _lc_object_put(ESS_ONGOING_CLIENT, on);  //** Add it to the table
     } else {
         add_service(lio->ess, ESS_RUNNING, ESS_MQ, lio->mqc);  //** It's used by other services
@@ -1376,7 +1404,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         add_service(lio->ess, ESS_RUNNING, ESS_SERVER_PORTAL, portal);
 
         //** And the ongoing stream object
-        gop_mq_ongoing_t *ons = gop_mq_ongoing_create(lio->mqc, portal, 30, ONGOING_SERVER);
+        gop_mq_ongoing_t *ons = gop_mq_ongoing_create(lio->mqc, portal, 30, ONGOING_SERVER, lio->tpc_ongoing);
         add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_SERVER, ons);
 
         //** This is to handle client stream responses

@@ -787,7 +787,7 @@ int gop_mq_stream_write(gop_mq_stream_t *mqs, void *vdata, int len)
             if (mqs->mpool == NULL) {  //** Got to configure everything
                 mqs_multipacket_create(mqs);
                 apr_thread_mutex_lock(mqs->lock);
-                mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
+                mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL, NULL, NULL);
 
                 if (nleft > 0) mqs->data[MQS_STATE_INDEX] = MQS_MORE;
                 mqs_write_send(mqs, mqs->address, mqs->fid);
@@ -816,7 +816,7 @@ int gop_mq_stream_write(gop_mq_stream_t *mqs, void *vdata, int len)
                     if (mqs->mpool == NULL) {  //** Got to configure everything
                         mqs_multipacket_create(mqs);
                         apr_thread_mutex_lock(mqs->lock);
-                        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
+                        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL, NULL, NULL);
                     }
 
                     mqs->want_more = MQS_MORE;
@@ -975,7 +975,7 @@ gop_mq_stream_t *gop_mq_stream_write_create(gop_mq_context_t *mqc, gop_mq_portal
     //** Launch the flusher now if requested
     if (launch_flusher == 1) {
         mqs_multipacket_create(mqs);
-        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL);
+        mqs->oo = gop_mq_ongoing_add(mqs->ongoing, 0, mqs->host_id, mqs->hid_len, mqs->okey, mqs, mqs_write_on_fail, NULL, NULL, NULL);
         mqs->sent_data = 1;
         tbx_thread_create_assert(&(mqs->flusher_thread), NULL, mqs_flusher_thread,  (void *)mqs, mqs->mpool);
     }

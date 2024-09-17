@@ -49,6 +49,13 @@
     #define MQ_DEBUG(...)
 #endif
 
+typedef struct {
+    gop_mq_ongoing_t *mqon;
+    gop_mq_ongoing_object_t *oo;
+    gop_mq_ongoing_handle_t *ohandle;
+    int tweak_remove_pending;
+} ongoing_close_defer_t;
+
 //***********************************************************************
 // ongoing_response_status - Handles a response that just returns the status
 //***********************************************************************
@@ -358,7 +365,7 @@ fail:
 // gop_mq_ongoing_add - Adds an onging object to the tracking tables
 //***********************************************************************
 
-gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, intptr_t key, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg)
+gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, intptr_t key, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg, gop_mq_ongoing_can_fail_fn_t on_canfail, void *on_canfail_arg)
 {
     gop_mq_ongoing_object_t *ongoing;
     gop_mq_ongoing_host_t *oh;
@@ -368,6 +375,8 @@ gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_cl
     ongoing->key = key;
     ongoing->on_fail = on_fail;
     ongoing->on_fail_arg = on_fail_arg;
+    ongoing->on_canfail = on_canfail;
+    ongoing->on_canfail_arg = on_canfail_arg;
     ongoing->count = 0;
     ongoing->auto_clean = auto_clean;
 
@@ -457,8 +466,10 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, gop_mq_ongoing_handle_t *oha
                 ohandle->oh->remove_pending--;  //** Remove the pending count
                 free(ongoing);
             } else {
-                apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() know it's Ok to reap
+                apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() and ongoing_fail() know it's Ok to reap
             }
+        } else {
+            apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() and ongoing_fail() know it's Ok to reap
         }
     } else {
         if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: Invalid handle: oh=%p oo=%p\n", ohandle->oh, ohandle->oo);
@@ -489,24 +500,22 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
 
         ongoing = apr_hash_get(oh->table, &key, sizeof(intptr_t));  //** Lookup the object
         if (ongoing != NULL) {
+            apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);  //** Clear the key so no one else finds it
             ptr = ongoing->handle;
             if (do_wait == 0) {
                 if (ongoing->count > 0) { //** Someone else has it so don't destroy it just yet
-                    apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);  //** But clear it
                     if (ongoing->remove == 0) {
                         ongoing->remove = 1;
                         oh->remove_pending++;
                     }
                 } else {  //** Clear it and destroy it
-                    apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
                     if (ongoing->remove) oh->remove_pending--;
                     free(ongoing);
                 }
-            } else { //** Wait for the refs to clear
+            } else { //** Wait for the refs to clear before freeing it
                 while (ongoing->count > 0) {
                     apr_thread_cond_wait(mqon->object_cond, mqon->lock);
                 }
-                apr_hash_set(oh->table, &key, sizeof(intptr_t), NULL);
                 free(ongoing);
             }
         }
@@ -515,6 +524,58 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
     apr_thread_mutex_unlock(mqon->lock);
 
     return(ptr);
+}
+
+//***********************************************************************
+//  *ongoing_close_wait - Waits until the OO's count is cleared before
+//      Calling the close object
+//***********************************************************************
+
+gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
+{
+    ongoing_close_defer_t *defer = task_arg;
+    gop_op_generic_t *gop;
+    gop_mq_ongoing_host_t *oh = defer->ohandle->oh;
+    int count, count_prev;
+
+    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: START oo->count=%d oo->remove=%d oh->remove_pending=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending);
+
+    //** Wait for the references to clear
+    apr_thread_mutex_lock(defer->mqon->lock);
+    count_prev = -1;
+    count = (defer->oo->auto_clean == 1) ?  defer->oo->count-1 : defer->oo->count;
+    while (count > 0) {
+        if (count != count_prev) {
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: LOOP-checking canfail count=%d oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d\n", count, defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending);
+            if (defer->oo->on_canfail) {
+                if (defer->oo->on_canfail(defer->oo->on_canfail_arg, defer->oo->handle, count) == 1) break;  //** Kick out of the loop
+            }
+        }
+        apr_thread_cond_wait(defer->mqon->object_cond, defer->mqon->lock);
+        count_prev = count;
+        count = (defer->oo->auto_clean == 1) ?  defer->oo->count-1 : defer->oo->count;
+    }
+    apr_thread_mutex_unlock(defer->mqon->lock);
+
+    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: KICKOUT oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d autoclean=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending, defer->oo->auto_clean);
+
+    //** Now we can call the on_fail task
+    gop = defer->oo->on_fail(defer->oo->on_fail_arg, defer->oo->handle);
+    gop_sync_exec(gop);
+
+    if (defer->tweak_remove_pending) {
+        apr_thread_mutex_lock(defer->mqon->lock);
+        oh->remove_pending--;
+        apr_thread_mutex_unlock(defer->mqon->lock);
+    }
+
+    free(defer->ohandle);
+    if (defer->oo->auto_clean) free(defer->oo);
+    free(defer);
+
+    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: END\n");
+
+    return(gop_success_status);
 }
 
 //***********************************************************************
@@ -530,7 +591,8 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
     gop_mq_ongoing_object_t *oo;
     gop_mq_ongoing_handle_t *ohandle;
     gop_op_generic_t *gop;
-    int ntasks;
+    ongoing_close_defer_t *defer;
+    int ntasks, tweak_remove_pending;
 
     int n = apr_hash_count(oh->table);
     log_printf(2, "closing host=%s task_count=%d now=" TT " next_check=" TT " hb=%d\n", oh->id, n, apr_time_now(), oh->next_check, oh->heartbeat);
@@ -540,22 +602,30 @@ int _mq_ongoing_close(gop_mq_ongoing_t *mqon, gop_mq_ongoing_host_t *oh, gop_opq
     for (hi = apr_hash_first(NULL, oh->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, (const void **)&key, &klen, (void **)&oo);
 
+        tweak_remove_pending = 0;
         ohandle = NULL;
         if (oo->auto_clean) {
             apr_hash_set(oh->table, key, klen, NULL);  //** I'm cleaning up so remove it from the table
             tbx_type_malloc_clear(ohandle, gop_mq_ongoing_handle_t, 1);
             ohandle->oo = oo;
             ohandle->oh = oh;
-            ohandle->oo->count++;  //** Add ourselves so we can do clean up if needed still
+            ohandle->oo->count++;  //** Add ourselves so we can do clean up if needed still ??????? Is this still needed
             MQ_DEBUG_NOTIFY( "ONGOING_CLOSE: oo->count=%d oo->remove=%d oh->remove_pending=%d\n", oo->count, oo->remove, oh->remove_pending);
             if (oo->remove == 0) {
                 oo->remove = 1;
                 oh->remove_pending++;
+                tweak_remove_pending = 1;
             }
 
         }
-        gop = oo->on_fail(oo->on_fail_arg, oo->handle);
-        gop_set_private(gop, (oo->auto_clean == 1) ? ohandle : NULL);
+
+        MQ_DEBUG_NOTIFY( "ONGOING_CLOSE: DEFER oo->count=%d oo->remove=%d oh->remove_pending=%d  oo->auto_clean\n", oo->count, oo->remove, oh->remove_pending, oo->auto_clean);
+        tbx_type_malloc_clear(defer, ongoing_close_defer_t, 1);
+        defer->mqon = mqon;
+        defer->oo = oo;
+        defer->ohandle = ohandle;
+        defer->tweak_remove_pending = tweak_remove_pending;
+        gop = gop_tp_op_new(mqon->tp_fail, "mq_onfail", ongoing_close_wait, defer, NULL, 1);
         gop_opque_add(q, gop);
 
         ntasks++;
@@ -869,7 +939,7 @@ void gop_mq_ongoing_destroy(gop_mq_ongoing_t *mqon)
 // gop_mq_ongoing_create - Creates an object to handle ongoing tasks
 //***********************************************************************
 
-gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *server_portal, int check_interval, int mode)
+gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *server_portal, int check_interval, int mode, gop_thread_pool_context_t *tp_fail)
 {
     gop_mq_ongoing_t *mqon;
     gop_mq_command_table_t *ctable;
@@ -880,6 +950,7 @@ gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *
     mqon->server_portal = server_portal;
     mqon->check_interval = check_interval;
     mqon->send_divisor = 4;
+    mqon->tp_fail = tp_fail;   //** This is used for handling client failures that still have a ref
 
     assert_result(apr_pool_create(&(mqon->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(mqon->lock), APR_THREAD_MUTEX_DEFAULT, mqon->mpool);

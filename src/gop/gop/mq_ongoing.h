@@ -24,6 +24,7 @@ limitations under the License.
 #include <gop/visibility.h>
 #include <gop/mq.h>
 #include <gop/types.h>
+#include <gop/tp.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +37,7 @@ typedef struct gop_mq_ongoing_t gop_mq_ongoing_t;
 typedef struct gop_ongoing_hb_t gop_ongoing_hb_t;
 typedef struct gop_ongoing_table_t gop_ongoing_table_t;
 typedef gop_op_generic_t *(*gop_mq_ongoing_fail_fn_t)(void *arg, void *handle);
+typedef int (*gop_mq_ongoing_can_fail_fn_t)(void *arg, void *handle, int count);
 
 // ** Ideally this should be obscurred but by declaring it we can keep it on the stack which is the primary use case
 typedef struct {
@@ -44,8 +46,8 @@ typedef struct {
 } gop_mq_ongoing_handle_t;
 
 // Functions
-GOP_API gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, intptr_t key, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg);
-GOP_API gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *server_portal, int check_interval, int mode);
+GOP_API gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_clean, char *id, int id_len, intptr_t key, void *handle, gop_mq_ongoing_fail_fn_t on_fail, void *on_fail_arg, gop_mq_ongoing_can_fail_fn_t on_canfail, void *on_canfail_arg);
+GOP_API gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *server_portal, int check_interval, int mode, gop_thread_pool_context_t *tp_fail);
 GOP_API void gop_mq_ongoing_destroy(gop_mq_ongoing_t *mqon);
 GOP_API void *gop_mq_ongoing_get(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr_t key, gop_mq_ongoing_handle_t *ohandle);
 GOP_API void gop_mq_ongoing_host_dec(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *id, int id_len);
@@ -74,7 +76,9 @@ struct gop_mq_ongoing_object_t {
     void *handle;
     intptr_t key;
     gop_mq_ongoing_fail_fn_t on_fail;
+    gop_mq_ongoing_can_fail_fn_t on_canfail;
     void *on_fail_arg;
+    void *on_canfail_arg;
 };
 
 #ifdef __cplusplus

@@ -510,7 +510,7 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         pc = c->priv;
         pc->hb = strdup(hb);
         pc->hb_len = hb_len;
-        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, ONGOING_PTR2KEY(c), (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an);
+        gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, ONGOING_PTR2KEY(c), (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an, NULL, NULL);
         gop_mq_frame_destroy(fhb);
     } else {
         if (id_len == 0) id = "NULL";
@@ -757,7 +757,7 @@ lio_authn_t *authn_psk_server_create(lio_service_manager_t *ess, tbx_inip_file_t
 
     //** See if we need to set up our own ongoing process
     if (ap->hostname) {
-        ap->ongoing = gop_mq_ongoing_create(ap->mqc, ap->server_portal, ap->ongoing_interval, ONGOING_SERVER);
+        ap->ongoing = gop_mq_ongoing_create(ap->mqc, ap->server_portal, ap->ongoing_interval, ONGOING_SERVER, (gop_thread_pool_context_t *)lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_ONGOING));
         FATAL_UNLESS(ap->ongoing != NULL);
 
         //** This is to handle client stream responses
