@@ -1,3 +1,34 @@
+lstore (2.2.0) stable; urgency=low
+  * Extend the notify routines to support logrotate
+  * Fix issue with double closing a file on the LServer due to an mq_ongoing failure
+  * Refactor the way mq_ongoing failures are handled by moving them to a separate
+    threadpool instead of handling inline in the ongoing server thread which could
+    lead to further ongoing failures.
+  * Fix double lc_unlock() in myopen
+  * Prefer using the OS from the args vs from the FD and also standardize on using
+    osf_store_val() for handling failures
+  * Fix memory leak from, typically, a broken symlink
+  * Add extra open/close locking to prevent stale atts and add tracking for flaky RID/depot
+  * Silence some messages about missing config files
+  * Add flag, ignore_remove, to allow the data service to ignore allocation remove requests.
+    This doesn't modify any grow/truncate behavior.  Just allocation removal. This was added
+    to provide some reversability when merging namespaces with different options of storing
+    small files as metadata.
+  * Fix edge cases of symlinks being hardlinks
+  * Update external tooling for handling orphaned shards and hardlinks
+  * Extend lio_fsck support to handling files as metadata
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Wed Sep 09 2024 12:42:00 -0500
+
+lstore (2.1.0) stable; urgency=low
+
+  * Add the ability to dynamically rebalance data between the shards and also migrate data
+    from the namespace drives to shards.
+  * Normalize the destination directory to remove trailing '/'
+
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Wed Sep 09 2024 12:42:00 -0500
+
 lstore (2.0.4) stable; urgency=low
   * Rework the way options are passed into the package builder
   * Move the MQ and OS remote_server extended debugging is enabled
