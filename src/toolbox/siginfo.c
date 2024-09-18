@@ -160,9 +160,11 @@ void tbx_siginfo_install(char *fname, int signal)
 
     if (!_si_list[signal])  _si_list[signal] = tbx_stack_new();
 
-    if (_siginfo_name[signal]) free(_siginfo_name[signal]);
-    _siginfo_name[signal] = fname;
-
+    //** See if we just want to trap the signal and not overwrite any existing fname
+    if ((fname == NULL) || (strcmp(fname, TBX_SIGINFO_ENABLE) != 0)) {
+        if (_siginfo_name[signal]) free(_siginfo_name[signal]);
+        _siginfo_name[signal] = fname;
+    }
     apr_signal_unblock(signal);
     apr_signal(signal, tbx_siginfo_handler);
     apr_thread_mutex_unlock(_si_lock);

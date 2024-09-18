@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#define TBX_SIGINFO_ENABLE  "_SIGINFO_ENABLE_"   //** Special filename to trap the signal but don't override any fname associated with it
+
 typedef void (*tbx_siginfo_fn_t)(void *arg, FILE *fd);
 
 // Functions

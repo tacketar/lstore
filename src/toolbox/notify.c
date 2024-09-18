@@ -39,6 +39,7 @@
 #include <tbx/io.h>
 #include <tbx/notify.h>
 #include <tbx/string_token.h>
+#include <tbx/siginfo.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
 #include <time.h>
@@ -59,6 +60,8 @@ struct tbx_notify_s { //** This is used for notifications
     int pid_append;
     int exec_append;
     int header_type;
+    int date_append;
+    int signal;
 };
 
 struct tbx_notify_iter_s { //** Notification log iterator
@@ -92,9 +95,21 @@ void tbx_notify_open_check(tbx_notify_t *nlog, time_t *now, struct tm *tm_now)
         (tm_now->tm_year == nlog->tm_open.tm_year)) return;
 
     //** The day is different so we need to close and reopen the log
+
+    //** Update the time
+    nlog->tm_open = *tm_now;
+
+    //** Close the old log
     if (nlog->fd) tbx_io_fclose(nlog->fd);
 
-    snprintf(fname, sizeof(fname), "%s.%d-%02d-%02d", nlog->fname, 1900+tm_now->tm_year, 1+tm_now->tm_mon, tm_now->tm_mday); fname[sizeof(fname)-1] = '\0';
+    //** Figure out the new name
+    if (nlog->date_append) {
+        snprintf(fname, sizeof(fname), "%s.%d-%02d-%02d", nlog->fname, 1900+tm_now->tm_year, 1+tm_now->tm_mon, tm_now->tm_mday); fname[sizeof(fname)-1] = '\0';
+    } else {
+        snprintf(fname, sizeof(fname), "%s", nlog->fname);
+    }
+
+    //** Open it
     nlog->fd = tbx_io_fopen(fname, "a");
     if (nlog->fd == NULL) {
         log_printf(0, "ERROR opening activity_log (%s)!\n", fname);
@@ -219,6 +234,8 @@ void tbx_notify_print_running_config(tbx_notify_t *nlog, FILE *fd, int print_sec
         fprintf(fd, "fname = %s\n", nlog->fname_from_config);
         fprintf(fd, "pid_append = %d\n", nlog->pid_append);
         fprintf(fd, "exec_append = %d\n", nlog->exec_append);
+        fprintf(fd, "date_append = %d\n", nlog->date_append);
+        fprintf(fd, "signal = %d  # Disabled if negative\n", nlog->signal);
         if (nlog->header_type == 0) {
             fprintf(fd, "header = normal\n");
         } else if (nlog->header_type == 1) {
@@ -231,6 +248,23 @@ void tbx_notify_print_running_config(tbx_notify_t *nlog, FILE *fd, int print_sec
     fprintf(fd, "\n");
 
     return;
+}
+
+//***********************************************************************
+// notify_sighandler_fn - Logrotate sig handler
+//***********************************************************************
+
+void notify_sighandler_fn(void *arg, FILE *fd)
+{
+    tbx_notify_t *nlog = arg;
+
+    //** Close the current file
+    if (nlog->fd) { tbx_io_fclose(nlog->fd);  nlog->fd = NULL; }
+
+    //** Clear the timestamp to trigger it being reopened
+    nlog->tm_open.tm_mday = 0;
+    nlog->tm_open.tm_mon = 0;
+    nlog->tm_open.tm_year = 0;
 }
 
 //***********************************************************************
@@ -259,7 +293,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
     }
 
     //** This acts as teh base location for the notification log
-    nlog->fname_from_config = tbx_inip_get_string(ifd, section, "fname", "/lio/log/notify");
+    nlog->fname_from_config = tbx_inip_get_string(ifd, section, "fname", "/lio/log/notify.log");
     if (strlen(nlog->fname_from_config) > 0) {
         nlog->fname = strdup(nlog->fname_from_config);
 
@@ -293,6 +327,16 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
             snprintf(fname, n-1, "%s." LU, nlog->fname, pid);
             free(nlog->fname);
             nlog->fname = fname;
+        }
+
+        //** See if we append the date
+        nlog->date_append = tbx_inip_get_integer(ifd, section, "date_append", 1);
+
+        //** Do we want to do a logrotate, ie open/close on a signal?
+        nlog->signal = tbx_inip_get_integer(ifd, section, "signal", -1);
+        if (nlog->signal > 0) {
+            tbx_siginfo_install(TBX_SIGINFO_ENABLE, nlog->signal);   //** Enable the sighandler and use the calling program fname
+            tbx_siginfo_handler_add(nlog->signal, notify_sighandler_fn, nlog);  //** Add our handler
         }
     }
 
