@@ -71,7 +71,7 @@ void tbx_siginfo_handler_remove(int signal, tbx_siginfo_fn_t fn, void *arg)
 {
     si_task_t *t;
 
-    if (_si_list == NULL) return;
+    if (_si_pool == NULL) return;  //** Nothing hash been installed yet
 
     apr_thread_mutex_lock(_si_lock);
     tbx_stack_move_to_top(_si_list[signal]);
