@@ -26,8 +26,7 @@ lstore (2.1.0) stable; urgency=low
     from the namespace drives to shards.
   * Normalize the destination directory to remove trailing '/'
 
-
- -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Wed Sep 09 2024 12:42:00 -0500
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Wed Jul 17 2024 15:32:51 -0500
 
 lstore (2.0.4) stable; urgency=low
   * Rework the way options are passed into the package builder
