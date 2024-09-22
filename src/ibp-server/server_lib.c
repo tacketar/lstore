@@ -804,26 +804,6 @@ void signal_taskmgr()
 }
 
 //*****************************************************************
-// wait_for_free_task - Waits until a free task slot is available
-//*****************************************************************
-
-void wait_for_free_task()
-{
-    apr_thread_mutex_lock(taskmgr.lock);
-
-    if (taskmgr.curr_threads >= taskmgr.max_threads) {
-        taskmgr.request_thread = 1;
-        log_printf(15, "wait_for_free_task: Before cond_wait time=" TT "\n", apr_time_now());
-        apr_thread_cond_wait(taskmgr.cond, taskmgr.lock);
-        log_printf(15, "wait_for_free_task: After cond_wait time=" TT "\n", apr_time_now());
-        taskmgr.request_thread = 0;
-    }
-
-
-    apr_thread_mutex_unlock(taskmgr.lock);
-}
-
-//*****************************************************************
 // reject_close - Closes the netstream but sends a reject error
 //*****************************************************************
 
@@ -1006,7 +986,6 @@ void server_loop(Config_t *config)
         if (tbx_network_wait_for_connection(network, config->server.timeout_secs) > 0) {        // ** got a new connection
             log_printf(10, "server_loop: Got a connection request or timed out!  time=" TT "\n",
                        apr_time_now());
-//        wait_for_free_task();
             ns = tbx_ns_new();
             if (tbx_network_accept_pending_connection(network, ns) == 0) {
                 spawn_new_task(ns, to_many_connections());
