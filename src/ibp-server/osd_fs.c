@@ -789,6 +789,7 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
     int64_t timestamp;
     osd_fs_object_t *obj = fsfd->obj;
     tbx_pc_t *coop;
+    apr_time_t dt = apr_time_from_sec(1);
 
     if (mode == OSD_READ_MODE) {
         coop = obj->read_range_list;
@@ -826,14 +827,13 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
                        timestamp);
             tbx_log_flush();
             insert_range(coop, fsfd, RANGE_REQUEST, timestamp, start_block, end_block);
-            apr_thread_cond_wait(obj->cond, obj->lock);
+            apr_thread_cond_timedwait(obj->cond, obj->lock, dt);
             log_printf(10, "fsfd_lock: fsfd=%p Woken back so trying again ts=" I64T "\n", fsfd,
                        timestamp);
             tbx_log_flush();
             delete_range(fsfd); //** Delete the queue request and try again
         }
     }
-
 
     log_printf(10,
                "fsfd_lock: fsfd=%p SUCCESS ts=" I64T " lo=" I64T " hi=" I64T " hi_got=" I64T "\n",
