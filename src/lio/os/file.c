@@ -1563,11 +1563,11 @@ int _compare_fobj_locks(int n1, int *ilock1, int n2, int *ilock2)
 {
     int i1, i2;
 
-    if (n2>n1) return(1);  //** The 2nd is to big
+    if (n2>n1) return(1);  //** The 1st is to big
 
     i1 = 0;
     for (i2=0; i2<n2; i2++) {
-        while ((i1>=n1) || (ilock2[i2] > ilock1[i1])) {
+        while ((i1<n1) && (ilock2[i2] > ilock1[i1])) {
             i1++;
         }
         if (ilock2[i2] != ilock1[i1]) return(1);  //** Got a miss
