@@ -1,3 +1,9 @@
+lstore (2.2.1) stable; urgency=medium   
+  * In ibp_server don't assume the broadcast is received in fsfd_lock(). Instead use a timedwait.
+  * Fix issue in os/file.c checking if a set of locks are a subset of another set
+  
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Wed Oct 01 2024 07:22:00 -0500
+  
 lstore (2.2.0) stable; urgency=low
   * Extend the notify routines to support logrotate
   * Fix issue with double closing a file on the LServer due to an mq_ongoing failure
