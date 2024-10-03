@@ -535,10 +535,16 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
 {
     ongoing_close_defer_t *defer = task_arg;
     gop_op_generic_t *gop;
-    gop_mq_ongoing_host_t *oh = defer->ohandle->oh;
     int count, count_prev;
+    MQ_DEBUG(int has_oh = (defer->ohandle) ? 1 : 0;)
 
-    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: START oo->count=%d oo->remove=%d oh->remove_pending=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending);
+    MQ_DEBUG(
+        if (has_oh) {
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: START oo->count=%d oo->remove=%d oh->remove_pending=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending);
+        } else {
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: START oo->count=%d oo->remove=%d oh->remove_pending=MISSING\n", defer->oo->count, defer->oo->remove);
+        }
+     )
 
     //** Wait for the references to clear
     apr_thread_mutex_lock(defer->mqon->lock);
@@ -546,7 +552,13 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
     count = (defer->oo->auto_clean == 1) ?  defer->oo->count-1 : defer->oo->count;
     while (count > 0) {
         if (count != count_prev) {
-            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: LOOP-checking canfail count=%d oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d\n", count, defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending);
+            MQ_DEBUG(
+                if (has_oh) {
+                    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: LOOP-checking canfail count=%d oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d\n", count, defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending);
+                } else {
+                    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: LOOP-checking canfail count=%d oo->count=%d oo->remove=%d oh->remove_pending=MISSING tweak=%d\n", count, defer->oo->count, defer->oo->remove, defer->tweak_remove_pending);
+                }
+            )
             if (defer->oo->on_canfail) {
                 if (defer->oo->on_canfail(defer->oo->on_canfail_arg, defer->oo->handle, count) == 1) break;  //** Kick out of the loop
             }
@@ -557,19 +569,24 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
     }
     apr_thread_mutex_unlock(defer->mqon->lock);
 
-    MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: KICKOUT oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d autoclean=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending, defer->oo->auto_clean);
-
+    MQ_DEBUG(
+        if (has_oh) {
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: KICKOUT oo->count=%d oo->remove=%d oh->remove_pending=%d tweak=%d autoclean=%d\n", defer->oo->count, defer->oo->remove, defer->ohandle->oh->remove_pending, defer->tweak_remove_pending, defer->oo->auto_clean);
+        } else {
+            MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: KICKOUT oo->count=%d oo->remove=%d oh->remove_pending=MISSING tweak=%d autoclean=%d\n", defer->oo->count, defer->oo->remove, defer->tweak_remove_pending, defer->oo->auto_clean);
+        }
+    )
     //** Now we can call the on_fail task
     gop = defer->oo->on_fail(defer->oo->on_fail_arg, defer->oo->handle);
     gop_sync_exec(gop);
 
-    if (defer->tweak_remove_pending) {
+    if (defer->tweak_remove_pending && defer->ohandle) {
         apr_thread_mutex_lock(defer->mqon->lock);
-        oh->remove_pending--;
+        defer->ohandle->oh->remove_pending--;
         apr_thread_mutex_unlock(defer->mqon->lock);
     }
 
-    free(defer->ohandle);
+    if (defer->ohandle) free(defer->ohandle);
     if (defer->oo->auto_clean) free(defer->oo);
     free(defer);
 
