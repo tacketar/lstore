@@ -1,3 +1,9 @@
+lstore (2.2.2) stable; urgency=high (for lio_server, low for everything else)
+  * Fix issue with ongoing fail when ohandle is missing
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Thur Oct 03 2024 09:26:00 -0500
+
+
 lstore (2.2.1) stable; urgency=medium   
   * In ibp_server don't assume the broadcast is received in fsfd_lock(). Instead use a timedwait.
   * Fix issue in os/file.c checking if a set of locks are a subset of another set
