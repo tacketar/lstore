@@ -58,6 +58,8 @@ struct gop_thread_pool_context_t {
     tbx_stack_t **reserve_stack;
     int *overflow_running_depth;
     tbx_atomic_int_t n_overflow;
+    tbx_atomic_int_t n_overflow_max;
+    tbx_atomic_int_t n_overflow_total;
     tbx_atomic_int_t n_ops;
     tbx_atomic_int_t n_completed;
     tbx_atomic_int_t n_started;

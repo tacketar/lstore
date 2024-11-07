@@ -83,7 +83,7 @@ void tp_siginfo_handler(void *arg, FILE *fd)
     apr_thread_mutex_lock(_tp_lock);
     sync_exec = tbx_atomic_get(tpc->n_running) + tbx_atomic_get(tpc->n_completed) - tbx_atomic_get(tpc->n_submitted);
     fprintf(fd, "Thread pool info (%s)-------------------------------------------\n", tpc->name);
-    fprintf(fd, "    Ops -- Submitted: " AIT "  Sync Exec: %d  Completed: " AIT "  Running: " AIT "\n", tbx_atomic_get(tpc->n_submitted), sync_exec, tbx_atomic_get(tpc->n_completed), tbx_atomic_get(tpc->n_running));
+    fprintf(fd, "    Ops -- Submitted: " AIT "  Sync Exec: %d  Completed: " AIT "  Running: " AIT "  Overflow Total: " AIT "  Overflow Max Concurrent: " AIT "\n", tbx_atomic_get(tpc->n_submitted), sync_exec, tbx_atomic_get(tpc->n_completed), tbx_atomic_get(tpc->n_running), tbx_atomic_get(tpc->n_overflow_total), tbx_atomic_get(tpc->n_overflow_max));
     fprintf(fd, "    Threads -- Current: %lu  Busy: %lu  Idle: %lu  Max Concurrent: %lu   Pool Min: %d  Pool Max: %d  Max Recursion: %d\n",
         tbx_thread_pool_threads_count(tpc->tp), tbx_thread_pool_busy_count(tpc->tp), tbx_thread_pool_idle_count(tpc->tp),
         tbx_thread_pool_threads_high_count(tpc->tp), tpc->min_threads, tpc->max_threads, tpc->recursion_depth);
@@ -168,7 +168,7 @@ void _tp_submit_op(void *arg, gop_op_generic_t *gop)
 {
     gop_thread_pool_op_t *op = gop_get_tp(gop);
     apr_status_t aerr;
-    int running;
+    int running, n;
 
     log_printf(15, "_tp_submit_op: gid=%d\n", gop_id(gop));
 
@@ -178,7 +178,9 @@ void _tp_submit_op(void *arg, gop_op_generic_t *gop)
 
     if (running > op->tpc->max_concurrency) {
         apr_thread_mutex_lock(_tp_lock);
-        tbx_atomic_inc(op->tpc->n_overflow);
+        tbx_atomic_inc(op->tpc->n_overflow_total);
+        n = tbx_atomic_inc(op->tpc->n_overflow) + 1;
+        if (n > tbx_atomic_get(op->tpc->n_overflow_max)) { tbx_atomic_set(op->tpc->n_overflow_max, n); }
         if (op->depth >= op->tpc->recursion_depth) {  //** Check if we hit the max recursion
             log_printf(0, "GOP has a recursion depth >= max specified in the TP!!!! gop depth=%d  TPC max=%d\n", op->depth, op->tpc->recursion_depth);
             tbx_stack_push(op->tpc->reserve_stack[op->tpc->recursion_depth-1], gop);  //** Need to do the push and overflow check
@@ -191,6 +193,7 @@ void _tp_submit_op(void *arg, gop_op_generic_t *gop)
             op = gop_get_tp(gop);
             aerr = tbx_thread_pool_push(op->tpc->tp,(void *(*)(apr_thread_t *, void *))thread_pool_exec_fn, gop, TBX_THREAD_TASK_PRIORITY_NORMAL, NULL);
         } else {
+            tbx_atomic_dec(op->tpc->n_submitted);
             tbx_atomic_dec(op->tpc->n_running);  //** We didn't actually submit anything
             if (op->overflow_slot != -1) {   //** Check if we need to undo our overflow slot
                 op->tpc->overflow_running_depth[op->overflow_slot] = -1;
