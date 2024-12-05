@@ -111,6 +111,7 @@ tbx_pch_t tbx_pc_next(tbx_pc_iter_t *pci)
         for (i=pci->shelf; i<pc->nshelves; i++)  {
             shelf = pc->ph_shelf[i];
             if (tbx_ph_used(shelf) > 0) {
+                pci->shelf = i;
                 pci->pi = tbx_ph_iter_init(shelf);
                 slot = tbx_ph_next(&(pci->pi));
                 if (slot >= 0) {
