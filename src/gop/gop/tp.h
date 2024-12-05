@@ -66,6 +66,13 @@ struct gop_thread_pool_context_t {
     tbx_atomic_int_t n_submitted;
     tbx_atomic_int_t n_direct;
     tbx_atomic_int_t n_running;
+    tbx_atomic_int_t concurrent_max;
+    tbx_atomic_int_t concurrent;
+    tbx_atomic_int_t *depth_concurrent;
+    tbx_atomic_int_t *depth_concurrent_max;
+    tbx_atomic_int_t *depth_total;
+    tbx_atomic_int_t *reserve_max;
+    int tp_stats;
     int min_idle;
     int min_threads;
     int max_threads;

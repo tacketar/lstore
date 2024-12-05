@@ -59,17 +59,42 @@ static gop_portal_fn_t _tp_base_portal = {
     .sync_exec = thread_pool_exec_fn
 };
 
-void thread_pool_stats_make();
-void thread_pool_stats_print();
+//void thread_pool_stats_make();
+//REMOVEvoid thread_pool_stats_print();
 
 tbx_atomic_int_t _tp_context_count = 0;
 apr_thread_mutex_t *_tp_lock = NULL;
 apr_pool_t *_tp_pool = NULL;
-int _tp_stats = 0;
+int _tp_stats = 1;
 
 extern apr_threadkey_t *thread_local_stats_key;
 extern apr_threadkey_t *thread_local_depth_key;
 
+
+//*************************************************************************
+// thread_pool_stats_print - Dumps the stats to the local log file
+//*************************************************************************
+
+void thread_pool_stats_print(gop_thread_pool_context_t *tpc, FILE *fd)
+{
+    int i;
+
+    fprintf(fd, "Thread Pool Concurrency Stats-------------------\n");
+    fprintf(fd, "Max Concurrency: " AIT "   Current: " AIT "\n", tbx_atomic_get(tpc->concurrent_max), tbx_atomic_get(tpc->concurrent));
+
+    for (i=0; i<tpc->recursion_depth; i++) {
+        fprintf(fd, "  Level: %d    Max Concurrent: " AIT "  Total: " AIT "\n", i, tbx_atomic_get(tpc->depth_concurrent_max[i]), tbx_atomic_get(tpc->depth_total[i]));
+    }
+
+    fprintf(fd, "\n");
+
+    //** Calling process is holding the lock for the stacks
+    fprintf(fd, "Overflow Depth Stats-------------------\n");
+    for (i=0; i<tpc->recursion_depth; i++) {
+        fprintf(fd, "  Level: %d    Pending: %d  Max: " AIT "\n", i, tbx_stack_count(tpc->reserve_stack[i]), tbx_atomic_get(tpc->reserve_max[i]));
+    }
+
+}
 
 //************************************************************************
 //  tp_siginfo_handler - Prints info about the threadpool
@@ -88,9 +113,9 @@ void tp_siginfo_handler(void *arg, FILE *fd)
         tbx_thread_pool_threads_count(tpc->tp), tbx_thread_pool_busy_count(tpc->tp), tbx_thread_pool_idle_count(tpc->tp),
         tbx_thread_pool_threads_high_count(tpc->tp), tpc->min_threads, tpc->max_threads, tpc->recursion_depth);
 
-    if (_tp_stats > 0) {
+    if (tpc->tp_stats > 0) {
         fprintf(fd, "\n");
-        thread_pool_stats_print(fd);
+        thread_pool_stats_print(tpc, fd);
     }
     fprintf(fd, "\n");
     apr_thread_mutex_unlock(_tp_lock);
@@ -123,11 +148,6 @@ void thread_pool_stats_init()
         i = atol(eval);
         if (i > 0) {
             _tp_stats = i;
-
-            if (thread_local_stats_key == NULL) {
-                apr_threadkey_private_create(&thread_local_stats_key,_thread_pool_destructor, _tp_pool);
-                thread_pool_stats_make();
-            }
         }
     }
 }
@@ -168,7 +188,7 @@ void _tp_submit_op(void *arg, gop_op_generic_t *gop)
 {
     gop_thread_pool_op_t *op = gop_get_tp(gop);
     apr_status_t aerr;
-    int running, n;
+    int running, n, depth;
 
     log_printf(15, "_tp_submit_op: gid=%d\n", gop_id(gop));
 
@@ -183,10 +203,12 @@ void _tp_submit_op(void *arg, gop_op_generic_t *gop)
         if (n > tbx_atomic_get(op->tpc->n_overflow_max)) { tbx_atomic_set(op->tpc->n_overflow_max, n); }
         if (op->depth >= op->tpc->recursion_depth) {  //** Check if we hit the max recursion
             log_printf(0, "GOP has a recursion depth >= max specified in the TP!!!! gop depth=%d  TPC max=%d\n", op->depth, op->tpc->recursion_depth);
-            tbx_stack_push(op->tpc->reserve_stack[op->tpc->recursion_depth-1], gop);  //** Need to do the push and overflow check
+            depth = op->tpc->recursion_depth - 1;
         } else {
-            tbx_stack_push(op->tpc->reserve_stack[op->depth], gop);  //** Need to do the push and overflow check
+            depth = op->depth;
         }
+        tbx_stack_push(op->tpc->reserve_stack[depth], gop);  //** Need to do the push and overflow check
+        if (tbx_stack_count(op->tpc->reserve_stack[depth]) > tbx_atomic_get(op->tpc->reserve_max[depth])) { tbx_atomic_set(op->tpc->reserve_max[depth],  tbx_stack_count(op->tpc->reserve_stack[depth])); }
         gop = _tpc_overflow_next(op->tpc);             //** along with the submit or rollback atomically
 
         if (gop) {
@@ -259,6 +281,8 @@ gop_thread_pool_context_t *gop_tp_context_create(char *tp_name, int min_threads,
 
     tbx_type_malloc_clear(tpc, gop_thread_pool_context_t, 1);
 
+    if (_tp_stats > 0) tpc->tp_stats = 1;
+
     if (tbx_atomic_inc(_tp_context_count) == 0) {
         apr_pool_create(&_tp_pool, NULL);
         apr_thread_mutex_create(&_tp_lock, APR_THREAD_MUTEX_DEFAULT, _tp_pool);
@@ -291,6 +315,11 @@ gop_thread_pool_context_t *gop_tp_context_create(char *tp_name, int min_threads,
     tbx_atomic_set(tpc->n_submitted, 0);
     tbx_atomic_set(tpc->n_running, 0);
 
+    tbx_type_malloc(tpc->depth_concurrent_max, tbx_atomic_int_t, tpc->recursion_depth);
+    tbx_type_malloc(tpc->depth_concurrent, tbx_atomic_int_t, tpc->recursion_depth);
+    tbx_type_malloc(tpc->depth_total, tbx_atomic_int_t, tpc->recursion_depth);
+    tbx_type_malloc(tpc->reserve_max, tbx_atomic_int_t, tpc->recursion_depth);
+
     tbx_type_malloc(tpc->overflow_running_depth, int, tpc->recursion_depth);
     tbx_type_malloc(tpc->reserve_stack, tbx_stack_t *, tpc->recursion_depth);
     for (i=0; i<tpc->recursion_depth; i++) {
@@ -320,7 +349,6 @@ void gop_tp_context_destroy(gop_thread_pool_context_t *tpc)
     tbx_thread_pool_destroy(tpc->tp);
 
     if (tbx_atomic_dec(_tp_context_count) == 0) {
-        if (_tp_stats > 0) thread_pool_stats_print(stderr);
         apr_thread_mutex_destroy(_tp_lock); _tp_lock = NULL;
         apr_pool_destroy(_tp_pool); _tp_pool = NULL;
     }
@@ -332,7 +360,10 @@ void gop_tp_context_destroy(gop_thread_pool_context_t *tpc)
     }
     free(tpc->reserve_stack);
     free(tpc->overflow_running_depth);
-
+    free(tpc->depth_concurrent);
+    free(tpc->depth_concurrent_max);
+    free(tpc->depth_total);
+    free(tpc->reserve_max);
     free(tpc);
 }
 

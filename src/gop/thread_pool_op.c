@@ -45,72 +45,10 @@ extern apr_thread_mutex_t *_tp_lock;
 extern apr_pool_t *_tp_pool;
 extern int _tp_stats;
 
-static int _tp_concurrent_max;
-static int _tp_depth_concurrent_max[TP_MAX_DEPTH];
-static tbx_atomic_int_t _tp_depth_concurrent[TP_MAX_DEPTH];
-static tbx_atomic_int_t _tp_concurrent;
-static tbx_atomic_int_t _tp_depth_total[TP_MAX_DEPTH];
-
-apr_threadkey_t *thread_local_stats_key = NULL;
 apr_threadkey_t *thread_local_depth_key = NULL;
 
 void _tp_submit_op(void *arg, gop_op_generic_t *gop);
 void _tp_op_free(gop_op_generic_t *gop, int mode);
-
-//*************************************************************************
-// thread_pool_stats_print - Dumps the stats to the local log file
-//*************************************************************************
-
-void thread_pool_stats_print(FILE *fd)
-{
-    int i, total;
-
-    fprintf(fd, "Thread Pool Concurrency Stats-------------------\n");
-    fprintf(fd, "Max Concurrency: %d\n", _tp_concurrent_max);
-    fprintf(fd, "Level  Concurrent     Total\n");
-
-    for (i=0; i<TP_MAX_DEPTH; i++) {
-        total = tbx_atomic_get(_tp_depth_total[i]);
-        if (total > 0) fprintf(fd, " %2d    %10d  %10d\n", i, _tp_depth_concurrent_max[i], total);
-    }
-}
-
-//*************************************************************************
-// thread_pool_stats_make - Makes the global thread pools stats
-//*************************************************************************
-
-void thread_pool_stats_make()
-{
-    int i;
-
-    _tp_concurrent_max = 0;
-    for (i=0; i<TP_MAX_DEPTH; i++) {
-        _tp_depth_concurrent_max[i] = 0;
-        tbx_atomic_set(_tp_depth_total[i], 0);
-        tbx_atomic_set(_tp_depth_concurrent[i], 0);
-    }
-}
-
-//*************************************************************************
-// _thread_local_stats_ptr - Returns the pointer to the unique thread local stats
-//*************************************************************************
-
-thread_local_stats_t *_thread_local_stats_ptr()
-{
-    thread_local_stats_t *my = NULL;
-
-    apr_threadkey_private_get((void *)&my, thread_local_stats_key);
-    if (my == NULL ) {
-        tbx_type_malloc_clear(my, thread_local_stats_t, 1);
-        apr_thread_mutex_lock(_tp_lock);
-        my->concurrent_max = _tp_concurrent_max;
-        memcpy(my->depth_concurrent, _tp_depth_concurrent_max, sizeof(_tp_depth_concurrent_max));  //** Set to the current global
-        apr_thread_mutex_unlock(_tp_lock);
-        apr_threadkey_private_set(my, thread_local_stats_key);
-    }
-
-    return(my);
-}
 
 
 //*************************************************************************
@@ -161,7 +99,7 @@ gop_op_generic_t *_tpc_overflow_next(gop_thread_pool_context_t *tpc)
         }
     }
 
-    //** Not look for a viable gop
+    //** Now look for a viable gop
     for (i=tpc->recursion_depth-1; i>dmax; i--) {
         gop = tbx_stack_pop(tpc->reserve_stack[i]);
         if (gop) {
@@ -182,7 +120,6 @@ void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
     gop_thread_pool_op_t *op = gop_get_tp(gop);
     gop_thread_pool_context_t *tpc = op->tpc;
     gop_op_status_t status;
-    thread_local_stats_t *my;
     int *my_depth;
     int tid;
     int concurrent, start_depth;
@@ -196,30 +133,21 @@ void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
 
     if (tid != op->parent_tid) *my_depth = op->depth;   //** Set the depth
 
-    if (_tp_stats > 0) {
+    if (tpc->tp_stats > 0) {
         //** Set everything to the GOP depth and inc if not running in the parent thread
         if (tid != op->parent_tid) {
             //** Check if we set a new high for max concurrency
-            my = _thread_local_stats_ptr();
-            concurrent = tbx_atomic_inc(_tp_concurrent) + 1;
-            if (concurrent > my->concurrent_max) {
-                my->concurrent_max = concurrent;
-                apr_thread_mutex_lock(_tp_lock);  //** We passed the local check so now check the global
-                if (concurrent > _tp_concurrent_max) _tp_concurrent_max = concurrent;
-                apr_thread_mutex_unlock(_tp_lock);
+            concurrent = tbx_atomic_inc(tpc->concurrent) + 1;
+            if (concurrent > tbx_atomic_get(tpc->concurrent_max)) {
+                tbx_atomic_set(tpc->concurrent_max, concurrent);
             }
 
-            tbx_atomic_inc(_tp_depth_total[*my_depth]);
+            tbx_atomic_inc(tpc->depth_total[*my_depth]);
 
             //** Check if we may have set a new concurrency limit for the depth
-            concurrent = tbx_atomic_inc(_tp_depth_concurrent[*my_depth]) + 1;
-            if (concurrent > my->depth_concurrent[*my_depth]) {
-                apr_thread_mutex_lock(_tp_lock);  //** We passed the local check so now check the global table
-                if (concurrent > _tp_depth_concurrent_max[*my_depth]) {
-                    _tp_depth_concurrent_max[*my_depth] = concurrent;
-                    my->depth_concurrent[*my_depth] = _tp_depth_concurrent_max[*my_depth];  //** Update to global
-                }
-                apr_thread_mutex_unlock(_tp_lock);
+            concurrent = tbx_atomic_inc(tpc->depth_concurrent[*my_depth]) + 1;
+            if (concurrent > tbx_atomic_get(tpc->depth_concurrent_max[*my_depth])) {
+                tbx_atomic_set(tpc->depth_concurrent_max[*my_depth], concurrent);
             }
         }
     }
@@ -233,10 +161,10 @@ void *thread_pool_exec_fn(void *arg, gop_op_generic_t *gop)
     gop->op->cmd.end_time = apr_time_now();
     tbx_monitor_thread_ungroup(tbx_monitor_object_fill(&mo, MON_INDEX_GOP, gop_id(gop)), MON_MY_THREAD);
 
-    if (_tp_stats > 0) {
+    if (tpc->tp_stats > 0) {
         if (tid != op->parent_tid) {
-            tbx_atomic_dec(_tp_depth_concurrent[*(_thread_local_depth_ptr())]);
-            tbx_atomic_dec(_tp_concurrent);
+            tbx_atomic_dec(tpc->depth_concurrent[*my_depth]);
+            tbx_atomic_dec(tpc->concurrent);
         }
     }
 
