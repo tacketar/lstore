@@ -1,3 +1,9 @@
+lstore (2.2.3) stable; urgency=high (for ibp_server, low for everything else)
+  * Fix bug when iterating and not properly tracking the shelf.  This only effects ibp_server.
+  * Update the threadpool to support TP level concurrencies and stats
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Thur Dec 05 2024 16:14:00 -0500
+
 lstore (2.2.2) stable; urgency=high (for lio_server, low for everything else)
   * Fix issue with ongoing fail when ohandle is missing
 
