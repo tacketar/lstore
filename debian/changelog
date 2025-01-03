@@ -1,3 +1,8 @@
+lstore (2.2.4) stable; urgency=high (for lio_server only)
+  * Fix bug with switching FD ilock from the stack to the heap
+  
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fri Jan 03 2024 14:04:00 -0500
+
 lstore (2.2.3) stable; urgency=high (for ibp_server, low for everything else)
   * Fix bug when iterating and not properly tracking the shelf.  This only effects ibp_server.
   * Update the threadpool to support TP level concurrencies and stats
