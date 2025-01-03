@@ -1462,11 +1462,15 @@ int _get_matching_open_fd_locks(lio_object_service_fn_t *os, const char *prefix,
 // _get_matching_open_fd_locks_and_alloc - Same as _get_matching_open_fd_locks but iterates allocating space as needed
 //***********************************************************************
 
-int _get_matching_open_fd_locks_and_alloc(lio_object_service_fn_t *os, const char *prefix, int n_used, int *max_locks, int **lock_index, int do_lock)
+int _get_matching_open_fd_locks_and_alloc(lio_object_service_fn_t *os, const char *prefix, int n_used, int *max_locks, int **lock_index, int start_max_locks, int do_lock)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
-    int k, nleft;
+    int k, nleft, start_locks;
     int *ilock = *lock_index;
+    int *oldlock;
+
+    //** Store the initial max locks
+    start_locks = *max_locks;
 
     //** Now add the open FD locks
 again:
@@ -1478,7 +1482,16 @@ again:
     if (nleft < k) {
         *max_locks = 2 * (*max_locks);
         if (k> (*max_locks)) *max_locks = 2*(k + n_used);
-        tbx_type_realloc(ilock, int, *max_locks);
+        if (start_locks == start_max_locks) {  //** Using the original ilocks which are on the stack so move it to the heap
+            start_locks = -1;  //** From now on use the heap.
+            oldlock = ilock;
+            tbx_type_malloc(ilock, int, *max_locks);   //** Make it on the heap
+            memcpy(ilock, oldlock, sizeof(int)*n_used);  //** And copy the old data over
+            *lock_index = ilock;
+        } else {    //** The old ilock is on the heap already
+            tbx_type_realloc(ilock, int, *max_locks);
+            *lock_index = ilock;
+        }
         goto again;
     }
 
@@ -1493,7 +1506,7 @@ again:
 //  NOTE: The flock structs are locked when returned
 //***********************************************************************
 
-int osf_match_open_fd_lock_try(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int *max_locks, int **lock_index, int do_lock)
+int osf_match_open_fd_lock_try(lio_object_service_fn_t *os, const char *rp_src, const char *rp_dest, const char *obj_src, const char *obj_dest, int *max_locks, int **lock_index, int start_max_locks, int do_lock)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int n, i;
@@ -1513,8 +1526,10 @@ int osf_match_open_fd_lock_try(lio_object_service_fn_t *os, const char *rp_src, 
     n = 4;
 
     //** And the open FD locks
-    n = _get_matching_open_fd_locks_and_alloc(os, obj_src, n, max_locks, lock_index, do_lock);
-    n = _get_matching_open_fd_locks_and_alloc(os, obj_dest, n, max_locks, lock_index, do_lock);
+    n = _get_matching_open_fd_locks_and_alloc(os, obj_src, n, max_locks, lock_index, start_max_locks, do_lock);
+    n = _get_matching_open_fd_locks_and_alloc(os, obj_dest, n, max_locks, lock_index, start_max_locks, do_lock);
+
+    ilock = *lock_index;  //** Need to reget the ptr since it could have changed
 
     //** Compact them
     n = osf_compact_ilocks(n, ilock);
@@ -1594,9 +1609,10 @@ int osf_match_open_fd_lock(lio_object_service_fn_t *os, const char *rp_src, cons
     max2 = 0;
     ilock2 = NULL;
 
-    n1 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max1, &ilock1, 1);  //** Get the inital set
+    n1 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max1, &ilock1, max_locks, 1);  //** Get the inital set
 again:
-    n2 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max2, &ilock2, 0);  //** again but under the locks
+    //** again but under the locks.  Also start_max_locks=-1 to force creation on the stack
+    n2 = osf_match_open_fd_lock_try(os, rp_src, rp_dest, obj_src, obj_dest, &max2, &ilock2, -1, 0);
 
     //**Compare lock tables to see if we're Ok.
     if (_compare_fobj_locks(n1, ilock1, n2, ilock2) != 0) {  //** They aren't a subset so got to do it again
