@@ -276,3 +276,6 @@ endforeach()
 
 #Add the bits to install the custom libfuse3-lio.so. This is a NULL op if there's nothing to do
 install(CODE "execute_process(COMMAND ${CMAKE_SOURCE_DIR}/scripts/copy_libfuse3-lio.sh /tmp)")
+
+#Add shell scripts
+install(PROGRAMS bin/lfs_service_manager.sh DESTINATION bin)
