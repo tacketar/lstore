@@ -1,3 +1,8 @@
+lstore (2.2.5) stable; urgency=low
+  * Add LFS service manager script
+  
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Th Jan 09 2024 14:03:00 -0500
+
 lstore (2.2.4) stable; urgency=high (for lio_server only)
   * Fix bug with switching FD ilock from the stack to the heap
   
