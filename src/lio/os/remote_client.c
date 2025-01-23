@@ -2363,7 +2363,7 @@ gop_op_status_t osrc_response_open(void *task_arg, int tid)
 
     log_printf(5, "START\n");
 
-    OSRC_DEBUG_MQ_PRINTF(task->response, "MISSNG\n");
+    OSRC_DEBUG_MQ_PRINTF(task->response, "MISSING\n");
 
     //** Parse the response
     gop_mq_remove_header(task->response, 1);
