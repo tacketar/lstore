@@ -152,6 +152,16 @@ update_symlink() {
     fi
 }
 
+#******************************************************************************
+# systemd_clear_instance - Clears the lfs@<INSTANCE_ID>.service from systemd failed list
+#    INSTANCE_ID - Local instance ID
+#******************************************************************************
+
+systemd_clear_instance() {
+    INSTANCE_ID=$1
+
+    systecmctl reset-failed lfs@${INSTANCE_ID}.service 2>/dev/null
+}
 
 #******************************************************************************
 # start_instance - Starts a new instance
@@ -215,6 +225,9 @@ stop_instance() {
             kill -9 ${FPID}
         fi
     fi
+
+    #Clear it from the transient SystemD list which shows it as failed
+    systemd_clear_instance $INSTANCE_ID
 }
 
 #******************************************************************************
@@ -233,6 +246,10 @@ remove_instance() {
     echo Command: ${MY_PREFIX:-} --one-file-system -rf "$INSTANCE_PATH"
     echo "Ctrl+C now to cancel (3 sec)"
     ${MY_PREFIX:-} rm --one-file-system -rf $INSTANCE_PATH
+
+    #Clear it from the transient SystemD list which shows it as failed
+    systemd_clear_instance $INSTANCE_ID
+
 }
 
 #******************************************************************************
