@@ -1,6 +1,8 @@
 #!/bin/bash
 #******************************************************************************
 #
+# lfs_service_manager.sh - Script for managing LFS namespace mounts
+#
 # Parameters:
 #   LFS_ROOTS    - Prefix for LFS mounts to run out of
 #   LFS_CFG      - LFS config to load
@@ -15,7 +17,14 @@
 #   TCM_ENABLE   - Enable use of TCMalloc if available
 #   TCM_LIB      - TCMalloc shared library.  If not specified it will be searched for
 #   TCM_OPTS     - TCMalloc options
-#
+#   LOG_MAX_GB   - Max amount of space to use for namespace logs
+#   LOG_MIN_GB   - Low water mark on when to stop deleting one LOG_MAX_GB has been hit
+#   LOG_PREFIX   - Prefix to use for log file names.  Assumes the PID of the lio_fuse is embedded in the name.
+#   LOG_SIGNAL   - Signal to trigger a log rotate.  IF blank the LFS mount isn't rotated.
+#   CK_TIMEOUT   - Mount health check timeout
+#   CK_PENDING_TIMEOUT - Background Mount health check timeout
+#   CK_FILE      - File to stat for determining health
+#   CK_MEM_GB    - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
 #
 # Organization of files
 #    ${LFS_ROOTS}
@@ -48,6 +57,14 @@ vars_default() {
     TCM_ENABLE=1
     TCM_LIB=$(ldconfig -p |grep libtcmalloc.so | sort | tail -n 1 | awk '{print $4}')
     TCM_OPTS="--setenv=TCMALLOC_RELEARSE_RATE=5"
+    LOG_MAX_GB="10"
+    LOG_MIN_GB="5"
+    LOG_PREFIX=""
+    LOG_SIGNAL=""
+    CK_TIMEOUT="30"
+    CK_PENDING_TIMEOUT="600"
+    CK_FILE=""
+    CK_MEM_GB=""
 }
 
 #******************************************************************************
@@ -71,6 +88,12 @@ install() {
     script_path=$1
     install_target=$2
     user=$3
+
+    # Check if we've already run an install. If so kick out with a warning.
+    if [ -e ${install_target} ]; then
+        echo "WARNING: It looks like LFS was already installed for ${install_target}.  Kicking out."
+        exit 0
+    fi
 
     #Configure the service_manager variables
     vars_default
@@ -115,6 +138,14 @@ install() {
     echo "TCM_ENABLE=\"${TCM_ENABLE}\"" >> ${VARS}
     echo "TCM_OPTS=\"${TCM_OPTS}\"" >> ${VARS}
     echo "TCM_LIB=\"${TCM_LIB}\"" >> ${VARS}
+    echo "LOG_MAX_GB=\"${LOG_MAX_GB}\"" >> ${VARS}
+    echo "LOG_MIN_GB=\"${LOG_MIN_GB}\"" >> ${VARS}
+    echo "LOG_PREFIX=\"${LOG_PREFIX}\"" >> ${VARS}
+    echo "LOG_SIGNAL=\"${LOG_SIGNAL}\"" >> ${VARS}
+    echo "CK_TIMEOUT=\"${CK_TIMEOUT}\"" >> ${VARS}
+    echo "CK_PENDING_TIMEOUT=\"${CK_PENDING_TIMEOUT}\"" >> ${VARS}
+    echo "CK_FILE=\"${CK_FILE}\"" >> ${VARS}
+    echo "CK_MEM_GB=\"${CK_MEM_GB}\"" >> ${VARS}
 
     chown "${user}:" "${VARS}"
     chmod +x ${VARS}
@@ -197,7 +228,7 @@ start_instance() {
     (
         set +u
         DAEMON_COREFILE_LIMIT=${LIMIT_CORE}
-        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} $COMMAND"
+        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} $COMMAND"
         systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} $COMMAND
     )
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
@@ -239,67 +270,134 @@ remove_instance() {
     INSTANCE_ID=$1
     log_message "REMOVE_INSTANCE ${INSTANCE_ID}"
     set_instance_vars $INSTANCE_ID
+
     # provide some protection against accidental deletion
     if [ "$(id -u)" != "0" ]; then
         local MY_PREFIX="sudo -u $LFS_USER rm "
     fi
     echo Command: ${MY_PREFIX:-} --one-file-system -rf "$INSTANCE_PATH"
     echo "Ctrl+C now to cancel (3 sec)"
+    sleep 3
     ${MY_PREFIX:-} rm --one-file-system -rf $INSTANCE_PATH
 
     #Clear it from the transient SystemD list which shows it as failed
     systemd_clear_instance $INSTANCE_ID
-
 }
 
+
 #******************************************************************************
-# check_instance_health - Checks the health of the instance
+# get_stat_instance - Does a stat on the instance and reports the time
 #    INSTANCE_ID - Local instance ID
 #******************************************************************************
 
-check_instance_health() {
+get_stat_instance() {
+    INSTANCE_ID=$1
+    set_instance_vars $INSTANCE_ID
+
+    TMP=$( $(which time) -p -o ${INSTANCE_LOGS}/stat_time timeout -s 9 ${CK_TIMEOUT} stat ${INSTANCE_MNT}/${CK_FILE} 2>&1 >/dev/null )
+    rcode=$?
+
+    if [ "${rcode}" == "0" ]; then
+        DT=$(grep real < ${INSTANCE_LOGS}/stat_time | awk '{print $2}')
+    elif [ "${rcode}" == "1" ]; then
+        DT="MISSING-FILE"
+    else
+        DT="TIMEOUT"
+    fi
+
+    echo "${DT}"
+    return;
+}
+
+#******************************************************************************
+# get_instance_pending_stat - Checks for and returns any pending background
+#    stat calls.
+#******************************************************************************
+
+get_pending_stat_instance() {
+    INSTANCE_ID=$1
+    set_instance_vars $INSTANCE_ID
+    STATUS=""
+
+    # If nothing pending kick out
+    if [ ! -e ${INSTANCE_LOGS}/pending_stat ]; then
+        return;
+    fi
+
+    # Get the pending info: <stat_dt or PENDING> <Pending start time in epoch sec>
+    STAT_DT=$( awk '{print $1}' < ${INSTANCE_LOGS}/pending_stat)
+    STIME=$( awk '{print $2}' < ${INSTANCE_LOGS}/pending_stat)
+
+    # Find out how long ago we completed or started
+    NOW=$(date +%s)
+    DT=$(( NOW - STIME ))
+
+    echo "started=${DT},stat_dt=${STAT_DT}"
+    return
+}
+
+#******************************************************************************
+# get_instance_health - Collects health info of the instance
+#    INSTANCE_ID - Local instance ID
+#******************************************************************************
+
+get_instance_health() {
     INSTANCE_ID=$1
     set_instance_vars $INSTANCE_ID
     HEALTHY=true
     STATUS=""
+
     # primary instance?
     if [ "$INSTANCE_PATH" = "$(readlink -f $CURRENT_SYMLINK)" ]; then
-                STATUS+=" primary=yes"
-        else
-                STATUS+=" primary=NO"
-        fi
+        STATUS+=" primary=yes"
+     else
+        STATUS+=" primary=NO "
+    fi
+
     # Does it exist?
     if [ -e "$INSTANCE_PATH" ]; then
         STATUS+=" exists=yes"
     else
-        STATUS+=" exists=NO"
-        echo $STATUS
+        STATUS+=" exists=NO "
+        echo "$STATUS"
         return
     fi
-    # Is in mounted?
+
+    # Is it mounted?
     if mount | grep -q "$INSTANCE_MNT"; then
         STATUS+=" mounted=yes"
     else
-        STATUS+=" mounted=NO"
+        STATUS+=" mounted=NO "
         HEALTHY=false
     fi
+
     # Is the filesystem process running?
-    if pgrep -f "lio_fuse"'.*'"$INSTANCE_MNT" >/dev/null; then
-        STATUS+=" is_running=yes"
-    else
+    PSINFO=$(ps -eo pid,rss,args | grep -v grep | grep ${INSTANCE_ID})
+    if [ "${PSINFO}" == "" ]; then
         STATUS+=" is_running=NO"
-        HEALTHY=false
+        echo "$STATUS"
+        return
     fi
-    if $HEALTHY; then
-        # Is it in use?
-        FILE_USE_COUNT=$($TIMEOUT 10 bash -c "lsof +f --  $INSTANCE_MNT 2>/dev/null | grep -Ev '^COMMAND ' | wc -l" || echo 'TIMEOUT')
-        STATUS+=" files_in_use:$FILE_USE_COUNT"
-        # Does a metadata operation work?
-        # TODO
+
+    # Get the RSS and PID and add it
+    IPID=$(echo ${PSINFO} | awk '{print $1}')
+    IMEM=$(echo ${PSINFO} | awk '{printf "%.2f", $2/1024}')
+    STATUS+=$(printf " %-23s" "is_running=yes(${IPID})")
+    STATUS+=$(printf " %-16s" "rss_mb=${IMEM}")
+
+    # Is it in use?
+    FILE_USE_COUNT=$($TIMEOUT 10 bash -c "lsof +f --  $INSTANCE_MNT 2>/dev/null | grep -Ev '^COMMAND ' | wc -l" || echo 'TIMEOUT')
+    STATUS+=$( printf " %-18s" "files_in_use=${FILE_USE_COUNT}")
+
+    # Do a stat
+    STATINFO=$(get_stat_instance ${ID})
+    PENDINGINFO=$(get_pending_stat_instance ${ID})
+    if [ "${PENDINGINFO}" == "" ]; then
+        STATUS+=$( printf " %-20s" "stat=${STATINFO}")
     else
-        STATUS+=" files_in_use:0"
+        STATUS+=$(printf " %-20s" "stat=${STATINFO}(pending:${PENDINGINFO})")
     fi
-    echo $STATUS
+    echo "$STATUS"
 }
 
 #******************************************************************************
@@ -334,20 +432,18 @@ service_status() {
     else
         PRIMARY_ID=$(basename $(readlink -f $MOUNT_SYMLINK))
     fi
+
     if [ "$PRIMARY_ID" = 'service_is_stopped' ]; then
         echo "Service is stopped"
     else
         echo "Service is running"
     fi
-        echo "Status of instances:"
-        ls -r $INSTANCE_ROOT | grep -v lfs | while read i; do
-            ID=$(basename $i)
-            #echo "   $ID: $(check_instance_health $ID)"
-            for i in $(echo $ID $(check_instance_health $ID)); do
-                printf "%-24s" $i
-            done | sed 's/ *$//'
-            printf "\n"
-        done
+
+    echo "Status of instances:"
+    ls -r $INSTANCE_ROOT | grep -v lfs | while read i; do
+        ID=$(basename $i)
+        echo "${ID} $(get_instance_health $ID)"
+    done
 }
 
 #******************************************************************************
@@ -357,7 +453,7 @@ service_status() {
 service_start() {
     log_message "START_SERVICE"
     PRIMARY_ID=$(basename $(readlink -f $CURRENT_SYMLINK))
-    if [ "$PRIMARY_ID" = 'service_is_stopped' ] || check_instance_health $PRIMARY_ID | grep -q -E 'exists=NO|is_running=NO|mounted=NO'; then
+    if [ "$PRIMARY_ID" = 'service_is_stopped' ] || get_instance_health $PRIMARY_ID | grep -q -E 'exists=NO|is_running=NO|mounted=NO'; then
         start_instance $(generate_instance_id)
     else
         echo "Service is already running and it appears to be operational, instance='${INSTANCE_ROOT}/$PRIMARY_ID'. Run the 'restart' command if you wish to force a new instance to be created."
@@ -449,13 +545,246 @@ stop_all() {
 }
 
 #******************************************************************************
+# health_check_instance - Checks the health of the instance by processing the
+#     output of service_status which is passed in as arguments.
+#
+# Return states:
+#     GOOD - Mount is good. Nothing to do
+#     PENDING - Mount is sluggish and there is a pending stat call to determine
+#               next steps
+#     HI_MEM  - The mount has hit the high water mark on memoery
+#     HUNG    - Mount is unresponsive and should be killed
+#     DEAD    - Mount is dead and can be cleaned up
+#     UNUSED  - Mount is up but not used
+#******************************************************************************
+
+health_check_instance() {
+    # Read the status args
+    ID=$1
+    set_instance_vars ${ID}
+    PRIMARY=$2
+    EXISTS=$3
+    MOUNTED=$4
+    IS_RUNNING=$5
+    if [[ "$IS_RUNNING" =~ "is_running=yes" ]]; then
+        d=$(echo "$6" | cut -f2 -d=)
+        RSS=$( echo "scale=4; ${d} * 1024 * 1024" | bc | cut -f1 -d\. )
+        FILES_IN_USE=$7
+        STAT=$8
+    fi
+
+    MAX_SIZE=$( echo "scale=4; ${CK_MEM_GB} * 1024 * 1024 * 1024" | bc | cut -f1 -d\. )
+
+    # Now check them
+
+    # See if it's running
+    if [ "${IS_RUNNING}" == "is_running=NO" ]; then
+        echo "DEAD"
+        return
+    fi
+
+    #We do a few special checks if it's the primary
+    if [ "${PRIMARY}" == "primary=yes" ]; then
+        # Check the memory
+        if (( RSS > MAX_SIZE )) ; then
+            echo "HI_MEM"
+            return
+        fi
+    elif [ "${FILES_IN_USE}" == "files_in_use=0" ]; then # Not being used and not the primary
+        echo "UNUSED"
+        return
+    fi
+
+    # Check the stat arg to see if everything is good
+    if [[ ! ${STAT} =~ PENDING|TIMEOUT ]]; then
+        echo "GOOD"
+        return
+    fi
+
+    # If we made it here then there is a problem with stat we need to look at
+    # Do an initial split on the stat varible into current and pending
+    SCURR=$(echo ${STAT} | tr "(" " " | awk '{print $1}' )
+    SPENDING=$(echo ${STAT} | tr "(" " " | awk '{print $2}' )
+
+    # 1st check if the current stat completed successfully.
+    if [[ ! ${SCURR} =~ TIMEOUT ]]; then # It did so see if we need to cleanup
+        if [[ ! ${SPENDING} =~ PENDING ]]; then  # No background task so remove it
+            rm ${INSTANCE_LOGS}/pending_stat
+        fi
+        echo "GOOD"
+        return
+    fi
+
+    # So we have a timeout on the current stat.  See if we have one as well on the pending
+    if [[ ${SPENDING} =~ PENDING ]]; then
+        echo "PENDING"
+        if [[ ${SCURR} -gt ${CK_PENDING_TIMEOUT} ]]; then   ## The time is to long so we err out anyway
+            echo "HUNG"
+        fi
+        return
+    elif [[ ${SPENDING} =~ TIMEOUT ]]; then  # The pending also failed so kill it
+        echo "HUNG"
+        return
+    fi
+
+    # If we made it here then the current stat hung but the pending succeeded or doesn't exist so kick on off
+    ${LFS_PENDING_STAT_CHECK_SCRIPT} ${CK_PENDING_TIMEOUT} ${INSTANCE_LOGS}/pending_stat ${INSTANCE_MNT}/${CK_FILE} ${LFS_ROOTS}/service.log >/dev/null &
+
+    # We're in a holding pattern
+    echo "PENDING"
+}
+
+#******************************************************************************
+# health_checkup - Checks the health of all the mounts and takes corrective
+#      action as needed.
+#******************************************************************************
+
+health_checkup() {
+    log_message "HEALTH-CHECKUP  START"
+    service_status | grep primary | while read id primary everything_else; do
+        STATE=$(health_check_instance $id $primary $everything_else)
+
+        case "${STATE}" in
+            GOOD)
+                ;;
+            HI_MEM)
+                service_restart
+                ;;
+            HUNG)
+                stop_instance $id
+                remove_instance $id
+                ;;
+            DEAD)
+                stop_instance $id
+                remove_instance $id
+                ;;
+            UNUSED)
+                stop_instance $id
+                remove_instance $id
+                ;;
+            *)
+                log_message "ERROR: health_checkup invalid state=${STATE} id=${id}"
+                ;;
+        esac
+    done
+
+    log_message "HEALTH-CHECKUP  END"
+
+}
+
+
+#******************************************************************************
+# log_status - Prints the log usage information
+#******************************************************************************
+
+log_status() {
+    if [ "${1}" != "-" ]; then #Looks like we have a df unit
+        UNITS=$1;
+        shift
+    else
+        UNITS=""
+    fi
+    INFO=$( ${LIO_LOG_SCRIPT} status ${UNITS} ${LOG_PREFIX}* )
+    echo ${INFO}
+    log_message "LOG-STATUS ${INFO}"
+}
+
+#******************************************************************************
+# log_rotate_instance - Does a log rotation on the instance
+#******************************************************************************
+
+log_rotate_instance() {
+    INSTANCE_ID=$1
+
+    # Get the PID
+    FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
+    if [ "${FPID}" == "" ]; then
+        return
+    fi
+
+    # Now find the PIDs open log file
+    LNAME=$(readlink /proc/${FPID}/fd/* | grep -F ${LOG_PREFIX})
+    if [ "${LNAME}" == "" ]; then
+        return
+    fi
+
+    # Find the next "part" we can use
+    part=1
+    while [ -e "${LNAME}.p${part}" ]; do
+       (( part = part + 1 ))
+    done
+
+    #Move the current log file
+    mv ${LNAME} ${LNAME}.p${part}
+
+    #Now trigger the rotation which will create a new log file using the old name
+    kill -${LOG_SIGNAL} ${FPID}
+}
+
+#******************************************************************************
+# log_cleanup - Clears out log space if needed
+#******************************************************************************
+
+log_cleanup() {
+    #Convert the size from GB to Bytes
+    MAX_SIZE=$( echo "scale=4; ${LOG_MAX_GB} * 1024 * 1024 * 1024" | bc | cut -f1 -d\. )
+
+    USED_SIZE=$( ${LIO_LOG_SCRIPT} status -b ${LOG_PREFIX}* | tr -s " " | cut -f4 -d\  )
+    if [[ ${USED_SIZE} -lt ${MAX_SIZE} ]]; then    # Nothing to do so log the action and kick out
+        log_message "LOG-CLEANUP  Used_bytes: ${USED_SIZE} < ${MAX_SIZE}"
+        return
+    fi
+
+    if [ "${LOG_SIGNAL}" != "" ]; then
+        # Cycle through each mount and do a log rotate
+        service_status | grep 'is_running=yes' | while read id everything_else; do
+            echo "Rotating logs for instance '$id'"
+            log_rotate_instance $id
+        done
+    fi
+
+    # Log the start size
+    INFO_START=$( ${LIO_LOG_SCRIPT} status -h ${LOG_PREFIX}* )
+
+    # Now call the log cleanup script
+    ${LIO_LOG_SCRIPT} cleanup ${LOG_MIN_GB} ${LOG_PREFIX}*
+
+    # Get the final size
+    INFO_END=$( ${LIO_LOG_SCRIPT} status -h ${LOG_PREFIX}* )
+
+    # Log that we are finished
+    log_message "LOG-CLEANUP  Start -- ${INFO_START}   End -- ${INFO_END}"
+    echo "Start -- ${INFO_START}   End -- ${INFO_END}"
+}
+
+#******************************************************************************
 # usage - Help message
 #******************************************************************************
 
 usage() {
-    echo "Usage: $0 lfs_roots_prefix {start|stop|status|restart|cleanup [-f] [older-than-date]|install <path> <user> [<vars.sh>]}"
-    echo "lfs_roots_prefix  - Directory used for install containing the LFS configuration options and mount info"
-    echo "<vars.sh>         - Base LFS variables file to use for install.  If none given then a default is created that can be edited."
+    echo "Usage: $0 install <path> <user> [<vars.sh>] | <lfs_roots_prefix> OPTION"
+    echo "install <path> <user> [<vars.sh>] - Install a new namespace"
+    echo "     <path>    - Prefix to use for storing hte namespace.  The path is created if it doesn'texist"
+    echo "     <user>    - Local user for running the lio_fuse binary under. Defaults to lfs"
+    echo "     <vars.sh> - Optional file containing the lfs_service_manager.sh configuration options."
+    echo "<lfs_roots_prefix>  - Directory used for managing the LFS namespace."
+    echo "Valid OPTIONs"
+    echo "    start   - Start the LFS service"
+    echo "    stop    - Stop the LFS service"
+    echo "    status  - List the state of all LFS mounts in the namespace"
+    echo "    restart - Restart/cycle the LFS mount"
+    echo "    cleanup [-f] [<older-than-date>]   - Cleanup mounts"
+    echo "        -f                - Use \"-z\" with fusermount3 if needed to clear the mount"
+    echo "        <older-than-date> - Force the shutdown of in-use mounts that are older than the data provided"
+    echo "    install <path> <user> [<vars.sh>] - Install a new namespace"
+    echo "         <path>    - Prefix to use for storing hte namespace.  The path is created if it doesn'texist"
+    echo "         <user>    - Local user for running the lio_fuse binary under. Defaults to lfs"
+    echo "         <vars.sh> - Optional file containing the lfs_service_manager.sh configuration options."
+    echo "    log-status [<size-units>] - Prints log file disk usage for the namespace"
+    echo "         <size-units> - Output units passed to df.  See \"df\" for details"
+    echo "    log-cleanup - Clean up log files if needed"
+    echo "    health-checkup - Checks on all mounts help and cycles, clean's up as needed."
+
     exit 1
 }
 
@@ -492,6 +821,8 @@ else    # No vars file so print help
 fi
 
 #Now we can start making the local variables
+LIO_LOG_SCRIPT=$(dirname $(realpath $0) )/lio_log_manager.sh
+LFS_PENDING_STAT_CHECK_SCRIPT=$(dirname $(realpath $0) )/lfs_pending_stat_check.sh
 INSTANCE_ROOT="${LFS_ROOTS}/instances"
 MOUNT_SYMLINK="${LFS_ROOTS}/mnt"
 CURRENT_SYMLINK="${LFS_ROOTS}/current"
@@ -524,6 +855,15 @@ case "${2:-}" in
         ;;
     cleanup)
         service_cleanup "${3:-}" "${4:-}"
+        ;;
+    log-status)
+        log_status "${3:-}"
+        ;;
+    log-cleanup)
+        log_cleanup
+        ;;
+    health-checkup)
+        health_checkup
         ;;
     *)
         usage;
