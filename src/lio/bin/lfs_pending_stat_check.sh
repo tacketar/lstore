@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #************************************************************************************
 #
 # lfs_pending_stat_check.sh - Performs a background stat operation in an LFS instance

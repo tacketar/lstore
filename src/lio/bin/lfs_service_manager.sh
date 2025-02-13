@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #******************************************************************************
 #
 # lfs_service_manager.sh - Script for managing LFS namespace mounts
@@ -648,17 +648,21 @@ health_checkup() {
             GOOD)
                 ;;
             HI_MEM)
+                log_message "HEALTH-CHECKUP ${id} HI_MEM on primary"
                 service_restart
                 ;;
             HUNG)
+                log_message "HEALTH-CHECKUP ${id} HUNG"
                 stop_instance $id
                 remove_instance $id
                 ;;
             DEAD)
+                log_message "HEALTH-CHECKUP ${id} DEAD"
                 stop_instance $id
                 remove_instance $id
                 ;;
             UNUSED)
+                log_message "HEALTH-CHECKUP ${id} UNUSED"
                 stop_instance $id
                 remove_instance $id
                 ;;

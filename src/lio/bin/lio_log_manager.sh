@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #******************************************************************************
 #
 # lfs_log_manager.sh - Script for managing LFS namespace logging
@@ -33,7 +33,6 @@ log_cleanup() {
 
     #Convert the size from GB to Bytes
     MAX_SIZE=$( echo "scale=4; ${1} * 1024 * 1024 * 1024" | bc | cut -f1 -d\. )
-#FIXME    echo "max_size=${MAX_SIZE}"
     shift  #Remove the size from the args list
 
     #Get the file list in oldest->newest order and store it in an array to iterate over
@@ -44,11 +43,16 @@ log_cleanup() {
     #See how much is used
     USED_SIZE=$(du -cb ${FILES[@]}| grep total | cut -f1)
 
-    for (( i=0; i<${#FILES[@]}; i++ )); do
-        fname=${FILES[i]}
+    # See if we can kick out
+    if [[ ${USED_SIZE} -lt ${MAX_SIZE} ]]; then
+        return;
+    fi
 
-        echo "Removing ${fname}"
-        $(which rm) ${fname}
+    # Need to do some cleanup
+    for (( i=0; i<${#FILES[@]}; i++ )); do
+
+        echo "Removing ${FILES[i]}"
+        rm ${FILES[i]}
 
         #Update the used size
         if [[ ${i} -eq ${#FILES[@]}-1 ]]; then
@@ -59,7 +63,6 @@ log_cleanup() {
 
         # See if we can kick out
         if [[ ${USED_SIZE} -lt ${MAX_SIZE} ]]; then
-            echo "Kicking out"
             return;
         fi
     done
