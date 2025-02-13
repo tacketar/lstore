@@ -1,3 +1,7 @@
+lstore (2.3.0) stable; urgency=low
+  * Initial version with fully functioning LFS service manager scripts
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Th Feb 13 2025 15:36:00 -0500
 
 lstore (2.2.6) stable; urgency=low
   * LFS service manager script now cleans up the systemd services
