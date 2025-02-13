@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 #******************************************************************************
 #
 # lfs_service_manager.sh - Script for managing LFS namespace mounts
@@ -116,7 +116,9 @@ install() {
     echo
     echo "setting up file structure and copying service manager script"
     mkdir -p "${install_target}/instances"
-    chown "${user}:" "${install_target}/instances"
+    chmod 0775 ${install_target}
+    chmod 0775 ${install_target}/instances
+    chown "${user}:" "${install_target}"
     cp $script_path $new_script_path
     if [ ! -f /etc/fuse.conf ]; then
         echo "/etc/fuse.conf doesn't exist, creating it..."
@@ -203,6 +205,7 @@ start_instance() {
     INSTANCE_ID=$1
     set_instance_vars $INSTANCE_ID
     mkdir -p "$INSTANCE_PATH"
+    chmod 0755 "${INSTANCE_PATH}"
     mkdir -p "$INSTANCE_LOGS"
     mkdir -p "$INSTANCE_MNT"
     mkdir -p "$INSTANCE_CFG"
