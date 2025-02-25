@@ -341,8 +341,8 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
 {
     FILE *fd_file, *fd_parity;
     char **ptr, **data, **parity, *buffer;
-    int i, j, block_size, bsize;
-    long long int rpos, apos, bpos, ppos;
+    int i, block_size, bsize;
+    long long int rpos, apos, bpos, ppos, file_size;
 
     //** Open the files
     fd_file = tbx_io_fopen(fname, "r");
@@ -350,6 +350,11 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
         printf("et_encode: Error opening data file %s\n", fname);
         return(1);
     }
+
+    //** Get the file size
+    tbx_io_fseek(fd_file, 0, SEEK_END);
+    file_size = tbx_io_ftell(fd_file);
+    tbx_io_fseek(fd_file, 0, SEEK_SET);
 
     fd_parity = tbx_io_fopen(pname, "r+");
     if (fd_parity == NULL) {
@@ -363,22 +368,24 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     plan->form_encoding_matrix(plan);  //** Form the matrix if needed
 
     //** Determine the buffersize
-    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-    if (buffer_size == 0) {
-        buffer_size = 10*1024*1024;
-    }
+    buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
+//    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
+//    if (buffer_size == 0) {
+//        buffer_size = 10*1024*1024;
+//    }
 
-    j = buffer_size / i;
-    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
-    buffer_size = j * i;
+//    j = buffer_size / i;
+//    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
+//    buffer_size = j * i;
     block_size = buffer_size/(plan->data_strips + plan->parity_strips);
 
+printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
     //** allocate the buffer space
     ptr = (char **)malloc(sizeof(char *)*(plan->data_strips + plan->parity_strips));
-   FATAL_UNLESS(ptr != NULL);
+    FATAL_UNLESS(ptr != NULL);
 
     buffer = (char *)malloc(sizeof(char)*buffer_size);
-   FATAL_UNLESS(buffer != NULL);
+    FATAL_UNLESS(buffer != NULL);
 
     for (i=0; i < (plan->data_strips+plan->parity_strips); i++) {
         ptr[i] = &(buffer[i*block_size]);
@@ -391,10 +398,16 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     ppos = poffset;
     rpos = 0;
     log_printf(15, "et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
-    while (rpos < plan->strip_size) {
-        //** Adjust the block size if needed
-        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
+//    while (rpos < plan->strip_size) {
+//int loop = 0;
+    while (apos < file_size) {
+//printf("loop=%d fsize=%lld apos=%lld ppos=%lld\n", loop, file_size, apos, ppos);
+//loop++;
 
+        //** Adjust the block size if needed
+//--        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
+//        bsize = ((rpos+block_size) > file_size) ? file_size - rpos : block_size;
+        bsize = block_size;
         log_printf(15, "et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
 
         //** Read the data
@@ -404,21 +417,24 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
             bread(data[i], 1, bsize, fd_file);
             bpos = bpos + plan->strip_size;
         }
-        apos = apos + block_size;
+//        apos = apos + block_size;
+        apos = bpos;
 
         //** Perform the encoding
         plan->encode_block(plan, ptr, bsize);
 
         //** Store the parity
         bpos = ppos;
+        bsize = block_size;
         for (i=0; i<plan->parity_strips; i++) {
             tbx_io_fseek(fd_parity, bpos, SEEK_SET);
             tbx_io_fwrite(parity[i], 1, bsize, fd_parity);
             bpos = bpos + plan->strip_size;
         }
-        ppos = ppos + block_size;
+        ppos = bpos;
 
-        rpos = rpos + block_size;
+//        ppos = ppos + block_size;
+//        rpos = rpos + block_size;
     }
 
     //** Free the ptrs
@@ -478,12 +494,16 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
 {
     FILE *fd_file, *fd_parity;
     char **ptr, **data, **parity, *buffer;
-    int i, j, block_size, bsize, missing[plan->data_strips+plan->parity_strips];
-    int *missing_data, *missing_parity;
+    int i, block_size, bsize, msize, nbytes;
+//    int missing[plan->data_strips+plan->parity_strips];
+//    int *missing_data, *missing_parity;
+    char *missing, *missing_data, *missing_parity;
     long long int rpos, apos, bpos, ppos;
 
     //** Make the missing tables
-    memset(missing, 0, sizeof(long)*(plan->data_strips+plan->parity_strips));
+    msize = sizeof(char) * (plan->data_strips+plan->parity_strips);
+    missing = malloc(msize);
+    memset(missing, 0, msize);
     missing_data = missing;
     missing_parity = &(missing[plan->data_strips]);
     i = 0;
@@ -510,22 +530,27 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
     plan->form_decoding_matrix(plan);  //** Form the matrix if needed
 
     //** Determine the buffersize
-    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-    if (buffer_size == 0) {
-        buffer_size = 10*1024*1024;
-    }
+    buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
 
-    j = buffer_size / i;
-    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
-    buffer_size = j * i;
+//    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
+//    if (buffer_size == 0) {
+//        buffer_size = 10*1024*1024;
+//    }
+
+//    j = buffer_size / i;
+//    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
+//    buffer_size = j * i;
+//    block_size = buffer_size/(plan->data_strips + plan->parity_strips);
     block_size = buffer_size/(plan->data_strips + plan->parity_strips);
+
+printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
 
     //** allocate the buffer space
     ptr = (char **)malloc(sizeof(char *)*(plan->data_strips + plan->parity_strips));
-   FATAL_UNLESS(ptr != NULL);
+    FATAL_UNLESS(ptr != NULL);
 
     buffer = (char *)malloc(sizeof(char)*buffer_size);
-   FATAL_UNLESS(buffer != NULL);
+    FATAL_UNLESS(buffer != NULL);
 
     for (i=0; i < (plan->data_strips+plan->parity_strips); i++) {
         ptr[i] = &(buffer[i*block_size]);
@@ -538,9 +563,14 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
     ppos = poffset;
     rpos = 0;
     log_printf(1, "et_decode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
-    while (rpos < plan->strip_size) {
+//    while (rpos < plan->strip_size) {
+//int loop = 0;
+    while (apos < fsize) {
+//printf("loop=%d fsize=%lld apos=%lld ppos=%lld\n", loop, fsize, apos, ppos);
+//loop++;
         //** Adjust the block size if needed
-        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
+//        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
+        bsize = block_size;
 
         log_printf(1, "et_decode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
 
@@ -562,36 +592,32 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
             }
             bpos = bpos + plan->strip_size;
         }
+        ppos = bpos;
 
         //** Perform the decoding
         plan->decode_block(plan, ptr, bsize, erasures);
 
         //** Store the missing blocks
         bpos = apos;
-        for (i=0; i<plan->data_strips-1; i++) {  //** Skip the last block
+        for (i=0; i<plan->data_strips; i++) {  //** Skip the last block
             if (missing_data[i] == 1) {
+                nbytes = (bpos + bsize) > fsize ? fsize - bpos : block_size;
+                if (nbytes < 0) break;
                 tbx_io_fseek(fd_file, bpos, SEEK_SET);
-                if (tbx_io_fwrite(data[i], 1, bsize, fd_file) != (size_t)bsize) abort();
+                tbx_io_fwrite(data[i], 1, nbytes, fd_file);
             }
             bpos = bpos + plan->strip_size;
         }
-        //** Handle the last strip individually to handle truncation
-        i = plan->data_strips-1;
-        if (missing_data[i] == 1) {
-            tbx_io_fseek(fd_file, bpos, SEEK_SET);
-            bpos = (bpos + bsize) > fsize ? fsize - bpos : bsize;
-            tbx_io_fwrite(data[i], 1, bpos, fd_file);
-        }
 
         //** Update the file positions
-        ppos = ppos + block_size;
-        apos = apos + block_size;
-        rpos = rpos + block_size;
+        apos = apos + plan->data_strips * block_size;
+//        rpos = rpos + block_size;
     }
 
     //** Free the ptrs
     free(ptr);
     free(buffer);
+    free(missing);
 
     tbx_io_fclose(fd_file);
     tbx_io_fclose(fd_parity);

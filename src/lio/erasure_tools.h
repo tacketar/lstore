@@ -34,15 +34,15 @@ extern int _debug;
    }
 
 
-#define REED_SOL_VAN    0
-#define REED_SOL_R6_OP  1
-#define CAUCHY_ORIG     2
-#define CAUCHY_GOOD     3
-#define BLAUM_ROTH      4
-#define LIBERATION      5
-#define LIBER8TION      6
-#define RAID4           7
-#define N_JE_METHODS    8
+//#define REED_SOL_VAN    0
+//#define REED_SOL_R6_OP  1
+//#define CAUCHY_ORIG     2
+//#define CAUCHY_GOOD     3
+//#define BLAUM_ROTH      4
+//#define LIBERATION      5
+//#define LIBER8TION      6
+//#define RAID4           7
+//#define N_JE_METHODS    8
 
 extern const char *JE_method[N_JE_METHODS];
 
@@ -65,14 +65,14 @@ struct lio_erasure_plan_t {    //** Contains the erasure parameters
 };
 
 int nearest_prime(int w, int which);
-int et_method_type(char *meth);
-lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
-                            int data_strips, int parity_strips, int w, int packet_size, int base_unit);
-lio_erasure_plan_t *et_generate_plan(long long int file_size, int method,
-                                 int data_strips, int parity_strips, int w, int packet_low, int packet_high);
-void et_destroy_plan(lio_erasure_plan_t *plan);
-int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size);
-int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size, int *erasures);
+//int et_method_type(char *meth);
+//lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
+//                            int data_strips, int parity_strips, int w, int packet_size, int base_unit);
+//lio_erasure_plan_t *et_generate_plan(long long int file_size, int method,
+//                                 int data_strips, int parity_strips, int w, int packet_low, int packet_high);
+//void et_destroy_plan(lio_erasure_plan_t *plan);
+//int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size);
+//int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size, int *erasures);
 
 #ifdef __cplusplus
 }

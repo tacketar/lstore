@@ -324,6 +324,18 @@ if(BUILD_TESTS)
     add_executable(log_test test/log_test.c)
     target_link_libraries(log_test pthread toolbox gop lio)
     target_include_directories(log_test PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(et_planner test/et_planner.c)
+    target_link_libraries(et_planner pthread toolbox gop lio)
+    target_include_directories(et_planner PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(et_encoder test/et_encoder.c)
+    target_link_libraries(et_encoder pthread toolbox gop lio)
+    target_include_directories(et_encoder PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(et_decoder test/et_decoder.c)
+    target_link_libraries(et_decoder pthread toolbox gop lio)
+    target_include_directories(et_decoder PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(et_erase_blocks test/et_erase_blocks.c)
+    target_link_libraries(et_erase_blocks pthread toolbox gop lio)
+    target_include_directories(et_erase_blocks PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
 
 
     add_executable(run-tests test/run-tests.c
