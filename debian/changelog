@@ -1,3 +1,8 @@
+lstore (2.3.1) stable; urgency=high
+  * Fix return type in lfs_copy_range() to support large transfers
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Fr Feb 28 2025 11:0:00 -0500
+
 lstore (2.3.0) stable; urgency=low
   * Initial version with fully functioning LFS service manager scripts
 
