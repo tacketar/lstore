@@ -1025,7 +1025,7 @@ ssize_t lfs_copy_file_range(const char *path_in,  struct fuse_file_info *fi_in, 
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_fd_t *fd_in, *fd_out;
-    int err;
+    ssize_t err;
 
     log_printf(1, "START copy_file_range src=%s dest=%s\n", path_in, path_out);
 
