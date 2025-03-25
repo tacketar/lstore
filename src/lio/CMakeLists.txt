@@ -46,7 +46,7 @@ if(NOT USE_SUPERBUILD)
     )
 
     list(APPEND LIBS
-        ${IBP_LIBRARY} ${GOP_LIBRARY} ${TOOLBOX_LIBRARY}
+        ${IBP_LIBRARY} ${GOP_LIBRARY} ${TOOLBOX_LIBRARY} ${ISAL_LIBRARIES}
         ${JERASURE_LIBRARY} ${ZMQ_LIBRARY} ${FUSE_LIBRARIES} ${ROCKSDB_LIBRARY} ${ROCKSDB_EXTRA_LIBRARY} ${LIBSODIUM_LIBRARY}
     )
 else()
@@ -67,6 +67,7 @@ set(LSTORE_LIBS toolbox
                 ${ZMQ_LIBRARY}
                 ${FUSE_LIBRARY}
                 ${JERASURE_LIBRARY}
+                ${ISAL_LIBRARIES}
                 ${ROCKSDB_LIBRARY}
                 ${ROCKSDB_EXTRA_LIBRARY}
                 ${LIBSODIUM_LIBRARY}
@@ -79,6 +80,7 @@ set(LSTORE_INCLUDE_SYSTEM ${APR_INCLUDE_DIR}
                     ${ZLIB_INCLUDE_DIR}
                     ${FUSE_INCLUDE_DIR}
                     ${JERASURE_INCLUDE_DIR}
+                    ${ISAL_INCLUDE_DIR}
                     ${ROCKSDB_INCLUDE_DIR}
                     ${LIBSODIUM_INCLUDE_DIR})
 set(LSTORE_INCLUDE_PUBLIC ${PROJECT_SOURCE_DIR})
@@ -110,7 +112,8 @@ set(LSTORE_PROJECT_OBJS
 		cred_default.c
 		data_block.c
 		ds/ibp.c
-        erasure_tools.c
+    erasure_tools.c
+#    erasure_tools_isa.c
 		ex3.c
 		ex3/compare.c
 		ex3/global.c
@@ -171,6 +174,7 @@ set(LSTORE_PROJECT_INCLUDES
         lio/data_block.h
         lio/ds.h
         lio/erasure_tools.h
+        lio/erasure_tools_isa.h
         lio/ex3.h
         lio/ex3_fwd.h
         lio/fs.h

@@ -118,6 +118,9 @@ set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 set(USE_SUPERBUILD ON)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -D_REENTRANT -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -fvisibility=hidden -fno-strict-aliasing -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Wno-error=sign-compare")
 
+remove_definitions(-Werror=nonnull-compare)
+add_compile_options(-Wno-nonnull-compare)
+
 if (ENABLE_MQ_DEBUG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_MQ_DEBUG")
 endif()
@@ -253,6 +256,7 @@ find_package(LibSodium REQUIRED)
 
 # Find external deps we might build
 find_package(Jerasure)
+find_package(ISAL)
 
 # Build external dependencies
 set(REBUILD_DEPENDENCIES)
@@ -324,6 +328,11 @@ if(BUILD_TESTS)
     add_executable(log_test test/log_test.c)
     target_link_libraries(log_test pthread toolbox gop lio)
     target_include_directories(log_test PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    add_executable(test_isal test/test_isal.c)
+    target_link_libraries(test_isal lio toolbox gop pthread isal)
+    add_executable(test_jerasure test/test_jerasure.c)
+    target_include_directories(test_jerasure PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    target_link_libraries(test_jerasure lio jerasure toolbox gop pthread)
     add_executable(et_planner test/et_planner.c)
     target_link_libraries(et_planner pthread toolbox gop lio)
     target_include_directories(et_planner PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})

@@ -9,14 +9,21 @@
 # also defined, but not for general use are
 #  JERASURE_LIBRARY and JERASURE_LIBRARY, where to find the Jerasure library.
 
-FIND_PATH(JERASURE_INCLUDE_DIR NAMES jerasure/jerasure.h
-                    jerasure/galois.h 
-                    jerasure/cauchy.h 
-                    jerasure/reed_sol.h 
-                    jerasure/liberation.h)
+# Specify your custom Jerasure directory
+set(JERASURE_CUSTOM_PATH "/home/medurys/GitRepos/lstore/vendor/jerasure" CACHE PATH "Custom path to Jerasure")
+
+FIND_PATH(JERASURE_INCLUDE_DIR NAMES jerasure.h
+                    galois.h
+                    cauchy.h
+                    reed_sol.h
+                    liberation.h
+  HINTS ${JERASURE_CUSTOM_PATH}/src
+                    )
 
 SET(JERASURE_NAMES jerasure Jerasure)
-FIND_LIBRARY(JERASURE_LIBRARY NAMES ${JERASURE_NAMES})
+FIND_LIBRARY(JERASURE_LIBRARY NAMES ${JERASURE_NAMES}
+              HINTS ${JERASURE_CUSTOM_PATH}/build/src
+)
 
 IF (JERASURE_LIBRARY AND JERASURE_INCLUDE_DIR)
     SET(JERASURE_LIBRARIES ${JERASURE_LIBRARY})

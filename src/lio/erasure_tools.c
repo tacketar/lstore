@@ -231,6 +231,7 @@ int cauchy_orig_form_encoding_matrix(lio_erasure_plan_t *plan)
 
 int cauchy_good_form_encoding_matrix(lio_erasure_plan_t *plan)
 {
+    printf("Cauchy Good Matrix selected with w: %d",plan->w);
     if (plan == NULL) return(-1);
     if (plan->encode_matrix  != NULL) return(0);  //** Already formed so skip step
 
@@ -240,6 +241,7 @@ int cauchy_good_form_encoding_matrix(lio_erasure_plan_t *plan)
 //log_printf(15, "plan->encode_schedule=%p\n", plan->encode_schedule);
 
     if (plan->encode_schedule == NULL) return(-1);
+
 
     return(0);
 }

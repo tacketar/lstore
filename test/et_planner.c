@@ -58,7 +58,7 @@ int main(int argc, char **argv)
   method[RAID4] = "raid4";
 
   if (argc < 5) {
-     printf("et_planner method chumk_size data_strips parity_strips [w] [packetsize_low] [packetsize_high]\n");
+     printf("et_planner method chunk_size data_strips parity_strips [w] [packetsize_low] [packetsize_high]\n");
      printf("   where method is ");
      for (i=0; i<N_JE_METHODS-1; i++) printf("%s, ", method[i]);
      printf("or %s\n", method[N_JE_METHODS-1]);
