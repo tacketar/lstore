@@ -45,11 +45,11 @@
 #include <lio/path_acl.h>
 
 typedef struct {  //** FUSE compliant POSIX ACL
-    gid_t gid_primary;  //** Primary GID to report for LFS
-    gid_t uid_primary;  //** Primary UID to report for LFS
-    mode_t mode[3];     //** Normal perms User/Group/Other
-    void *acl[3];       //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
-    int  size[3];       //** And It's size
+    gid_t gid_primary;   //** Primary GID to report for LFS
+    gid_t uid_primary;   //** Primary UID to report for LFS
+    mode_t mode[3];      //** Normal perms User/Group/Other
+    void *acl[3];        //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
+    int  size[3];        //** And It's size
 } fuse_acl_t;
 
 typedef struct {    //** FS ACL for use by the FS layer and sits on top of the LStore account type ACLs
@@ -84,7 +84,6 @@ typedef struct {    //** Individual path ACL
     int n_account;          //** Number of accounts in the list
     int n_prefix;           //** Length of the prefix
     char *lfs_account;      //** Primary account to report for FS/FUSE
-    char *lfs_group;        //** Primary group to report for FUSE. Overrides lfs_account is both supplied
     uid_t lfs_uid;          //** Primary user for FUSE
     uid_t lfs_gid;          //** Primary group for FUSE
     fs_acl_list_t *uid_map;
@@ -93,6 +92,7 @@ typedef struct {    //** Individual path ACL
     fuse_acl_t *lfs_acl;    //** Composite FUSE ACL
     int nested_end;         //** Tracks nesting of ACL prefixes
     int nested_primary;     //** Initial prefix of nested group
+    int nested_parent;      //** PArent of current prefix if nested
     int rlut;               //** Reverse LUT
     int gid_account_start;  //** Index representing the GID was added from the account mappings
 } path_acl_t;
@@ -828,6 +828,7 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *pre
 
     tbx_type_malloc_clear(*kacl, char, *kacl_size+1);
     memcpy(*kacl, acl_buf, *kacl_size);
+
     return(0);
 }
 
@@ -836,13 +837,14 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *pre
 //   use with FUSE.  The returned object can be returned as system.posic_acl_access
 //**************************************************************************
 
-fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int fdd)
+fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int fdd, char **dacl_text, char **facl_text, char **eacl_text, int use_name)
 {
     fuse_acl_t *facl;
     int nbytes = 1024*1024;
     char dir_acl_text[nbytes];
     char file_acl_text[nbytes];
     char exec_acl_text[nbytes];
+    char *name;
     int dir_pos, file_pos, exec_pos, i, primary_added;
     gid_t gid;
     uid_t uid;
@@ -885,6 +887,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     primary_added = 0;
     if (acl->gid_map) {
         for (i=0; i<acl->gid_map->n; i++) {
+            name = acl->gid_map->id[i].name;
             gid = acl->gid_map->id[i].gid;
             mode = acl->gid_map->id[i].mode;
 
@@ -906,13 +909,25 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::r-x");
                 }
             } else if (mode & PACL_MODE_WRITE) {
-                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
-                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:rw-", gid);
-                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:rwx", gid);
+                if (use_name == 0) {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:rw-", gid);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:rwx", gid);
+                } else {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%s:rwx", name);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%s:rw-", name);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%s:rwx", name);
+                }
             } else {
-                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:r-x", gid);
-                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:r--", gid);
-                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:r-x", gid);
+                if (use_name == 0) {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:r-x", gid);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:r--", gid);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:r-x", gid);
+                } else {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%s:r-x", name);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%s:r--", name);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%s:r-x", name);
+                }
             }
         }
     }
@@ -950,13 +965,25 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::r-x");
                 }
             } else if (mode & PACL_MODE_WRITE) {
-                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:rwx", uid);
-                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:rw-", uid);
-                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:rwx", uid);
+                if (use_name == 0) {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:rwx", uid);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:rw-", uid);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:rwx", uid);
+                } else {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%s:rwx", name);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%s:rw-", name);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%s:rwx", name);
+                }
             } else {
-                tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:r-x", uid);
-                tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:r--", uid);
-                tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:r-x", uid);
+                if (use_name == 0) {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:r-x", uid);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:r--", uid);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:r-x", uid);
+                } else {
+                    tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%s:r-x", name);
+                    tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%s:r--", name);
+                    tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%s:r-x", name);
+                }
             }
         }
     }
@@ -994,6 +1021,11 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
         free(facl);
         facl = NULL;
     }
+
+    if (dacl_text) *dacl_text = strdup(dir_acl_text);
+    if (facl_text) *facl_text = strdup(file_acl_text);
+    if (eacl_text) *eacl_text = strdup(exec_acl_text);
+
     return(facl);
 }
 
@@ -1023,13 +1055,13 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
 
     log_printf(10, "Generating default ACL\n"); tbx_log_flush();
     //** 1st set the default FUSE ACL
-    pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd);
+    pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd, NULL, NULL, NULL, 0);
     if (!pa->pacl_default->lfs_acl) err++;
 
     //** And now all the Path's
     for (i=0; i<pa->n_path_acl; i++) {
         log_printf(10, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
-        pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd);
+        pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd, NULL, NULL, NULL, 0);
         if (!pa->path_acl[i]->lfs_acl) err++;
     }
 
@@ -1288,7 +1320,7 @@ void lfs_add_account_mappings(path_acl_context_t *ctx, path_acl_t *acl)
 // prefix_account_parse - Parse the INI file and populates the
 //     prefix/account associations.
 //     NOTE: The INI file if from the LIO context and persists for
-//           dureation of the program so no need to dup strings
+//           duration of the program so no need to dup strings
 //**************************************************************************
 
 int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
@@ -1419,6 +1451,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     for (i=0; i<pa->n_path_acl; i++) {
         pa->path_acl[i] = tbx_stack_pop(acl_stack);
         pa->path_acl[i]->nested_primary = -1;
+        pa->path_acl[i]->nested_parent = -1;
     }
     qsort_r(pa->path_acl, pa->n_path_acl, sizeof(path_acl_t *), pacl_sort_fn, NULL);
 
@@ -1432,6 +1465,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         for (j=i+1; j<pa->n_path_acl; j++) {
             if (strncmp(pa->path_acl[i]->prefix, pa->path_acl[j]->prefix, pa->path_acl[i]->n_prefix) != 0) break;
             if (pa->path_acl[j]->nested_primary == -1) pa->path_acl[j]->nested_primary = i;
+            pa->path_acl[j]->nested_parent = i;
             if (pacl_compare_nested_acls(pa->path_acl[i], pa->path_acl[j]) != 0) {
                 log_printf(0, "ERROR: bad nested ACLs! prefix=%s prefix_nested=%s\n", pa->path_acl[i]->prefix, pa->path_acl[j]->prefix);
                 tbx_log_flush();
@@ -1757,20 +1791,144 @@ void pacl_destroy(path_acl_context_t *pa)
 }
 
 //**************************************************************************
+// pacl_facl_print - Prints the FUSE ACL to the FD
+//**************************************************************************
+
+void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, const char *dacl_text, const char *facl_text, const char *eacl_text, FILE *fd)
+{
+    struct group *grp;
+    struct passwd *user;
+    int i;
+
+    //** Print the LSTore ACL info
+    for (i=0; i<acl->n_account; i++) {
+        fprintf(fd, "%saccount(%s) = %s\n", text_prefix, ((acl->account[i].mode == PACL_MODE_READ) ? "r" : "rw"), acl->account[i].account);
+    }
+
+    //** Now the FUSE ACL's
+    grp = getgrgid(facl->gid_primary);
+    user = getpwuid(facl->uid_primary);
+    fprintf(fd, "%suser=%s group=%s\n", text_prefix, user->pw_name, grp->gr_name);
+    fprintf(fd, "%sDIR:  %s\n", text_prefix, dacl_text);
+    fprintf(fd, "%sFILE: %s\n", text_prefix, facl_text);
+    fprintf(fd, "%sEXEC: %s\n", text_prefix, eacl_text);
+}
+
+//**************************************************************************
+// pacl_path_probe_recurse - Recurses print the PACL tree
+//**************************************************************************
+
+void pacl_path_probe_recurse(path_acl_context_t *pa, path_acl_t *acl, int index, FILE *fd)
+{
+    if (acl->nested_parent != -1 ) {
+        pacl_path_probe_recurse(pa, pa->path_acl[acl->nested_parent], acl->nested_parent, fd);
+    }
+
+    fprintf(fd, "%4d: %s  nested_primary=%d nested_end=%d\n", index, acl->prefix, acl->nested_parent, acl->nested_end);
+}
+
+
+//**************************************************************************
 // pacl_path_probe - Dumps information about the prefix the path maps to
 //   Prints details to the given fd if provided and returns an index representing
 //   which internal prefix it maps to or -1 if the default is hit
 //**************************************************************************
 
-int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int seed)
+int pacl_path_probe(path_acl_context_t *pa, const char *prefix, int do_acl_tree, FILE *fd, int seed)
 {
-    path_acl_t *acl;
     int exact, got_default, index;
+    path_acl_t *acl;
 
     index = seed;
     acl = pacl_search(pa, prefix, &exact, &got_default, &index);
 
-    fprintf(fd, "  Prefix: %s\n", acl->prefix);
-    fprintf(fd, "  exact=%d got_default=%d index=%d\n", exact, got_default, index);
+    if (do_acl_tree == 0) {
+        fprintf(fd, "  Prefix: %s\n", acl->prefix);
+        fprintf(fd, "  exact=%d got_default=%d index=%d\n", exact, got_default, index);
+        return(index);
+    }
+
+    //** If we made it here they want the annotated tree
+    if (got_default == 0) {
+        pacl_path_probe_recurse(pa, acl, index, fd);
+    } else {
+        fprintf(fd, "DEFAULT\n");
+    }
+    fprintf(fd, "USER: %s\n", prefix);
+
     return(index);
+}
+
+//**************************************************************************
+// pacl_print_tree - Prints the ACL tree
+//**************************************************************************
+
+int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd)
+{
+    path_acl_t *acl;
+    fuse_acl_t *facl;
+    char *dacl_text, *facl_text, *eacl_text;
+    int i, fdf, fdd;
+    DIR *dir;
+    char *fname, *dname;
+
+    //** Make the temp file for generating the ACLs on
+    fname = strdup(pa->fname_acl);
+    fdf = mkstemp(fname);
+    dname = strdup(pa->fname_acl);
+    if (mkdtemp(dname) == NULL) {
+        log_printf(0, "ERROR: failed maing temp ACL directory: %s\n", dname);
+        return(1);
+    }
+    dir = opendir(dname);
+    fdd = dirfd(dir);
+
+
+    fprintf(fd, "n_path_acl=%d\n", pa->n_path_acl);
+
+    dacl_text = facl_text = eacl_text = NULL;
+    facl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd, &dacl_text, &facl_text, &eacl_text, 1);
+    fprintf(fd, "\n");
+    fprintf(fd, "Default ACL\n");
+    pacl_acl_print(pa->pacl_default, facl, "      ", dacl_text, facl_text, eacl_text, fd);
+    if (facl) {
+        free(facl->acl[0]);
+        free(facl->acl[1]);
+        free(facl->acl[2]);
+        free(facl);
+    }
+    if (dacl_text) free(dacl_text);
+    if (facl_text) free(facl_text);
+    if (eacl_text) free(eacl_text);
+
+    for (i=0; i<pa->n_path_acl; i++) {
+        acl = pa->path_acl[i];
+
+        dacl_text = facl_text = eacl_text = NULL;
+        facl = pacl2lfs_acl(pa, acl, fdf, fdd, &dacl_text, &facl_text, &eacl_text, 1);
+
+        fprintf(fd, "\n");
+        fprintf(fd, "%4d: %s  nested_primary=%d nested_end=%d nested_parent=%d rlut=%d\n", i, acl->prefix, 
+            acl->nested_primary, acl->nested_end, acl->nested_parent, acl->rlut);
+        pacl_acl_print(acl, facl, "      ", dacl_text, facl_text, eacl_text, fd);
+        if (facl) {
+            free(facl->acl[0]);
+            free(facl->acl[1]);
+            free(facl->acl[2]);
+            free(facl);
+        }
+        if (dacl_text) free(dacl_text);
+        if (facl_text) free(facl_text);
+        if (eacl_text) free(eacl_text);
+    }
+
+    //** Cleanup
+    close(fdf);
+    closedir(dir);
+    remove(fname);
+    rmdir(dname);
+    free(fname);
+    free(dname);
+
+    return(0);
 }

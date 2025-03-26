@@ -47,7 +47,8 @@ LIO_API int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 LIO_API int pacl_can_access_hint(path_acl_context_t *pa, char *path, int mode, lio_os_authz_local_t *ug, int *acl);
 LIO_API path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls);
 LIO_API void pacl_destroy(path_acl_context_t *pa);
-LIO_API int pacl_path_probe(path_acl_context_t *pa, const char *prefix, FILE *fd, int seed);
+LIO_API int pacl_path_probe(path_acl_context_t *pa, const char *prefix, int do_acl_tree, FILE *fd, int seed);
+LIO_API int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd);
 LIO_API uint64_t pacl_unused_guid_get();
 LIO_API void pacl_unused_guid_set(uint64_t guid);
 
