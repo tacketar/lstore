@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     }
 
     //** Open the file
-    ifd = tbx_inip_file_read(fname, 0);
+    ifd = tbx_inip_file_read(fname, 1);
     if (ifd == NULL) {
         fprintf(stderr, "ERROR: parsing file!\n");
         tbx_stack_free(hints, 1);

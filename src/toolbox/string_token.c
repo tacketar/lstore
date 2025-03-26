@@ -35,6 +35,41 @@ int64_t split_token_into_number_and_scale(char *token);
 
 char NULL_TERMINATOR = '\0';
 
+
+//***************************************************************
+// tbx_stk_string2args - Converts a string to argc/argv
+//***************************************************************
+
+int tbx_stk_string2args(char *str, int *argc, char ***eargv)
+{
+    int i, n, fin;
+    char *bstate, **argv;
+
+    n = 100;
+    tbx_type_malloc_clear(argv, char *, n);
+
+    i = 0;
+    argv[i] = tbx_stk_string_token(str, " ", &bstate, &fin);
+    while (fin == 0) {
+        i++;
+        if (i==n) {
+            n += 10;
+            tbx_type_realloc(argv, char *, n);
+        }
+        argv[i] = tbx_stk_string_token(NULL, " ", &bstate, &fin);
+    }
+
+    *argc = i;
+    if (i == 0) {
+        *argv = NULL;
+    } else {
+        tbx_type_realloc(argv, char *, i);
+    }
+
+    *eargv = argv;
+    return(0);
+}
+
 //*****************************************************************
 // string_token - Same as strtok_r except that instead of returing
 //   a NULL it returns a '\0' which won't cause sscanf to barf.
@@ -102,6 +137,72 @@ char *tbx_stk_argv2format(char *arg)
 
 
 //*****************************************************************
+// escape_string_token_to_end - Same as string_token except it supports
+//   parsing escape sequences and just culls delimins from the beginning
+//   and end.
+//*****************************************************************
+
+char *tbx_stk_escape_string_token_to_end(char *str, const char *delims, char escape_char, int compress_delims, char **last, int *finished)
+{
+    int n, n_end, ndata;
+    char *ptr, *token;
+
+    n_end = -1;
+    ptr = (str == NULL) ? *last : str;
+    if (ptr == NULL) {
+        *finished = 1;
+        *last = NULL;
+        return(&NULL_TERMINATOR);
+    }
+
+    ndata = strlen(ptr);
+
+    //** Skip any beginning delims
+    n = 0;
+    if (compress_delims != 0) {
+        while ((n < ndata) && (index(delims, ptr[n]) != NULL)) {
+            n++;
+        }
+    }
+
+    //** This is where the token starts
+    token = &(ptr[n]);
+
+    while (*finished == 0) {
+        //** Cycle trough until we find the next delim
+        while ((n < ndata) && (index(delims, ptr[n]) == NULL)) {
+            if (ptr[n] == escape_char) n++;
+            n++;
+        }
+
+        //** Now null terminate the token
+        n_end = n;
+
+        //** Update the state
+        if (n >= (ndata-1)) {
+            *last = NULL;
+            *finished = 1;
+        } else {
+            //** Skip any other trailing delims if requested
+            n++;
+            if (compress_delims != 0) {
+                while ((n < ndata) && (index(delims, ptr[n]) != NULL)) {
+                    n++;
+                }
+            }
+
+            if (n >= (ndata-1)) {
+                *last = NULL;
+                *finished = 1;
+            }
+        }
+    }
+
+    ptr[n_end] = '\0';
+    return(token);
+}
+
+//*****************************************************************
 // escape_string_token - Same as string_token except it supports
 //   parsing escape sequences.
 //*****************************************************************
@@ -145,8 +246,21 @@ char *tbx_stk_escape_string_token(char *str, const char *delims, char escape_cha
         *last = NULL;
         *finished = 1;
     } else {
-        *last = &(ptr[n+1]);
-        *finished = 0;
+        //** Skip any other trailing delims if requested
+        n++;
+        if (compress_delims != 0) {
+            while ((n < ndata) && (index(delims, ptr[n]) != NULL)) {
+                n++;
+            }
+        }
+
+        if (n >= (ndata-1)) {
+            *last = NULL;
+            *finished = 1;
+        } else {
+            *last = &(ptr[n]);
+            *finished = 0;
+        }
     }
 
     return(token);

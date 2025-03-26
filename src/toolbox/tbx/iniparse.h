@@ -35,6 +35,7 @@ extern "C" {
 #define TBX_INIP_HINT_REMOVE   1
 #define TBX_INIP_HINT_REPLACE  2
 #define TBX_INIP_HINT_DEFAULT  3
+#define TBX_INIP_HINT_MERGE    4
 
 
 // Types
@@ -69,6 +70,7 @@ TBX_API tbx_inip_group_t *tbx_inip_group_next(tbx_inip_group_t *g);
 TBX_API void tbx_inip_group_set(tbx_inip_group_t *ig, char *value);
 TBX_API tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params);
 TBX_API tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params);
+TBX_API tbx_inip_file_t *tbx_inip_string_read_with_hints_string(const char *text, const char *hint_string, int resolve_params);
 TBX_API int tbx_inip_file2string(const char *fname, char **text_out, int *nbytes);
 TBX_API int tbx_inip_text2string(const char *text, char **text_out, int *nbytes);
 TBX_API tbx_inip_file_t *tbx_inip_string_read_jail(const char *text, int resolve_params, const char *jail_prefix);

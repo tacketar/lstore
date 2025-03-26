@@ -28,7 +28,8 @@
 #define VAR_DECLARE '$'
 #define  VAR_RANDOM "RANDOM"
 
-char *hint_ops[] = { "--ini-hint-add", "--ini-hint-remove", "--ini-hint-replace", "--ini-hint-default" };
+#define HINT_OPS_SIZE 5
+char *hint_ops[] = { "--ini-hint-add", "--ini-hint-remove", "--ini-hint-replace", "--ini-hint-default", "--ini-hint-merge" };
 
 typedef struct {
     FILE *fd;
@@ -66,6 +67,7 @@ struct tbx_inip_file_t {  //File
     tbx_inip_group_t *tree;
     int n_groups;
     int n_substitution_checks;
+    int use_env;
     tbx_atomic_int_t ref_count;
     int auto_free_string;
     char *string;
@@ -131,9 +133,9 @@ void tbx_inip_group_set(tbx_inip_group_t *ig, char *value) {
 //     returned.  Otherwise NULL is returns.
 //***********************************************************************
 
-char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_error)
+char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_error, int use_env)
 {
-    char *start, *end, *last, *dest, *c, *value, *newtext, *textend;
+    char *start, *end, *last, *dest, *c, *value, *newtext, *textend, *vtmp;
     char param[1024], subtext[1024];
     int n, ndest, nmax, changed, pid;
 
@@ -207,10 +209,19 @@ char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_
         } else {    //** Look it up
             value = tbx_inip_get_string(fd, PARAMS, param, "_^MISSING-PARAM^_");
             if (strcmp(value, "_^MISSING-PARAM^_") == 0) {
-                if (report_error) fprintf(stderr, "iniparse:  ERROR undefined parameter! parm=%s\n", param);
-                free(value);
-                value = NULL;
-                if (error) *error = 1;
+                if (use_env) {  //** If using env variables let's see if it's defined there
+                    vtmp = getenv(param);
+                    if (vtmp) {
+                        free(value);
+                        value = strdup(vtmp);
+                    }
+                }
+                if (strcmp(value, "_^MISSING-PARAM^_") == 0) {
+                    if (report_error) fprintf(stderr, "iniparse:  ERROR undefined parameter! parm=%s\n", param);
+                    free(value);
+                    value = NULL;
+                    if (error) *error = 1;
+                }
             }
         }
 
@@ -250,7 +261,7 @@ finished:
 // resolve_params - Resolves the parameters
 //***********************************************************************
 
-int resolve_params(tbx_inip_file_t  *fd)
+int resolve_params(tbx_inip_file_t  *fd, int use_env)
 {
     int loop, n, error, n_errors;
     char *str;
@@ -272,13 +283,13 @@ int resolve_params(tbx_inip_file_t  *fd)
     for (loop=0; loop<20; loop++) {
         n = 0;
         for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
-            if ((str = substitute_params(fd, ele->key, &error, 1)) != NULL) {
+            if ((str = substitute_params(fd, ele->key, &error, 1, use_env)) != NULL) {
                 n++;
                 free(ele->key);
                 ele->key = str;
             }
             n_errors += error;
-            if ((str = substitute_params(fd, ele->value, &error, 1)) != NULL) {
+            if ((str = substitute_params(fd, ele->value, &error, 1, use_env)) != NULL) {
                 n++;
                free(ele->value);
                ele->value = str;
@@ -306,11 +317,11 @@ int tbx_inip_apply_params(tbx_inip_file_t  *fd)
 
     fd->n_substitution_checks = 0;  //** Flag that we've applied the param substitutions
 
-    n_errors = resolve_params(fd);
+    n_errors = resolve_params(fd, fd->use_env);
 
     for (g = tbx_inip_group_first(fd); g != NULL; g = tbx_inip_group_next(g)) {
         if (g->substitution_check) {
-            if ((str = substitute_params(fd, g->group, &error, 1)) != NULL) {
+            if ((str = substitute_params(fd, g->group, &error, 1, fd->use_env)) != NULL) {
                 free(g->group);
                 g->group = str;
             }
@@ -320,12 +331,12 @@ int tbx_inip_apply_params(tbx_inip_file_t  *fd)
         if (g->n_kv_substitution_check) {
             for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
                 if (ele->substitution_check) {
-                    if ((str = substitute_params(fd, ele->key, &error, 1)) != NULL) {
+                    if ((str = substitute_params(fd, ele->key, &error, 1, fd->use_env)) != NULL) {
                         free(ele->key);
                         ele->key = str;
                     }
                     n_errors += error;
-                    if ((str = substitute_params(fd, ele->value, &error, 1)) != NULL) {
+                    if ((str = substitute_params(fd, ele->value, &error, 1, fd->use_env)) != NULL) {
                         free(ele->value);
                         ele->value = str;
                     }
@@ -455,6 +466,38 @@ char *_fetch_text(char *buf, int bsize, bfile_entry_t *entry)
 }
 
 //***********************************************************************
+//  fgets_multiline - Same as fgets but supports line continuation
+//***********************************************************************
+
+char *fgets_multiline(char *s, int size, FILE *stream)
+{
+    char *c;
+    int n, left, k;
+
+    left = size;
+    n = 0;
+
+    do {
+        //** Get the next line
+        c = fgets(s + n, left, stream);
+        if (!c) return(c);  //** Ifnothing left kick out
+
+        //** See if it's a multiline
+        k = strlen(s + n);
+        if (k < 1) {
+            return(c);
+        } else if ((s[n+k-2] == '\\') && (s[n+k-1] == '\n')) {
+            n = n + k - 2;
+            left = size - n;
+        } else {
+            return(c);
+        }
+    } while (left > 0);
+
+    return(c);
+}
+
+//***********************************************************************
 // _get_line - Reads a line of text from the file
 //***********************************************************************
 
@@ -471,7 +514,7 @@ char * _get_line(bfile_t *bfd, int *err)
     if (bfd->curr->used == 1) return(bfd->curr->buffer);
 
 again:
-    comment = (bfd->curr->text) ? _fetch_text(bfd->curr->buffer, BUFMAX, bfd->curr) : fgets(bfd->curr->buffer, BUFMAX, bfd->curr->fd);
+    comment = (bfd->curr->text) ? _fetch_text(bfd->curr->buffer, BUFMAX, bfd->curr) : fgets_multiline(bfd->curr->buffer, BUFMAX, bfd->curr->fd);
     if (comment) { log_printf(15, "_get_line: fgets=%s\n", comment); }
 
     if (comment == NULL) {  //** EOF or error
@@ -561,7 +604,7 @@ tbx_inip_element_t *_parse_ele(bfile_t *bfd)
         key = tbx_stk_escape_string_token(text, " =\r\n", '\\', 1, &last, &fin);
         log_printf(15, "_parse_ele: key=!%s!\n", key);
         if (fin == 0) {
-            val = tbx_stk_escape_string_token(NULL, " =\r\n", '\\', 1, &last, &fin);
+            val = tbx_stk_escape_string_token_to_end(NULL, " =\r\n", '\\', 1, &last, &fin);
 
             ele = new_ele(strdup(key), (val ? strdup(val) : NULL));
             log_printf(15, "_parse_ele: key=%s value=%s\n", ele->key, ele->value);
@@ -856,7 +899,7 @@ char *tbx_inip_get_string_full(tbx_inip_file_t *inip, const char *group, const c
     if (ele != NULL) {
         value = ele->value;
     } else if (def != NULL) {
-        sub = substitute_params(inip, def, error, (error) ? 0 : 1);
+        sub = substitute_params(inip, def, error, (error) ? 0 : 1, inip->use_env);
         value = (sub) ? sub : def;
     }
 
@@ -880,17 +923,31 @@ char *tbx_inip_get_string(tbx_inip_file_t *inip, const char *group, const char *
 //    NOTE:  Either fd or text showld be non-NULL but not both.
 //***********************************************************************
 
-tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int resolve_params, const char *jail_prefix)
+tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, const char *hints_string, int resolve_params, const char *jail_prefix)
 {
     tbx_inip_file_t *inip;
     tbx_inip_group_t *group, *prev;
     bfile_t bfd;
     bfile_entry_t *entry;
+    tbx_stack_t *hints = NULL;
+    char *hstr = NULL;
+    int argc;
+    char **argv = NULL;
 
     tbx_type_malloc_clear(entry, bfile_entry_t, 1);
     entry->fd = fd;
     entry->text = (char *)text;
     entry->text_pos = (char *)text;
+
+    //** Load the hints
+    if (hints_string) {
+        hints = tbx_stack_new();
+        hstr = strdup(hints_string);
+        tbx_stk_string2args(hstr, &argc, &argv);
+        tbx_inip_hint_options_parse(hints, argv, &argc);
+        if (argv) free(argv);
+        free(hstr);
+    }
 
     if (fd) rewind(fd);
 
@@ -911,6 +968,7 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int r
     inip->n_groups = 0;
     if (text) inip->string = (char *)text;
     tbx_atomic_set(inip->ref_count, 1);
+    inip->use_env = resolve_params;
 
     prev = NULL;
     while (group != NULL) {
@@ -942,6 +1000,11 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, int r
                 inip = NULL;
             }
         }
+    }
+
+    if (inip && hints_string) {
+        tbx_inip_hint_list_apply(inip, hints);  //** Apply the hints
+        tbx_inip_hint_list_destroy(hints);     //** and cleanup
     }
 
     return(inip);
@@ -980,7 +1043,7 @@ tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, 
         }
     }
 
-    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, resolve_params, jail_prefix);
+    tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, NULL, resolve_params, jail_prefix);
 
     if (prefix) free(prefix);
     return ret;
@@ -994,12 +1057,24 @@ tbx_inip_file_t *tbx_inip_file_read(const char *fname, int resolve_params)
 {
     return(tbx_inip_file_read_jail(fname, resolve_params, "/"));
 }
+
 //***********************************************************************
 //  tbx_inip_string_read - Loads a string and parses it into a INI structure
 //***********************************************************************
+
 tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params)
 {
-    return(inip_load(NULL, text, NULL, resolve_params, "/"));
+    return(inip_load(NULL, text, NULL, NULL, resolve_params, "/"));
+}
+
+//***********************************************************************
+//  tbx_inip_string_read_with_hint_string - Loads a string and parses it into a INI structure
+//     and applies supplied hints string
+//***********************************************************************
+
+tbx_inip_file_t *tbx_inip_string_read_with_hints_string(const char *text, const char *hints_string, int resolve_params)
+{
+    return(inip_load(NULL, text, NULL, hints_string, resolve_params, "/"));
 }
 
 //***********************************************************************
@@ -1008,7 +1083,7 @@ tbx_inip_file_t *tbx_inip_string_read(const char *text, int resolve_params)
 //***********************************************************************
 tbx_inip_file_t *tbx_inip_string_read_jail(const char *text, int resolve_params, const char *jail_prefix)
 {
-    return(inip_load(NULL, text, NULL, resolve_params, jail_prefix));
+    return(inip_load(NULL, text, NULL, NULL, resolve_params, jail_prefix));
 }
 
 //***********************************************************************
@@ -1290,7 +1365,6 @@ tbx_inip_hint_t *tbx_inip_hint_parse(int op, char *text)
 
     h = tbx_inip_hint_new(op, section, srank, key, krank, value);
 error:
-    if (section) free(section);
     free(base);
     return(h);
 }
@@ -1309,7 +1383,7 @@ void tbx_inip_hint_options_parse(tbx_stack_t *list, char **argv, int *argc)
     i = 0;
     while (i<*argc) {  //** Loop over all the args
         hit = 0;
-        for (op=0; op<4; op++) {  //** See if we find a match
+        for (op=0; op<HINT_OPS_SIZE; op++) {  //** See if we find a match
             if (strcmp(hint_ops[op], argv[i]) == 0) {  //** If so store it
                 h = tbx_inip_hint_parse(op, argv[i+1]);
                 tbx_stack_move_to_bottom(list);
@@ -1515,6 +1589,36 @@ int hint_remove(tbx_inip_file_t *fd, tbx_inip_hint_t *h, int check_only)
 }
 
 //***********************************************************************
+// hint_merge - Merges another INI file with this one.  No deduplication
+//     is done. A straight merge of the 2 INI trees is done
+//***********************************************************************
+
+int hint_merge(tbx_inip_file_t *fd, tbx_inip_hint_t *h, int resolve_params)
+{
+    tbx_inip_file_t *fd2;
+    tbx_inip_group_t *group;
+
+    //** Load the other file
+    fd2 = tbx_inip_file_read(h->section, resolve_params);
+    if (!fd2) return(1);
+
+    //** Move to the end of the original
+    group = fd->tree;
+    while (group->next) {
+        group = group->next;
+    }
+
+    //** Merge it it
+    group->next = fd2->tree;
+
+    //** And clear it for cleanup
+    fd2->tree = NULL;
+    tbx_inip_destroy(fd2);
+
+    return(0);
+}
+
+//***********************************************************************
 // tbx_inip_hint_apply - Applies the hint to the current INI
 //    file descriptor
 //***********************************************************************
@@ -1543,6 +1647,9 @@ int tbx_inip_hint_apply(tbx_inip_file_t *fd, tbx_inip_hint_t *h)
             break;
         case TBX_INIP_HINT_DEFAULT:
             err = (hint_remove(fd, h, 1) != 0) ? hint_add(fd, h) : 0;
+            break;
+        case TBX_INIP_HINT_MERGE:
+            err = hint_merge(fd, h, 1);
             break;
     }
 
@@ -1575,10 +1682,11 @@ int tbx_inip_hint_list_apply(tbx_inip_file_t *fd, tbx_stack_t *list)
 void tbx_inip_print_hint_options(FILE *fd)
 {
     fprintf(fd, "    INI_OPTIONS - Override configuration options. Multiple options are allowed and applied in the order given.\n");
-    fprintf(fd, "       --ini-hint-add  INI_ARG    - Add the option\n");
-    fprintf(fd, "       --ini-hint-remove  INI_ARG - Remove the option\n");
-    fprintf(fd, "       --ini-hint-replace INI_ARG - Replace the option if it exists otherwise add it\n");
-    fprintf(fd, "       --ini-hint-default INI_ARG - Only add the option if it doesn't exist\n");
+    fprintf(fd, "       --ini-hint-add     INI_ARG  - Add the option\n");
+    fprintf(fd, "       --ini-hint-remove  INI_ARG  - Remove the option\n");
+    fprintf(fd, "       --ini-hint-replace INI_ARG  - Replace the option if it exists otherwise add it\n");
+    fprintf(fd, "       --ini-hint-default INI_ARG  - Only add the option if it doesn't exist\n");
+    fprintf(fd, "       --ini-hint-merge   INI-file - Merge another INI file after processing. No deduplication is done.\n");
     fprintf(fd, "\n");
     fprintf(fd, "       INI_ARG format: section[:index]/key[:index]=value\n");
     fprintf(fd, "          section - INI Section name\n");
