@@ -1,30 +1,35 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #******************************************************************************
 #
 # lfs_service_manager.sh - Script for managing LFS namespace mounts
 #
 # Parameters:
-#   LFS_ROOTS    - Prefix for LFS mounts to run out of
-#   LFS_CFG      - LFS config to load
-#   LIO_OPTS     - LStore options
-#   FUSE_OPTS    - FUSE options
-#   FUSE_PATH    - Path containing FUSE tools -- fusermount, fusermount3 (OPTIONAL)
-#   LFS_USER     - Which local user to run the LFS process as (defailt: lfs)
-#   LIMIT_FD     - FD limit (default: 20480)
-#   LIMIT_NPROC  - Nprocs/threads ulimit (default: 100000)
-#   LIMIT_MEM    - Memory limit (default: 16G)
-#   LIMIT_CORE   - Core dump size (default: 0)
-#   TCM_ENABLE   - Enable use of TCMalloc if available
-#   TCM_LIB      - TCMalloc shared library.  If not specified it will be searched for
-#   TCM_OPTS     - TCMalloc options
-#   LOG_MAX_GB   - Max amount of space to use for namespace logs
-#   LOG_MIN_GB   - Low water mark on when to stop deleting one LOG_MAX_GB has been hit
-#   LOG_PREFIX   - Prefix to use for log file names.  Assumes the PID of the lio_fuse is embedded in the name.
-#   LOG_SIGNAL   - Signal to trigger a log rotate.  IF blank the LFS mount isn't rotated.
-#   CK_TIMEOUT   - Mount health check timeout
+#   LFS_NAME       - Mount name
+#   LFS_ROOTS      - Prefix for LFS mounts to run out of
+#   LFS_CFG        - LFS config to load
+#   CLI_CFG        - CLI config to load.  Only used for commands when setting up shortcuts/known_hosts
+#   LIO_CREDS      - lio_fuse options for the creds.  This includes any '--fcreds <creds file>' and '-u <user>' needed
+#   LIO_PKEY_DIR   - Override the directory looking for the known host file: ${LIO_PKEY_DIR}/known_hosts.
+#                    It is passed to systemd so should be of the form '--setenv=LIO_KEY_PREFIX=/dir/of-known-hosts'
+#   LIO_OPTS       - LStore options
+#   LFS_USER       - Which local user to run the LFS process as (defailt: lfs)
+#   FUSE_OPTS      - FUSE options
+#   FUSE_PATH      - Path containing FUSE tools -- fusermount, fusermount3 (OPTIONAL)
+#   LIMIT_FD       - FD limit (default: 20480)
+#   LIMIT_NPROC    - Nprocs/threads ulimit (default: 100000)
+#   LIMIT_MEM      - Memory limit (default: 16G)
+#   LIMIT_CORE     - Core dump size (default: 0)
+#   TCM_ENABLE     - Enable use of TCMalloc if available
+#   TCM_LIB        - TCMalloc shared library.  If not specified it will be searched for
+#   TCM_OPTS       - TCMalloc options
+#   LOG_MAX_GB     - Max amount of space to use for namespace logs
+#   LOG_MIN_GB     - Low water mark on when to stop deleting one LOG_MAX_GB has been hit
+#   LOG_PREFIX      - Prefix to use for log file names.  Assumes the PID of the lio_fuse is embedded in the name.
+#   LOG_SIGNAL     - Signal to trigger a log rotate.  IF blank the LFS mount isn't rotated.
+#   CK_TIMEOUT     - Mount health check timeout
 #   CK_PENDING_TIMEOUT - Background Mount health check timeout
-#   CK_FILE      - File to stat for determining health
-#   CK_MEM_GB    - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
+#   CK_FILE        - File to stat for determining health
+#   CK_MEM_GB      - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
 #
 # Organization of files
 #    ${LFS_ROOTS}
@@ -44,11 +49,15 @@
 vars_default() {
     #Set the default falues to be overridden by the ENV file
     # don't use trailing slashes for directories
+    LFS_NAME=
     LFS_ROOTS=/lfs_roots
     LFS_CFG=
+    CLI_CFG=
+    LIO_PKEY_DIR=
     LFS_USER=lfs
-    LIO_OPTS="-d 1 --fcreds /etc/lio/lfs.psk"
-    FUSE_OPTS="-f -o auto_cache,allow_other,fsname=${LFS_USER}:lio,max_threads=200"
+    LIO_OPTS="-d 1"
+    LIO_CREDS="--fcreds /etc/lio/lfs.psk -u lfs"
+    FUSE_OPTS="-f -o auto_cache,allow_other,fsname=lfs:lio,max_threads=200"
     FUSE_PATH=""
     LIMIT_FD=20480
     LIMIT_NPROC=100000
@@ -97,8 +106,9 @@ install() {
 
     #Configure the service_manager variables
     vars_default
-    [ -e "$4" ] && source $4
+    LFS_NAME=$(basename ${install_target})
     LFS_ROOTS=${install_target}
+    [ -e "$4" ] && source $4
     LFS_USER=${user}
     VARS=${install_target}/vars.sh
 
@@ -127,8 +137,12 @@ install() {
     fi
 
     #Now dump them to the new vars file
-    echo "LFS_ROOTS=\"${LFS_ROOTS}\"" > ${VARS}
+    echo "LFS_NAME=\"${LFS_NAME}\"" > ${VARS}
+    echo "LFS_ROOTS=\"${LFS_ROOTS}\"" >> ${VARS}
     echo "LFS_CFG=\"${LFS_CFG}\"" >> ${VARS}
+    echo "CLI_CFG=\"${CLI_CFG}\"" >> ${VARS}
+    echo "LIO_CREDS=\"${LIO_CREDS}\"" >> ${VARS}
+    echo "LIO_PKEY_DIR=\"${LIO_PKEY_DIR}\"" >> ${VARS}
     echo "LFS_USER=\"${LFS_USER}\"" >> ${VARS}
     echo "LIO_OPTS=\"${LIO_OPTS}\"" >> ${VARS}
     echo "FUSE_OPTS=\"${FUSE_OPTS}\"" >> ${VARS}
@@ -215,7 +229,7 @@ start_instance() {
     # allow coredumps, set working dir
     cd $WDIR
     echo "Core dumps enabled (unlimited size), working directory is '$(pwd)' and the current destination/handler is '$(cat /proc/sys/kernel/core_pattern)' (set using /proc/sys/kernel/core_pattern)"
-    COMMAND="lio_fuse ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${WDIR} ${LFS_CFG} $LIO_OPTS"
+    COMMAND="lio_fuse ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${WDIR} ${LFS_CFG} ${LIO_CREDS} ${LIO_OPTS}"
     echo "COMMAND=${COMMAND}"
     # ulimits are done twice, once as root to raise the hard limit and once
     # after the sudo to raise user's soft limit
@@ -231,8 +245,8 @@ start_instance() {
     (
         set +u
         DAEMON_COREFILE_LIMIT=${LIMIT_CORE}
-        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} $COMMAND"
-        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} $COMMAND
+        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND"
+        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND
     )
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
@@ -393,8 +407,8 @@ get_instance_health() {
     STATUS+=$( printf " %-18s" "files_in_use=${FILE_USE_COUNT}")
 
     # Do a stat
-    STATINFO=$(get_stat_instance ${ID})
-    PENDINGINFO=$(get_pending_stat_instance ${ID})
+    STATINFO=$(get_stat_instance ${INSTANCE_ID})
+    PENDINGINFO=$(get_pending_stat_instance ${INSTANCE_ID})
     if [ "${PENDINGINFO}" == "" ]; then
         STATUS+=$( printf " %-20s" "stat=${STATINFO}")
     else
@@ -545,6 +559,24 @@ stop_all() {
         echo "Stopping instance '$id'"
         stop_instance $id
     done
+}
+
+#******************************************************************************
+# remove_root  - Remove the previously installed mount
+#******************************************************************************
+
+remove_root() {
+    echo "Removing framework for ${LFS_ROOTS}"
+
+    stop_all
+
+    #Make sure they are all dead
+    for pid in $(ps agux |grep lio_fuse | grep -F ${LFS_ROOTS}  | awk '{print $2}'); do
+        kill -9 ${pid}
+    done
+
+    #Now delete the shell
+    rm --one-file-system -rf ${LFS_ROOTS}
 }
 
 #******************************************************************************
@@ -776,6 +808,7 @@ usage() {
     echo "     <vars.sh> - Optional file containing the lfs_service_manager.sh configuration options."
     echo "<lfs_roots_prefix>  - Directory used for managing the LFS namespace."
     echo "Valid OPTIONs"
+    echo "    remove  - Removes the mount root framework"
     echo "    start   - Start the LFS service"
     echo "    stop    - Stop the LFS service"
     echo "    status  - List the state of all LFS mounts in the namespace"
@@ -848,6 +881,9 @@ if [ "${TCM_ENABLE}" == "1" ]; then
 fi
 
 case "${2:-}" in
+    remove)
+        remove_root
+        ;;
     start)
         service_start
         ;;
