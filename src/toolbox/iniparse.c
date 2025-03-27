@@ -1342,7 +1342,7 @@ tbx_inip_hint_t *tbx_inip_hint_parse(int op, char *text)
             tmp = strtok_r(NULL, "/", &bs2);
             srank = (tmp) ? atol(tmp) : 0;
         } else {
-            section = strdup(s);
+            section = s;
         }
 
         if (!section) {
