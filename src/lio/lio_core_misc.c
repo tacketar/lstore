@@ -53,9 +53,12 @@
 // lio_get_shortcut - Looks up the shortcut from the standard file locations:
 //      ~/.lio/known_hosts
 //      /etc/lio/known_hosts
+//
+//    label - Shortcut to look up
+//    hints - If non-NULL then any shortcut hints are returned
 //***********************************************************************
 
-char *lio_get_shortcut(char *label)
+char *lio_get_shortcut(char *label, char **hints_string)
 {
     char fname[4096];
     char fname_home[4096];
@@ -71,6 +74,7 @@ char *lio_get_shortcut(char *label)
     ifd = tbx_inip_file_read(fname_home, 1);
     if (ifd == NULL) goto next;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
+    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL); 
     tbx_inip_destroy(ifd);
     if (shortcut) return(shortcut);
 
@@ -81,6 +85,7 @@ next:
     ifd = tbx_inip_file_read(fname, 1);
     if (ifd == NULL) goto oops;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
+    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL); 
     tbx_inip_destroy(ifd);
 
     if (shortcut == NULL) {
@@ -151,7 +156,7 @@ int is_special(char special, char *string, int offset, char escape)
 //    -1 if the path can't be parsed.  Usually :@ or some perm
 //***********************************************************************
 
-int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **path, int path_is_literal)
+int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **hints_string, char **path, int path_is_literal)
 {
     int i, j, k, found, found2, n, ptype, uri, m, s, uri_type, got_at, got_mq;
     char *dummy, *shortcut, *c1, *c2;
@@ -160,6 +165,7 @@ int lio_parse_path(char *basepath, char **user, char **mq_name, char **host, int
 
     startpath = basepath;
     shortcut = NULL;
+    if (hints_string) *hints_string = NULL;
 
 try_again:
     n = strlen(startpath);
@@ -229,7 +235,7 @@ try_again:
                 if (is_special(':', startpath, j, '\\')) j++;
                 memcpy(label, startpath + found, j-found);
                 label[j-found] = '\0';
-                shortcut = lio_get_shortcut(label);
+                shortcut = lio_get_shortcut(label, hints_string);
                 if (shortcut) {
                     m = n - j;
                     s = m + strlen(shortcut)+2;
@@ -407,16 +413,18 @@ kick_out:
 tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts)
 {
     const char *local;
+    char *hints_string;
     char *cfg;
     int offset;
     struct stat st;
     tbx_inip_file_t *ifd = NULL;
 
     if ((strncmp("lstore://", config_name, 9) == 0) || (strstr(config_name, "@@") != NULL)) {
-        if (rc_client_get_config(mqc, creds, (char *)config_name, NULL, &cfg, obj_name, NULL, ts) == 0) {
+        if (rc_client_get_config(mqc, creds, (char *)config_name, NULL, &cfg, &hints_string, obj_name, NULL, ts) == 0) {
             if (cfg) {
-                ifd = tbx_inip_string_read(cfg, 1);
+                ifd = tbx_inip_string_read_with_hints_string(cfg, hints_string, 1);
                 if (ifd) tbx_inip_string_auto_destroy(ifd);
+                if (hints_string) free(hints_string);
                 return(ifd);
             }
             return(NULL);
@@ -466,7 +474,7 @@ int parse_path_check(char *uri, char *user, char *mq_name, char *host, int port,
 
     port2 = -1;
     user2 = mq_name2 = host2 = cfg2 = section2 = path2 = NULL;
-    err2 = lio_parse_path(uri, &user2, &mq_name2, &host2, &port2, &cfg2, &section2, &path2, path_is_literal);
+    err2 = lio_parse_path(uri, &user2, &mq_name2, &host2, &port2, &cfg2, &section2, NULL, &path2, path_is_literal);
 
     printf("uri=%s err=%d\n", uri, err2);
 

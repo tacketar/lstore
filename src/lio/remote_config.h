@@ -17,7 +17,7 @@
 #include <lio/lio.h>
 
 void rc_print_running_config(FILE *fd);
-int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_string, char *mq_default, char **config, char **obj_name, char **rc_user, time_t *timestamp);
+int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_string, char *mq_default, char **config, char **hinsts_string, char **obj_name, char **rc_user, time_t *timestamp);
 int rc_server_install(lio_config_t *lc, char *section);
 void rc_server_destroy();
 

@@ -702,7 +702,7 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
 
 lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
 {
-    char *userid, *pp_section, *fname, *pp_mq, *pp_host, *pp_cfg, *config, *obj_name;
+    char *userid, *pp_section, *fname, *pp_mq, *pp_host, *pp_cfg, *config, *obj_name, *hints_string;
     void *cred_args[2];
     lio_path_tuple_t tuple, *tuple2;
     tbx_inip_file_t *ifd;
@@ -718,8 +718,9 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
     pp_port = 0;
     pp_cfg = NULL;
     pp_section = NULL;
+    hints_string = NULL;
     fname = NULL;
-    is_lio = lio_parse_path(lpath, &userid, &pp_mq, &pp_host, &pp_port, &pp_cfg, &pp_section, &fname, path_is_literal);
+    is_lio = lio_parse_path(lpath, &userid, &pp_mq, &pp_host, &pp_port, &pp_cfg, &pp_section, &hints_string, &fname, path_is_literal);
     if (is_lio == -1) { //** Can't parse the path
         memset(&tuple, 0, sizeof(tuple));
         goto finished;
@@ -780,7 +781,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
             }
             tuple.lc->ifd = tbx_inip_dup(tuple.lc->ifd);  //** Dup the ifd
         } else { //** Look up using the remote config query
-            if (rc_client_get_config(NULL, NULL, uri, NULL,  &config, &obj_name, NULL, &ts) != 0) {
+            if (rc_client_get_config(NULL, NULL, uri, NULL,  &config, &hints_string, &obj_name, NULL, &ts) != 0) {
                 memset(&tuple, 0, sizeof(tuple));
                 if (fname != NULL) free(fname);
                 goto finished;
@@ -790,8 +791,9 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
             uri[sizeof(uri)-1] = '\0';
             free(obj_name);
 
-            ifd = tbx_inip_string_read(config, 1);
+            ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 1);
             if (config) free(config);
+            if (hints_string) free(hints_string);
             if (ifd == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
                 if (fname) free(fname);
@@ -1718,40 +1720,6 @@ int lio_parse_path_options(int *argc, char **argv, int auto_mode, lio_path_tuple
 }
 
 //***************************************************************
-// env2args - Converts an env string to argc/argv
-//***************************************************************
-
-int env2args(char *env, int *argc, char ***eargv)
-{
-    int i, n, fin;
-    char *bstate, **argv;
-
-    n = 100;
-    tbx_type_malloc_clear(argv, char *, n);
-
-    i = 0;
-    argv[i] = tbx_stk_string_token(env, " ", &bstate, &fin);
-    while (fin == 0) {
-        i++;
-        if (i==n) {
-            n += 10;
-            tbx_type_realloc(argv, char *, n);
-        }
-        argv[i] = tbx_stk_string_token(NULL, " ", &bstate, &fin);
-    }
-
-    *argc = i;
-    if (i == 0) {
-        *argv = NULL;
-    } else {
-        tbx_type_realloc(argv, char *, i);
-    }
-
-    *eargv = argv;
-    return(0);
-}
-
-//***************************************************************
 // lio_init - Initializes LIO for use.  argc and argv are
 //    modified by removing LIO common options.
 //
@@ -1780,6 +1748,7 @@ int lio_init(int *argc, char ***argvp)
     char *remote_config = NULL;
     char *section_name = "lio";
     char *userid = NULL;
+    char *hints_string = NULL;
     char *home;
     char *obj_name;
     char buffer[4096];
@@ -1830,7 +1799,7 @@ int lio_init(int *argc, char ***argvp)
     if (env != NULL) {  //** Got args so prepend them to the front of the list
         env = strdup(env);  //** Don't want to mess up the actual env variable
         eargv = NULL;
-        env2args(env, &neargs, &eargv);
+        tbx_stk_string2args(env, &neargs, &eargv);
 
         if (neargs > 0) {
             ll = *argc + neargs;
@@ -2031,9 +2000,10 @@ no_args:
         snprintf(obj_name, i, "lstore://%s|%s:%d:%s:%s", LIO_MQ_NAME_DEFAULT, dummy, 6711, "LOCAL", section_name);
     } else {            //** Try and load a remote config
         ts = 0;
-        if (rc_client_get_config(NULL, NULL, cfg_name, NULL, &config, &obj_name, &userid, &ts) == 0) {
-            ifd = tbx_inip_string_read(config, 0);
+        if (rc_client_get_config(NULL, NULL, cfg_name, NULL, &config, &hints_string, &obj_name, &userid, &ts) == 0) {
+            ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 0);
             free(config);
+            if (hints_string) free(hints_string);
         } else {
             printf("Failed loading config: %s\n", cfg_name);
             exit(1);

@@ -458,7 +458,7 @@ fail:
 // rc_client_get_config - Returns the remote config if available
 //***********************************************************************
 
-int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_string, char *mq_default, char **config, char **obj_name, char **rc_user, time_t *timestamp)
+int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_string, char *mq_default, char **config, char **hints_string, char **obj_name, char **rc_user, time_t *timestamp)
 {
     rc_t rc;
     mq_msg_t *address;
@@ -472,7 +472,7 @@ int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_str
     rc_file = strdup("lio");
     rc_section = strdup("lio");
     rc_host = NULL;
-    lio_parse_path(rc_string, rc_user, &mq, &rc_host, &port, &rc_file, &rc_section, NULL, 0);
+    lio_parse_path(rc_string, rc_user, &mq, &rc_host, &port, &rc_file, &rc_section, hints_string, NULL, 0);
 
     //** Make the object name
     n = 9 + sizeof(mq) + 1 + sizeof(rc_host) + 1 + 6 + sizeof(rc_file) + 1 + sizeof(rc_section) + 20;
