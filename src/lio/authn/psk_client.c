@@ -117,6 +117,7 @@ void authn_psk_client_cred_destroy(lio_creds_t *c)
     notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", c->descriptive_id);
     if (c->handle != NULL) free(c->handle);
     if (c->id != NULL) free(c->id);
+    if (c->account != NULL) free(c->account);
     if (c->descriptive_id != NULL) free(c->descriptive_id);
     free(c);
 }
@@ -333,7 +334,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     free(etext); free(text);
 
     //** Set the default ID's
-    cred_default_set_ids(c, user);
+    cred_default_set_ids(c, user, account);
 
     //** Do the validation with the server
     psk_exchange(an, c, psk);
@@ -357,7 +358,7 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
     mode_t bad_mode;
     lio_authn_psk_client_priv_t *ap = an->priv;
 
-    c = cred_default_create(NULL);
+    c = cred_default_create(NULL, NULL);
     c->priv = an;
     c->get_type = authn_psk_client_get_type;
     c->destroy = authn_psk_client_cred_destroy;

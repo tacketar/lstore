@@ -50,6 +50,14 @@ char *cdef_get_id(lio_creds_t *c, int *len)
 
 //***********************************************************************
 
+char *cdef_get_account(lio_creds_t *c, int *len)
+{
+    if (len) *len = c->account_len;
+    return(c->account);
+}
+
+//***********************************************************************
+
 char *cdef_get_descriptive_id(lio_creds_t *c, int *len)
 {
     if (len) *len = c->descriptive_id_len;
@@ -70,7 +78,7 @@ void *cdef_get_handle(lio_creds_t *c, int *len)
 //     id:pid:userid@hostname
 //***********************************************************************
 
-void cred_default_set_ids(lio_creds_t *c, char *id)
+void cred_default_set_ids(lio_creds_t *c, const char *id, const char *account)
 {
     char buffer[1024], buf2[16384], buf3[512], *login;
     uint64_t pid;
@@ -90,8 +98,23 @@ void cred_default_set_ids(lio_creds_t *c, char *id)
     pid = getpid();
     gethostname(buf3, sizeof(buf3));
     snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, login, buf3, _lio_exe_name);
+    if (c->descriptive_id) free(c->descriptive_id);
     c->descriptive_id = strdup(buffer); c->descriptive_id_len = strlen(c->descriptive_id);
-    c->id = strdup(id); c->id_len = strlen(c->id);
+
+    if (c->id) free(c->id);
+    if (id) {
+        c->id = strdup(id); c->id_len = strlen(c->id);
+    } else {
+        c->id = NULL; c->id_len = 0;
+    }
+
+    if (c->account) free(c->account);
+    if (account) {
+        c->account = strdup(account); c->account_len = strlen(c->account);
+    } else {
+        c->account = NULL; c->account_len = 0;
+    }
+
     return;
 }
 
@@ -100,17 +123,19 @@ void cred_default_set_ids(lio_creds_t *c, char *id)
 void cdef_destroy(lio_creds_t *c)
 {
     if (c->id != NULL) free(c->id);
+    if (c->account) free(c->account);
     if (c->descriptive_id) free(c->descriptive_id);
     free(c);
 }
 
 //***********************************************************************
 
-void cred_default_init(lio_creds_t *c, char *id)
+void cred_default_init(lio_creds_t *c, const char *id, const char *account)
 {
-    if (id) cred_default_set_ids(c, id);
+    cred_default_set_ids(c, id, account);
     c->get_type = cdef_get_type;
     c->get_id = cdef_get_id;
+    c->get_account = cdef_get_account;
     c->get_descriptive_id = cdef_get_descriptive_id;
     c->get_handle = cdef_get_handle;
     c->destroy = cdef_destroy;
@@ -118,12 +143,12 @@ void cred_default_init(lio_creds_t *c, char *id)
 
 //***********************************************************************
 
-lio_creds_t *cred_default_create(char *id)
+lio_creds_t *cred_default_create(const char *id, const char *account)
 {
     lio_creds_t *c;
     tbx_type_malloc_clear(c, lio_creds_t, 1);
 
-    cred_default_init(c, id);
+    cred_default_init(c, id, account);
     return(c);
 }
 

@@ -38,13 +38,16 @@ extern "C" {
 struct lio_creds_t {
     void *priv;
     char *id;             //** User ID
-    char *descriptive_id;  //** User ID along with other info about the process, etc
+    char *account;        //** Account name specified in accounts file
+    char *descriptive_id; //** User ID along with other info about the process, etc
     void *handle;         //** Handle used for interprocess communication
     int id_len;           //** Length of the ID
+    int account_len;      //** Length of the account
     int descriptive_id_len;  //** Length of the Descriptive ID
     int handle_len;       //** Length of the handle
     char *(*get_type)(lio_creds_t *creds);
     char *(*get_id)(lio_creds_t *creds, int *len);
+    char *(*get_account)(lio_creds_t *creds, int *len);
     char *(*get_descriptive_id)(lio_creds_t *creds, int *len);
     void *(*get_handle)(lio_creds_t *creds, int *len);
     void (*destroy)(lio_creds_t *creds);
@@ -52,6 +55,7 @@ struct lio_creds_t {
 
 #define an_cred_get_type(c) (c)->get_type(c)
 #define an_cred_get_id(c, len) (c)->get_id(c, len)
+#define an_cred_get_account(c, len) (c)->get_account(c, len)
 #define an_cred_get_descriptive_id(c, len) (c)->get_descriptive_id(c, len)
 #define an_cred_get_handle(c, len) (c)->get_handle(c, len)
 #define an_cred_destroy(c) (c)->destroy(c)
@@ -65,9 +69,9 @@ struct lio_authn_t {
 
 typedef lio_authn_t *(authn_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
 
-void cred_default_init(lio_creds_t *c, char *id);
-lio_creds_t *cred_default_create(char *id);
-void cred_default_set_ids(lio_creds_t *c, char *id);
+void cred_default_init(lio_creds_t *c, const char *id, const char *account);
+lio_creds_t *cred_default_create(const char *id, const char *account);
+void cred_default_set_ids(lio_creds_t *c, const char *id, const char *account);
 
 #define authn_cred_init(an, type, args) (an)->cred_init(an, type, args)
 #define authn_destroy(an) (an)->destroy(an)

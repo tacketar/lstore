@@ -64,7 +64,7 @@ lio_creds_t *authn_fake_cred_init(lio_authn_t *an, int type, void **args)
         account = args[0];
     }
 
-    c = cred_default_create(account);
+    c = cred_default_create(account, account);
     c->get_type = authn_fake_get_type;
     c->handle = c->descriptive_id;
     c->handle_len = strlen(c->descriptive_id)+1;

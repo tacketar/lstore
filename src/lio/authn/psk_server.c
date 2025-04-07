@@ -84,6 +84,7 @@ void _psk_destroy(lio_authn_t *an)
         while ((pc = tbx_stack_pop(pa->creds)) != NULL) {
             if (pc->c.id != NULL) free(pc->c.id);
             if (pc->c.descriptive_id) free(pc->c.descriptive_id);
+            if (pc->c.account) free(pc->c.account);
             free(pc);
         }
 
@@ -309,6 +310,7 @@ void apsk_cred_destroy(lio_creds_t *c)
 
         notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", pc->c.descriptive_id);
         if (pc->c.id != NULL) free(pc->c.id);
+        if (pc->c.account != NULL) free(pc->c.account);
         if (pc->c.descriptive_id) free(pc->c.descriptive_id);
         tbx_stack_move_to_ptr(pc->a->creds, pc->ele);
         tbx_stack_delete_current(pc->a->creds, 0, 0);
@@ -371,12 +373,16 @@ lio_creds_t *apsk_login(lio_authn_t *an, char *id, int id_len, char *did, int di
 
     //** Make the new creds
     tbx_type_malloc_clear(pc, psk_creds_t, 1);
-    cred_default_init(&(pc->c), NULL);
+    cred_default_init(&(pc->c), NULL, NULL);
     pc->an = an;
     pc->count = 1;
     pc->c.priv = pc;
     pc->c.destroy = apsk_cred_destroy;
+    if (pc->c.id) free(pc->c.id);
     pc->c.id = strdup(id); pc->c.id_len = strlen(id);
+    if (pc->c.account) free(pc->c.account);
+    pc->c.account = strdup(id); pc->c.account_len = strlen(id);
+    if (pc->c.descriptive_id) free(pc->c.descriptive_id);
     pc->c.descriptive_id = strdup(did); pc->c.descriptive_id_len = strlen(did);
     tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
     pc->c.handle = pc->handle;
