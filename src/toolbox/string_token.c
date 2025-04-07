@@ -245,22 +245,9 @@ char *tbx_stk_escape_string_token(char *str, const char *delims, char escape_cha
     if (n >= (ndata-1)) {
         *last = NULL;
         *finished = 1;
-    } else {
-        //** Skip any other trailing delims if requested
-        n++;
-        if (compress_delims != 0) {
-            while ((n < ndata) && (index(delims, ptr[n]) != NULL)) {
-                n++;
-            }
-        }
-
-        if (n >= (ndata-1)) {
-            *last = NULL;
-            *finished = 1;
-        } else {
-            *last = &(ptr[n]);
-            *finished = 0;
-        }
+    } else {   //** Update the location to the next char
+        *last = &(ptr[n+1]);
+        *finished = 0;
     }
 
     return(token);
