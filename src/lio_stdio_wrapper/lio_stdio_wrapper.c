@@ -3019,7 +3019,7 @@ void load_prefix_table(int argc, char **argv, lio_fs_t *fs_default)
                     exit(-1);
                 }
                 if (!section) section = strdup("lio");
-                lc = lio_create(ifd, section, user, obj_name, argv[0]);
+                lc = lio_create(ifd, section, user, obj_name, argv[0], 0);
 
                 free(section);
                 if (user) free(user);

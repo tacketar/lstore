@@ -74,7 +74,8 @@ char *lio_get_shortcut(char *label, char **hints_string)
     ifd = tbx_inip_file_read(fname_home, 1);
     if (ifd == NULL) goto next;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
-    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL); 
+    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL);
+
     tbx_inip_destroy(ifd);
     if (shortcut) return(shortcut);
 
@@ -85,7 +86,7 @@ next:
     ifd = tbx_inip_file_read(fname, 1);
     if (ifd == NULL) goto oops;
     shortcut = tbx_inip_get_string(ifd, "shortcuts", label, NULL);
-    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL); 
+    if (shortcut && hints_string) *hints_string = tbx_inip_get_string(ifd, "hints", label, NULL);
     tbx_inip_destroy(ifd);
 
     if (shortcut == NULL) {
@@ -192,8 +193,6 @@ try_again:
         ptype = 0;
     }
 
-    //printf("URI=%s len=%d uri=%d\n", startpath, n, uri);
-
     if (k<n) {
         if (is_special('/', startpath, k, '\\')) goto handle_path;  //** Just a path
     }
@@ -220,10 +219,8 @@ try_again:
 
             if ((i>k) && (user)) {  //** Got a valid user
                 if (*user == NULL) {
-                    if (!shortcut) {  //** Only copy over the user if it's empty if handling a shortcut
-                        free(*user);
-                        *user = tbx_stk_unescape_strndup('\\', startpath+k, i-k);
-                    }
+                    free(*user);
+                    *user = tbx_stk_unescape_strndup('\\', startpath+k, i-k);
                 }
             }
             if (is_special('@', startpath, found, '\\')) { //** See if we got a shortcut
@@ -232,16 +229,23 @@ try_again:
                 for (j=found; j<n; j++) {
                     if (is_special(':', startpath, j, '\\')) break;
                 }
-                if (is_special(':', startpath, j, '\\')) j++;
+
                 memcpy(label, startpath + found, j-found);
                 label[j-found] = '\0';
+                if (is_special(':', startpath, j, '\\')) j++;
+
+                if (hints_string) {
+                    if (*hints_string) free(*hints_string);
+                    *hints_string = NULL;
+                }
                 shortcut = lio_get_shortcut(label, hints_string);
+
                 if (shortcut) {
                     m = n - j;
                     s = m + strlen(shortcut)+2;
                     tbx_type_malloc(dummy, char, s);
                     snprintf(dummy, s, "%s:%s", shortcut, startpath + j);
-                    if (shortcut) free(shortcut);
+                    free(shortcut);
                     if (startpath != basepath) free(startpath);
                     startpath = dummy;
                     goto try_again;
@@ -488,6 +492,13 @@ int parse_path_check(char *uri, char *user, char *mq_name, char *host, int port,
     if (strcmp_null(section, section2) != 0) {ret=1; printf("    ERROR: section=%s  section2=%s\n", section, section2); }
     if (strcmp_null(path, path2) != 0) {ret=1; printf("    ERROR: path=%s  path2=%s\n", path, path2); }
 
+    if (user2) free(user2);
+    if (mq_name2) free(mq_name2);
+    if (host2) free(host2);
+    if (cfg2) free(cfg2);
+    if (section2) free(section2);
+    if (path2) free(path2);
+
     return(ret);
 }
 
@@ -501,7 +512,6 @@ int lio_parse_path_test()
     int err;
 
     err = 0;
-//goto skip;
     err += parse_path_check("lstore://user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);
     err += parse_path_check("user@MQ|host.vampire:1234:cfg:section:/my/path", "user", "MQ", "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);
     err += parse_path_check("user@host.vampire:1234:cfg:section:/my/path", "user", NULL, "host.vampire", 1234, "cfg", "section", "/my/path", 0, 1);

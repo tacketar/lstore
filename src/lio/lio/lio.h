@@ -59,7 +59,7 @@ struct stat;
 //typedef enum lio_copy_hint_t lio_copy_hint_t;
 
 // Functions
-LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name);
+LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name, int make_monitor);
 LIO_API void lio_destroy(lio_config_t *lio);
 LIO_API tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, const char *config_name, char **obj_name, time_t *ts);
 LIO_API int lio_parse_path(char *startpath, char **user, char **mq_name, char **host, int *port, char **cfg, char **section, char **hints_string, char **path, int path_is_literal);
