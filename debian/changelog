@@ -1,3 +1,10 @@
+lstore (2.4.0) stable; urgency=low
+  * Add tooling to better understand path_acl mappings
+  * Ease of use support for multiple LFS mounts
+  * Extend INI parsing to support: using env variables, multiline support, add values with delims, ability to remove a section, and merge an external file
+  * Add support for auotmatic fetching and usage of shortcut hints
+  * Fix several isues related to loading and using  multiple LIO contexts at the same time
+  * Add ability to change the error for the unsupported chown() call
 lstore (2.3.1) stable; urgency=high
   * Fix return type in lfs_copy_range() to support large transfers
 
