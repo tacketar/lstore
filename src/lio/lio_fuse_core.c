@@ -788,7 +788,11 @@ int lfs_chmod(const char *fname, mode_t mode)
 //     a silent failure
 //*************************************************************************
 
+#ifdef HAS_FUSE3
 int lfs_chown(const char *fname, uid_t owner, gid_t group, struct fuse_file_info *fi)
+#else
+int lfs_chown(const char *fname, uid_t owner, gid_t group)
+#endif
 {
     lio_fuse_t *lfs = lfs_get_context();
     lio_os_authz_local_t ug;
