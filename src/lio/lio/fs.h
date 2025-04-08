@@ -58,6 +58,7 @@ LIO_API int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const ch
 LIO_API int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath);
 LIO_API int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev);
 LIO_API int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode);
+LIO_API int lio_fs_chown(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,  uid_t owner, gid_t group);
 LIO_API int lio_fs_mkdir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode);
 LIO_API int lio_fs_mkpath(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath);
 LIO_API int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int ftype);

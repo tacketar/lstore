@@ -268,6 +268,7 @@ struct lio_fs_t {
     int enable_fifo;
     int enable_socket;
     int readdir_prefetch_size;
+    int chown_errno;               //** Currently chown isn't supported on the client so this controls what to do
     ex_off_t copy_bufsize;
     lio_config_t *lc;
     apr_pool_t *mpool;
@@ -1094,6 +1095,25 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
     err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+
+    FS_MON_OBJ_DESTROY();
+
+    return(err);
+}
+
+//*************************************************************************
+// lio_fs_chown - Changing the owner of a file isn't currently supported
+//     on the client so instead we just throw an error determined by the
+//     config file.
+//*************************************************************************
+
+int lio_fs_chown(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,  uid_t owner, gid_t group)
+{
+    int err;
+
+    FS_MON_OBJ_CREATE("FS_CHOWN: fname=%s owner=%u gid=%u", fname, owner, group);
+
+    err = -fs->chown_errno;
 
     FS_MON_OBJ_DESTROY();
 
@@ -3094,6 +3114,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     fs->enable_socket = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_socket", 0);
     fs->fs_checks_acls = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "fs_checks_acls", 1);
     fs->xattr_error_for_hard_errors = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "xattr_error_for_hard_errors", 0);
+    fs->chown_errno = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "chown_errno", ENOSYS);
     atype = tbx_inip_get_string(fd, fs->fs_section, "ug_mode", _ug_mode_string[UG_GLOBAL]);
     fs->ug_mode = UG_GLOBAL;
     if (strcmp(atype, _ug_mode_string[UG_UID]) == 0) {

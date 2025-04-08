@@ -783,6 +783,29 @@ int lfs_chmod(const char *fname, mode_t mode)
 }
 
 //*************************************************************************
+// lfs_chown - This routine isn't actually implemented but the error code can
+//     returned can be controlled via a setting in the FS including
+//     a silent failure
+//*************************************************************************
+
+int lfs_chown(const char *fname, uid_t owner, gid_t group, struct fuse_file_info *fi)
+{
+    lio_fuse_t *lfs = lfs_get_context();
+    lio_os_authz_local_t ug;
+    int err;
+    char *mpath;
+
+    mpath = lfs_pending_delete_mapping_get(lfs, fname);
+    err = lio_fs_chown(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, owner, group);
+    _lfs_hint_release(lfs, &ug);
+
+    SHADOW_GENERIC_COMPARE(fname, err, chown(sfname, owner, group));
+
+    if (mpath != fname) free(mpath);
+    return(err);
+}
+
+//*************************************************************************
 // lfs_mkdir - Makes a directory
 //*************************************************************************
 
@@ -1766,6 +1789,7 @@ struct fuse_operations lfs_fops = { //All lfs instances should use the same func
     .rename = lfs_rename2,
 #endif
     .chmod = lfs_chmod,
+    .chown = lfs_chown,
     .mknod = lfs_mknod,
     .mkdir = lfs_mkdir,
     .unlink = lfs_unlink,
