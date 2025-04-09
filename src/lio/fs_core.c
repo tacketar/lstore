@@ -3045,6 +3045,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
     fprintf(fd, "enable_fuse_hacks = %d\n", fs->enable_fuse_hacks);
     fprintf(fd, "fs_checks_acls = %d  # Should only be 0 if running lio_fuse and the FUSE kernel supports FUSE_CAP_POSIX_ACL\n", fs->fs_checks_acls);
+    fprintf(fd, "chown_errno = %d # Silently fail on chown if 0. Otherwise this is the errno reported. Should be non-negative.\n", fs->chown_errno);
     fprintf(fd, "enable_internal_lock_mode = %d # 0=No locks, 1=Internal R/W locks, 2=Internal shared locks for tracking\n", fs->enable_internal_lock_mode);
     if (fs->enable_internal_lock_mode) fprintf(fd, "internal_locks_max_wait = %d\n", fs->internal_locks_max_wait);
     fprintf(fd, "user_locks_max_wait = %d\n", fs->user_locks_max_wait);
