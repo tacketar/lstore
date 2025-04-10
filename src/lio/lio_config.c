@@ -80,6 +80,7 @@ typedef struct {
 typedef struct {
     char *prefix;
     int len;
+    char *shortcut;
 } lfs_mount_t;
 
 int lio_parallel_task_count = 100;
@@ -487,7 +488,7 @@ void lio_find_lfs_mounts()
     tbx_stack_t *stack;
     FILE *fd;
     lfs_mount_t *entry;
-    char *text, *prefix, *bstate;
+    char *text, *prefix, *bstate, *shortcut;
     int i, fin;
     size_t ns;
 
@@ -499,14 +500,17 @@ void lio_find_lfs_mounts()
         while (getline(&text, &ns, fd) != -1) {
             log_printf(5, "getline=%s", text);
             if (strncasecmp(text, "lfs:", 4) == 0) { //** Found a match
-                tbx_stk_string_token(text, " ", &bstate, &fin);
+                shortcut = tbx_stk_string_token(text, " ", &bstate, &fin);
                 prefix = tbx_stk_string_token(NULL, " ", &bstate, &fin);
                 if (prefix != NULL) { //** Add it
                     tbx_type_malloc_clear(entry, lfs_mount_t, 1);
+                    if (shortcut) {
+                        entry->shortcut = strdup(shortcut + 4);
+                    }
                     entry->prefix = strdup(prefix);
                     entry->len = strlen(entry->prefix);
                     tbx_stack_push(stack, entry);
-                    log_printf(5, "mount prefix=%s len=%d\n", entry->prefix, entry->len);
+                    log_printf(5, "mount prefix=%s len=%d shortcut=%s\n", entry->prefix, entry->len, entry->shortcut);
                 }
             }
 
@@ -521,6 +525,7 @@ void lio_find_lfs_mounts()
     tbx_type_malloc(lfs_mount, lfs_mount_t, _lfs_mount_count);
     for (i=0; i<_lfs_mount_count; i++) {
         entry = tbx_stack_pop(stack);
+        lfs_mount[i].shortcut = entry->shortcut;
         lfs_mount[i].prefix = entry->prefix;
         lfs_mount[i].len = entry->len;
         free(entry);
@@ -917,11 +922,11 @@ lio_path_tuple_t lio_path_auto_fuse_convert_full(lio_path_tuple_t *ltuple, int p
             if ((int)strlen(ltuple->path) > prefix_len) {
                 if (ltuple->path[prefix_len] == '/') {
                     do_convert = 1;
-                    snprintf(path, sizeof(path), "@:%s", &(ltuple->path[prefix_len]));
+                    snprintf(path, sizeof(path), "@@%s:%s", lfs_mount[i].shortcut, &(ltuple->path[prefix_len]));
                 }
             } else {
                 do_convert = 1;
-                snprintf(path, sizeof(path), "@:/");
+                snprintf(path, sizeof(path), "@@%s:/", lfs_mount[i].shortcut);
             }
 
             if (do_convert == 1) {
