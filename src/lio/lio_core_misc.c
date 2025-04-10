@@ -218,8 +218,7 @@ try_again:
             got_at = 1;
 
             if ((i>k) && (user)) {  //** Got a valid user
-                if (*user == NULL) {
-                    free(*user);
+                if (*user == NULL) {  //** Only fetch the user if we don't already have one
                     *user = tbx_stk_unescape_strndup('\\', startpath+k, i-k);
                 }
             }
