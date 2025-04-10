@@ -49,15 +49,6 @@ typedef struct lio_path_tuple_t lio_path_tuple_t;
 typedef struct lio_unified_object_iter_t lio_unified_object_iter_t;
 struct stat;
 
-//enum lio_copy_hint_t {
-//    LIO_COPY_DIRECT          = 0,  // ** Normal depot->depot copy op
-//    LIO_COPY_INDIRECT        = 1,  // ** Make the data go through the client for lio2lio copies
-//    LIO_COPY_DIRECT_IO_READ  = 2,  // ** Use direct I/O for local reads
-//    LIO_COPY_DIRECT_IO_WRITE = 4,  // ** USe direct I/O for local writes
-//};
-
-//typedef enum lio_copy_hint_t lio_copy_hint_t;
-
 // Functions
 LIO_API lio_config_t *lio_create(tbx_inip_file_t *ifd, char *section, char *user, char *obj_name, char *exe_name, int make_monitor);
 LIO_API void lio_destroy(lio_config_t *lio);
@@ -271,6 +262,7 @@ struct lio_config_t {
     char *rc_section;
     char *notify_section;
     char *special_file_prefix;
+    char *root_prefix;          //** This is for relative pathing into the NS
     lio_blacklist_t *blacklist;
     ex_off_t readahead;
     ex_off_t readahead_trigger;

@@ -111,8 +111,8 @@ lio_config_t lio_default_options = {
     .authn_section = "authn",
     .cache_section = "cache_amp",
     .special_file_prefix = "/tmp/lfs_special.",
+    .root_prefix = NULL,
     .creds_user = NULL
-//    .creds_user = "guest"
 };
 
 // ** Define the global LIO config
@@ -683,7 +683,7 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
     char buffer[4096];
 
     tuple = *curr;
-    tuple.path = fname;
+    tuple.path = fname;    //** We don't use the helper because this routine would be called after the tuple parsing
 
     snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_account(curr->creds, NULL), curr->lc->obj_name);
     apr_thread_mutex_lock(_lc_lock);
@@ -696,6 +696,25 @@ lio_path_tuple_t lio_path_tuple_copy(lio_path_tuple_t *curr, char *fname)
         abort();
     }
     return(tuple);
+}
+
+//***************************************************************
+// tuple_fname_helper
+//***************************************************************
+
+char *tuple_fname_helper(lio_config_t *lc, char *fname)
+{
+    char buf[OS_PATH_MAX];
+    char *new_fname;
+
+    if (lc->root_prefix && fname) {
+        snprintf(buf, sizeof(buf), "%s%s", lc->root_prefix, fname);
+        new_fname = strdup(buf);
+        free(fname);
+        return(new_fname);
+    }
+
+    return(fname);
 }
 
 //***************************************************************
@@ -769,7 +788,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
     tuple2 = _lc_object_get(buffer);
     if (tuple2 != NULL) { //** Already exists!
         tuple = *tuple2;
-        tuple.path = fname;
+        tuple.path = tuple_fname_helper(tuple.lc, fname);
         goto finished;
     }
 
@@ -784,10 +803,10 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
                 if (fname != NULL) free(fname);
                 goto finished;
             }
-            tuple = *tuple2;  //** Copy the one we just created over sine it also has the creds
+            tuple = *tuple2;  //** Copy the one we just created over since it also has the creds
             tuple.lc->ifd = tbx_inip_dup(tuple.lc->ifd);  //** Dup the ifd
             tuple.lc->anonymous_creation = 1;
-            tuple.path = fname;
+            tuple.path = tuple_fname_helper(tuple.lc, fname);
             goto finished;
         } else { //** Look up using the remote config query
             if (rc_client_get_config(NULL, NULL, uri, NULL,  &config, &hints_string, &obj_name, NULL, &ts) != 0) {
@@ -818,7 +837,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
 
             tuple = *tuple2;  //** Copy the one we just created over sine it also has the creds
             tuple.lc->anonymous_creation = 1;
-            tuple.path = fname;
+            tuple.path = tuple_fname_helper(tuple.lc, fname);
             goto finished;
         }
 
@@ -848,7 +867,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
     }
 
     tuple.creds = tuple2->creds;
-    tuple.path = fname;
+    tuple.path = tuple_fname_helper(tuple.lc, fname);
 
 finished:
     apr_thread_mutex_unlock(_lc_lock);
@@ -1218,6 +1237,7 @@ void lio_destroy_nl(lio_config_t *lio)
     apr_pool_destroy(lio->mpool);
 
     if (lio->obj_name) free(lio->obj_name);
+    if (lio->root_prefix) free(lio->root_prefix);
 
     if (lio->exe_name != NULL) free(lio->exe_name);
     free(lio);
@@ -1304,6 +1324,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->stream_buffer_total_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_total_size", lio_default_options.stream_buffer_total_size);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
     lio->special_file_prefix = tbx_inip_get_string(lio->ifd, section, "special_file_prefix", lio_default_options.special_file_prefix);
+    lio->root_prefix = tbx_inip_get_string(lio->ifd, section, "root_prefix", lio_default_options.root_prefix);
 
     //** Get the mount's UUID. Most of the time this isn't set specifically in the section but instead stored as a parameter
     stype = tbx_inip_get_string_full(lio->ifd, section, "uuid", "${uuid}", &err);
