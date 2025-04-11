@@ -386,12 +386,8 @@ lio_creds_t *authn_psk_client_cred_init(lio_authn_t *an, int type, void **args)
 
     if (get_psk(an, c, fname, (char *)args[0], 0, bad_mode) == 0) goto success;
 
-    //** Now check the global location for anonymouns creds
+    //** Now check the global location for anonymous creds and fail if nothing works
     bad_mode = S_IWOTH|S_IXOTH|S_IWGRP|S_IXGRP|S_IXUSR;
-    if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) goto success;
-
-    //** If we made it here nothing is good so try the local file again but fail this time
-    bad_mode = S_IRWXO|S_IRWXG|S_IXUSR;
     if (get_psk(an, c, "/etc/lio/default.psk", (char *)args[0], 1, bad_mode) == 0) goto success;
 
     //** We should  never make it here since we'll exit() on failure
