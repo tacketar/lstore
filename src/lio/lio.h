@@ -172,6 +172,7 @@ LIO_API int lio_parse_path_test();
 lio_fn_t *lio_core_create();
 void lio_core_destroy(lio_config_t *lio);
 const char *lio_client_version();
+char *lio_get_shortcut_user(char *label);
 
 void lio_wq_shutdown();
 void lio_wq_startup(int n_parallel);

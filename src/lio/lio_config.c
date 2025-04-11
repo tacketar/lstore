@@ -832,6 +832,10 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
                 if (fname) free(fname);
                 goto finished;
             }
+
+            //** Still no user so see if there is a default user for the shortcut in the accounts file
+            if (userid == NULL) { userid = lio_get_shortcut_user("account"); }
+
             tuple.lc = lio_create_nl(ifd, pp_section, strdup(userid), uri, _lio_exe_name, 0, &tuple2);  //** Use the non-locking routine
             if (tuple.lc == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
@@ -1286,7 +1290,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio_segment_t *seg;
 
     //** Add the LC first cause it may already exist
-    log_printf(1, "START: Creating LIO context %s\n", obj_name);
+    log_printf(1, "START: Creating LIO context %s user=%s\n", obj_name, user);
 
     lio = _lc_object_get(obj_name);
     if (lio != NULL) {  //** Already loaded so can skip this part

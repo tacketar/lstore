@@ -50,6 +50,64 @@
 //***********************************************************************
 
 //***********************************************************************
+// _get_shortcut_user - Helper on finding the default user for the shortcut
+//
+//    [default]
+//    <shortcut> = <user>
+//***********************************************************************
+
+char *_get_shortcut_user(const char *fname, const char *shortcut)
+{
+    tbx_inip_file_t *ifd;
+    struct stat sbuf;
+    char *user;
+
+    if (stat(fname, &sbuf) != 0) return(NULL);  //** File is missing
+
+    ifd = tbx_inip_file_read(fname, 1);
+    if (ifd == NULL) return(NULL);
+    user = tbx_inip_get_string(ifd, "default", shortcut, NULL);
+    tbx_inip_destroy(ifd);
+
+    return(user);
+}
+
+//***********************************************************************
+// lio_get_shortcut_user - Looks up the default user for the shortcut
+//      ~/.lio/accounts.psk
+//      /etc/lio/default.psk
+//
+//    label - Shortcut to look up
+//***********************************************************************
+
+char *lio_get_shortcut_user(char *label)
+{
+    char fname[4096];
+    char *home, *user, *kname;
+
+    user = NULL;
+
+    //** 1st check if they've provided an env prefix
+    kname = getenv(LIO_ENV_KEY_FILE);
+    if (kname) { user = _get_shortcut_user(kname, label); }
+    if (user) return(user);
+
+    //** Nexzt check the user local file
+    home = getenv("HOME");
+    if (home) {
+        snprintf(fname, sizeof(fname), "%s/.lio/accounts.psk", home);
+        user = _get_shortcut_user(fname, label);
+    }
+    if (user) return(user);
+
+    //** No luck so look in the global location
+    snprintf(fname, sizeof(fname), "%s", "/etc/lio/known_hosts");
+    user = _get_shortcut_user(fname, label);
+
+    return(user);
+}
+
+//***********************************************************************
 // lio_get_shortcut - Looks up the shortcut from the standard file locations:
 //      ~/.lio/known_hosts
 //      /etc/lio/known_hosts
@@ -69,7 +127,7 @@ char *lio_get_shortcut(char *label, char **hints_string)
     //** 1st check the user local known_hosts
     home = getenv("HOME");
     if (home == NULL) goto next;
-    snprintf(fname_home, sizeof(fname), "%s/.lio/known_hosts", home);
+    snprintf(fname_home, sizeof(fname_home), "%s/.lio/known_hosts", home);
     if (stat(fname_home, &sbuf) != 0) goto next;  //** File is missing
     ifd = tbx_inip_file_read(fname_home, 1);
     if (ifd == NULL) goto next;
@@ -238,7 +296,6 @@ try_again:
                     *hints_string = NULL;
                 }
                 shortcut = lio_get_shortcut(label, hints_string);
-
                 if (shortcut) {
                     m = n - j;
                     s = m + strlen(shortcut)+2;
@@ -247,6 +304,10 @@ try_again:
                     free(shortcut);
                     if (startpath != basepath) free(startpath);
                     startpath = dummy;
+
+                    if (*user == NULL) {   //** If we still don't have a user see if we can find a default one from the accounts files
+                        *user = lio_get_shortcut_user(label);
+                    }
                     goto try_again;
                 }
             }
