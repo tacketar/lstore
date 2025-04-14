@@ -159,9 +159,9 @@ find_orphaned() {
 
     ${DEDUP} ${SHARDS_FOUND} ${NAMESPACE_USED_SHARDS} > ${SHARDS_UNUSED}
 
-    echo "Namespace shards used: $(wc -l ${NAMESPACE_USED_SHARDS})"
-    echo "Shard prefixes found: $(wc -l ${SHARDS_FOUND})"
-    echo "Unused shards: $(wc -l ${SHARDS_UNUSED})"
+    echo "Namespace shards used: $(wc -l ${NAMESPACE_USED_SHARDS}) (${NAMESPACE_USED_SHARDS})"
+    echo "Shard prefixes found: $(wc -l ${SHARDS_FOUND}) (${SHARDS_FOUND})"
+    echo "Unused shards: $(wc -l ${SHARDS_UNUSED}) (${SHARDS_UNUSED})"
 }
 
 #Move to orphaned directory

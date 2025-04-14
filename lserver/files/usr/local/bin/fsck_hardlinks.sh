@@ -8,12 +8,13 @@ if [ ! -e ${OSFILE_CFG} ]; then
     echo "If it's in a different location please edit this script, $0"
     echo "It should define 2 environment variables:"
     echo "  NAMESPACE_PREFIX - Path to the OSFile root directory.  Same as the 'base_path' in the osfile config section for the server."
+    echo "  SHARD_PREFIXES   - A bash ARRAY of all the shard prefixes. All the 'shard_prefix' declarations in the osfile config section."
     exit 1
 fi
 
 source ${OSFILE_CFG}
 
-#Make sure the paths all exist
+#Make sure the namespace exists.  We don't directly use the shards so don't check them
 if [ "${NAMESPACE_PREFIX}" == "" ]; then
     echo "ERROR: NAMESPACE_PREFIX is missing! Same as the 'base_path' in the osfile config section for the server."
     exit 1
@@ -23,10 +24,8 @@ if [ ! -e ${NAMESPACE_PREFIX} ]; then
     exit 1
 fi
 
+#Working directory for logging all output
 WORK_DIR=/tmp/fsck-hardlinks
-
-DEDUP=dedup.sh
-RM=/usr/bin/rm
 
 HARDLINK_LOCAL_FILES=${WORK_DIR}/hardlink-local-files.log
 HARDLINK_LOCAL_ATTRS=${WORK_DIR}/hardlink-local-attrs.log
@@ -40,6 +39,10 @@ TO_BROKEN_LOG=${WORK_DIR}/to-broken.log
 FROM_BROKEN_LOG=${WORK_DIR}/from-broken.log
 TO_ORPHANED_LOG=${WORK_DIR}/to-orphaned.log
 FROM_ORPHANED_LOG=${WORK_DIR}/from-orphaned.log
+
+#Location os some commands we use
+DEDUP=dedup.sh
+RM=/usr/bin/rm
 
 #Move the work directory if needed and make the new work direcotry
 work_dir_create() {
@@ -61,10 +64,10 @@ dump_hardlink_info() {
     hpath=$1
 
     #This generates a list of all the hardlink file placeholders
-    find ${hpath}/* -maxdepth 0 -type f 2>/dev/null | xargs -P1 -I{} basename {} > ${HARDLINK_LOCAL_FILES}
+    find ${hpath}/* -maxdepth 0 -type f 2>/dev/null | xargs --no-run-if-empty -P1 -I{} basename {} > ${HARDLINK_LOCAL_FILES}
 
     #Now do the same for the attribute dirs
-    find ${hpath}/_^FA^_/* -maxdepth 0 2>/dev/null | xargs -P1 basename 2>/dev/null | grep -F _^FA^_ | cut -f3 -d_ > ${HARDLINK_LOCAL_ATTRS}
+    find ${hpath}/_^FA^_/* -maxdepth 0 2>/dev/null | xargs --no-run-if-empty -P1 basename | grep -F _^FA^_ | cut -f3 -d_ > ${HARDLINK_LOCAL_ATTRS}
 
     #Sort the good and bad
     cat ${HARDLINK_LOCAL_FILES} ${HARDLINK_LOCAL_ATTRS} | sort | uniq -c | grep ' 1 ' | awk '{print $2}' > ${HARDLINK_LOCAL_BROKEN}
@@ -88,7 +91,6 @@ find_broken() {
 
     echo "Finding broken hardlinks"
     for path in $( ls -d ${NAMESPACE_PREFIX}/hardlink/* | grep -v _^FA^_); do
-#path=/backend/toplvl/hardlink/11
         echo "Processing ${path}"
         dump_hardlink_info ${path}
     done
@@ -293,7 +295,7 @@ hardlink_help() {
     echo "    --to-broken        - Take the broken hardlinks and move them to the broken directories for later removal"
     echo "    --from-broken      - Move broken hardlinks back to their original location"
     echo "    --purge-broken     - Permanently remove broken hardlinks. This can not be undone"
-    echo "    -y                 - The options supporting this flag ask for an affirmation before continuing unless this flag is provided"
+    echo "    -y                 - The options supporting this flag require an affirmation fromthe user before continuing unless this flag is provided"
     echo ""
     echo "Namespace prefix: ${NAMESPACE_PREFIX}"
     echo "Output files are in ${WORK_DIR}"
