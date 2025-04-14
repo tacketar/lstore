@@ -336,9 +336,6 @@ if(BUILD_TESTS)
     add_executable(et_erase_blocks test/et_erase_blocks.c)
     target_link_libraries(et_erase_blocks pthread toolbox gop lio)
     target_include_directories(et_erase_blocks PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
-    add_executable(lio_parse_path_check test/lio_parse_path_check.c)
-    target_link_libraries(lio_parse_path_check pthread lio)
-    target_include_directories(lio_parse_path_check PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR})
 
     add_executable(run-tests test/run-tests.c
                              test/runner.c

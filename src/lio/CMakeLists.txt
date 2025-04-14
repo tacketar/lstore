@@ -209,6 +209,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_mkdir
 		lio_monitor_parse
 		lio_mv
+		lio_parse_path_check
 		lio_put
 		lio_realpath
 		lio_rm

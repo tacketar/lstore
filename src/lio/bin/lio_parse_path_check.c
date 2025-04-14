@@ -60,8 +60,8 @@ int main(int argc, char **argv)
     ppath = argv[1];
     user = mq = host = cfg = section = hints = fname = NULL;
     is_lio = lio_parse_path(ppath, &user, &mq, &host, &port, &cfg, &section, &hints, &fname, 1);
-    printf("breakout: is_lio=%d user=%s mq=%s host=%s port=%d cfg=%s section=%s fname=%s\n", is_lio, user, mq, host, port, cfg, section, fname);
     printf("hints=%s\n", hints);
+    printf("breakout:\n  is_lio=%d\n  user=%s\n  mq=%s\n  host=%s\n  port=%d\n  cfg=%s\n  section=%s\n  fname=%s\n", is_lio, user, mq, host, port, cfg, section, fname);
 
     if (user) free(user);
     if (mq) free(mq);
