@@ -279,6 +279,7 @@ endforeach()
 install(CODE "execute_process(COMMAND ${CMAKE_SOURCE_DIR}/scripts/copy_libfuse3-lio.sh /tmp)")
 
 #Add shell scripts
+install(PROGRAMS bin/lfs_mgmt.sh DESTINATION bin)
 install(PROGRAMS bin/lfs_service_manager.sh DESTINATION bin)
 install(PROGRAMS bin/lio_log_manager.sh DESTINATION bin)
 install(PROGRAMS bin/lfs_pending_stat_check.sh DESTINATION bin)
