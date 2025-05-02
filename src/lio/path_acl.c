@@ -872,6 +872,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
         facl->mode[0] = S_IRWXO;
         facl->mode[1] = S_IROTH | S_IWOTH;
         facl->mode[2] = S_IRWXO;
+        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::rwx,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::rw-,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::rwx,m::rwx");
     } else {  //** Read only access
@@ -1048,7 +1049,8 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
     fdf = mkstemp(fname);
     dname = strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
-        log_printf(0, "ERROR: failed maing temp ACL directory: %s\n", dname);
+        log_printf(0, "ERROR: failed maxing temp ACL directory: %s\n", dname);
+        fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed maxing temp ACL directory: %s\n", dname);
         return(1);
     }
     dir = opendir(dname);
@@ -1063,7 +1065,11 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
     for (i=0; i<pa->n_path_acl; i++) {
         log_printf(10, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
         pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd, NULL, NULL, NULL, 0);
-        if (!pa->path_acl[i]->lfs_acl) err++;
+        if (!pa->path_acl[i]->lfs_acl) {
+            fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
+            log_printf(0, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
+            err++;
+        }
     }
 
     //** Cleanup
@@ -1672,6 +1678,8 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
 
     //**Now populate it
     if (prefix_account_parse(pa, fd) != 0) { //** Add the prefix/account associations
+        fprintf(stderr, "ERROR: prefix_account_parse() failed!\n"); fflush(stderr);
+        log_printf(0, "ERROR: prefix_account_parse() failed!\n"); tbx_log_flush();
         pacl_destroy(pa);  //** Got an error so cleanup and kick out
         return(NULL);
     }
@@ -1689,6 +1697,8 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
         snprintf(fname, sizeof(fname)-1, "%s.XXXXXX", fname_lfs_acls);
         pa->fname_acl = strdup(fname);
         if (pacl_lfs_acls_generate(pa) != 0) {
+            fprintf(stderr, "ERROR: pacl_lfs_acls_genereate() failed! fname=%s\n", fname);  fflush(stderr);
+            log_printf(0, "ERROR: pacl_lfs_acls_genereate() failed! fname=%s\n", fname);  tbx_log_flush();
             pacl_destroy(pa);
             return(NULL);
         }
