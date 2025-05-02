@@ -265,6 +265,13 @@ gop_op_status_t rsrc_response_get_config(void *task_arg, int tid)
         snprintf(fname_tmp, n, "%s." I64T , rsrc->child_target_file, rnd);
 
         fd = fopen(fname_tmp, "w");
+        if (fd == NULL) {
+            n = errno;
+            fprintf(stderr, "ERROR: Unable to store tmp RID config file! errno=%d fname=%s\n", n, fname_tmp);  fflush(stderr);
+            log_printf(0, "ERROR: Unable to store tmp RID config file! errno=%d fname=%s\n", n, fname_tmp); tbx_log_flush();
+            status = gop_failure_status;
+            goto fail;
+        }
         err = fwrite(config, n_config, 1, fd);
         fclose(fd);
 
