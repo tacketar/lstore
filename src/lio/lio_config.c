@@ -210,6 +210,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "ds = %s\n", lio->ds_section);
     fprintf(fd, "rs = %s\n", lio->rs_section);
     fprintf(fd, "os = %s\n", lio->os_section);
+    fprintf(fd, "authn = %s\n", lio->authn_section);
     fprintf(fd, "server_address = %s\n", (lio->server_address == NULL) ? "<CLIENT-MODE>" : lio->server_address);
     fprintf(fd, "remote_config = %s\n", lio->rc_section);
     fprintf(fd, "cache = %s\n", lio->cache_section);
@@ -2064,7 +2065,7 @@ no_args:
     } else {            //** Try and load a remote config
         ts = 0;
         if (rc_client_get_config(NULL, NULL, cfg_name, NULL, &config, &hints_string, &obj_name, &userid, &ts) == 0) {
-            ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 0);
+            ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 1);
             free(config);
             if (hints_string) free(hints_string);
         } else {

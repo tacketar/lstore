@@ -862,11 +862,11 @@ usage() {
 set -u
 
 #Setup the constants
-LFS_MNT="/lfs"
-LFS_ROOTS="/lfs_roots"
-LFS_LOCAL_CONFIG="/etc/lio/lfs.local"
-LFS_GLOBAL_VARS="/etc/lio/lfs.vars"
-LFS_SERVICE_MANAGER=$(which lfs_service_manager.sh)
+LFS_MNT=${LFS_MNT:="/lfs"}
+LFS_ROOTS=${LFS_ROOTS:="/lfs_roots"}
+LFS_LOCAL_CONFIG=${LFS_LOCAL_CONFIG:="/etc/lio/lfs.local"}
+LFS_GLOBAL_VARS=${LFS_GLOBAL_VARS:="/etc/lio/lfs.vars"}
+LFS_SERVICE_MANAGER=${LFS_SERVICE_MANAGER:=$(which lfs_service_manager.sh)}
 
 #If no options given then print help and kick out
 if [ $# -lt 1 ]; then
