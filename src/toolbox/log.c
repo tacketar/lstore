@@ -115,7 +115,10 @@ void tbx_log_open(char *fname, int dolock)
     } else if (strcmp(_log_fname, "NULL") == 0) {
         _log_fd = NULL;
     } else if ((_log_fd = tbx_io_fopen(_log_fname, "w")) == NULL) {
-        fprintf(stderr, "OPEN_LOG failed! Attempted to us log file %s\n", _log_fname);
+        int err = errno;
+        char *cwd = get_current_dir_name();
+        fprintf(stderr, "OPEN_LOG failed! Failed opening log file: %s  CWD=%s errno=%d\n", _log_fname, cwd, err); fflush(stderr);
+        if (cwd) free(cwd);
         perror("OPEN_LOG: ");
     }
 
