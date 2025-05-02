@@ -125,10 +125,12 @@ install() {
     echo "   chmod u+s ${FUSE_PATH}/bin/fusermount3"
     echo
     echo "setting up file structure and copying service manager script"
-    mkdir -p "${install_target}/instances"
+    mkdir -p ${install_target}/{instances,log,cfg}
     chmod 0775 ${install_target}
-    chmod 0775 ${install_target}/instances
+    chmod 0775 ${install_target}/{instances,log,cfg}
     chown "${user}:" "${install_target}"
+    chown "${user}:" ${install_target}/{instances,log,cfg}
+
     cp $script_path $new_script_path
     if [ ! -f /etc/fuse.conf ]; then
         echo "/etc/fuse.conf doesn't exist, creating it..."
@@ -229,7 +231,7 @@ start_instance() {
     # allow coredumps, set working dir
     cd $WDIR
     echo "Core dumps enabled (unlimited size), working directory is '$(pwd)' and the current destination/handler is '$(cat /proc/sys/kernel/core_pattern)' (set using /proc/sys/kernel/core_pattern)"
-    COMMAND="lio_fuse ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${WDIR} ${LFS_CFG} ${LIO_CREDS} ${LIO_OPTS}"
+    COMMAND="${LIO_FUSE} ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${WDIR} ${LFS_CFG} ${LIO_CREDS} ${LIO_OPTS}"
     echo "COMMAND=${COMMAND}"
     # ulimits are done twice, once as root to raise the hard limit and once
     # after the sudo to raise user's soft limit
@@ -243,10 +245,11 @@ start_instance() {
     # Drop set +u in subshell because function library doesn't work
     # This may be centos-specific
     (
+echo "************************* WDIR=${WDIR}  ILOGS=${INSTANCE_LOGS}"
         set +u
         DAEMON_COREFILE_LIMIT=${LIMIT_CORE}
-        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND"
-        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND
+        log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC}  --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} ${COMMAND}"
+        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLimit=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND
     )
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
@@ -861,12 +864,14 @@ else    # No vars file so print help
 fi
 
 #Now we can start making the local variables
+#We don't assume the LFS/LIO management sccripts are in the search path but are in the same directory as this script
 LIO_LOG_SCRIPT=$(dirname $(realpath $0) )/lio_log_manager.sh
 LFS_PENDING_STAT_CHECK_SCRIPT=$(dirname $(realpath $0) )/lfs_pending_stat_check.sh
 INSTANCE_ROOT="${LFS_ROOTS}/instances"
 MOUNT_SYMLINK="${LFS_ROOTS}/mnt"
 CURRENT_SYMLINK="${LFS_ROOTS}/current"
 WDIR="${CURRENT_SYMLINK}/logs"
+LIO_FUSE=${LIO_FUSE:=$(which lio_fuse)}   # Allow the lio_fuse binary to be overridden as well
 
 # To bind-mount LStore inside of a container, any symlinks need to be resolvable
 # to locations beneath the mount. Set up a symlink to current mount point at
