@@ -44,7 +44,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("pacl_check [-d log_level] [--path map_path] --seed n] [--print] [--apply-acl path] path_acl.ini\n");
+        printf("pacl_check [-d log_level] [--path map_path | --path-tree map_path] [--seed n] [--print-tree | --print-config] [--apply-acl path] path_acl.ini\n");
         printf("    --path map_path      - Optional path to check where it maps\n");
         printf("    --path-tree map_path - Optional path to check where it maps and print an annotated ACL tree\n");
         printf("    --apply-acl path     - Apply the map_path ACLs to the given file or directory contained in path\n");
