@@ -1093,19 +1093,32 @@ int pacl_compare_nested_acls(path_acl_t *a, path_acl_t *b)
     int i, j, checked;
 
     //** Check the "other_mode"
-    if (a->other_mode < b->other_mode) return(1);
+    if (a->other_mode < b->other_mode) {
+        log_printf(0, "ERROR: OTHER mismatch! parent->prefix=%s parent->other_mode=%d child->prefix=%s child->other=%d\n",
+            a->prefix, a->other_mode, b->prefix, b->other_mode);
+        return(1);
+    }
 
     //** Check the accounts. All the "b" accounts should exist in "a"
     for (i=0; i<b->n_account; i++) {
         checked = 0;
         for (j=0; j<a->n_account; j++) {
             if (strcmp(b->account[i].account, a->account[j].account) == 0) {
-                if (a->account[j].mode < b->account[i].mode) return(2);
+                if (a->account[j].mode < b->account[i].mode) {
+                    log_printf(0, "ERROR: ACCOUNT mismatch! account=%s parent->prefix=%s parent->account_mode=%d child->prefix=%s child->account_mode=%d\n",
+                        a->account[j].account, a->prefix, a->account[j].mode, b->prefix, b->account[i].mode);
+                    return(2);
+                }
+
                 checked = 1;
                 break;  //** Got a match so continue to the next one
             }
         }
-        if (checked == 0) return(3);  //** The account is missing in the parent
+        if (checked == 0) {
+            log_printf(0, "ERROR: ACCOUNT missing in parent! account=%s parent->prefix=%s child->prefix=%s\n",
+               b->account[i].account, a->prefix, b->prefix);
+            return(3);  //** The account is missing in the parent
+        }
     }
 
     return(0);
