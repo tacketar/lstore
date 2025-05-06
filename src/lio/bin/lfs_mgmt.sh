@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 #**************************************************************************************************
 #
 # lfs_mgmt.sh - LFS management script to handle multiple LFS sites and filesets
@@ -301,13 +301,38 @@ create_lstore_mount() {
         sed "s%^LIO_PKEY_DIR=.*%LIO_PKEY_DIR=\"--setenv=LIO_KEY_PREFIX=${LFS_ROOTS}/${mnt}\"%g" | \
         sed "s%^LIO_CREDS=.*%LIO_CREDS=\"--fcreds ${creds} -u ${user}\"%g"  > ${vars}
 
+    # Make the /lfs_roots directory if needed
+    if [ ! -f "${LFS_ROOTS}" ]; then
+        mkdir "${LFS_ROOTS}"
+        chown "${luser}:" "${LFS_ROOTS}"
+        chmod 0755 "${LFS_ROOTS}"
+    fi
+
+    # Make the /lfs directory if needed
+    if [ ! -f "${LFS_MNT}" ]; then
+        mkdir "${LFS_MNT}"
+        chown "${luser}:" "${LFS_MNT}"
+        chmod 0755 "${LFS_MNT}"
+    fi
+
     #Make the mount
     ${LFS_SERVICE_MANAGER} install "${LFS_ROOTS}/${mnt}" "${luser}" "${vars}"
     rm ${vars}
 
     #Add the public key if needed
     if [ "${MNT_PKEY}" != "" ]; then
+        if [ ! -f "${LFS_ROOTS}/${mnt}/known_hosts" ]; then
+            touch "${LFS_ROOTS}/${mnt}/known_hosts"
+            chown "${luser}:" "${LFS_ROOTS}/${mnt}/known_hosts"
+            chmod 0755 "${LFS_ROOTS}/${mnt}/known_hosts"
+        fi
         update_known_hosts "${mnt}" "${LFS_ROOTS}/${mnt}/known_hosts"
+
+        if [ ! -f "/etc/lio/known_hosts" ]; then
+            touch "/etc/lio/known_hosts"
+            chown "${luser}:" "/etc/lio/known_hosts"
+            chmod 0755 "/etc/lio/known_hosts"
+        fi
         update_known_hosts "${mnt}" "/etc/lio/known_hosts"
     fi
 
