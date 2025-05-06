@@ -1,3 +1,17 @@
+lstore (2.4.1) stable; urgency=low
+  * More diagnostics about why things won't start
+  * Add lio_config shortcuts
+  * Support for default users for each shortcut
+  * Report when the RS can't open the RID config file
+  * Fix bug not setting other RW perms on LFS files and also add more diagnostic info.
+  * Enable resolving parameters when loading the config and also print the authn section when dumping state
+  * Move lio_parse_path_check from the tests to lio/bin so it can be used as a helper
+  * Add global lfs_mgmt script
+  * Add support for a root prefix.
+  * User configurable chown errno() setting
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Tu May 06 2025 08:22 -0600
+
 lstore (2.4.0) stable; urgency=low
   * Add tooling to better understand path_acl mappings
   * Ease of use support for multiple LFS mounts
@@ -5,6 +19,9 @@ lstore (2.4.0) stable; urgency=low
   * Add support for auotmatic fetching and usage of shortcut hints
   * Fix several isues related to loading and using  multiple LIO contexts at the same time
   * Add ability to change the error for the unsupported chown() call
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Tu Apr 01 2025 11:0:00 -0500
+
 lstore (2.3.1) stable; urgency=high
   * Fix return type in lfs_copy_range() to support large transfers
 
