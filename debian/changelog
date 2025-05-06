@@ -1,3 +1,10 @@
+lstore (2.4.2) stable; urgency=low
+  * Make install easier by making parent directories if they don't exist
+  * Gracefully handle empy log directories
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Tu May 06 2025 15:32 -0600
+
+  
 lstore (2.4.1) stable; urgency=low
   * More diagnostics about why things won't start
   * Add lio_config shortcuts
