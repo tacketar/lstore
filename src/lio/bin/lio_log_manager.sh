@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 #******************************************************************************
 #
 # lfs_log_manager.sh - Script for managing LFS namespace logging
@@ -19,9 +19,11 @@ log_status() {
 
     FILES=$*
 
-    COUNT=$(ls ${FILES} | wc -l)
-    SIZE=$(du -c ${UNITS} ${FILES}| grep total | cut -f1)
-
+    COUNT=$(ls ${FILES} 2>/dev/null| wc -l)
+    SIZE=0
+    if [ "${COUNT}" != "0" ]; then
+        SIZE=$(du -c ${UNITS} ${FILES}| grep total | cut -f1)
+    fi
     echo "File_count: ${COUNT}  Total_Size: ${SIZE}"
 }
 
@@ -52,7 +54,7 @@ log_cleanup() {
     for (( i=0; i<${#FILES[@]}; i++ )); do
 
         echo "Removing ${FILES[i]}"
-        rm ${FILES[i]}
+        rm --one-file-system ${FILES[i]}
 
         #Update the used size
         if [[ ${i} -eq ${#FILES[@]}-1 ]]; then
