@@ -1056,7 +1056,7 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
     fdf = mkstemp(fname);
     dname = strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
-        log_printf(0, "ERROR: failed maxing temp ACL directory: %s\n", dname);
+        log_printf(-1, "ERROR: failed maxing temp ACL directory: %s\n", dname);
         fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed maxing temp ACL directory: %s\n", dname);
         return(1);
     }
@@ -1074,7 +1074,7 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
         pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd, NULL, NULL, NULL, 0);
         if (!pa->path_acl[i]->lfs_acl) {
             fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
-            log_printf(0, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
+            log_printf(-1, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
             err++;
         }
     }
@@ -1101,7 +1101,7 @@ int pacl_compare_nested_acls(path_acl_t *a, path_acl_t *b)
 
     //** Check the "other_mode"
     if (a->other_mode < b->other_mode) {
-        log_printf(0, "ERROR: OTHER mismatch! parent->prefix=%s parent->other_mode=%d child->prefix=%s child->other=%d\n",
+        log_printf(-1, "ERROR: OTHER mismatch! parent->prefix=%s parent->other_mode=%d child->prefix=%s child->other=%d\n",
             a->prefix, a->other_mode, b->prefix, b->other_mode);
         return(1);
     }
@@ -1112,7 +1112,7 @@ int pacl_compare_nested_acls(path_acl_t *a, path_acl_t *b)
         for (j=0; j<a->n_account; j++) {
             if (strcmp(b->account[i].account, a->account[j].account) == 0) {
                 if (a->account[j].mode < b->account[i].mode) {
-                    log_printf(0, "ERROR: ACCOUNT mismatch! account=%s parent->prefix=%s parent->account_mode=%d child->prefix=%s child->account_mode=%d\n",
+                    log_printf(-1, "ERROR: ACCOUNT mismatch! account=%s parent->prefix=%s parent->account_mode=%d child->prefix=%s child->account_mode=%d\n",
                         a->account[j].account, a->prefix, a->account[j].mode, b->prefix, b->account[i].mode);
                     return(2);
                 }
@@ -1389,8 +1389,12 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 if (strcmp(key, "prefix") == 0) {  //** Got the path prefix
                     prefix = value;
                 } else if (strncmp(key, "account", 7) == 0) { //** Got an account
-                    tbx_stack_push(stack, key);
-                    tbx_stack_push(stack, value);
+                    if ((strcmp(key, "account") == 0) || (strcmp(key, "account(rw)") == 0) || (strcmp(key, "account(r)") == 0)) {
+                        tbx_stack_push(stack, key);
+                        tbx_stack_push(stack, value);
+                    } else {
+                        log_printf(-1, "ERROR: Unknown account option: %s = %s\n", key, value);
+                    }
                 } else if (strcmp(key, "other") == 0) {  //** Only used for defaults
                     other_mode = value;
                 } else if (strcmp(key, "lfs_account") == 0) {  //** Only used with LFS
@@ -1423,6 +1427,8 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     gid_parse(value, PACL_MODE_RW, gid_list, &n_gid);
                 } else if (strcmp(key, "gid(r)") == 0) {
                     gid_parse(value, PACL_MODE_READ, gid_list, &n_gid);
+                } else {  //** Unknown option so just report it
+                    log_printf(-1, "ERROR: Unknown option: %s = %s\n", key, value);
                 }
 
                 ele = tbx_inip_ele_next(ele);
@@ -1463,7 +1469,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 }
 
             } else {
-                log_printf(0, "ERROR: Missing fields! prefix=%s stack_count(accounts)=%d\n", prefix, tbx_stack_count(stack));
+                log_printf(-1, "ERROR: Missing fields! prefix=%s stack_count(accounts)=%d\n", prefix, tbx_stack_count(stack));
                 err = 1;
                 tbx_stack_empty(stack, 0);
             }
@@ -1494,7 +1500,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
             if (pa->path_acl[j]->nested_primary == -1) pa->path_acl[j]->nested_primary = i;
             pa->path_acl[j]->nested_parent = i;
             if (pacl_compare_nested_acls(pa->path_acl[i], pa->path_acl[j]) != 0) {
-                log_printf(0, "ERROR: bad nested ACLs! prefix=%s prefix_nested=%s\n", pa->path_acl[i]->prefix, pa->path_acl[j]->prefix);
+                log_printf(-1, "ERROR: bad nested ACLs! prefix=%s prefix_nested=%s\n", pa->path_acl[i]->prefix, pa->path_acl[j]->prefix);
                 tbx_log_flush();
                 return(1);
             }
