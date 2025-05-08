@@ -49,7 +49,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
         printf("    --path-tree map_path - Optional path to check where it maps and print an annotated ACL tree\n");
         printf("    --apply-acl path     - Apply the map_path ACLs to the given file or directory contained in path\n");
         printf("    --print-config       - Dump the parsed config to stdout\n");
-        printf("    --print-tree         - Dump the PAth ACL tree to stdout\n");
+        printf("    --print-tree         - Dump the Path ACL tree to stdout\n");
         return(1);
     }
 
