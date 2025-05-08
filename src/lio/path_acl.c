@@ -163,6 +163,13 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
     account2gid_t *a2g;
     char *from_acct;
 
+    if (pa == NULL) {
+        fprintf(fd, "#----------------Path ACL start------------------\n");
+        fprintf(fd, "# ERROR pa = NULL!\n");
+        fprintf(fd, "#----------------Path ACL end------------------\n\n");
+        return;
+    }
+
     fprintf(fd, "#----------------Path ACL start------------------\n");
     fprintf(fd, "# n_path_acl = %d\n", pa->n_path_acl);
     fprintf(fd, "# LFS acl fname template: %s\n", ((pa->fname_acl) ? pa->fname_acl : "NOT_ENABLED"));
