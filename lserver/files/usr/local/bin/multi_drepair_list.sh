@@ -5,12 +5,15 @@ if [ "${2}" == "" ]; then
     exit 1
 fi
 
+#Load the helpers and also set the warmer DB to use
+source warmer_helpers.sh
+
 fname=""
 for i in $*; do
     depot=$(echo ${i} | cut -f1 -d/)
     rid=$(echo ${i} | cut -f2 -d/)
     echo "Processing RID ${depot}/${rid}"
-    warmer_query.py --fname --prefix "@:" --rid ${rid} > /tmp/${depot}r${rid}.$$
+    warmer_query_fname_by_rid ${rid} > /tmp/${depot}r${rid}.$$
     echo "      $(wc -l /tmp/${depot}r${rid}.$$ | cut -f1 -d\  ) files"
     if [ "${fname}" == "" ]; then
         fname="${depot}r${rid}"

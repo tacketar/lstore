@@ -8,10 +8,13 @@ fi
 depot=${1}
 shift
 
+#Load the helpers and set the DB to use
+source warmer_helpers.sh
+
 fname=""
 for i in $*; do
     echo "Processing RID ${i}"
-    warmer_query.py --fname --prefix "@:" --rid ${i} > /tmp/${depot}r${i}.$$
+    warmer_query_fname_by_rid ${i} > /tmp/${depot}r${i}.$$
     echo "      $(wc -l /tmp/${depot}r${i}.$$ | cut -f1 -d\  ) files"
     if [ "${fname}" == "" ]; then
         fname="${depot}r${i}"
