@@ -17,6 +17,7 @@
 #define _log_module_index 132
 
 #include <apr_time.h>
+#include <ctype.h>
 #include <gop/types.h>
 #include <ibp/protocol.h>
 #include <stdio.h>
@@ -159,33 +160,26 @@ int process_inq(char *buffer, ibp_depotinfo_t *di)
 
 void set_hostport(char *hostport, int max_size, char *host, int port, ibp_connect_context_t *cc)
 {
-    char in_addr[DNS_ADDR_MAX];
-    char ip[64];
     int type, i;
 
     type = (cc == NULL) ? NS_TYPE_SOCK : cc->type;
 
-    i = 0;
-    while ((host[i] != 0) && (host[i] != '#')) i++;
-    if (host[i] == '#') {
-        host[i] = 0;
-        i=-i;
-    }
-
-    if (tbx_dnsc_lookup(host, in_addr, ip) != 0) {
-        if (i<0) host[-i] = '#';
-        log_printf(1, "set_hostport:  Failed to lookup host: %s\n", host);
-        hostport[max_size-1] = '\0';
-        snprintf(hostport, max_size-1, "%s:%d:%d:0", host, port, type);
-        return;
-    }
-    if (i<0) host[-i] = '#';
-
-    ip[63] = '\0';
-
     hostport[max_size-1] = '\0';
+
+    i = 0;
+    while (host[i] != 0) {   //** Kick out if end of string
+        if (!isprint(host[i])) {  //** If not printable then sanitize and flag an error which shows up in a new HP with USR1 signal
+            snprintf(hostport, max_size-1, "ERROR_WITH_HOSTNAME-%.*s" HP_HOSTPORT_SEPARATOR "%d" HP_HOSTPORT_SEPARATOR "%d" HP_HOSTPORT_SEPARATOR "0",
+                 i, host, port, type);
+            return;
+        }
+        i++;
+    }
+
+    //** If we made it here then the host string is good
     snprintf(hostport, max_size-1, "%s" HP_HOSTPORT_SEPARATOR "%d" HP_HOSTPORT_SEPARATOR "%d" HP_HOSTPORT_SEPARATOR "0",
                  host, port, type);
+    return;
 }
 
 char *change_hostport_cc(char *old_hostport, ibp_connect_context_t *cc)
