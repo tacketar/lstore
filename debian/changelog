@@ -1,3 +1,10 @@
+lstore (2.4.3) stable; urgency=low
+  * Stop DNS query storm -- Sanitize setting the hostport and also remove the superflous DNS lookup
+  * Update LServer warmer helper scripts and start the process of deprecating the python wrapper
+  * Add more diagnostics and config checking
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Th May 15 2025 09:31 -0500
+
 lstore (2.4.2) stable; urgency=low
   * Make install easier by making parent directories if they don't exist
   * Gracefully handle empy log directories
