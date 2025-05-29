@@ -245,7 +245,6 @@ start_instance() {
     # Drop set +u in subshell because function library doesn't work
     # This may be centos-specific
     (
-echo "************************* WDIR=${WDIR}  ILOGS=${INSTANCE_LOGS}"
         set +u
         DAEMON_COREFILE_LIMIT=${LIMIT_CORE}
         log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC}  --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} ${COMMAND}"
