@@ -37,6 +37,29 @@ char NULL_TERMINATOR = '\0';
 
 
 //***************************************************************
+// tbx_stk_string_remove_space - Removes the spaces from the string
+//   Returns the new strlen
+//***************************************************************
+
+int tbx_stk_string_remove_space(char *str)
+{
+    int i, j = 0;
+
+    if (str == NULL) return -1;
+
+    for (i=0; str[i] != '\0'; i++) {
+        if (!isspace(str[i])) {
+            if (j!=i) str[j] = str[i];
+            j++;
+        }
+    }
+
+    if (j != i) str[j] = '\0';
+
+    return(j);
+}
+
+//***************************************************************
 // tbx_stk_string2args - Converts a string to argc/argv
 //***************************************************************
 
