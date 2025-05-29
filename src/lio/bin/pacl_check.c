@@ -36,7 +36,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
     char *check_path = NULL;
     char *apply_path = NULL;
     void *acl;
-    int asize;
+    int asize, enable_nfs4;
     path_acl_context_t *pa;
     uid_t uid;
     gid_t gid;
@@ -44,18 +44,20 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
 
     if (argc < 2) {
         printf("\n");
-        printf("pacl_check [-d log_level] [--path map_path | --path-tree map_path] [--seed n] [--print-tree | --print-config] [--apply-acl path] path_acl.ini\n");
+        printf("pacl_check [-d log_level] [--path map_path | --path-tree map_path] [--seed n] [--print-tree | --print-config] [--apply-acl path] [--enable_nfs4] path_acl.ini\n");
         printf("    --path map_path      - Optional path to check where it maps\n");
         printf("    --path-tree map_path - Optional path to check where it maps and print an annotated ACL tree\n");
         printf("    --apply-acl path     - Apply the map_path ACLs to the given file or directory contained in path\n");
         printf("    --print-config       - Dump the parsed config to stdout\n");
         printf("    --print-tree         - Dump the Path ACL tree to stdout\n");
+        printf("    --enable-nfs4        - Enable NFSv4 ACLs\n");
         return(1);
     }
 
     do_print_config = 0;
     do_print_tree = 0;
     do_acl_tree = 0;
+    enable_nfs4 = 0;
     i = 1;
     seed = -1;
     ll = -1;
@@ -88,6 +90,9 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
         } else if (strcmp(argv[i], "--print-tree") == 0) { //** Print the parsed config
             i++;
             do_print_tree = 1;
+        } else if (strcmp(argv[i], "--enable-nfs4") == 0) { //** Print the parsed config
+            i++;
+            enable_nfs4 = 1;
         }
     } while ((start_option < i) && (i<argc));
     start_option = i;
@@ -110,7 +115,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
     }
 
     //** Load the path acl
-    pa = pacl_create(ifd, "/tmp/lfs.XXXXXX");
+    pa = pacl_create(ifd, "/tmp/lfs.XXXXXX", enable_nfs4);
     if (pa == NULL) {
         tbx_inip_destroy(ifd);
         printf("ERROR: Failed to parse the pacl file %s\n", pacl_fname);
@@ -135,7 +140,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
             if (ftype == 0) {
                 printf("ERROR: Unable to apply ACL. Object does not exist! path=%s\n", check_path);
             } else {
-                if (pacl_lfs_get_acl(pa, check_path, ftype, &acl, &asize, &uid, &gid, &mode) != 0) {
+                if (pacl_lfs_get_acl(pa, check_path, ftype, &acl, &asize, &uid, &gid, &mode, enable_nfs4) != 0) {
                     printf("ERROR: Failed getting LFS acl!\n");
                 } else {
                     printf("Applying ACL to path %s (lio_fype=%d)\n", apply_path, ftype);

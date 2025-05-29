@@ -28,8 +28,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <sys/acl.h>
+#include <sys/mount.h>
+#include <sys/types.h>
 #include <sys/xattr.h>
 #include <apr_hash.h>
 #include <apr_pools.h>
@@ -44,12 +45,25 @@
 
 #include <lio/path_acl.h>
 
-typedef struct {  //** FUSE compliant POSIX ACL
-    gid_t gid_primary;   //** Primary GID to report for LFS
-    gid_t uid_primary;   //** Primary UID to report for LFS
-    mode_t mode[3];      //** Normal perms User/Group/Other
-    void *acl[3];        //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
-    int  size[3];        //** And It's size
+//** ACL slots
+#define ACL_POSIX_DIR  0
+#define ACL_POSIX_FILE 1
+#define ACL_POSIX_EXEC 2
+#define ACL_NFS4_DIR   3
+#define ACL_NFS4_FILE  4
+#define ACL_NFS4_EXEC  5
+#define ACL_MAX        6
+#define ACL_NFS4_START ACL_NFS4_DIR
+
+
+char *_acl_name[] = { "# POSIX_DIR_ACL", "# POSIX_FILE_ACL", "# POSIX_EXEC_ACL", "nfs4_dir", "nfs4_file", "nfs4_exec" };
+
+typedef struct {  //** FUSE compliant POSIX and NFS4 ACLs
+    gid_t gid_primary;     //** Primary GID to report for LFS
+    gid_t uid_primary;     //** Primary UID to report for LFS
+    mode_t mode[ACL_MAX];  //** Normal perms User/Group/Other
+    void *acl[ACL_MAX];    //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
+    int  size[ACL_MAX];    //** And It's size
 } fuse_acl_t;
 
 typedef struct {    //** FS ACL for use by the FS layer and sits on top of the LStore account type ACLs
@@ -90,6 +104,7 @@ typedef struct {    //** Individual path ACL
     fs_acl_list_t *gid_map;
     int other_mode;         //** Access for other accounts. Defaults to NONE
     fuse_acl_t *lfs_acl;    //** Composite FUSE ACL
+    char *acl_text[ACL_MAX];  //** Text version of the ACLs
     int nested_end;         //** Tracks nesting of ACL prefixes
     int nested_primary;     //** Initial prefix of nested group
     int nested_parent;      //** PArent of current prefix if nested
@@ -112,7 +127,8 @@ struct path_acl_context_s {    //** Context for containing the Path ACL's
     int *lut;                  //** Lookup table for unique prefixes
     account2gid_t **a2gid;
     int n_a2gid;
-    char *fname_acl;           //** Used for making the LFS ACLs if enabled
+    char *fname_acl;           //** Used for making the LFS POSIX ACLs if enabled
+    int nfs4_enable;           //** Enable creation of NFS4 ACLs if provided
 };
 
 #define PA_MAX_ACCOUNT 100
@@ -142,6 +158,7 @@ typedef struct {    //** Structure used for hints
     char *account[PA_MAX_ACCOUNT];
 } pa_hint_t;
 
+void facl_destroy(fuse_acl_t *facl, char **acl_text);
 int _group2gid(const char *group, gid_t *gid);
 char *pacl_gid2account(path_acl_context_t *pa, gid_t gid);
 
@@ -158,7 +175,7 @@ void pacl_unused_guid_set(uint64_t guid) { _pa_guid_unused = guid; }
 
 void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
 {
-    int i, j;
+    int i, j, n;
     path_acl_t *acl;
     account2gid_t *a2g;
     char *from_acct;
@@ -170,9 +187,11 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         return;
     }
 
+    n = (pa->nfs4_enable) ? ACL_MAX : 3;
+
     fprintf(fd, "#----------------Path ACL start------------------\n");
-    fprintf(fd, "# n_path_acl = %d\n", pa->n_path_acl);
-    fprintf(fd, "# LFS acl fname template: %s\n", ((pa->fname_acl) ? pa->fname_acl : "NOT_ENABLED"));
+    fprintf(fd, "# n_path_acl = %d   nfs4_enabled = %d\n", pa->n_path_acl, pa->nfs4_enable);
+    fprintf(fd, "# LFS POSIX acl fname template: %s\n", ((pa->fname_acl) ? pa->fname_acl : "NOT_ENABLED"));
     fprintf(fd, "\n");
     if (pa->pacl_default) {
         acl = pa->pacl_default;
@@ -185,6 +204,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         if (acl->lfs_account) fprintf(fd, "lfs_account = %s\n", acl->lfs_account);
         for (j=0; j<acl->n_account; j++) {
             fprintf(fd, "account(%s) = %s\n", ((acl->account[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->account[j].account);
+        }
+        for (j=0; j<n; j++) {
+            fprintf(fd, "%s = %s\n", _acl_name[j], acl->acl_text[j]);
         }
         fprintf(fd, "\n");
     }
@@ -222,6 +244,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
                     fprintf(fd, "gid(%s) = %u %s\n", ((acl->gid_map->id[j].mode == PACL_MODE_READ) ? "r" : "rw"), acl->gid_map->id[j].gid, from_acct);
                 }
             }
+        }
+        for (j=0; j<n; j++) {
+            fprintf(fd, "%s = %s\n", _acl_name[j], acl->acl_text[j]);
         }
         fprintf(fd, "\n");
     }
@@ -722,7 +747,7 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
 // pacl_lfs_get_acl - Returns the LFS ACL
 //**************************************************************************
 
-int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode)
+int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4)
 {
     path_acl_t *acl;
     int exact, slot, got_default;
@@ -744,11 +769,16 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
                     slot = (lio_ftype & OS_OBJECT_EXEC_FLAG) ? 2 : 1;
                 }
             }
-            *lfs_acl = acl->lfs_acl->acl[slot];
-            *acl_size = acl->lfs_acl->size[slot];
+
+            //** These always come from the POSIX
             *mode = acl->lfs_acl->mode[slot];
             *gid = acl->lfs_acl->gid_primary;
             if (acl->lfs_acl->uid_primary != _pa_guid_unused) *uid = acl->lfs_acl->uid_primary;
+
+            //** Tweak things for NFS4
+            if (get_nfs4) slot = slot + ACL_NFS4_START;
+            *lfs_acl = acl->lfs_acl->acl[slot];
+            *acl_size = acl->lfs_acl->size[slot];
 
             //** Still need to map the file type over
             *mode |= filebits;
@@ -794,11 +824,148 @@ gid_t pacl2lfs_gid_primary(path_acl_context_t *pa, char *account)
     return(0);
 }
 
+
 //**************************************************************************
-// _make_lfs_acl - Makes an LFS compatible ACL
+//  _find_binary - Finds the given binary
 //**************************************************************************
 
-int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *prefix, char *atype)
+char *_find_binary(char *exec, int force_root_uid)
+{
+    int n_paths = 5;
+    char *search_path[] = { NULL, "/bin", "/sbin", "/usr/bin", "/usr/sbin" };
+    char *prefix;
+    char fname[OS_PATH_MAX];
+    struct stat sbuf;
+    int i;
+
+    //** 1st check for LIO_NFS4_PATH setting
+    search_path[0] = getenv("LIO_NFS4_PATH");
+
+    for (i=0; i<n_paths; i++) {
+        prefix = search_path[i];
+        if (prefix) {
+            snprintf(fname, sizeof(fname)-1, "%s/%s", prefix, exec);
+            fname[OS_PATH_MAX-1] = '\0';
+            if (stat(fname, &sbuf) == 0) {
+                if (force_root_uid) {
+                    if (sbuf.st_uid == 0) {   //** Make sure it's owned by root
+                        return(strdup(fname));
+                    } else {
+                        log_printf(0, "ERROR: %s should be owned by root! Ignoring...\n", fname);
+                        fprintf(stderr, "ERROR: %s should be owned by root! Ignoring...\n", fname);
+                    }
+                } else {
+                    return(strdup(fname));
+                }
+
+            }
+        }
+    }
+
+    return(NULL);
+}
+
+//** These are set on he initial call and assumed static for the dureation of the program
+char *_nfs4_setfacl = NULL;
+char *_nfs4_getfacl = NULL;
+
+//**************************************************************************
+// _find_nfs4_binaries - Finds the NFS4 nfs4_setfacl and nfs4_getfacl binaries
+//**************************************************************************
+
+int _find_nfs4_binaries()
+{
+    if (_nfs4_setfacl == NULL) _nfs4_setfacl = _find_binary("nfs4_setfacl", 1);
+    if (_nfs4_getfacl == NULL) _nfs4_getfacl = _find_binary("nfs4_getfacl", 1);
+
+    if ((_nfs4_setfacl == NULL) || (_nfs4_getfacl == NULL)) {
+        log_printf(0, "ERROR: _nfs4_setfacl=%s _nfs4_getfacl=%s\n", _nfs4_setfacl, _nfs4_getfacl);
+        log_printf(0, "ERROR: Try setting the LIO_NFS4_PATH envirnment variable to locate the executabales!\n");
+        fprintf(stderr, "ERROR: _nfs4_setfacl=%s _nfs4_getfacl=%s\n", _nfs4_setfacl, _nfs4_getfacl);
+        fprintf(stderr, "ERROR: Try setting the LIO_NFS4_PATH envirnment variable to locate the executabales!\n");
+
+        return(1);
+    }
+
+    return(0);
+}
+
+//**************************************************************************
+// _set_nfs4_acl - Shells out and sets the NFS4 ACL on the object
+//**************************************************************************
+
+int _set_nfs4_acl(const char *dfname, char *acl_text)
+{
+    int err;
+    char cmd[OS_PATH_MAX];
+
+    snprintf(cmd, sizeof(cmd)-1, "%s -s %s %s", _nfs4_setfacl, acl_text, dfname);
+
+    err = system(cmd);
+    if (err != 0) {
+        err = errno;
+        fprintf(stderr, "ERROR: _set_nfs4_acl errno=%d -- CMD=%s\n", err, cmd);
+        log_printf(-1, "ERROR: _set_nfs4_acl errno=%d -- CMD=%s\n", err, cmd);
+    }
+
+    return(err);
+}
+
+//**************************************************************************
+// _get_nfs4_acl - Shells out and gets the NFS4 ACL on the object
+//**************************************************************************
+
+int _get_nfs4_acl(const char *dfname, void **kacl, int *kacl_size)
+{
+    size_t nbytes;
+    char *buf = NULL;
+
+    //** Get the size
+    nbytes = 0;
+    *kacl_size = getxattr(dfname, "system.nfs4_acl", buf, nbytes);
+    if (*kacl_size < 0) {
+        *kacl_size = 0;
+        *kacl = NULL;
+        return(1);
+    } else if (*kacl_size == 0) {
+        *kacl = NULL;
+        return(0);
+    }
+
+    //** Now store it
+    tbx_type_malloc_clear(*kacl, void, *kacl_size);
+    nbytes = *kacl_size;
+    getxattr(dfname, "system.nfs4_acl", *kacl, nbytes);
+
+    return(0);
+}
+
+//**************************************************************************
+// _make_nfs4_acl - Makes an LFS compatible NFSv4 ACL
+//**************************************************************************
+
+int _make_nfs4_acl(const char *dfname, char *acl_text, void **kacl, int *kacl_size, char *prefix, char *atype)
+{
+
+    log_printf(10, "acl_text=%s\n", acl_text);
+
+    //** Kick out if no suitable binaries
+    if (_find_nfs4_binaries() != 0) return(1);
+
+    //** Set the ACL
+    if (_set_nfs4_acl(dfname, acl_text) != 0) return(2);
+
+    //** Read it back
+    if (_get_nfs4_acl(dfname, kacl, kacl_size) != 0) return(3);
+
+    return(0);
+}
+
+//**************************************************************************
+// _make_posix_acl - Makes an LFS compatible POSIX ACL
+//**************************************************************************
+
+int _make_posix_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *prefix, char *atype)
 {
     acl_t acl;
     char acl_buf[10*1024];
@@ -840,17 +1007,67 @@ int _make_lfs_acl(int fd, char *acl_text, void **kacl, int *kacl_size, char *pre
 }
 
 //**************************************************************************
+// _mount_nfs4 - Mounts min_fise at the provided path to set/get the NFS4 ACLs
+//**************************************************************************
+
+int _mount_nfs4(const char *prefix)
+{
+    char *min_fuse;
+    char cmd[OS_PATH_MAX];
+    int err;
+
+    min_fuse = _find_binary("min_fuse", 0);
+    if (min_fuse == NULL) {
+        log_printf(-1, "ERROR: Unable to find min_fuse binary!\n");
+        fprintf(stderr, "ERROR: Unable to find min_fuse binary!\n");
+        return(1);
+    }
+
+    snprintf(cmd, sizeof(cmd)-1, "MIN_IGNORE_XATTR_REPLACE='1' %s -o fsname=min %s", min_fuse, prefix);
+    err = system(cmd);
+    free(min_fuse);
+
+    if (err != 0) {
+        err = errno;
+        fprintf(stderr, "ERROR: _mount_nfs4 errno=%d -- CMD=%s\n", err, cmd);
+        log_printf(-1, "ERROR: _mount_nfs4 errno=%d -- CMD=%s\n", err, cmd);
+    }
+
+    return(err);
+}
+
+
+//**************************************************************************
+// _umount_nfs4 - Unmounts the min_fuse
+//**************************************************************************
+
+void _umount_nfs4(const char *prefix)
+{
+    int err;
+
+    err = umount(prefix);
+    if (err != 0) {
+        err = errno;
+        log_printf(-1, "ERROR: Unable to unmount min_fuse from %s errno=%d!\n", prefix, err);
+        fprintf(stderr, "ERROR: Unable to unmount min_fuse from %s errno=%d!\n", prefix, err);
+    }
+
+    return;
+}
+
+//**************************************************************************
 // pacl2lfs_acl - Converts the given path acl to a usable extended ACL for
 //   use with FUSE.  The returned object can be returned as system.posic_acl_access
 //**************************************************************************
 
-fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int fdd, char **dacl_text, char **facl_text, char **eacl_text, int use_name)
+fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int fdd, const char *fdf_name, const char *fdd_name, char *nfs4_fname)
 {
     fuse_acl_t *facl;
     int nbytes = 1024*1024;
     char dir_acl_text[nbytes];
     char file_acl_text[nbytes];
     char exec_acl_text[nbytes];
+    char fname[OS_PATH_MAX];
     char *name;
     int dir_pos, file_pos, exec_pos, i, primary_added;
     gid_t gid;
@@ -869,24 +1086,24 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     facl->uid_primary = acl->lfs_uid;
 
     if (acl->other_mode == 0) {
-        facl->mode[0] = 0;
-        facl->mode[1] = 0;
-        facl->mode[2] = 0;
+        facl->mode[ACL_POSIX_DIR] = 0;
+        facl->mode[ACL_POSIX_FILE] = 0;
+        facl->mode[ACL_POSIX_EXEC] = 0;
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::---,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::---,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::---,m::rwx");
     } else if (acl->other_mode & PACL_MODE_WRITE) {   //** If you have write you also have read
-        facl->mode[0] = S_IRWXO;
-        facl->mode[1] = S_IROTH | S_IWOTH;
-        facl->mode[2] = S_IRWXO;
+        facl->mode[ACL_POSIX_DIR] = S_IRWXO;
+        facl->mode[ACL_POSIX_FILE] = S_IROTH | S_IWOTH;
+        facl->mode[ACL_POSIX_EXEC] = S_IRWXO;
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::rwx,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::rw-,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::rwx,m::rwx");
     } else {  //** Read only access
-        facl->mode[0] = S_IROTH | S_IXOTH;
-        facl->mode[0] = S_IROTH | S_IXOTH;
-        facl->mode[1] = S_IROTH;
-        facl->mode[2] = S_IROTH | S_IXOTH;
+        facl->mode[ACL_POSIX_DIR] = S_IROTH | S_IXOTH;
+        facl->mode[ACL_POSIX_DIR] = S_IROTH | S_IXOTH;
+        facl->mode[ACL_POSIX_FILE] = S_IROTH;
+        facl->mode[ACL_POSIX_EXEC] = S_IROTH | S_IXOTH;
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, "o::r-x,m::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, "o::r--,m::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, "o::r-x,m::rwx");
@@ -902,22 +1119,22 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
             if (gid == facl->gid_primary) {  //** Primary GID
                 primary_added = 1;
                 if (mode & PACL_MODE_WRITE) {
-                    facl->mode[0] |= S_IRWXG;
-                    facl->mode[1] |= S_IRGRP | S_IWGRP;
-                    facl->mode[2] |= S_IRWXG;
+                    facl->mode[ACL_POSIX_DIR] |= S_IRWXG;
+                    facl->mode[ACL_POSIX_FILE] |= S_IRGRP | S_IWGRP;
+                    facl->mode[ACL_POSIX_EXEC] |= S_IRWXG;
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::rwx");
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::rw-");
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::rwx");
                 } else {
-                    facl->mode[0] |= S_IRGRP | S_IXGRP;
-                    facl->mode[1] |= S_IRGRP;
-                    facl->mode[2] |= S_IRGRP | S_IXGRP;
+                    facl->mode[ACL_POSIX_DIR] |= S_IRGRP | S_IXGRP;
+                    facl->mode[ACL_POSIX_FILE] |= S_IRGRP;
+                    facl->mode[ACL_POSIX_EXEC] |= S_IRGRP | S_IXGRP;
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::r-x");
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::r--");
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::r-x");
                 }
             } else if (mode & PACL_MODE_WRITE) {
-                if (use_name == 0) {
+                if (name == NULL) {
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:rwx", gid);
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:rw-", gid);
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:rwx", gid);
@@ -927,7 +1144,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%s:rwx", name);
                 }
             } else {
-                if (use_name == 0) {
+                if (name == NULL) {
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g:%u:r-x", gid);
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g:%u:r--", gid);
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g:%u:r-x", gid);
@@ -941,9 +1158,9 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     }
 
     if (primary_added == 0) { //** No primary GID so manually add one. Assumes full perms.
-        facl->mode[0] |= S_IRWXG;
-        facl->mode[1] |= S_IRGRP | S_IWGRP;
-        facl->mode[2] |= S_IRWXG;
+        facl->mode[ACL_POSIX_DIR] |= S_IRWXG;
+        facl->mode[ACL_POSIX_FILE] |= S_IRGRP | S_IWGRP;
+        facl->mode[ACL_POSIX_EXEC] |= S_IRWXG;
         tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",g::rwx");
         tbx_append_printf(file_acl_text, &file_pos, nbytes, ",g::rw-");
         tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",g::rwx");
@@ -959,22 +1176,22 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
             if (uid == facl->uid_primary) {  //** Primary GID
                 primary_added = 1;
                 if (mode & PACL_MODE_WRITE) {
-                    facl->mode[0] |= S_IRWXU;
-                    facl->mode[1] |= S_IRUSR | S_IWUSR;
-                    facl->mode[2] |= S_IRWXU;
+                    facl->mode[ACL_POSIX_DIR] |= S_IRWXU;
+                    facl->mode[ACL_POSIX_FILE] |= S_IRUSR | S_IWUSR;
+                    facl->mode[ACL_POSIX_EXEC] |= S_IRWXU;
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
                 } else {
-                    facl->mode[0] |= S_IRUSR | S_IXUSR;
-                    facl->mode[1] |= S_IRUSR;
-                    facl->mode[2] |= S_IRUSR | S_IXUSR;
+                    facl->mode[ACL_POSIX_DIR] |= S_IRUSR | S_IXUSR;
+                    facl->mode[ACL_POSIX_FILE] |= S_IRUSR;
+                    facl->mode[ACL_POSIX_EXEC] |= S_IRUSR | S_IXUSR;
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::r-x");
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::r--");
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::r-x");
                 }
             } else if (mode & PACL_MODE_WRITE) {
-                if (use_name == 0) {
+                if (name == NULL) {
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:rwx", uid);
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:rw-", uid);
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:rwx", uid);
@@ -984,7 +1201,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%s:rwx", name);
                 }
             } else {
-                if (use_name == 0) {
+                if (name == NULL) {
                     tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u:%u:r-x", uid);
                     tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u:%u:r--", uid);
                     tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u:%u:r-x", uid);
@@ -998,9 +1215,9 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     }
 
     if (primary_added == 0) { //** No primary UID so manually add one. Assumes full perms.
-       facl->mode[0] |= S_IRWXU;
-       facl->mode[1] |= S_IRUSR | S_IWUSR;
-       facl->mode[2] |= S_IRWXU;
+       facl->mode[ACL_POSIX_DIR] |= S_IRWXU;
+       facl->mode[ACL_POSIX_FILE] |= S_IRUSR | S_IWUSR;
+       facl->mode[ACL_POSIX_EXEC] |= S_IRWXU;
        tbx_append_printf(dir_acl_text, &dir_pos, nbytes, ",u::rwx");
        tbx_append_printf(file_acl_text, &file_pos, nbytes, ",u::rw-");
        tbx_append_printf(exec_acl_text, &exec_pos, nbytes, ",u::rwx");
@@ -1013,27 +1230,41 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     }
 
     log_printf(10, "DIRACL=%s\n", dir_acl_text);
-    log_printf(10, "DIRMODE=%o\n", facl->mode[0]);
+    log_printf(10, "DIRMODE=%o\n", facl->mode[ACL_POSIX_DIR]);
 
     log_printf(1, "Prefix: %s uid=%u gid=%u\n", acl->prefix, facl->uid_primary, facl->gid_primary);
 
     //** Convert it to an ACL
-    log_printf(1, "    dir_acl=%s mode=%o\n", dir_acl_text, facl->mode[0]);
+    log_printf(1, "    posix_dir_acl=%s mode=%o\n", dir_acl_text, facl->mode[ACL_POSIX_DIR]);
     err = 0;
-    err += _make_lfs_acl(fdd, dir_acl_text, &(facl->acl[0]), &(facl->size[0]), acl->prefix, "dir_acl");
-    log_printf(1, "    file_acl=%s mode=%o\n", file_acl_text, facl->mode[1]);
-    err += _make_lfs_acl(fdf, file_acl_text, &(facl->acl[1]), &(facl->size[1]), acl->prefix, "file_acl");
-    log_printf(1, "    exec_acl=%s mode=%o\n", exec_acl_text, facl->mode[2]);
-    err += _make_lfs_acl(fdf, exec_acl_text, &(facl->acl[2]), &(facl->size[2]), acl->prefix, "exec_acl");
+    err += _make_posix_acl(fdd, dir_acl_text, &(facl->acl[ACL_POSIX_DIR]), &(facl->size[ACL_POSIX_DIR]), acl->prefix, "posix_dir_acl");
+    log_printf(1, "    posix_file_acl=%s mode=%o\n", file_acl_text, facl->mode[ACL_POSIX_FILE]);
+    err += _make_posix_acl(fdf, file_acl_text, &(facl->acl[ACL_POSIX_FILE]), &(facl->size[ACL_POSIX_FILE]), acl->prefix, "posix_file_acl");
+    log_printf(1, "    posix_exec_acl=%s mode=%o\n", exec_acl_text, facl->mode[ACL_POSIX_EXEC]);
+    err += _make_posix_acl(fdf, exec_acl_text, &(facl->acl[ACL_POSIX_EXEC]), &(facl->size[ACL_POSIX_EXEC]), acl->prefix, "posix_exec_acl");
 
-    if (err) {
-        free(facl);
-        facl = NULL;
+    acl->acl_text[ACL_POSIX_DIR] = strdup(dir_acl_text);
+    acl->acl_text[ACL_POSIX_FILE] = strdup(file_acl_text);
+    acl->acl_text[ACL_POSIX_EXEC] = strdup(exec_acl_text);
+
+    if (pa->nfs4_enable) {
+        snprintf(fname, sizeof(fname), "%s/dir", nfs4_fname);
+        fname[sizeof(fname)-1] = '\0';
+        log_printf(1, "    nfs4_dir_acl=%s\n", acl->acl_text[ACL_NFS4_DIR]);
+        err += _make_nfs4_acl(fname, acl->acl_text[ACL_NFS4_DIR], &(facl->acl[ACL_NFS4_DIR]), &(facl->size[ACL_NFS4_DIR]), acl->prefix, "nfs4_dir_acl");
+
+        snprintf(fname, sizeof(fname), "%s/file", nfs4_fname);
+        fname[sizeof(fname)-1] = '\0';
+        log_printf(1, "    nfs4_file_acl=%s\n", acl->acl_text[ACL_NFS4_FILE]);
+        err += _make_nfs4_acl(fname, acl->acl_text[ACL_NFS4_FILE], &(facl->acl[ACL_NFS4_FILE]), &(facl->size[ACL_NFS4_FILE]), acl->prefix, "nfs4_file_acl");
+        log_printf(1, "    nfs4_exec_acl=%s\n", acl->acl_text[ACL_NFS4_EXEC]);
+        err += _make_nfs4_acl(fname, acl->acl_text[ACL_NFS4_EXEC], &(facl->acl[ACL_NFS4_EXEC]), &(facl->size[ACL_NFS4_EXEC]), acl->prefix, "nfs4_exec_acl");
     }
 
-    if (dacl_text) *dacl_text = strdup(dir_acl_text);
-    if (facl_text) *facl_text = strdup(file_acl_text);
-    if (eacl_text) *eacl_text = strdup(exec_acl_text);
+    if (err) {
+        facl_destroy(facl, acl->acl_text);
+        facl = NULL;
+    }
 
     return(facl);
 }
@@ -1046,32 +1277,56 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
 {
     int i, fdf, fdd;
     DIR *dir;
-    char *fname, *dname;
-    int err;
+    char *fname, *dname, *nfs4_dname;
+    int err, mount_err;
 
     err = 0;
+    fname = dname = nfs4_dname = NULL;
+    fdf = fdd = mount_err = -1;
+    dir = NULL;
 
     //** Make the temp file for generating the ACLs on
     fname = strdup(pa->fname_acl);
     fdf = mkstemp(fname);
     dname = strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
-        log_printf(-1, "ERROR: failed maxing temp ACL directory: %s\n", dname);
-        fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed maxing temp ACL directory: %s\n", dname);
-        return(1);
+        err = errno;
+        log_printf(-1, "ERROR: failed maxing temp ACL directory: %s errno=%d\n", dname, err);
+        fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed maxing temp ACL directory: %s errno=%d\n", dname, err);
+        err = 1;
+        goto oops;
     }
     dir = opendir(dname);
     fdd = dirfd(dir);
 
+    nfs4_dname = NULL;
+    if (pa->nfs4_enable) {
+        nfs4_dname = strdup(pa->fname_acl);
+        if (mkdtemp(nfs4_dname) == NULL) {
+            err = errno;
+            log_printf(0, "ERROR: pacl_lfs_acls_generate -- failed making NFS4 ACL directory: %s errno=%d\n", dname, err);
+            fprintf(stderr, "ERROR: acl_lfs_acls_generate -- failed making NFS4 ACL directory: %s errno=%d\n", dname, err);
+            err = 2;
+            goto oops;
+        }
+        if ((mount_err = _mount_nfs4(nfs4_dname)) != 0) {
+            err = errno;
+            log_printf(0, "ERROR: acl_lfs_acls_generate -- failed mounting min_fuse NFS4 ACL directory: %s errno=%d\n", nfs4_dname, err);
+            fprintf(stderr, "ERROR: acl_lfs_acls_generate -- failed mounting min_fuse NFS4 ACL directory: %s errno=%d\n", nfs4_dname, err);
+            err = 3;
+            goto oops;
+        }
+    }
+
     log_printf(10, "Generating default ACL\n"); tbx_log_flush();
     //** 1st set the default FUSE ACL
-    pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd, NULL, NULL, NULL, 0);
+    pa->pacl_default->lfs_acl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd, fname, dname, nfs4_dname);
     if (!pa->pacl_default->lfs_acl) err++;
 
     //** And now all the Path's
     for (i=0; i<pa->n_path_acl; i++) {
         log_printf(10, "Generating acl for prefix[%d]=%s\n", i, pa->path_acl[i]->prefix);
-        pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd, NULL, NULL, NULL, 0);
+        pa->path_acl[i]->lfs_acl = pacl2lfs_acl(pa, pa->path_acl[i], fdf, fdd, fname, dname, nfs4_dname);
         if (!pa->path_acl[i]->lfs_acl) {
             fprintf(stderr, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
             log_printf(-1, "ERROR: pacl_lfs_acls_generate() failed generating acl for prefix[%d]:%s\n", i, pa->path_acl[i]->prefix);
@@ -1080,13 +1335,18 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
     }
 
     //** Cleanup
-    close(fdf);
-    closedir(dir);
-    remove(fname);
-    rmdir(dname);
-    free(fname);
-    free(dname);
-
+oops:
+    if (fdf != -1) close(fdf);
+    if (dir != NULL) closedir(dir);
+    if (fname) remove(fname);
+    if (dname) rmdir(dname);
+    if (fname) free(fname);
+    if (dname) free(dname);
+    if (nfs4_dname) {
+        if (mount_err == 0) _umount_nfs4(nfs4_dname);
+        rmdir(nfs4_dname);
+        free(nfs4_dname);
+    }
     return(err);
 }
 
@@ -1362,6 +1622,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     gid_t lfs_gid, gid;
     fs_acl_t uid_list[100];
     fs_acl_t gid_list[100];
+    char *nfs4_dir, *nfs4_file, *nfs4_exec;
 
     err = 0;
 
@@ -1383,6 +1644,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
             lfs = NULL;
             lfs_uid = _pa_guid_unused; n_uid = 0;
             lfs_gid = _pa_guid_unused; n_gid = 0;
+            nfs4_dir = nfs4_file = nfs4_exec = NULL;
             while (ele != NULL) {
                 key = tbx_inip_ele_get_key(ele);
                 value = tbx_inip_ele_get_value(ele);
@@ -1427,6 +1689,21 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     gid_parse(value, PACL_MODE_RW, gid_list, &n_gid);
                 } else if (strcmp(key, "gid(r)") == 0) {
                     gid_parse(value, PACL_MODE_READ, gid_list, &n_gid);
+                } else if (strcmp(key, "nfs4_dir") == 0) {
+                    if (pa->nfs4_enable) {
+                        nfs4_dir = strdup(value);
+                        tbx_stk_string_remove_space(nfs4_dir);
+                    }
+                } else if (strcmp(key, "nfs4_file") == 0) {
+                    if (pa->nfs4_enable) {
+                        nfs4_file = strdup(value);
+                        tbx_stk_string_remove_space(nfs4_file);
+                    }
+                } else if (strcmp(key, "nfs4_exec") == 0) {
+                    if (pa->nfs4_enable) {
+                        nfs4_exec = strdup(value);
+                        tbx_stk_string_remove_space(nfs4_exec);
+                    }
                 } else {  //** Unknown option so just report it
                     log_printf(-1, "ERROR: Unknown option: %s = %s\n", key, value);
                 }
@@ -1439,6 +1716,9 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 tbx_type_malloc_clear(acl, path_acl_t, 1);
                 acl->n_account = tbx_stack_count(stack)/2;
                 tbx_type_malloc_clear(acl->account, account_acl_t, acl->n_account);
+                acl->acl_text[ACL_NFS4_DIR] = nfs4_dir;
+                acl->acl_text[ACL_NFS4_FILE] = nfs4_file;
+                acl->acl_text[ACL_NFS4_EXEC] = nfs4_exec;
                 acl->prefix = strdup(prefix);
                 acl->n_prefix = strlen(prefix);
                 for (i=0; i<acl->n_account; i++) {
@@ -1485,6 +1765,14 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         pa->path_acl[i] = tbx_stack_pop(acl_stack);
         pa->path_acl[i]->nested_primary = -1;
         pa->path_acl[i]->nested_parent = -1;
+
+        if (pa->nfs4_enable) {
+            if (pa->path_acl[i]->acl_text[ACL_NFS4_DIR] == NULL) {  //** IF empty copy over the values from default
+                if (pa->pacl_default->acl_text[ACL_NFS4_DIR]) pa->path_acl[i]->acl_text[ACL_NFS4_DIR] = strdup(pa->pacl_default->acl_text[ACL_NFS4_DIR]);
+                if (pa->pacl_default->acl_text[ACL_NFS4_FILE]) pa->path_acl[i]->acl_text[ACL_NFS4_FILE] = strdup(pa->pacl_default->acl_text[ACL_NFS4_FILE]);
+                if (pa->pacl_default->acl_text[ACL_NFS4_EXEC]) pa->path_acl[i]->acl_text[ACL_NFS4_EXEC] = strdup(pa->pacl_default->acl_text[ACL_NFS4_EXEC]);
+            }
+        }
     }
     qsort_r(pa->path_acl, pa->n_path_acl, sizeof(path_acl_t *), pacl_sort_fn, NULL);
 
@@ -1677,6 +1965,9 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 //    uid = <uid>         #Local user UID access.  No modifier means full R/W access. Valid modifiers uid(r), uid(rw).
 //    group = <group>     #Local group access.  No modifier means full R/W access. Valid modifiers group(r), group(rw).
 //    gid = <gid>         #Local group UID access.  No modifier means full R/W access. Valid modifiers gid(r), gid(rw).
+//    nfs4_dir = <NFSv4 ACE>  #NFSv4 ACL for directories
+//    nfs4_file = <NFSv4 ACE>  #NFSv4 ACL for files
+//    nfs4_exec = <NFSv4 ACE>  #NFSv4 ACL for executable files
 //
 //    [path_acl_mapping]
 //    account=<account>
@@ -1686,7 +1977,7 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 //
 //**************************************************************************
 
-path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
+path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls, int nfs4_enable)
 {
     path_acl_context_t *pa;
     char fname[4096];
@@ -1701,6 +1992,7 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
     pa->a2gid_hash = apr_hash_make(pa->mpool);
     pa->hints_hash = apr_hash_make(pa->mpool);
     pa->dt_hint_cache = PA_HINT_TIMEOUT;
+    pa->nfs4_enable = nfs4_enable;    //** If this is set then we add NFS4 ACLs and also throw errors if hit
 
     //**Now populate it
     if (prefix_account_parse(pa, fd) != 0) { //** Add the prefix/account associations
@@ -1736,6 +2028,23 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls)
 }
 
 //**************************************************************************
+// facl_destroy - Frees the mem associated with the FUSE ACL
+//**************************************************************************
+
+void facl_destroy(fuse_acl_t *facl, char **acl_text)
+{
+    int i;
+
+    if (!facl) return;
+
+    for (i=0; i<ACL_MAX; i++) {
+        if (facl->acl[i]) free(facl->acl[i]);
+        if (acl_text[i]) { free(acl_text[i]); acl_text[i] = NULL; }
+     }
+     free(facl);
+}
+
+//**************************************************************************
 // prefix_destroy
 //**************************************************************************
 
@@ -1744,13 +2053,7 @@ void prefix_destroy(path_acl_t *acl)
     int i;
 
     log_printf(10, "prefix=%s lfs_acl=%p\n", acl->prefix, acl->lfs_acl);
-    if (acl->lfs_acl) {
-        for (i=0; i<3; i++) {
-            if (acl->lfs_acl->acl[i]) free(acl->lfs_acl->acl[i]);
-        }
-        free(acl->lfs_acl);
-    }
-
+    facl_destroy(acl->lfs_acl, acl->acl_text);
     if (acl->uid_map) {
         for (i=0; i<acl->uid_map->n; i++) {
             if (acl->uid_map->id[i].name) free(acl->uid_map->id[i].name);
@@ -1831,7 +2134,7 @@ void pacl_destroy(path_acl_context_t *pa)
 // pacl_facl_print - Prints the FUSE ACL to the FD
 //**************************************************************************
 
-void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, const char *dacl_text, const char *facl_text, const char *eacl_text, FILE *fd)
+void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, FILE *fd)
 {
     struct group *grp;
     struct passwd *user;
@@ -1846,9 +2149,16 @@ void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, 
     grp = getgrgid(facl->gid_primary);
     user = getpwuid(facl->uid_primary);
     fprintf(fd, "%suser=%s group=%s\n", text_prefix, user->pw_name, grp->gr_name);
-    fprintf(fd, "%sDIR:  %s\n", text_prefix, dacl_text);
-    fprintf(fd, "%sFILE: %s\n", text_prefix, facl_text);
-    fprintf(fd, "%sEXEC: %s\n", text_prefix, eacl_text);
+    fprintf(fd, "%sPOSIX_DIR:  %s\n", text_prefix, acl->acl_text[ACL_POSIX_DIR]);
+    fprintf(fd, "%sPOSIX_FILE:  %s\n", text_prefix, acl->acl_text[ACL_POSIX_FILE]);
+    fprintf(fd, "%sPOSIX_EXEC:  %s\n", text_prefix, acl->acl_text[ACL_POSIX_EXEC]);
+
+    if (acl->acl_text[ACL_NFS4_DIR]) {
+        fprintf(fd, "%sNFS4_DIR:  %s\n", text_prefix, acl->acl_text[ACL_NFS4_DIR]);
+        fprintf(fd, "%sNFS4_FILE:  %s\n", text_prefix, acl->acl_text[ACL_NFS4_FILE]);
+        fprintf(fd, "%sNFS4_EXEC:  %s\n", text_prefix, acl->acl_text[ACL_NFS4_EXEC]);
+    }
+    fprintf(fd, "\n");
 }
 
 //**************************************************************************
@@ -1903,69 +2213,73 @@ int pacl_path_probe(path_acl_context_t *pa, const char *prefix, int do_acl_tree,
 int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd)
 {
     path_acl_t *acl;
-    fuse_acl_t *facl;
-    char *dacl_text, *facl_text, *eacl_text;
-    int i, fdf, fdd;
+    int i, fdf, fdd, err, mount_err;
     DIR *dir;
-    char *fname, *dname;
+    char *fname, *dname, *nfs4_dname;
+
+
+    err = 0;
+    fdf = fdd = mount_err = -1;
+    fname = dname = nfs4_dname = NULL;
+    dir = NULL;
 
     //** Make the temp file for generating the ACLs on
     fname = strdup(pa->fname_acl);
     fdf = mkstemp(fname);
     dname = strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
-        log_printf(0, "ERROR: failed maing temp ACL directory: %s\n", dname);
-        return(1);
+        log_printf(0, "ERROR: failed making temp POSIX ACL directory: %s\n", dname);
+        fprintf(stderr, "ERROR: failed making temp POSIX ACL directory: %s\n", dname);
+        err = 1;
+        goto oops;
     }
     dir = opendir(dname);
     fdd = dirfd(dir);
 
+    nfs4_dname = NULL;
+    if (pa->nfs4_enable) {
+        nfs4_dname = strdup(pa->fname_acl);
+        if (mkdtemp(nfs4_dname) == NULL) {
+            err = errno;
+            log_printf(0, "ERROR: failed making NFS4 ACL directory: %s, errno=%d\n", dname, err);
+            fprintf(stderr, "ERROR: failed making NFS4 ACL directory: %s, errno=%d\n", dname, err);
+            err = 2;
+            goto oops;
+        }
+        if ((mount_err = _mount_nfs4(nfs4_dname)) != 0) {
+            err = errno;
+            log_printf(0, "ERROR: failed mounting min_fuse NFS4 ACL directory: %s  errno=%d\n", nfs4_dname, err);
+            fprintf(stderr, "ERROR: failed mounting min_fuse NFS4 ACL directory: %s  errno=%d\n", nfs4_dname, err);
+            err = 3;
+            goto oops;
+        }
+    }
 
     fprintf(fd, "n_path_acl=%d\n", pa->n_path_acl);
-
-    dacl_text = facl_text = eacl_text = NULL;
-    facl = pacl2lfs_acl(pa, pa->pacl_default, fdf, fdd, &dacl_text, &facl_text, &eacl_text, 1);
     fprintf(fd, "\n");
     fprintf(fd, "Default ACL\n");
-    pacl_acl_print(pa->pacl_default, facl, "      ", dacl_text, facl_text, eacl_text, fd);
-    if (facl) {
-        free(facl->acl[0]);
-        free(facl->acl[1]);
-        free(facl->acl[2]);
-        free(facl);
-    }
-    if (dacl_text) free(dacl_text);
-    if (facl_text) free(facl_text);
-    if (eacl_text) free(eacl_text);
+    pacl_acl_print(pa->pacl_default, pa->pacl_default->lfs_acl, "      ", fd);
 
     for (i=0; i<pa->n_path_acl; i++) {
         acl = pa->path_acl[i];
-
-        dacl_text = facl_text = eacl_text = NULL;
-        facl = pacl2lfs_acl(pa, acl, fdf, fdd, &dacl_text, &facl_text, &eacl_text, 1);
-
         fprintf(fd, "\n");
-        fprintf(fd, "%4d: %s  nested_primary=%d nested_end=%d nested_parent=%d rlut=%d\n", i, acl->prefix, 
+        fprintf(fd, "%4d: %s  nested_primary=%d nested_end=%d nested_parent=%d rlut=%d\n", i, acl->prefix,
             acl->nested_primary, acl->nested_end, acl->nested_parent, acl->rlut);
-        pacl_acl_print(acl, facl, "      ", dacl_text, facl_text, eacl_text, fd);
-        if (facl) {
-            free(facl->acl[0]);
-            free(facl->acl[1]);
-            free(facl->acl[2]);
-            free(facl);
-        }
-        if (dacl_text) free(dacl_text);
-        if (facl_text) free(facl_text);
-        if (eacl_text) free(eacl_text);
+        pacl_acl_print(acl, acl->lfs_acl, "      ", fd);
     }
 
     //** Cleanup
-    close(fdf);
-    closedir(dir);
-    remove(fname);
-    rmdir(dname);
-    free(fname);
-    free(dname);
-
-    return(0);
+oops:
+    if (fdf != -1) close(fdf);
+    if (dir != NULL) closedir(dir);
+    if (fname) remove(fname);
+    if (dname) rmdir(dname);
+    if (fname) free(fname);
+    if (dname) free(dname);
+    if (nfs4_dname) {
+        if (mount_err == 0) _umount_nfs4(nfs4_dname);
+        rmdir(nfs4_dname);
+        free(nfs4_dname);
+    }
+    return(err);
 }

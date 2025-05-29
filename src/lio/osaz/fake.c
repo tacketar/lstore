@@ -105,7 +105,7 @@ int osaz_fake_attr_create_remove(lio_os_authz_t *osa, lio_creds_t *c, lio_os_aut
 
 //***********************************************************************
 
-int osaz_fake_posix_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *val, size_t size, uid_t *uid, gid_t *gid, mode_t *mode)
+int osaz_fake_get_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *val, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4)
 {
     if (lio_ftype & OS_OBJECT_SYMLINK_FLAG) {
         *mode = S_IFLNK | 0770;
@@ -154,7 +154,7 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
     osaz->attr_create = osaz_fake_attr_create_remove;
     osaz->attr_remove = osaz_fake_attr_create_remove;
     osaz->attr_access = osaz_fake_attr_access;
-    osaz->posix_acl = osaz_fake_posix_acl;
+    osaz->get_acl = osaz_fake_get_acl;
     osaz->destroy = osaz_fake_destroy;
     osaz->ug_hint_set = osaz_fake_ug_hint_set;
     osaz->ug_hint_get = osaz_fake_ug_hint_get;

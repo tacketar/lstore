@@ -254,6 +254,7 @@ struct lio_fs_t {
     int enable_tape;
     int enable_osaz_acl_mappings;
     int enable_osaz_secondary_gids;
+    int enable_nfs4;
     int enable_fuse_hacks;
     int enable_internal_lock_mode;     //** 0=no persistent locking, 1=Use normal R/W locks, 2=Just use R locks for tracking
     int fs_checks_acls;                //** For LFS the kernel can do all the perm checking
@@ -562,22 +563,22 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (slink) {
         if (stat_symlink == 1) {
             stat->st_size = strlen(slink);
-            osaz_posix_acl(fs->osaz, fs->lc->creds, fname, OS_OBJECT_FILE_FLAG, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
+            osaz_get_acl(fs->osaz, fs->lc->creds, fname, OS_OBJECT_FILE_FLAG, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
         } else { //** Get the symlink target values
             ino = 0;
             if (lio_get_symlink_inode(fs->lc, fs->lc->creds, fname, rpath, 1, &ino) == 0) {
                 stat->st_ino = ino;
 
                 //** Get the UID/GID from the target
-                osaz_posix_acl(fs->osaz, fs->lc->creds, rpath, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
+                osaz_get_acl(fs->osaz, fs->lc->creds, rpath, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
             } else {
                 //** Get the UID/GID from the symlink path
-                osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
+                osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
             }
        }
     } else {
         //** Get the UID/GID from the fname
-        osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode));
+        osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
     }
 
     if (symlink) {
@@ -2508,10 +2509,24 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                 return(-ENODATA);
             }
-            err = osaz_posix_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode);
+            err = osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode, 0);
             tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
             FS_MON_OBJ_DESTROY();
             return(err);
+        } else if (fs->enable_nfs4) {   //** We have NFS4 enabled otherwise return the value from the attr
+            if (strcmp("system.nfs4_acl", name) == 0) {  //** So return the value from the OSAZ
+                ftype = lio_fs_exists(fs, (char *)fname);
+                if (ftype <= 0) {
+                    log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
+                    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
+                    FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
+                    return(-ENODATA);
+                }
+                err = osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode, 1);
+                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                FS_MON_OBJ_DESTROY();
+                return(err);
+            }
         }
     }
 
@@ -2670,6 +2685,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     if (strcmp("system.posix_acl_access", name) == 0) return(0);  //** We don't allow setting that now
     if (strcmp("system.exnode", name) == 0) return(0);  //** We don't allow setting the exnode from FUSE
     if (strcmp("system.exnode.data", name) == 0) return(0);  //** We don't allow setting the exnode data from FUSE either
+    if ((fs->enable_nfs4) && (strcmp("system.nfs4_acl", name) == 0)) return(0); //** We don't allow setting the NFS4 ACL if we are managing it
 
     FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
 
@@ -3042,6 +3058,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
     fprintf(fd, "enable_tape = %d\n", fs->enable_tape);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", fs->enable_osaz_acl_mappings);
     fprintf(fd, "enable_osaz_secondary_gids = %d\n", fs->enable_osaz_secondary_gids);
+    fprintf(fd, "enable_nfs4 = %d\n", fs->enable_nfs4);
     fprintf(fd, "enable_security_attr_checks = %d\n", fs->enable_security_attr_checks);
     fprintf(fd, "enable_fuse_hacks = %d\n", fs->enable_fuse_hacks);
     fprintf(fd, "fs_checks_acls = %d  # Should only be 0 if running lio_fuse and the FUSE kernel supports FUSE_CAP_POSIX_ACL\n", fs->fs_checks_acls);
@@ -3110,6 +3127,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     fs->enable_tape = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_tape", 0);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
+    fs->enable_nfs4 = tbx_inip_get_integer(fd, fs->fs_section, "enable_nfs4", 0);
     fs->enable_security_attr_checks = tbx_inip_get_integer(fd, fs->fs_section, "enable_security_attr_checks", 0);
     fs->enable_fifo = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fifo", 0);
     fs->enable_socket = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_socket", 0);

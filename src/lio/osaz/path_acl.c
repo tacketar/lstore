@@ -46,6 +46,7 @@ typedef struct {
     char *lfs_tmp_prefix;
     char *section;
     int check_interval;
+    int nfs4_enable;
     int shutdown;
     time_t modify_time;
 } osaz_pacl_t;
@@ -239,7 +240,7 @@ void osaz_pacl_print_running_config(lio_os_authz_t *osa, FILE *fd, int print_sec
     fprintf(fd, "type=%s\n", OSAZ_TYPE_PATH_ACL);
     fprintf(fd, "file=%s\n", osaz->pa_file);
     if (osaz->lfs_tmp_prefix) {
-        fprintf(fd, "lfs_temp=%s  # Used when generating LFS POSIX ACLs\n", osaz->lfs_tmp_prefix);
+        fprintf(fd, "lfs_temp=%s  # Used when generating LFS POSIX and NFSv4 ACLs\n", osaz->lfs_tmp_prefix);
     } else {
         fprintf(fd, "# lfs_temp=NULL  # LFS POSIX ACL mode is disabled\n");
     }
@@ -304,13 +305,13 @@ int osaz_pacl_attr_create_remove(lio_os_authz_t *osa, lio_creds_t *c, lio_os_aut
 
 //***********************************************************************
 
-int osaz_pacl_posix_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *value, size_t size, uid_t *uid, gid_t *gid, mode_t *mode)
+int osaz_pacl_get_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *value, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4)
 {
     osaz_pacl_t *osaz = osa->priv;
     int n, err;
     void *data;
 
-    err = pacl_lfs_get_acl(osaz->pa, (char *)path, lio_ftype, &data, &n, uid, gid, mode);
+    err = pacl_lfs_get_acl(osaz->pa, (char *)path, lio_ftype, &data, &n, uid, gid, mode, get_nfs4);
     if (err == 0) {
         if (n <= (int)size) memcpy(value, data, n);
         err = n;
@@ -369,7 +370,7 @@ void _pacl_load(lio_os_authz_t *az)
     if (ifd) {
         log_printf(5, "RELOADING data\n");
         tbx_monitor_thread_message(MON_MY_THREAD, "Reloading");
-        pa = pacl_create(ifd, osaz->lfs_tmp_prefix);
+        pa = pacl_create(ifd, osaz->lfs_tmp_prefix, osaz->nfs4_enable);
         if (pa) {
             if (osaz->pa) pacl_destroy(osaz->pa);
             osaz->pa = pa;
@@ -464,7 +465,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     osaz->attr_create = osaz_pacl_attr_create_remove;
     osaz->attr_remove = osaz_pacl_attr_create_remove;
     osaz->attr_access = osaz_pacl_attr_access;
-    osaz->posix_acl = osaz_pacl_posix_acl;
+    osaz->get_acl = osaz_pacl_get_acl;
     osaz->destroy = osaz_pacl_destroy;
     osaz->print_running_config = osaz_pacl_print_running_config;
     osaz->ug_hint_set = osaz_pacl_ug_hint_set;
@@ -476,6 +477,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     opa->pa_file = tbx_inip_get_string(ifd, section, "file", "path_acl.cfg");
     opa->lfs_tmp_prefix = tbx_inip_get_string(ifd, section, "lfs_temp", NULL);
     opa->check_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);
+    opa->nfs4_enable = tbx_inip_get_integer(ifd, section, "enable_nfs4", 0);
     opa->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ); FATAL_UNLESS(opa->mqc != NULL);
 
     //** Load the initial config
