@@ -34,10 +34,15 @@ extern "C" {
 #define PACL_MODE_WRITE 2
 #define PACL_MODE_RW    3
 
+//** Bits controlling if the prefix supports overriding the PREFIX externally with OS flags
+#define PACL_MODE_PERMS 1    //** Can override UID/GID/mode
+#define PACL_MODE_POSIX 2    //** Can override system.posix_acl_access
+#define PACL_MODE_NFS4  4    //** Can override system.nfs4_acl
+
 typedef struct path_acl_context_s path_acl_context_t;
 
 LIO_API void pacl_print_running_config(path_acl_context_t *pa, FILE *fd);
-LIO_API int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4);
+LIO_API int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4, int *override_mode);
 LIO_API int pacl_can_access_account(path_acl_context_t *pa, char *path, char *account, int mode, int *perms);
 LIO_API void pacl_ug_hint_init(path_acl_context_t *pa, lio_os_authz_local_t *ug);
 LIO_API void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug);
@@ -51,6 +56,7 @@ LIO_API int pacl_path_probe(path_acl_context_t *pa, const char *prefix, int do_a
 LIO_API int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd);
 LIO_API uint64_t pacl_unused_guid_get();
 LIO_API void pacl_unused_guid_set(uint64_t guid);
+LIO_API int pacl_override_settings(path_acl_context_t *pa);
 
 #ifdef __cplusplus
 }

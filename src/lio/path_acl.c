@@ -55,12 +55,13 @@
 #define ACL_MAX        6
 #define ACL_NFS4_START ACL_NFS4_DIR
 
+#define IS_SET(n, flag) (((n & flag) > 0) ? 1 : 0)
 
 char *_acl_name[] = { "# POSIX_DIR_ACL", "# POSIX_FILE_ACL", "# POSIX_EXEC_ACL", "nfs4_dir", "nfs4_file", "nfs4_exec" };
 
 typedef struct {  //** FUSE compliant POSIX and NFS4 ACLs
     gid_t gid_primary;     //** Primary GID to report for LFS
-    gid_t uid_primary;     //** Primary UID to report for LFS
+    uid_t uid_primary;     //** Primary UID to report for LFS
     mode_t mode[ACL_MAX];  //** Normal perms User/Group/Other
     void *acl[ACL_MAX];    //** Full fledged system.posix_acl_access (0=DIR, 1=FILE, 2=EXEC-FILE)
     int  size[ACL_MAX];    //** And It's size
@@ -105,6 +106,7 @@ typedef struct {    //** Individual path ACL
     int other_mode;         //** Access for other accounts. Defaults to NONE
     fuse_acl_t *lfs_acl;    //** Composite FUSE ACL
     char *acl_text[ACL_MAX];  //** Text version of the ACLs
+    int override_mode;      //** Prefex passthru mode bits
     int nested_end;         //** Tracks nesting of ACL prefixes
     int nested_primary;     //** Initial prefix of nested group
     int nested_parent;      //** PArent of current prefix if nested
@@ -196,6 +198,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
     if (pa->pacl_default) {
         acl = pa->pacl_default;
         fprintf(fd, "[path_acl_default]\n");
+        fprintf(fd, "perms_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_PERMS));
+        fprintf(fd, "posix_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_POSIX));
+        fprintf(fd, "nfs4_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_NFS4));
         if (acl->other_mode > 0) {
             fprintf(fd, "other = %s\n", ((acl->other_mode == PACL_MODE_READ) ? "r" : "rw"));
         } else {
@@ -215,6 +220,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         acl = pa->path_acl[i];
         fprintf(fd, "[path_acl]\n");
         fprintf(fd, "path = %s\n", acl->prefix);
+        fprintf(fd, "perms_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_PERMS));
+        fprintf(fd, "posix_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_POSIX));
+        fprintf(fd, "nfs4_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_NFS4));
         if (acl->other_mode > 0) {
             fprintf(fd, "other = %s\n", ((acl->other_mode == PACL_MODE_READ) ? "r" : "rw"));
         } else {
@@ -747,15 +755,16 @@ int pacl_can_access_hint(path_acl_context_t *ctx, char *path, int mode, lio_os_a
 // pacl_lfs_get_acl - Returns the LFS ACL
 //**************************************************************************
 
-int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4)
+int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **lfs_acl, int *acl_size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4, int *override_mode)
 {
     path_acl_t *acl;
     int exact, slot, got_default;
     mode_t filebits;
 
-    filebits = *mode & S_IFMT;
+    filebits = (mode) ? *mode & S_IFMT : 0;
 
     acl = pacl_search(pa, path, &exact, &got_default, NULL);
+    if (override_mode) *override_mode = acl->override_mode;
     log_printf(10, "path=%s exact=%d acl=%p\n", path, exact, acl);
     if (acl) {
         log_printf(10, "path=%s exact=%d lfs_acl=%p\n", path, exact, acl->lfs_acl);
@@ -771,22 +780,31 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
             }
 
             //** These always come from the POSIX
-            *mode = acl->lfs_acl->mode[slot];
-            *gid = acl->lfs_acl->gid_primary;
-            if (acl->lfs_acl->uid_primary != _pa_guid_unused) *uid = acl->lfs_acl->uid_primary;
+            if (mode) *mode = acl->lfs_acl->mode[slot];
+            if (gid) *gid = acl->lfs_acl->gid_primary;
+            if (acl->lfs_acl->uid_primary != _pa_guid_unused) {
+                if (uid) *uid = acl->lfs_acl->uid_primary;
+            }
 
             //** Tweak things for NFS4
             if (get_nfs4) slot = slot + ACL_NFS4_START;
-            *lfs_acl = acl->lfs_acl->acl[slot];
-            *acl_size = acl->lfs_acl->size[slot];
+            if (lfs_acl) *lfs_acl = acl->lfs_acl->acl[slot];
+            if (acl_size) *acl_size = acl->lfs_acl->size[slot];
 
             //** Still need to map the file type over
-            *mode |= filebits;
-            if ((lio_ftype & OS_OBJECT_FILE_FLAG) && (lio_ftype & OS_OBJECT_EXEC_FLAG)) { //** Executable
-                if (*mode & S_IRUSR) *mode |= S_IXUSR;
-                if (*mode & S_IRGRP) *mode |= S_IXGRP;
-                if (*mode & S_IROTH) *mode |= S_IXOTH;
+            if (mode) {
+                *mode |= filebits;
+                if ((lio_ftype & OS_OBJECT_FILE_FLAG) && (lio_ftype & OS_OBJECT_EXEC_FLAG)) { //** Executable
+                    if (*mode & S_IRUSR) *mode |= S_IXUSR;
+                    if (*mode & S_IRGRP) *mode |= S_IXGRP;
+                    if (*mode & S_IROTH) *mode |= S_IXOTH;
+                }
             }
+if (mode) {
+    log_printf(0, "QWERT: fname=%s ftype=%d mode=%o filebits=%o\n", path, lio_ftype, *mode, filebits);
+} else {
+    log_printf(0, "QWERT: fname=%s ftype=%d mode=NULL\n", path, lio_ftype);
+}
             return(0);
         }
 
@@ -1617,7 +1635,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     tbx_inip_element_t *ele;
     char *key, *value, *prefix, *other_mode, *lfs;
     tbx_stack_t *stack, *acl_stack;
-    int i, j, def, match, n_uid, n_gid, err;
+    int i, j, def, match, n_uid, n_gid, err, override_mode;
     uid_t lfs_uid, uid;
     gid_t lfs_gid, gid;
     fs_acl_t uid_list[100];
@@ -1645,6 +1663,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
             lfs_uid = _pa_guid_unused; n_uid = 0;
             lfs_gid = _pa_guid_unused; n_gid = 0;
             nfs4_dir = nfs4_file = nfs4_exec = NULL;
+            override_mode = 0;
             while (ele != NULL) {
                 key = tbx_inip_ele_get_key(ele);
                 value = tbx_inip_ele_get_value(ele);
@@ -1704,6 +1723,12 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                         nfs4_exec = strdup(value);
                         tbx_stk_string_remove_space(nfs4_exec);
                     }
+                } else if (strcmp(key, "perms_override") == 0) {
+                    if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_PERMS;
+                } else if (strcmp(key, "posix_override") == 0) {
+                    if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_POSIX;
+                } else if (strcmp(key, "nfs4_override") == 0) {
+                    if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_NFS4;
                 } else {  //** Unknown option so just report it
                     log_printf(-1, "ERROR: Unknown option: %s = %s\n", key, value);
                 }
@@ -1716,6 +1741,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 tbx_type_malloc_clear(acl, path_acl_t, 1);
                 acl->n_account = tbx_stack_count(stack)/2;
                 tbx_type_malloc_clear(acl->account, account_acl_t, acl->n_account);
+                acl->override_mode = override_mode;
                 acl->acl_text[ACL_NFS4_DIR] = nfs4_dir;
                 acl->acl_text[ACL_NFS4_FILE] = nfs4_file;
                 acl->acl_text[ACL_NFS4_EXEC] = nfs4_exec;
@@ -1937,6 +1963,26 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 }
 
 //**************************************************************************
+// pacl_override_settings - Returns the ACL override settings over all the prefixes
+//**************************************************************************
+
+int pacl_override_settings(path_acl_context_t *pa)
+{
+    int i, override;
+    path_acl_t *acl;
+
+    override = 0;
+    for (i=0; i<pa->n_path_acl; i++) {
+        acl = pa->path_acl[i];
+        if (acl->override_mode & PACL_MODE_PERMS) override |= PACL_MODE_PERMS;
+        if (acl->override_mode & PACL_MODE_POSIX) override |= PACL_MODE_POSIX;
+        if (acl->override_mode & PACL_MODE_NFS4) override |= PACL_MODE_NFS4;
+    }
+
+    return(override);
+}
+
+//**************************************************************************
 // pacl_create - Creates a Path ACL structure
 //    This parse all [path_acl] and [path_acl_mapping] sections in the INI file
 //    to create the structure.  The format for each section type are defined below.
@@ -1952,6 +1998,9 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 //
 //    [path_acl]
 //    path=<prefix>
+//    perms_override = 1 #Optional flag to tell the calling program overriding UID/GID/PERMS is wanted
+//    posix_override = 1 #Optional flag to tell the calling program overriding POSIX ACLs is wanted
+//    nfs4_override = 1  #Optional flag to tell the calling program overriding NFSv4 ACLs is wanted
 //    lfs_account=<account> #Optional default account reported by FUSE. Must still have an "account" entry
 //    account =<account_1>   # Same as "(rw)"
 //    account(r)=<account_2>
@@ -2140,7 +2189,7 @@ void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, 
     struct passwd *user;
     int i;
 
-    //** Print the LSTore ACL info
+    //** Print the LStore ACL info
     for (i=0; i<acl->n_account; i++) {
         fprintf(fd, "%saccount(%s) = %s\n", text_prefix, ((acl->account[i].mode == PACL_MODE_READ) ? "r" : "rw"), acl->account[i].account);
     }
@@ -2148,6 +2197,8 @@ void pacl_acl_print(path_acl_t *acl, fuse_acl_t *facl, const char *text_prefix, 
     //** Now the FUSE ACL's
     grp = getgrgid(facl->gid_primary);
     user = getpwuid(facl->uid_primary);
+    fprintf(fd, "%sperms_override=%d posix_override=%d nfs4_override=%d\n", text_prefix, IS_SET(acl->override_mode, PACL_MODE_PERMS),
+        IS_SET(acl->override_mode, PACL_MODE_POSIX), IS_SET(acl->override_mode, PACL_MODE_NFS4));
     fprintf(fd, "%suser=%s group=%s\n", text_prefix, user->pw_name, grp->gr_name);
     fprintf(fd, "%sPOSIX_DIR:  %s\n", text_prefix, acl->acl_text[ACL_POSIX_DIR]);
     fprintf(fd, "%sPOSIX_FILE:  %s\n", text_prefix, acl->acl_text[ACL_POSIX_FILE]);
