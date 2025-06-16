@@ -704,7 +704,13 @@ int osf_store_val(void *src, int src_size, void **dest, int *v_size)
             return(1);
         } else if (*v_size > src_size) {
             buf = *dest;
-            buf[src_size] = 0;  //** IF have the space NULL terminate
+            if (src_size > 0) {
+                buf[src_size] = 0;  //** If have the space NULL terminate
+            } else { //** No attr
+                buf[0] = 0;
+                *v_size = src_size;
+                return(0);
+            }
         }
     } else if (src_size <= 0) {
         *dest = NULL;
