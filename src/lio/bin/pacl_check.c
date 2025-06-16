@@ -30,7 +30,7 @@
 //** Old C7 gcc 4.8.5 compiler optimizes arg processing loop and generates a potential signed overflow
 int __attribute__((optimize("O0"))) main(int argc, char **argv)
 {
-    int i, ll, do_acl_tree, start_option, seed, do_print_config, do_print_tree, ftype;
+    int i, ll, do_acl_tree, start_option, seed, do_print_config, do_print_tree, ftype, override_mode;
     tbx_inip_file_t *ifd;
     char *pacl_fname;
     char *check_path = NULL;
@@ -132,6 +132,7 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
     }
 
     //** See if we need to apply the ACL to a real file
+    override_mode = 0;
     if (apply_path) {
         if (check_path == NULL) {
             printf("ERROR: A --path map_path is required to select the source ACL!\n");
@@ -140,10 +141,10 @@ int __attribute__((optimize("O0"))) main(int argc, char **argv)
             if (ftype == 0) {
                 printf("ERROR: Unable to apply ACL. Object does not exist! path=%s\n", check_path);
             } else {
-                if (pacl_lfs_get_acl(pa, check_path, ftype, &acl, &asize, &uid, &gid, &mode, enable_nfs4) != 0) {
+                if (pacl_lfs_get_acl(pa, check_path, ftype, &acl, &asize, &uid, &gid, &mode, enable_nfs4, &override_mode) != 0) {
                     printf("ERROR: Failed getting LFS acl!\n");
                 } else {
-                    printf("Applying ACL to path %s (lio_fype=%d)\n", apply_path, ftype);
+                    printf("Applying ACL to path %s (lio_fype=%d override_mode=%d)\n", apply_path, ftype, override_mode);
                     printf("   Primary UID: %u  Primary GID: %u  mode: %o\n", uid, gid, mode);
                     if (setxattr(apply_path, "system.posix_acl_access", acl, asize, 0) != 0) {
                         printf("ERROR: setxattr() errno=%d. May need to be root for this to work\n", errno);

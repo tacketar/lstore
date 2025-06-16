@@ -115,9 +115,9 @@ LIO_API gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t 
 LIO_API lio_fsck_iter_t *lio_create_fsck_iter(lio_config_t *lc, lio_creds_t *creds, char *path, int owner_mode, char *owner, int exnode_mode);
 LIO_API os_object_iter_t *lio_create_object_iter(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, lio_os_regex_table_t *attr, int recurse_dpeth, os_attr_iter_t **it, int v_max);
 LIO_API os_object_iter_t *lio_create_object_iter_alist(lio_config_t *lc, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *obj_regex, int object_types, int recurse_depth, char **key, void **val, int *v_size, int n_keys);
-LIO_API gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id);
-LIO_API gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode);
-LIO_API gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id);
+LIO_API gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra);
+LIO_API gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra);
+LIO_API gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra);
 LIO_API void lio_destroy_fsck_iter(lio_config_t *lc, lio_fsck_iter_t *oit);
 LIO_API void lio_destroy_object_iter(lio_config_t *lc, os_object_iter_t *it);
 LIO_API int lio_encode_error_counts(lio_segment_errors_t *serr, char **key, char **val, char *buf, int *v_size, int mode);

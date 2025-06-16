@@ -156,7 +156,7 @@ int main(int argc, char **argv)
     dtype = lio_exists(tuple.lc, tuple.creds, tuple.path);
 
     if (dtype == 0) { //** Need to create it
-        status = gop_sync_exec_status(lio_create_gop(tuple.lc, tuple.creds, tuple.path, OS_OBJECT_FILE_FLAG, NULL, NULL));
+        status = gop_sync_exec_status(lio_create_gop(tuple.lc, tuple.creds, tuple.path, OS_OBJECT_FILE_FLAG, NULL, NULL, NULL, NULL, NULL, 0));
         if (status.op_status != OP_STATE_SUCCESS) {
             info_printf(lio_ifd, 1, "ERROR creating file(%s)! errno=%d\n", tuple.path, status.error_code);
             goto finished;

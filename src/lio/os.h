@@ -121,8 +121,12 @@ struct lio_os_authz_t {
     int (*attr_create)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key);
     int (*attr_remove)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key);
     int (*attr_access)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug, const char *path, const char *key, int mode, osaz_attr_filter_t *filter);
-    int (*get_acl)(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *buf, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4);
+    int (*get_acl)(lio_os_authz_t *osa, lio_creds_t *c, char **val, int *v_size, const char *path, int lio_ftype, char *buf, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4, char **use_instead);
     int (*ug_hint_get)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
+    void (*ns_acl_add)(lio_os_authz_t *osa, int n_start, int *n_array, char **attr);
+    char *(*perms_attr)(lio_os_authz_t *osa, const char *fname);
+    int (*perms_encode)(lio_os_authz_t *osa, const char *fname, int ftype, char *val, int v_size, uid_t uid, gid_t gid, mode_t mode);
+    int (*perms_decode)(lio_os_authz_t *osa, const char *fname, int ftype, char *val, int v_size, uid_t *uid, gid_t *gid, mode_t *mode);
     void (*ug_hint_set)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*ug_hint_init)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
     void (*ug_hint_free)(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_local_t *ug);
@@ -134,13 +138,18 @@ struct lio_os_authz_t {
 typedef lio_object_service_fn_t *(os_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section);
 typedef lio_os_authz_t *(osaz_create_t)(lio_service_manager_t *ess, tbx_inip_file_t *ifd, char *section, lio_object_service_fn_t *os);
 
+
 #define osaz_object_create(osa, c, ug, path) (osa)->object_create(osa, c, ug, path)
 #define osaz_object_remove(osa, c, ug, path) (osa)->object_remove(osa, c, ug, path)
 #define osaz_object_access(osa, c, ug, path, mode) (osa)->object_access(osa, c, ug, path, mode)
 #define osaz_attr_create(osa, c, ug, path, key) (osa)->attr_create(osa, c, ug, path, key)
 #define osaz_attr_remove(osa, c, ug, path, key) (osa)->attr_remove(osa, c, ug, path, key)
 #define osaz_attr_access(osa, c, ug, path, key, mode, filter) (osa)->attr_access(osa, c, ug, path, key, mode, filter)
-#define osaz_get_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode, get_nfs4) (osa)->get_acl(osa, c, path, lio_ftype, buf, size, uid, gid, mode, get_nfs4)
+#define osaz_get_acl(osa, c, vals, v_size, path, lio_ftype, buf, size, uid, gid, mode, get_nfs4, use_instead) (osa)->get_acl(osa, c, vals, v_size, path, lio_ftype, buf, size, uid, gid, mode, get_nfs4, use_instead)
+#define osaz_ns_acl_add(osa, n_start, n_array, attr) (osa)->ns_acl_add(osa, n_start, n_array, attr)
+#define osaz_perms_attr(osa, fname) (osa)->perms_attr(osa, fname)
+#define osaz_perms_encode(osa, fname, ftype, val, v_size, uid, gid, mode) (osa)->perms_encode(osa, fname, ftype, val, v_size, uid, gid, mode)
+#define osaz_perms_decode(osa, fname, ftype, val, v_size, uid, gid, mode) (osa)->perms_decode(osa, fname, ftype, val, v_size, uid, gid, mode)
 #define osaz_ug_hint_get(osa, c, ug) (osa)->ug_hint_get(osa, c, ug)
 #define osaz_ug_hint_set(osa, c, ug) (osa)->ug_hint_set(osa, c, ug)
 #define osaz_ug_hint_init(osa, c, ug) (osa)->ug_hint_init(osa, c, ug)
@@ -164,6 +173,7 @@ void os_log_warm_if_needed(tbx_notify_t *olog, lio_creds_t *creds, char *fname, 
 
 #ifdef __cplusplus
 }
+
 #endif
 
 #endif

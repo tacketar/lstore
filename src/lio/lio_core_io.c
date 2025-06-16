@@ -1235,7 +1235,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             } else {
                 dtype = OS_OBJECT_FILE_FLAG;
             }
-            status = gop_sync_exec_status(lio_create_inode_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id, &ino));
+            status = gop_sync_exec_status(lio_create_inode_gop(lc, op->creds, op->path, dtype|exec_flag, NULL, op->id, &ino, NULL, NULL, NULL, 0));
             if (status.op_status != OP_STATE_SUCCESS) {
                 if (status.error_code) {
                     info_printf(lio_ifd, 1, "ERROR creating file(%s) errno=%d!\n", op->path, status.error_code);
@@ -2929,7 +2929,7 @@ int lio_cp_create_dir(tbx_list_t *table, lio_path_tuple_t tuple)
                     }
                     err = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
                 } else {
-                    err = gop_sync_exec(lio_create_gop(tuple.lc, tuple.creds, dname, OS_OBJECT_DIR_FLAG, NULL, NULL));
+                    err = gop_sync_exec(lio_create_gop(tuple.lc, tuple.creds, dname, OS_OBJECT_DIR_FLAG, NULL, NULL, NULL, NULL, NULL, 0));
                     if (err != OP_STATE_SUCCESS) {  //** See if it was created by someone else
                         err = lio_exists(tuple.lc, tuple.creds, dname);
                         err = ((err & OS_OBJECT_DIR_FLAG) > 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;

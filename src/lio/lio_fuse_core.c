@@ -360,7 +360,8 @@ lio_os_authz_local_t *_get_fuse_ug(lio_fuse_t *lfs, lio_os_authz_local_t *ug, st
 {
 
     if (lfs->fs_checks_acls == 0) {
-        ug->valid_guids = 0;
+        ug->valid_guids = 0;  //** FIXME
+        ug->uid = fc->uid; ug->gid[0] = fc->gid; ug->n_gid = 1;
     } else {
         lio_fs_fill_os_authz_local(lfs->fs, ug, fc->uid, fc->gid);
     }
@@ -750,7 +751,12 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
     lio_os_authz_local_t ug;
     int err;
 
+struct fuse_context *fc = fuse_get_context();
+log_printf(0, "QWERT: AAA fname=%s uid=%u gid=%u mode=%o\n", fname, fc->uid, fc->gid, mode);
+    _get_fuse_ug(lfs, &ug, fuse_get_context());
+log_printf(0, "QWERT: AFTER _get_fuse_ug fname=%s ug->uid=%u ug->gid=%u ug->n_gid=%d mode=%o\n", fname, ug.uid, ug.gid[0], ug.n_gid, mode);
     err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
+log_printf(0, "QWERT: BBBB fname=%s ug->uid=%u ug->gid=%u mode=%o\n", fname, ug.uid, ug.gid[0], mode);
     _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, mknod(sfname, mode, rdev));

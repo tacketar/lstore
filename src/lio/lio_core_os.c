@@ -92,6 +92,10 @@ typedef struct {
     char *id;
     char *ex;
     ex_id_t *inode;
+    const char **attr_extra;
+    const char **val_extra;
+    int *v_size_extra;
+    int n_extra;
     int type;
 } lio_mk_mv_rm_t;
 
@@ -299,10 +303,12 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     lio_exnode_t *ex, *cex;
     ex_id_t ino;
     char inode[32];
-    char *val[_n_lio_create_keys];
+    char *val[_n_lio_create_keys + op->n_extra];
+    char *attrs[_n_lio_create_keys + op->n_extra];
+    char **create_keys;
     gop_op_status_t status, status2;
-    int v_size[_n_lio_create_keys];
-    int ll;
+    int v_size[_n_lio_create_keys + op->n_extra];
+    int ll, i, n;
     int ex_key = 5;
 
     status = gop_success_status;
@@ -440,7 +446,22 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     tbx_log_flush();
 
     //** Make the object with attrs
-    status = gop_sync_exec_status(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, _lio_create_keys, (void **)val, v_size, (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys));
+    n = (op->type & OS_OBJECT_FILE_FLAG) ? _n_lio_file_keys : _n_lio_dir_keys;
+    create_keys = _lio_create_keys;
+    if (op->n_extra) {
+        create_keys = attrs;
+        for (i=0; i<n; i++) {
+            attrs[i] = _lio_create_keys[i];
+        }
+        for (i=0; i<op->n_extra; i++) {
+            attrs[i + n] = (char *)op->attr_extra[i];
+            val[i+n] = (char *)op->val_extra[i];
+            v_size[i+n] = op->v_size_extra[i];
+        }
+        n = n + op->n_extra;
+    }
+
+    status = gop_sync_exec_status(os_create_object_with_attrs(op->lc->os, op->creds, op->src_path, op->type, op->id, create_keys, (void **)val, v_size, n));
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(ll, "ERROR: creating object fname=%s errno=%d\n", op->src_path, status.error_code);
         notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - creating object fname=%s errno=%d\n", op->src_path, status.error_code);
@@ -458,7 +479,7 @@ fail:
 //  lio_create_inode_gop - Generate a create object task and also returns the inode number
 //*************************************************************************
 
-gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode)
+gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, ex_id_t *inode, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra)
 {
     lio_mk_mv_rm_t *op;
 
@@ -471,6 +492,10 @@ gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, cha
     op->inode = inode;
     op->id = (id != NULL) ? strdup(id) : NULL;
     op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->attr_extra = attr_extra;
+    op->val_extra = val_extra;
+    op->v_size_extra = v_size_extra;
+    op->n_extra = n_extra;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_create_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
@@ -478,7 +503,7 @@ gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, cha
 //  lio_create_gop - Generate a create object task
 //*************************************************************************
 
-gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id)
+gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra)
 {
     lio_mk_mv_rm_t *op;
 
@@ -490,6 +515,10 @@ gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
     op->type = type;
     op->id = (id != NULL) ? strdup(id) : NULL;
     op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->attr_extra = attr_extra;
+    op->val_extra = val_extra;
+    op->v_size_extra = v_size_extra;
+    op->n_extra = n_extra;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_create_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
@@ -508,7 +537,7 @@ gop_op_status_t lio_mkpath_fn(void *arg, int id)
     int exists;
 
     //** See if we get lucky and all the intervening directories already exist
-    status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, op->src_path, op->type, op->id, op->ex));
+    status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, op->src_path, op->type, op->id, op->ex, op->attr_extra, op->val_extra, op->v_size_extra, op->n_extra));
     if (status.op_status == OP_STATE_SUCCESS) return(status);  //** Got lucky so kick out
 
     //** Ok we have to normalize the path and recurse down making the intermediate directories
@@ -528,7 +557,7 @@ gop_op_status_t lio_mkpath_fn(void *arg, int id)
     exists = 1;
     while ((next = index(curr + 1, '/')) != NULL) {
         if (next[0] == '\0') { //** Got the terminal so use the provided object type
-            status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, op->type, op->id, op->ex));
+            status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, op->type, op->id, op->ex, op->attr_extra, op->val_extra, op->v_size_extra, op->n_extra));
             goto finished;
         } else {  //** Intermediate directory
             next[0] = '\0';  //** NULL terminate the string
@@ -537,7 +566,7 @@ gop_op_status_t lio_mkpath_fn(void *arg, int id)
             }
 
             if (exists) {
-                status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, OS_OBJECT_DIR_FLAG, op->id, op->ex));
+                status = gop_sync_exec_status(lio_create_gop(op->lc, op->creds, fullpath, OS_OBJECT_DIR_FLAG, op->id, op->ex, op->attr_extra, op->val_extra, op->v_size_extra, op->n_extra));
                 if (status.op_status != OP_STATE_SUCCESS) {
                     log_printf(1, "ERROR: src_path=%s failed creating partial path=%s\n", op->src_path, fullpath);
                     notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_mkpath_fn - src_path=%s failed creating partial path=%s\n", op->src_path, fullpath);
@@ -559,7 +588,7 @@ finished:
 //  lio_mkpath_gop - Generate a make path task.
 //*************************************************************************
 
-gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id)
+gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *path, int type, char *ex, char *id, const char **attr_extra, const char **val_extra, int *v_size_extra, int n_extra)
 {
     lio_mk_mv_rm_t *op;
 
@@ -571,6 +600,10 @@ gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
     op->type = type;
     op->id = (id != NULL) ? strdup(id) : NULL;
     op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->attr_extra = attr_extra;
+    op->val_extra = val_extra;
+    op->v_size_extra = v_size_extra;
+    op->n_extra = n_extra;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_mkpath_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
@@ -1722,7 +1755,10 @@ void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size
 
     //** Clean up
     for (i=0; i<_lio_stat_key_size; i++) {
-        if (val[i] != NULL) free(val[i]);
+        if (val[i] != NULL) {
+            free(val[i]);
+            val[i] = NULL;
+        }
     }
 }
 

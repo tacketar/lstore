@@ -74,6 +74,27 @@ int osaz_fake_ug_hint_get(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_loca
     return(0);
 }
 
+//*************************************************************************
+
+char *osaz_fake_perms_attr(lio_os_authz_t *osa, const char *fname)
+{
+    return(NULL);
+}
+
+//*************************************************************************
+
+int osaz_fake_perms_encode(lio_os_authz_t *osa, const char *fname, int ftype, char *val, int v_size, uid_t uid, gid_t gid, mode_t mode)
+{
+    return(0);
+}
+
+//*************************************************************************
+
+int osaz_fake_perms_decode(lio_os_authz_t *osa, const char *fname, int ftype, char *val, int v_size, uid_t *uid, gid_t *gid, mode_t *mode)
+{
+    return(-1);
+}
+
 //***********************************************************************
 
 void osaz_fake_print_running_config(lio_os_authz_t *osa, FILE *fd, int print_section_heading)
@@ -105,7 +126,7 @@ int osaz_fake_attr_create_remove(lio_os_authz_t *osa, lio_creds_t *c, lio_os_aut
 
 //***********************************************************************
 
-int osaz_fake_get_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int lio_ftype, char *val, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4)
+int osaz_fake_get_acl(lio_os_authz_t *osa, lio_creds_t *c, char **attr, int *attr_size, const char *path, int lio_ftype, char *val, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4, char **use_instead)
 {
     if (lio_ftype & OS_OBJECT_SYMLINK_FLAG) {
         *mode = S_IFLNK | 0770;
@@ -117,6 +138,13 @@ int osaz_fake_get_acl(lio_os_authz_t *osa, lio_creds_t *c, const char *path, int
     }
 
     return(-ENODATA);
+}
+
+//***********************************************************************
+
+void osaz_fake_ns_acl_add(lio_os_authz_t *osa, int n_start, int *n_array, char **attr)
+{
+    return;
 }
 
 //***********************************************************************
@@ -156,6 +184,9 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
     osaz->attr_access = osaz_fake_attr_access;
     osaz->get_acl = osaz_fake_get_acl;
     osaz->destroy = osaz_fake_destroy;
+    osaz->perms_attr = osaz_fake_perms_attr;
+    osaz->perms_encode = osaz_fake_perms_encode;
+    osaz->perms_decode = osaz_fake_perms_decode;
     osaz->ug_hint_set = osaz_fake_ug_hint_set;
     osaz->ug_hint_get = osaz_fake_ug_hint_get;
     osaz->ug_hint_init = osaz_fake_ug_hint_init;

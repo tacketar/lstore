@@ -59,7 +59,7 @@ gop_op_status_t touch_fn(void *arg, int id)
             status.error_code = -1;
         }
     } else if (ftype == 0) {  //** New file so create the object
-        status = gop_sync_exec_status(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_FILE_FLAG, exnode_data, NULL));
+        status = gop_sync_exec_status(lio_create_gop(tuple->lc, tuple->creds, tuple->path, OS_OBJECT_FILE_FLAG, exnode_data, NULL, NULL, NULL, NULL, 0));
         if (status.op_status != OP_STATE_SUCCESS) {
             if (status.error_code) {
                 fprintf(stderr, "ERROR creating the object! errno=%d\n", status.error_code);

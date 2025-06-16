@@ -179,6 +179,7 @@ typedef struct {  //** This is the que structure for prefetching
     struct stat stat;
 } fs_dentry_stat_t;
 
+#define INODE_MAX_ATTRS 32
 struct lio_fs_dir_iter_t {
     lio_fs_t *fs;
     os_object_iter_t *it;
@@ -186,8 +187,8 @@ struct lio_fs_dir_iter_t {
     apr_pool_t *mpool;
     apr_thread_t *worker_thread;
     tbx_que_t *pipe;
-    char *val[_inode_key_size_security];
-    int v_size[_inode_key_size_security];
+    char *val[INODE_MAX_ATTRS];
+    int v_size[INODE_MAX_ATTRS];
     char *dot_path;
     char *dotdot_path;
     fs_dir_entry_t dot_de;
@@ -281,6 +282,8 @@ struct lio_fs_t {
     char *authz_section;
     char *fs_section;
     char *rw_lock_attr_string;
+    char **stat_keys;
+    int n_stat_keys;  //FIXME
     regex_t rw_lock_attr_regex;
     lio_os_authz_local_t ug;
     fs_stats_t stats;
@@ -328,6 +331,8 @@ void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t ui
 
     log_printf(10, "uid=%d gid=%d\n", uid, gid);
 
+log_printf(0, "QWERT: AAAA uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
+
     //** check if we just want to use the primary GID
     if (fs->enable_osaz_secondary_gids == 0) {
 oops:
@@ -339,18 +344,26 @@ oops:
         return;
     }
 
+log_printf(0, "QWERT: BBBB uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
     //** See if we've already done the mapping
     if (osaz_ug_hint_get(fs->osaz, fs->lc->creds, ug) == 0) return;
+
+log_printf(0, "QWERT: CCCCC uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
 
     //** If we made it here then no hint exists so we have to make it
     //** we're using the all the groups the user is a member of
     if (getpwuid_r(uid, &pwd, buf, blen, &result) != 0) {
+log_printf(0, "QWERT: OOPS-A uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
         goto oops;  //** Buffer was to small or the UID wasn't found so do the fallback
     }
     ug->n_gid = OS_AUTHZ_MAX_GID;
-    if (getgrouplist(result->pw_name, result->pw_gid, ug->gid, &(ug->n_gid)) < 0) goto oops;
-
+    if (getgrouplist(result->pw_name, result->pw_gid, ug->gid, &(ug->n_gid)) < 0) {
+log_printf(0, "QWERT: OOPS-B uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
+        goto oops;
+    }
     osaz_ug_hint_set(fs->osaz, fs->lc->creds, ug);  //** Make the hint
+log_printf(0, "QWERT: END uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
+
 }
 
 //***********************************************************************
@@ -554,37 +567,40 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     slink = NULL;
     lio_parse_stat_vals(fname, stat, val, v_size, &slink, &ftype);
 
-    //** Free up the extra attributes used to seed the OS cache
-    for (i=7; i<fs->_inode_key_size; i++) {
-        if (val[i]) free(val[i]);
-    }
-
     //** Now update the fields based on the requested symlink behavior
     if (slink) {
         if (stat_symlink == 1) {
             stat->st_size = strlen(slink);
-            osaz_get_acl(fs->osaz, fs->lc->creds, fname, OS_OBJECT_FILE_FLAG, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
+            osaz_get_acl(fs->osaz, fs->lc->creds, val, v_size, fname, OS_OBJECT_FILE_FLAG, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0, NULL);
         } else { //** Get the symlink target values
             ino = 0;
             if (lio_get_symlink_inode(fs->lc, fs->lc->creds, fname, rpath, 1, &ino) == 0) {
                 stat->st_ino = ino;
 
                 //** Get the UID/GID from the target
-                osaz_get_acl(fs->osaz, fs->lc->creds, rpath, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
+                osaz_get_acl(fs->osaz, fs->lc->creds, val, v_size, rpath, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0, NULL);
             } else {
                 //** Get the UID/GID from the symlink path
-                osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
+                osaz_get_acl(fs->osaz, fs->lc->creds, val, v_size, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0, NULL);
             }
        }
     } else {
         //** Get the UID/GID from the fname
-        osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0);
+        osaz_get_acl(fs->osaz, fs->lc->creds, val, v_size, fname, ftype, NULL, 0, &(stat->st_uid), &(stat->st_gid), &(stat->st_mode), 0, NULL);
     }
 
     if (symlink) {
         *symlink = slink;
     } else if (slink) {
         free(slink);
+    }
+
+    //** Free up the extra attributes used to seed the OS cache
+    for (i=7; i<fs->_inode_key_size; i++) {
+        if (val[i]) {
+            free(val[i]);
+            val[i] = NULL;
+        }
     }
 
     //** Size
@@ -645,8 +661,8 @@ int lio_fs_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int
 
 int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink, int no_cache_stat_if_file)
 {
-    char *val[_inode_key_size_security];
-    int v_size[_inode_key_size_security], i, err, lflags;
+    char *val[fs->_inode_key_size];
+    int v_size[fs->_inode_key_size], i, err, lflags;
     fs_open_file_t *fop;
     ex_id_t inode;
     int hit, ocl_slot;
@@ -666,7 +682,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     //** Assumes the system.inode is in slot 0 in the _inode_keys
     v_size[0] = -fs->lc->max_attr;
     val[0] = NULL;
-    err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, 1, 0);
+    err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, fs->stat_keys, (void **)val, v_size, 1, 0);
     hit = 0;
     if (err == OP_STATE_SUCCESS) {
         hit = 1;
@@ -681,16 +697,16 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
     for (i=0; i<fs->_inode_key_size; i++) v_size[i] = -fs->lc->max_attr;
 
     if (fs->enable_internal_lock_mode == 0) {
-        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
+        err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, fs->stat_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
     } else {
         fs_lock(fs);
         fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
         fs_unlock(fs);
         if (fop) { //** We have the file open so no need to lock it
-            err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
+            err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, fname, fs->id, fs->stat_keys, (void **)val, v_size, fs->_inode_key_size, no_cache_stat_if_file);
         } else {
             lflags = (no_cache_stat_if_file) ? (OS_MODE_NO_CACHE_INFO_IF_FILE|OS_MODE_BLOCK_ONLY_IF_FILE) : 0;
-            err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, fs->id, _inode_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
+            err = lio_get_multiple_attrs_lock(fs->lc, fs->lc->creds, fname, fs->id, fs->stat_keys, (void **)val, v_size, fs->_inode_key_size, lflags);
         }
     }
 
@@ -713,6 +729,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
         apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
     }
 
+log_printf(0, "QWERT: fname=%s uid=%u gid=%u mode=%o\n", fname, stat->st_uid, stat->st_gid, stat->st_mode);
     tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
 
     FS_MON_OBJ_DESTROY_MESSAGE("size=" XOT, stat->st_size);
@@ -890,7 +907,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     tbx_monitor_obj_create(tbx_monitor_object_fill(&(dit->mo), MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), "FS_OPENDIR: fname=%s", fname);
     tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
 
-    dit->it = lio_create_object_iter_alist(dit->fs->lc, dit->fs->lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, _inode_keys, (void **)dit->val, dit->v_size, fs->_inode_key_size);
+    dit->it = lio_create_object_iter_alist(dit->fs->lc, dit->fs->lc->creds, dit->path_regex, NULL, OS_OBJECT_ANY_FLAG, 0, fs->stat_keys, (void **)dit->val, dit->v_size, fs->_inode_key_size);
     if (dit->it == NULL) {
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         lio_fs_closedir(dit);
@@ -990,6 +1007,60 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     return(1);
 }
 
+
+//*************************************************************************
+// fs_modify_perms - Helper to modify the uid/gid/mode if supported by the OSAZ
+//*************************************************************************
+
+int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, uid_t *uid, gid_t *gid, mode_t *mode)
+{
+    uid_t _uid;
+    gid_t _gid;
+    mode_t _mode;
+    int err, ftype;
+    int v_size = 64;
+    char val[v_size];
+    char *vptr = val;
+    char *attr;
+
+if (uid) { log_printf(0, "QWERT: fname=%s uid=%u\n", fname, *uid); }
+if (gid) { log_printf(0, "QWERT: fname=%s gid=%u\n", fname, *gid); }
+if (mode) { log_printf(0, "QWERT: fname=%s mode=%u\n", fname, *mode); }
+    attr = osaz_perms_attr(fs->osaz, fname);
+log_printf(0, "QWERT: fname=%s attr=%s\n", fname, attr);
+    if (attr == NULL) return(1);  //** Not supported
+
+    err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, attr, (void **)&vptr, &v_size);
+log_printf(0, "QWERT: fname=%s attr=%s lio_getattr=%d v_size=%d\n", fname, attr, err, v_size);
+    if (err != OP_STATE_SUCCESS) {
+        v_size = -1;
+//        return(-EREMOTEIO);
+    }
+
+    ftype = lio_exists(fs->lc, fs->lc->creds, (char *)fname);
+    _mode = ftype_lio2posix(ftype);  //** Initialize the file type bits in the mode
+    _uid = _gid = 0;
+    if (osaz_perms_decode(fs->osaz, fname, ftype, val, v_size, &_uid, &_gid, &_mode) == 0) {  //** Returns 0 on success and -1 if it doesn't exists
+        //** Override what's in the attr based on what's supplied
+        if (uid) _uid = *uid;
+        if (gid) _gid = *gid;
+        if (mode) _mode = *mode;
+    }
+
+log_printf(0, "QWERT: fname=%s attr=%s uid=%u gid=%u mode=%o\n", fname, attr, _uid, _gid, _mode);
+
+    //** Store it back
+    v_size = osaz_perms_encode(fs->osaz, fname, ftype, val, v_size, _uid, _gid, _mode);
+    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)attr, (void *)val, v_size);
+    if (err != OP_STATE_SUCCESS) {
+        return(-EREMOTEIO);
+    }
+
+log_printf(0, "QWERT: fname=%s SUCCESS\n", fname);
+    return(0);
+}
+
+
 //*************************************************************************
 // lio_fs_object_create
 //*************************************************************************
@@ -999,7 +1070,15 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     char fullname[OS_PATH_MAX];
     int err, n, exec_mode, slot;
     gop_op_status_t status;
+    const char *attr;
+    int v_size[1];
+    char *v_array[1];
+    char *a_array[1];
+    char val[64];
+    int n_extra;
     int os_mode = lio_mode2os_flags(mode);
+
+log_printf(0, "QWERT: AAAA fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
 
     FS_MON_OBJ_CREATE("FS_OBJECT_CREATE: fname=%s mode=%d", fname, mode);
 
@@ -1025,11 +1104,24 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     //** If we made it here it's a new file or dir
     //** Create the new object
+
+    //** See if we should store the perms
+    attr = osaz_perms_attr(fs->osaz, fname);  //** This is not as flexible as I'd like it but should work for Hammerspace
+    v_array[0] = NULL;
+    a_array[0] = NULL;
+    n_extra = 0;
+    if (attr) {
+log_printf(0, "QWERT: BBBBB fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
+        v_size[0] = osaz_perms_encode(fs->osaz, fname, os_mode, val, v_size[0], ug->uid, ug->gid[0], mode);
+        v_array[0] = val;
+        a_array[0] = (char *)attr;
+        n_extra = 1;
+    }
     tbx_atomic_inc(fs->stats.op[slot].submitted);
     if (mkpath == 0) {
-        status = gop_sync_exec_status(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+        status = gop_sync_exec_status(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id, (const char **)a_array, (const char **)v_array, v_size, n_extra));
     } else {
-        status = gop_sync_exec_status(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id));
+        status = gop_sync_exec_status(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id, (const char **)a_array, (const char **)v_array, v_size, n_extra));
     }
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fullname);
@@ -1072,7 +1164,14 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
 int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev)
 {
-    return(lio_fs_object_create(fs, ug, fname, mode, 0));
+int err;
+
+log_printf(0, "QWERT: START fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
+err = lio_fs_object_create(fs, ug, fname, mode, 0);
+log_printf(0, "QWERT: END fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
+return(err);
+
+//    return(lio_fs_object_create(fs, ug, fname, mode, 0));
 }
 
 //*************************************************************************
@@ -1092,6 +1191,9 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
         return(-EACCES);
     }
+
+    //** See if we support changing the perms
+    fs_modify_perms(fs, ug, fname, NULL, NULL, &mode);
 
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
@@ -1114,7 +1216,8 @@ int lio_fs_chown(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,  uid
 
     FS_MON_OBJ_CREATE("FS_CHOWN: fname=%s owner=%u gid=%u", fname, owner, group);
 
-    err = -fs->chown_errno;
+    err = fs_modify_perms(fs, ug, fname, &owner, &group, NULL);
+    if (err == 1) err = -fs->chown_errno;
 
     FS_MON_OBJ_DESTROY();
 
@@ -2487,11 +2590,12 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     lio_file_handle_t *fh;
     char *val[2];
     char *attrs[2];
+    char *use_instead;
     int v_size[2], err, ftype, na;
     ex_id_t ino;
-    uid_t uid;
-    gid_t gid;
-    mode_t mode;
+//    uid_t uid;
+//    gid_t gid;
+//    mode_t mode;
     gop_op_status_t status;
     int n_readers, n_writers;
 
@@ -2499,6 +2603,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
 
     tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].submitted);
+
+    use_instead = NULL;
 
     if (fs->enable_osaz_acl_mappings) {
         if (strcmp("system.posix_acl_access", name) == 0) {
@@ -2509,7 +2615,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                 return(-ENODATA);
             }
-            err = osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode, 0);
+            err = osaz_get_acl(fs->osaz, fs->lc->creds, NULL, NULL, fname, ftype, buf, size, NULL, NULL, NULL, 0, &use_instead);
+            if (use_instead) goto use_alternate;
             tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
             FS_MON_OBJ_DESTROY();
             return(err);
@@ -2522,7 +2629,8 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
                     FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                     return(-ENODATA);
                 }
-                err = osaz_get_acl(fs->osaz, fs->lc->creds, fname, ftype, buf, size, &uid, &gid, &mode, 1);
+                err = osaz_get_acl(fs->osaz, fs->lc->creds, NULL, NULL, fname, ftype, buf, size, NULL, NULL, NULL, 1, &use_instead);
+                if (use_instead) goto use_alternate;
                 tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 FS_MON_OBJ_DESTROY();
                 return(err);
@@ -2545,9 +2653,10 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
        }
     }
 
+use_alternate:
     na = 1;
     v_size[0] = (size == 0) ? -fs->lc->max_attr : -(int)size;
-    attrs[0] = (char *)name;
+    attrs[0] = (use_instead) ? use_instead : (char *)name;
     val[0] = NULL;
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Want the tape backup attr
         //** Make sure we can access it
@@ -2969,6 +3078,8 @@ int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, con
         return(-EIO);
     }
 
+    //**See if the OSAZ wants to mangle the UID/GID
+    fs_modify_perms(fs, ug, newname, &(ug->uid), &(ug->gid[0]), NULL);
 
     tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].finished);
     FS_MON_OBJ_DESTROY();
@@ -3118,6 +3229,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     lio_fs_t *fs;
     char *atype;
     osaz_create_t *osaz_create;
+    int i, n;
 
     tbx_type_malloc_clear(fs, lio_fs_t, 1);
 
@@ -3142,7 +3254,6 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
         fs->ug_mode = UG_FSUID;
     }
     free(atype);
-    fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
 
     fs->enable_fuse_hacks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fuse_hacks", 0);
     fs->enable_internal_lock_mode = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_internal_lock_mode", 0);
@@ -3178,6 +3289,15 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     osaz_create = lio_lookup_service(fs->lc->ess, OSAZ_AVAILABLE, atype);
     fs->osaz = (*osaz_create)(fs->lc->ess, fd, fs->authz_section, NULL);
     free(atype);
+
+    //** See if the OSAZ needs some help with ATTRs
+    osaz_ns_acl_add(fs->osaz, 0, &n, NULL);
+    fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
+    tbx_type_malloc_clear(fs->stat_keys, char *, fs->_inode_key_size+n);
+    for (i=0; i<fs->_inode_key_size; i++) fs->stat_keys[i] = _inode_keys[i];
+    i = fs->_inode_key_size;
+    fs->_inode_key_size = fs->_inode_key_size + n;
+    osaz_ns_acl_add(fs->osaz, i, &(fs->_inode_key_size), fs->stat_keys);
 
     //** Get the default host ID for opens
     fs->id = lio_lookup_service(fs->lc->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);
@@ -3228,6 +3348,7 @@ void lio_fs_destroy(lio_fs_t *fs)
         regfree(&(fs->rw_lock_attr_regex));
         free(fs->rw_lock_attr_string);
     }
+    free(fs->stat_keys);  //** All the attrs are static strings
 
     apr_thread_mutex_destroy(fs->lock);
     apr_pool_destroy(fs->mpool);
