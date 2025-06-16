@@ -41,6 +41,7 @@
 #include <tbx/log.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "authn.h"
@@ -176,10 +177,15 @@ typedef struct {
 } ostc_object_op_t;
 
 typedef struct {
+    char *string;
+    regex_t regex;
+    int timeout;
+} limit_cache_t;
+
+typedef struct {
     char *section;
     char *os_child_section;
-    char *nocache_string;
-    regex_t nocache_regex;
+    limit_cache_t *limit_cache;
     lio_object_service_fn_t *os_child;//** child OS which does the heavy lifting
     apr_thread_mutex_t *lock;
     apr_thread_mutex_t *delayed_lock;
@@ -197,6 +203,7 @@ typedef struct {
     ex_off_t n_attrs_removed;
     ex_off_t n_attrs_hit;
     ex_off_t n_attrs_miss;
+    int n_limit_cache;
     int shutdown;
 } ostc_priv_t;
 
@@ -1109,6 +1116,23 @@ finished:
 
 
 //***********************************************************************
+// lut_limit_cache_timeout - returns the timeout for the attr or -1 if not found
+//***********************************************************************
+
+int lut_limit_cache_timeout(int n, limit_cache_t *lca, const char *key)
+{
+    int i;
+
+    for (i=0; i<n; i++) {
+        if (regexec(&(lca[i].regex), key, 0, NULL, 0) == 0) {
+            return(lca[i].timeout);
+        }
+    }
+
+    return(-1);
+}
+
+//***********************************************************************
 //  ostc_cache_process_attrs - Merges the attrs into the cache
 //***********************************************************************
 
@@ -1119,7 +1143,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
     ostcdb_object_t *sobj, *obj, *aobj;
     ostcdb_attr_t *attr;
     char *key, *lkey;
-    int i;
+    int i, timeout, to;
 
     tbx_stack_init(&tree);
 
@@ -1142,9 +1166,16 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
         val[2*n] = NULL;
     }
     for (i=0; i<n; i++) {
+        timeout = ostc->entry_timeout;
         key = key_list[i];
         if (OSTC_NOCACHE_MATCH(key)) continue;  //** These we don't cache
-        if (ostc->nocache_string && (regexec(&(ostc->nocache_regex), key, 0, NULL, 0) == 0)) continue;  //** These we don't cache
+        if (ostc->n_limit_cache) {
+            to = lut_limit_cache_timeout(ostc->n_limit_cache, ostc->limit_cache, key);
+            if (to != -1) {
+                if (to == 0) continue;
+                timeout = to;
+            }
+        }
         if (strcmp(key, "os.realpath") == 0) {
             if (v_size[i] > 0) {
                 if (sobj->realpath) free(sobj->realpath);
@@ -1174,7 +1205,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
             attr = apr_hash_get(obj->attrs, key, APR_HASH_KEY_STRING);
             if (attr == NULL) {
                 log_printf(5, "NEW obj=%s key=%s link=%s\n", obj->fname, key, lkey);
-                attr = new_ostcdb_attr(key, NULL, -1234, apr_time_now() + ostc->entry_timeout);
+                attr = new_ostcdb_attr(key, NULL, -1234, apr_time_now() + timeout);
                 apr_hash_set(obj->attrs, attr->key, APR_HASH_KEY_STRING, attr);
                 ostc->n_attrs_created++;
             } else {
@@ -1190,7 +1221,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
         } else {
             attr = apr_hash_get(obj->attrs, key, APR_HASH_KEY_STRING);
             if (attr == NULL) {
-                attr = new_ostcdb_attr(key, val[i], v_size[i], apr_time_now() + ostc->entry_timeout);
+                attr = new_ostcdb_attr(key, val[i], v_size[i], apr_time_now() + timeout);
                 apr_hash_set(obj->attrs, attr->key, APR_HASH_KEY_STRING, attr);
                 ostc->n_attrs_created++;
             } else {
@@ -3101,16 +3132,94 @@ void ostc_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
 void ostc_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_section_heading)
 {
     ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    int i;
 
     if (print_section_heading) fprintf(fd, "[%s]\n", ostc->section);
     fprintf(fd, "type = %s\n", OS_TYPE_TIMECACHE);
     fprintf(fd, "os_child = %s\n", ostc->os_child_section);
     fprintf(fd, "entry_timeout = %ld #seconds\n", apr_time_sec(ostc->entry_timeout));
     fprintf(fd, "cleanup_interval = %ld #seconds\n", apr_time_sec(ostc->cleanup_interval));
-    if (ostc->nocache_string) fprintf(fd, "nocache_attr = %s\n", ostc->nocache_string);
+    fprintf(fd, "# n_limit_cache = %d\n", ostc->n_limit_cache);
+    fprintf(fd, "# limit_cache = timeout_in_us:[glob|regex]:<attr_string>  -- String format.  Multiple limit_cache keys are supported\n");
+    for (i=0; i<ostc->n_limit_cache; i++) {
+        fprintf(fd, "limit_cache = %s\n", ostc->limit_cache[i].string);
+    }
     fprintf(fd, "\n");
 
     os_print_running_config(ostc->os_child, fd, 1);
+}
+
+//***********************************************************************
+// parse_limit_cache_attrs - Adds the limited caching attrs
+//***********************************************************************
+
+void parse_limit_cache_attrs(lio_object_service_fn_t *os, tbx_inip_file_t *ifd, const char *section)
+{
+    ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
+    tbx_inip_group_t *ig;
+    tbx_inip_element_t *ele;
+    char *s, *e, *key, *val;
+    tbx_stack_t *stack;
+    int n, to;
+
+    //** Find our group
+    ig = tbx_inip_group_first(ifd);
+    while ((ig != NULL) && (strcmp(section, tbx_inip_group_get(ig)) != 0)) {
+        ig = tbx_inip_group_next(ig);
+    }
+
+    if (ig == NULL) return;  //** Nothing to do so kick out
+
+    //**Cycle through the tags
+    ele = tbx_inip_ele_first(ig);
+    stack = NULL;
+    for (ele = tbx_inip_ele_first(ig); ele != NULL; ele = tbx_inip_ele_next(ele)) {
+        //** Check if this is a limit_cache key
+        key = tbx_inip_ele_get_key(ele);
+        if (strcmp("limit_cache", key) != 0) continue;
+
+        //** Got a match if we made it here
+        s = tbx_inip_ele_get_value(ele);
+        if (!s) continue;  //** No value so skip
+
+        //** Add it to the stack
+        if (stack == NULL) stack = tbx_stack_new();
+        tbx_stack_push(stack, strdup(s));
+    }
+
+    if (stack == NULL) return;  //Nothing found so kick out
+
+    //** If we made it here then we have some objects to parse
+    ostc->n_limit_cache = tbx_stack_count(stack);
+    tbx_type_malloc_clear(ostc->limit_cache, limit_cache_t, ostc->n_limit_cache);
+    n = 0;
+    while ((val = tbx_stack_pop(stack)) != NULL) {
+        ostc->limit_cache[n].string = strdup(val);  //** Store the string
+
+        //** Peel off the timeout and store it
+        e = index(val, ':');
+        s = val;
+        to = 0;
+        if (e) {
+            e[0] = '\0';
+            to = tbx_stk_string_get_integer(s);
+            s = e + 1;
+        }
+        ostc->limit_cache[n].timeout = to;
+
+        //** Now parse the glob or regex
+        if (lio_os_globregex_parse(&(ostc->limit_cache[n].regex), s) != 0) {
+            log_printf(0, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->limit_cache[n].string);
+            fprintf(stderr, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->limit_cache[n].string);
+            fflush(stderr);
+            abort();
+        }
+
+        free(val);
+        n++;
+    }
+
+    tbx_stack_free(stack, 1);
 }
 
 //***********************************************************************
@@ -3121,6 +3230,8 @@ void ostc_destroy(lio_object_service_fn_t *os)
 {
     ostc_priv_t *ostc = (ostc_priv_t *)os->priv;
     apr_status_t value;
+    limit_cache_t *lca;
+    int i;
 
     tbx_siginfo_handler_remove(SIGUSR1, ostc_info_fn, os);
 
@@ -3147,10 +3258,16 @@ void ostc_destroy(lio_object_service_fn_t *os)
     apr_thread_cond_destroy(ostc->cond);
     apr_pool_destroy(ostc->mpool);   //** This also destroys the hardlink hash
 
-    if (ostc->nocache_string) {
-        regfree(&(ostc->nocache_regex));
-        free(ostc->nocache_string);
+    if (ostc->n_limit_cache > 0) {
+        for (i=0; i<ostc->n_limit_cache; i++) {
+            lca = &(ostc->limit_cache[i]);
+            free(lca->string);
+            regfree(&(lca->regex));
+        }
+
+        free(ostc->limit_cache);
     }
+
     free(ostc->section);
     free(ostc->os_child_section);
     free(ostc);
@@ -3212,15 +3329,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     ostc->os_child_section = str;
 
     //** See if there are any attributes to not cache
-    ostc->nocache_string = tbx_inip_get_string(fd, section, "nocache_attrs", ostc_default_options.nocache_string);
-    if (ostc->nocache_string) {
-        if (lio_os_globregex_parse(&(ostc->nocache_regex), ostc->nocache_string) != 0) {
-            log_printf(0, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->nocache_string);
-            fprintf(stderr, "ERROR: Failed parsing nocache glob/regex! string=%s\n", ostc->nocache_string);
-            fflush(stderr);
-            abort();
-        }
-    }
+    parse_limit_cache_attrs(os, fd, section);
 
     ostc->entry_timeout = apr_time_from_sec(tbx_inip_get_integer(fd, section, "entry_timeout", ostc_default_options.entry_timeout));
     ostc->cleanup_interval = apr_time_from_sec(tbx_inip_get_integer(fd, section, "cleanup_interval",ostc_default_options.cleanup_interval));
