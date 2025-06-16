@@ -1187,7 +1187,7 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     primary_added = 0;
     if (acl->uid_map) {
         for (i=0; i<acl->uid_map->n; i++) {
-            name = acl->gid_map->id[i].name;
+            name = acl->uid_map->id[i].name;
             uid = acl->uid_map->id[i].uid;
             mode = acl->uid_map->id[i].mode;
 
