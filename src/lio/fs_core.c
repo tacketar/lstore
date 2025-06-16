@@ -3291,6 +3291,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     free(atype);
 
     //** See if the OSAZ needs some help with ATTRs
+    n = 0;  //** Initialize to 0 since we are seeing if we need to add extra space
     osaz_ns_acl_add(fs->osaz, 0, &n, NULL);
     fs->_inode_key_size = (fs->enable_security_attr_checks) ? _inode_key_size_security : _inode_key_size_core;
     tbx_type_malloc_clear(fs->stat_keys, char *, fs->_inode_key_size+n);
