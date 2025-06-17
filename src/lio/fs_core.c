@@ -1016,6 +1016,8 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
 {
     uid_t _uid;
     gid_t _gid;
+    uid_t _u_keep = -1;   //** These are special values passed the chown which mean no change
+    gid_t _g_keep = -1;
     mode_t _mode;
     int err, ftype;
     int v_size = 64;
@@ -1042,8 +1044,8 @@ log_printf(0, "QWERT: fname=%s attr=%s lio_getattr=%d v_size=%d\n", fname, attr,
     _uid = _gid = 0;
     if (osaz_perms_decode(fs->osaz, fname, ftype, val, v_size, &_uid, &_gid, &_mode) == 0) {  //** Returns 0 on success and -1 if it doesn't exists
         //** Override what's in the attr based on what's supplied
-        if (uid) _uid = *uid;
-        if (gid) _gid = *gid;
+        if ((uid) && (*uid != _u_keep)) _uid = *uid;
+        if ((gid) && (*gid != _g_keep)) _gid = *gid;
         if (mode) _mode = *mode;
     }
 
