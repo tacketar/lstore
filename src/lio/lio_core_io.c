@@ -3285,6 +3285,8 @@ gop_op_status_t lio_truncate_fn(void *arg, int id)
         } else if (fh->data_size > op->bufsize) {   //** Shrinking
             memset(fh->data + op->bufsize, 0, fh->data_size - op->bufsize);
             fh->data_size = op->bufsize;
+        } else {
+            fh->data_size = op->bufsize;
         }
         if (op->which_align) apr_thread_mutex_unlock(fh->lock);
     } else { //** Data is in the segment
