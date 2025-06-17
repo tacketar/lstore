@@ -1157,12 +1157,15 @@ int lfs_truncate(const char *fname, off_t new_size)
 int lfs_ftruncate(const char *fname, off_t new_size, struct fuse_file_info *fi)
 {
     lio_fuse_t *lfs = lfs_get_context();
-    lio_fd_t *fd = (lio_fd_t *)fi->fh;
+    lio_fd_t *fd = (fi) ? (lio_fd_t *)fi->fh : NULL;
     int err;
 
-    err = lio_fs_ftruncate(lfs->fs, fd, new_size);
-
-    SHADOW_GENERIC_COMPARE(fname, err, ftruncate(((shadow_fd_t *)fi->fh)->sfd, new_size));
+    if (fd) {
+        err = lio_fs_ftruncate(lfs->fs, fd, new_size);
+        SHADOW_GENERIC_COMPARE(fname, err, ftruncate(((shadow_fd_t *)fi->fh)->sfd, new_size));
+    } else {
+        err = lfs_truncate(fname, new_size);
+    }
 
     return(err);
 }
