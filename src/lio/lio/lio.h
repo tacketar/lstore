@@ -262,7 +262,7 @@ struct lio_config_t {
     char *rc_section;
     char *notify_section;
     char *special_file_prefix;
-    char *root_prefix;          //** This is for relative pathing into the NS
+    char *root_prefix;          // ** This is for relative pathing into the NS
     lio_blacklist_t *blacklist;
     ex_off_t readahead;
     ex_off_t readahead_trigger;
@@ -285,6 +285,7 @@ struct lio_config_t {
     int tpc_cache_count;
     int tpc_max_recursion;
     int init_complete;
+    int update_parent;
     int ref_cnt;
 };
 

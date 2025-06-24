@@ -291,6 +291,27 @@ void lio_free_mk_mv_rm(void *arg)
 }
 
 //***********************************************************************
+// lio_update_parent - Updates the parent directories modify timestamp
+//***********************************************************************
+
+void lio_update_parent(lio_config_t *lc, lio_creds_t *creds, char *id, const char *fname)
+{
+    char *parent, *file;
+
+    //** Kick out if no fname or we are at the root directory
+    if ((fname == NULL) || (fname[1] == '\0')) return;
+
+    //** Get the parent.
+    lio_os_path_split(fname, &parent, &file);
+
+    //** Do the update
+    lio_setattr(lc, creds, parent, id, "os.timestamp.system.modify_data", NULL, 0);
+
+    if (parent) free(parent);
+    if (file) free(file);
+}
+
+//***********************************************************************
 // lio_create_object_fn - Does the actual object creation
 //***********************************************************************
 
@@ -465,6 +486,8 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(ll, "ERROR: creating object fname=%s errno=%d\n", op->src_path, status.error_code);
         notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - creating object fname=%s errno=%d\n", op->src_path, status.error_code);
+    } else if (op->lc->update_parent) {
+        lio_update_parent(op->lc, op->creds, op->id, op->src_path);
     }
 
 fail:
@@ -712,6 +735,8 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         lio_exnode_destroy(ex);
     }
 
+    if (op->lc->update_parent)  lio_update_parent(op->lc, op->creds, op->id, op->src_path);
+
     notify_printf(op->lc->notify, 1, op->creds, "LIO_REMOVE_OBJECT_FN: fname=%s ftype=%d status=%d error_code=%d\n", op->src_path, op->type, status.op_status, status.error_code);
 
     return(status);
@@ -926,13 +951,18 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_move_object_fn - Esiting object in dest and temp move failed. old=%s temp=%s\n", op->dest_path, dtmp);
             free(dtmp);
             return(status);
-        }
+       }
     }
 
     //** If we made it here the dest file or directory is safely stashed so we can do the rename
     status = gop_sync_exec_status(os_move_object(op->lc->os, op->creds, op->src_path, op->dest_path));
 
     notify_printf(op->lc->notify, 1, op->creds, "LIO_MOVE_OBJECT_FN: old=%s new=%s status=%d error_code=%d\n", op->src_path, op->dest_path, status.op_status, status.error_code);
+
+    if ((status.op_status == OP_STATE_SUCCESS) && (op->lc->update_parent)){
+         lio_update_parent(op->lc, op->creds, op->id, op->src_path);
+         lio_update_parent(op->lc, op->creds, op->id, op->dest_path);
+    }
 
     //** Now clean up
     if (dtmp) {  //** If this exists we had to move an object out of the way
@@ -1004,7 +1034,9 @@ gop_op_status_t lio_link_object_fn(void *arg, int id)
         goto finished;
     }
 
-    if (op->type == 0) {  //** HArd link so exit
+    if (op->lc->update_parent)  lio_update_parent(op->lc, op->creds, op->id, op->dest_path);
+
+    if (op->type == 0) {  //** Hard link so exit
         status = gop_success_status;
         goto finished;
     }

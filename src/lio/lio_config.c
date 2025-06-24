@@ -200,6 +200,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "stream_buffer_min_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_min_size, text));
     fprintf(fd, "stream_buffer_total_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->stream_buffer_total_size, text));
     fprintf(fd, "small_files_in_metadata_max_size = %s\n", tbx_stk_pretty_print_int_with_scale(lio->small_files_in_metadata_max_size, text));
+    fprintf(fd, "update_parent = %d\n", lio->update_parent);
     fprintf(fd, "tpc_unlimited = %d\n", lio->tpc_unlimited_count);
     fprintf(fd, "tpc_ongoing = %d  # Only used for ongoing in SERVER mode\n", lio->tpc_ongoing_count);
     fprintf(fd, "tpc_max_recursion = %d\n", lio->tpc_max_recursion);
@@ -1332,6 +1333,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->stream_buffer_max_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_max_size", lio_default_options.stream_buffer_max_size);
     lio->stream_buffer_min_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_min_size", lio_default_options.stream_buffer_min_size);
     lio->stream_buffer_total_size = tbx_inip_get_integer(lio->ifd, section, "stream_buffer_total_size", lio_default_options.stream_buffer_total_size);
+    lio->update_parent = tbx_inip_get_integer(lio->ifd, section, "update_parent", lio_default_options.update_parent);
     lio->small_files_in_metadata_max_size = tbx_inip_get_integer(lio->ifd, section, "small_files_in_metadata_max_size", lio_default_options.small_files_in_metadata_max_size);
     lio->special_file_prefix = tbx_inip_get_string(lio->ifd, section, "special_file_prefix", lio_default_options.special_file_prefix);
     lio->root_prefix = tbx_inip_get_string(lio->ifd, section, "root_prefix", lio_default_options.root_prefix);
