@@ -248,7 +248,7 @@ start_instance() {
         set +u
         DAEMON_COREFILE_LIMIT=${LIMIT_CORE}
         log_message "START_INSTANCE ${INSTANCE_ID}  COMMAND: systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC}  --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} ${COMMAND}"
-        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryLMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND
+        systemd-run --uid=${LFS_USER} --unit=lfs@${INSTANCE_ID} -p MemoryMax=${LIMIT_MEM} -p LimitNOFILE=${LIMIT_FD} -p LimitNPROC=${LIMIT_NPROC} --working-directory=${INSTANCE_LOGS} --setenv=INSTANCE_DIR=${INSTANCE_PATH} ${TCMOPT} ${LIO_PKEY_DIR} $COMMAND
     )
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
