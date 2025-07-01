@@ -1569,6 +1569,11 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
 #ifdef HAS_FUSE3
     fprintf(fd, "max_read = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_read, ppbuf));
+    if (lfs->fuse_cfg) {
+        fprintf(fd, "use_ino = %d\n", lfs->fuse_cfg->use_ino);
+    } else {
+        fprintf(fd, "# use_ino is disabled since lfs->fuse_cfg = NULL\n");
+    }
 #endif
     fprintf(fd, "max_readahead = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_readahead, ppbuf));
     fprintf(fd, "max_background = %d\n", lfs->conn->max_background);
@@ -1595,7 +1600,7 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 //
 //*************************************************************************
 
-void *lfs_init_real(struct fuse_conn_info *conn,
+void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn,
                     int argc,
                     char **argv,
                     const char *mount_point)
@@ -1645,6 +1650,7 @@ void *lfs_init_real(struct fuse_conn_info *conn,
 
     tbx_type_malloc_clear(lfs, lio_fuse_t, 1);
 
+    lfs->fuse_cfg = fuse_cfg;  //** Can be NULL
     lfs->lc = init_args->lc;
     lfs->conn = conn;
     lfs->lfs_section = strdup(section);
@@ -1691,6 +1697,8 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 #ifdef HAS_FUSE3
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "max_read", -1);
     if (n > -1) conn->max_read = n;
+
+    if (lfs->fuse_cfg) lfs->fuse_cfg->use_ino = tbx_inip_get_integer(lfs->lc->ifd, section, "use_ino", 0);
 #endif
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "max_readahead", -1);
     if (n > -1) conn->max_readahead = n;
@@ -1733,10 +1741,11 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 //** See macro for actual definition
 LFS_INIT()
 {
+    struct fuse_config *fuse_cfg = NULL;
 #ifdef HAS_FUSE3
-    cfg->use_ino = 0;
+    fuse_cfg = cfg;   //** Pass in the FUSE config if available
 #endif
-    return lfs_init_real(conn,0,NULL,NULL);
+    return lfs_init_real(fuse_cfg, conn,0,NULL,NULL);
 }
 
 //*************************************************************************

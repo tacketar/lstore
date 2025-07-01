@@ -62,6 +62,7 @@ struct lio_fuse_t {
     apr_thread_mutex_t *lock;
     char *lfs_section;
     struct fuse_conn_info *conn;
+    struct fuse_config *fuse_cfg;
     lio_fs_t *fs;
 };
 
