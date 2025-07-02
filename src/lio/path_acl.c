@@ -200,7 +200,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         fprintf(fd, "[path_acl_default]\n");
         fprintf(fd, "perms_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_PERMS));
         fprintf(fd, "posix_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_POSIX));
+        fprintf(fd, "noposix_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_NOPOSIX));
         fprintf(fd, "nfs4_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_NFS4));
+        fprintf(fd, "nonfs4_override=%d\n", IS_SET(acl->override_mode, PACL_MODE_NONFS4));
         if (acl->other_mode > 0) {
             fprintf(fd, "other = %s\n", ((acl->other_mode == PACL_MODE_READ) ? "r" : "rw"));
         } else {
@@ -222,7 +224,9 @@ void pacl_print_running_config(path_acl_context_t *pa, FILE *fd)
         fprintf(fd, "path = %s\n", acl->prefix);
         fprintf(fd, "perms_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_PERMS));
         fprintf(fd, "posix_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_POSIX));
+        fprintf(fd, "noposix_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_NOPOSIX));
         fprintf(fd, "nfs4_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_NFS4));
+        fprintf(fd, "nonfs4_override = %d\n", IS_SET(acl->override_mode, PACL_MODE_NONFS4));
         if (acl->other_mode > 0) {
             fprintf(fd, "other = %s\n", ((acl->other_mode == PACL_MODE_READ) ? "r" : "rw"));
         } else {
@@ -1727,8 +1731,12 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_PERMS;
                 } else if (strcmp(key, "posix_override") == 0) {
                     if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_POSIX;
+                } else if (strcmp(key, "noposix_override") == 0) {
+                    if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_NOPOSIX;
                 } else if (strcmp(key, "nfs4_override") == 0) {
                     if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_NFS4;
+                } else if (strcmp(key, "nonfs4_override") == 0) {
+                    if (tbx_stk_string_get_integer(value) > 0) override_mode |= PACL_MODE_NONFS4;
                 } else {  //** Unknown option so just report it
                     log_printf(-1, "ERROR: Unknown option: %s = %s\n", key, value);
                 }
@@ -2000,7 +2008,9 @@ int pacl_override_settings(path_acl_context_t *pa)
 //    path=<prefix>
 //    perms_override = 1 #Optional flag to tell the calling program overriding UID/GID/PERMS is wanted
 //    posix_override = 1 #Optional flag to tell the calling program overriding POSIX ACLs is wanted
+//    noposix_override = 1 #Optional flag to tell the calling program to NOT return the constructed POSIXACLs
 //    nfs4_override = 1  #Optional flag to tell the calling program overriding NFSv4 ACLs is wanted
+//    nonfs4_override = 1  #Optional flag to tell the calling program to NOT return the constructed NFSv4 ACLs
 //    lfs_account=<account> #Optional default account reported by FUSE. Must still have an "account" entry
 //    account =<account_1>   # Same as "(rw)"
 //    account(r)=<account_2>

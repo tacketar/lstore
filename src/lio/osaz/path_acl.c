@@ -429,6 +429,9 @@ int osaz_pacl_attr_create_remove(lio_os_authz_t *osa, lio_creds_t *c, lio_os_aut
 }
 
 //***********************************************************************
+// osaz_pacl_acl_get - Returns the requested ACL
+//     NOTE:  use_instead for doing redirects is NOT implemeted!!!!!!
+//***********************************************************************
 
 int osaz_pacl_get_acl(lio_os_authz_t *osa, lio_creds_t *c, char **val, int *v_size, const char *path, int lio_ftype, char *value, size_t size, uid_t *uid, gid_t *gid, mode_t *mode, int get_nfs4, char **use_instead)
 {
@@ -437,7 +440,14 @@ int osaz_pacl_get_acl(lio_os_authz_t *osa, lio_creds_t *c, char **val, int *v_si
     void *data;
 
     err = pacl_lfs_get_acl(osaz->pa, (char *)path, lio_ftype, &data, &n, uid, gid, mode, get_nfs4, &override_mode);
-log_printf(0, "QWERT: fname=%s ftype=%d err=%d override=%d v_size=%d\n", path, lio_ftype, err, override_mode, n);
+
+    //** See if we are supposed to filter out the constructed xattr
+    if (((get_nfs4 == 0) && (override_mode & PACL_MODE_NOPOSIX)) ||
+        ((get_nfs4 == 1) && (override_mode & PACL_MODE_NONFS4))) {
+        data = NULL;
+        n = 0;
+    }
+
     if (osaz->override.override_mode && val) {
         if (override_mode & PACL_MODE_PERMS) {
             slot = osaz->override.n_start+osaz->override.perms_slot;
@@ -456,7 +466,7 @@ log_printf(0, "QWERT: fname=%s ftype=%d err=%d override=%d v_size=%d\n", path, l
                     data = val[slot];
                     n = v_size[slot];
                 }
-             }
+            }
         } else {
             if (override_mode & PACL_MODE_NFS4) {
                 slot = osaz->override.n_start+osaz->override.nfs4_slot;
@@ -469,8 +479,12 @@ log_printf(0, "QWERT: fname=%s ftype=%d err=%d override=%d v_size=%d\n", path, l
     }
 
     if (err == 0) {
-        if (n <= (int)size) memcpy(value, data, n);
-        err = n;
+        if (n == 0) {
+            err = -ENODATA;
+        } else {
+            if (n <= (int)size) memcpy(value, data, n);
+            err = n;
+        }
     } else {
         err = -ENODATA;
     }

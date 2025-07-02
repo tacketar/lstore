@@ -35,9 +35,11 @@ extern "C" {
 #define PACL_MODE_RW    3
 
 //** Bits controlling if the prefix supports overriding the PREFIX externally with OS flags
-#define PACL_MODE_PERMS 1    //** Can override UID/GID/mode
-#define PACL_MODE_POSIX 2    //** Can override system.posix_acl_access
-#define PACL_MODE_NFS4  4    //** Can override system.nfs4_acl
+#define PACL_MODE_PERMS   1    //** Can override UID/GID/mode
+#define PACL_MODE_POSIX   2    //** Can override system.posix_acl_access
+#define PACL_MODE_NOPOSIX 4    //** Never rerurn the constructed system.posix_acl_acces
+#define PACL_MODE_NFS4    8    //** Can override system.nfs4_acl
+#define PACL_MODE_NONFS4 16    //** Never return the constructed system.nfs4_acl
 
 typedef struct path_acl_context_s path_acl_context_t;
 
