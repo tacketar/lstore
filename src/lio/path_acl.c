@@ -1639,7 +1639,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
     tbx_inip_element_t *ele;
     char *key, *value, *prefix, *other_mode, *lfs;
     tbx_stack_t *stack, *acl_stack;
-    int i, j, def, match, n_uid, n_gid, err, override_mode;
+    int i, j, k, def, match, n_uid, n_gid, err, override_mode;
     uid_t lfs_uid, uid;
     gid_t lfs_gid, gid;
     fs_acl_t uid_list[100];
@@ -1818,7 +1818,16 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
         if (pa->path_acl[i]->nested_primary == -1) pa->path_acl[i]->nested_primary = i;
         pa->path_acl[i]->rlut = pa->n_lut;
         for (j=i+1; j<pa->n_path_acl; j++) {
+            //** check if the base prefixes match based on parent string
             if (strncmp(pa->path_acl[i]->prefix, pa->path_acl[j]->prefix, pa->path_acl[i]->n_prefix) != 0) break;
+
+            //** Ok they match so it could be a similar prefix
+            //** Check to make sure the next char is a '/' otherwise it's a similar name
+            k = pa->path_acl[i]->n_prefix;
+            if ((pa->path_acl[j]->n_prefix > k) && (pa->path_acl[j]->prefix[k] != '/')) {
+                break;
+            }
+
             if (pa->path_acl[j]->nested_primary == -1) pa->path_acl[j]->nested_primary = i;
             pa->path_acl[j]->nested_parent = i;
             if (pacl_compare_nested_acls(pa->path_acl[i], pa->path_acl[j]) != 0) {
