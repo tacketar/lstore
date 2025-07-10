@@ -133,10 +133,9 @@ void osrs_print_active_table(lio_object_service_fn_t *os, FILE *fd)
     char sdate[128], ldate[128];
     osrs_active_t *a;
 
-    fprintf(fd, "OSRS Dumping active table --------------------------------\n");
-
     apr_thread_mutex_lock(osrs->lock);
     apr_ctime(sdate, apr_time_now());
+    fprintf(fd, "OSRS Dumping active table (n=%d max_active=%d) --------------------------------\n", tbx_stack_count(osrs->active_lru), osrs->max_active);
     fprintf(fd, "#timestamp: %s\n", sdate);
     fprintf(fd, "#host|start_time|last_time|count\n");
     tbx_stack_move_to_top(osrs->active_lru);

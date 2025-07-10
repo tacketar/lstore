@@ -486,6 +486,7 @@ mount_start() {
         echo " "
         echo "${mnt} -----------------------------------------"
         start_mount ${mnt}
+        sleep 2
     done
 }
 
@@ -672,6 +673,7 @@ mount_restart() {
         echo " "
         echo "${mnt} -----------------------------------------"
         restart_mount "${mnt}" 0
+        sleep 2
     done
 }
 
