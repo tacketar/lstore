@@ -1,3 +1,23 @@
+lstore (2.4.4) stable; urgency=low
+  * Fix management scripts
+  * Fix nested ACL construction issues
+  * Add support to NOT return extended ACLs
+  * Add support for using the LFS inode number via FUSE
+  * Use the system.modify_data for the st_ctime instead of the modify_attr
+  * Add option to update parent dir mtime when changes occur in the directory
+  * Switch from using the FD to the fname depending on what's available
+  * Fix truncate() edge case when growing the file stored as metadata
+  * Handle uid/gid values of -1 for chown
+  * Refactor osaz to support fetching/storing of ACLs in OS attrs
+  * Add support to fetch ACLs from the OS based on the prefix
+  * Add ability to limit attr caching using multiple wildcards with timeouts
+  * Fix osf_store_val() bug if filling a user provided buffer
+  * Add baseline support for native NFS4 ACLs.  DO NOT USE AT THIS TIME!!!!
+  * Add a barebones FUSE driver for help with setting NFS4 ACL bootstrapping
+  * Add helper to remove whitespace from a string
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Th Jul 10 2025 15:16 -0500
+
 lstore (2.4.3) stable; urgency=low
   * Stop DNS query storm -- Sanitize setting the hostport and also remove the superflous DNS lookup
   * Update LServer warmer helper scripts and start the process of deprecating the python wrapper
