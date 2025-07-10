@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 #******************************************************************************
 #
 # lfs_service_manager.sh - Script for managing LFS namespace mounts
@@ -446,10 +446,11 @@ set_instance_vars() {
 #******************************************************************************
 
 service_status() {
-    if [ ! -e "$MOUNT_SYMLINK" ]; then
+    spath=$(readlink ${MOUNT_SYMLINK})
+    if [ "${spath}" == "service_is_stopped" ]; then
         PRIMARY_ID='service_is_stopped'
     else
-        PRIMARY_ID=$(basename $(readlink -f $MOUNT_SYMLINK))
+        PRIMARY_ID=$(basename $spath)
     fi
 
     if [ "$PRIMARY_ID" = 'service_is_stopped' ]; then
@@ -470,11 +471,12 @@ service_status() {
 #******************************************************************************
 
 service_start() {
-    log_message "START_SERVICE"
     PRIMARY_ID=$(basename $(readlink -f $CURRENT_SYMLINK))
     if [ "$PRIMARY_ID" = 'service_is_stopped' ] || get_instance_health $PRIMARY_ID | grep -q -E 'exists=NO|is_running=NO|mounted=NO'; then
+        log_message "START_SERVICE"
         start_instance $(generate_instance_id)
     else
+        log_message "START_SERVICE Mount appears operational. Skipping"
         echo "Service is already running and it appears to be operational, instance='${INSTANCE_ROOT}/$PRIMARY_ID'. Run the 'restart' command if you wish to force a new instance to be created."
     fi
 }
@@ -498,8 +500,13 @@ service_stop() {
 #******************************************************************************
 
 service_restart() {
-    log_message "RESTART"
-    start_instance $(generate_instance_id)
+    spath=$(readlink ${MOUNT_SYMLINK})
+    if [ "${spath}" == "service_is_stopped" ]; then
+        log_message "RESTART Skipping service is already STOPPED"
+    else
+        log_message "RESTART"
+        start_instance $(generate_instance_id)
+    fi
 }
 
 #******************************************************************************
@@ -680,28 +687,45 @@ health_checkup() {
     log_message "HEALTH-CHECKUP  START"
     service_status | grep primary | while read id primary everything_else; do
         STATE=$(health_check_instance $id $primary $everything_else)
+        if [ "${primary}" == "primary=yes" ]; then
+            on_primary="on primary"
+        else
+            on_primary=""
+        fi
 
         case "${STATE}" in
             GOOD)
+                log_message "HEALTH-CHECKUP ${id} GOOD ${on_primary}"
                 ;;
             HI_MEM)
-                log_message "HEALTH-CHECKUP ${id} HI_MEM on primary"
-                service_restart
+                log_message "HEALTH-CHECKUP ${id} HI_MEM ${on_primary}"
+                if [ "$on_primary" != "" ]; then
+                    service_restart
+                fi
                 ;;
             HUNG)
-                log_message "HEALTH-CHECKUP ${id} HUNG"
+                log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary}"
                 stop_instance $id
                 remove_instance $id
+                if [ "$on_primary" != "" ]; then
+                    service_restart
+                fi
                 ;;
             DEAD)
-                log_message "HEALTH-CHECKUP ${id} DEAD"
+                log_message "HEALTH-CHECKUP ${id} DEAD ${on_primary}"
                 stop_instance $id
                 remove_instance $id
+                if [ "$on_primary" != "" ]; then
+                    service_restart
+                fi
                 ;;
             UNUSED)
-                log_message "HEALTH-CHECKUP ${id} UNUSED"
+                log_message "HEALTH-CHECKUP ${id} UNUSED ${on_primary}"
                 stop_instance $id
                 remove_instance $id
+                if [ "$on_primary" != "" ]; then
+                    service_restart
+                fi
                 ;;
             *)
                 log_message "ERROR: health_checkup invalid state=${STATE} id=${id}"
