@@ -331,8 +331,6 @@ void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t ui
 
     log_printf(10, "uid=%d gid=%d\n", uid, gid);
 
-log_printf(0, "QWERT: AAAA uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
-
     //** check if we just want to use the primary GID
     if (fs->enable_osaz_secondary_gids == 0) {
 oops:
@@ -344,26 +342,19 @@ oops:
         return;
     }
 
-log_printf(0, "QWERT: BBBB uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
     //** See if we've already done the mapping
     if (osaz_ug_hint_get(fs->osaz, fs->lc->creds, ug) == 0) return;
-
-log_printf(0, "QWERT: CCCCC uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
 
     //** If we made it here then no hint exists so we have to make it
     //** we're using the all the groups the user is a member of
     if (getpwuid_r(uid, &pwd, buf, blen, &result) != 0) {
-log_printf(0, "QWERT: OOPS-A uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
         goto oops;  //** Buffer was to small or the UID wasn't found so do the fallback
     }
     ug->n_gid = OS_AUTHZ_MAX_GID;
     if (getgrouplist(result->pw_name, result->pw_gid, ug->gid, &(ug->n_gid)) < 0) {
-log_printf(0, "QWERT: OOPS-B uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
         goto oops;
     }
     osaz_ug_hint_set(fs->osaz, fs->lc->creds, ug);  //** Make the hint
-log_printf(0, "QWERT: END uid=%u gid=%u ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", uid, gid, ug->uid, ug->gid[0], ug->n_gid);
-
 }
 
 //***********************************************************************
@@ -729,7 +720,6 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
         apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
     }
 
-log_printf(0, "QWERT: fname=%s uid=%u gid=%u mode=%o\n", fname, stat->st_uid, stat->st_gid, stat->st_mode);
     tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
 
     FS_MON_OBJ_DESTROY_MESSAGE("size=" XOT, stat->st_size);
@@ -1025,18 +1015,12 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
     char *vptr = val;
     char *attr;
 
-if (uid) { log_printf(0, "QWERT: fname=%s uid=%u\n", fname, *uid); }
-if (gid) { log_printf(0, "QWERT: fname=%s gid=%u\n", fname, *gid); }
-if (mode) { log_printf(0, "QWERT: fname=%s mode=%u\n", fname, *mode); }
     attr = osaz_perms_attr(fs->osaz, fname);
-log_printf(0, "QWERT: fname=%s attr=%s\n", fname, attr);
     if (attr == NULL) return(1);  //** Not supported
 
     err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, attr, (void **)&vptr, &v_size);
-log_printf(0, "QWERT: fname=%s attr=%s lio_getattr=%d v_size=%d\n", fname, attr, err, v_size);
     if (err != OP_STATE_SUCCESS) {
         v_size = -1;
-//        return(-EREMOTEIO);
     }
 
     ftype = lio_exists(fs->lc, fs->lc->creds, (char *)fname);
@@ -1049,8 +1033,6 @@ log_printf(0, "QWERT: fname=%s attr=%s lio_getattr=%d v_size=%d\n", fname, attr,
         if (mode) _mode = *mode;
     }
 
-log_printf(0, "QWERT: fname=%s attr=%s uid=%u gid=%u mode=%o\n", fname, attr, _uid, _gid, _mode);
-
     //** Store it back
     v_size = osaz_perms_encode(fs->osaz, fname, ftype, val, v_size, _uid, _gid, _mode);
     err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)attr, (void *)val, v_size);
@@ -1058,7 +1040,6 @@ log_printf(0, "QWERT: fname=%s attr=%s uid=%u gid=%u mode=%o\n", fname, attr, _u
         return(-EREMOTEIO);
     }
 
-log_printf(0, "QWERT: fname=%s SUCCESS\n", fname);
     return(0);
 }
 
@@ -1079,8 +1060,6 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     char val[64];
     int n_extra;
     int os_mode = lio_mode2os_flags(mode);
-
-log_printf(0, "QWERT: AAAA fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
 
     FS_MON_OBJ_CREATE("FS_OBJECT_CREATE: fname=%s mode=%d", fname, mode);
 
@@ -1113,7 +1092,6 @@ log_printf(0, "QWERT: AAAA fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fn
     a_array[0] = NULL;
     n_extra = 0;
     if (attr) {
-log_printf(0, "QWERT: BBBBB fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
         v_size[0] = osaz_perms_encode(fs->osaz, fname, os_mode, val, v_size[0], ug->uid, ug->gid[0], mode);
         v_array[0] = val;
         a_array[0] = (char *)attr;
@@ -1166,14 +1144,7 @@ log_printf(0, "QWERT: BBBBB fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", f
 
 int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, dev_t rdev)
 {
-int err;
-
-log_printf(0, "QWERT: START fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
-err = lio_fs_object_create(fs, ug, fname, mode, 0);
-log_printf(0, "QWERT: END fname=%s ug->uid=%u ug->gid[0]=%u ug->n_gid=%d\n", fname, ug->uid, ug->gid[0], ug->n_gid);
-return(err);
-
-//    return(lio_fs_object_create(fs, ug, fname, mode, 0));
+    return(lio_fs_object_create(fs, ug, fname, mode, 0));
 }
 
 //*************************************************************************

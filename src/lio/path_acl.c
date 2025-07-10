@@ -804,11 +804,6 @@ int pacl_lfs_get_acl(path_acl_context_t *pa, char *path, int lio_ftype, void **l
                     if (*mode & S_IROTH) *mode |= S_IXOTH;
                 }
             }
-if (mode) {
-    log_printf(0, "QWERT: fname=%s ftype=%d mode=%o filebits=%o\n", path, lio_ftype, *mode, filebits);
-} else {
-    log_printf(0, "QWERT: fname=%s ftype=%d mode=NULL\n", path, lio_ftype);
-}
             return(0);
         }
 

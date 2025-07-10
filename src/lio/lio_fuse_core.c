@@ -751,12 +751,8 @@ int lfs_mknod(const char *fname, mode_t mode, dev_t rdev)
     lio_os_authz_local_t ug;
     int err;
 
-struct fuse_context *fc = fuse_get_context();
-log_printf(0, "QWERT: AAA fname=%s uid=%u gid=%u mode=%o\n", fname, fc->uid, fc->gid, mode);
     _get_fuse_ug(lfs, &ug, fuse_get_context());
-log_printf(0, "QWERT: AFTER _get_fuse_ug fname=%s ug->uid=%u ug->gid=%u ug->n_gid=%d mode=%o\n", fname, ug.uid, ug.gid[0], ug.n_gid, mode);
     err = lio_fs_mknod(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, mode, rdev);
-log_printf(0, "QWERT: BBBB fname=%s ug->uid=%u ug->gid=%u mode=%o\n", fname, ug.uid, ug.gid[0], mode);
     _lfs_hint_release(lfs, &ug);
 
     SHADOW_GENERIC_COMPARE(fname, err, mknod(sfname, mode, rdev));

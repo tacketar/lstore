@@ -87,8 +87,7 @@ int os2pacl_mode(int os_mode)
 int _get_perms(lio_os_authz_t *osa, const char *fname, int ftype, unsigned char *val, int v_size, uid_t *uid, gid_t *gid, mode_t *mode)
 {
     osaz_pacl_t *osaz = osa->priv;
-    int n, i;
-    int64_t d;
+    int n;
     gid_t g;
     uid_t u;
     mode_t m;
@@ -98,28 +97,17 @@ int _get_perms(lio_os_authz_t *osa, const char *fname, int ftype, unsigned char 
     if (v_size <= 0) { //** No attribute so get if from the PACL
         m = (*mode) ? *mode : 0;
         pacl_lfs_get_acl(osaz->pa, (char *)fname, ftype, &data, &n, &u, &g, &m, 0, &override_mode);
-log_printf(0, "QWERT: PACL fname=%s ftype=%d uid=%u gid=%u mode=%o\n", fname, ftype, u, g, m);
         if (uid) *uid = u;
         if (gid) *gid = g;
         if (mode) *mode = m;
         return(0);
     }
-sscanf((char *)val, "%u:%u:o%o", &u, &g, &m);
-log_printf(0, "QWERT: fname=%s perms=%s uid=%u gid=%u mode=%o\n", fname, val, u, g, m);
-if (uid) *uid = u;
-if (gid) *gid = g;
-if (mode) *mode = m;
-return(0);
 
-    n = tbx_zigzag_decode(val, v_size, &d);
-    if (uid) *uid = d;
-
-    i = tbx_zigzag_decode(val + n, v_size-n, &d);
-    if (gid) *gid = d;
-    n = n + i;
-
-    i = tbx_zigzag_decode(val + n, v_size-n, &d);
-    if (mode) *mode = d;
+    //** Parse the string.
+    sscanf((char *)val, "%u:%u:o%o", &u, &g, &m);
+    if (uid) *uid = u;
+    if (gid) *gid = g;
+    if (mode) *mode = m;
 
     return(0);
 }
@@ -133,15 +121,9 @@ int _store_perms(lio_os_authz_t *osa, const char *fname, int ftype, unsigned cha
 {
     int n;
 
-n = sprintf((char *)val, "%u:%u:o%o", uid, gid, mode);
-log_printf(0, "QWERT: perms=%s n=%d\n", val, n);
-return(n+1);
-
-    n = tbx_zigzag_encode(uid, val);
-    n = n + tbx_zigzag_encode(gid, val + n);
-    n = n + tbx_zigzag_encode(mode, val + n);
-
-    return(n);
+    //** Store it as a string for simplicity
+    n = sprintf((char *)val, "%u:%u:o%o", uid, gid, mode);
+    return(n+1);
 }
 
 //*************************************************************************
@@ -316,14 +298,11 @@ char *osaz_pacl_perms_attr(lio_os_authz_t *osa, const char *fname)
     int override_mode;
     mode_t pacl_mode = 0;
 
-log_printf(0, "QWERT: fname=%s global_override=%d\n", fname, osaz->override.override_mode);
-
     if ((osaz->override.override_mode & PACL_MODE_PERMS) == 0) return(NULL);  //** We may have this option disabled
 
     //** Fetch the prefix ACL's override_mode. We don't care about anything else
     pacl_lfs_get_acl(osaz->pa, (char *)fname, OS_OBJECT_FILE_FLAG, NULL, NULL, NULL, NULL, &pacl_mode, 0, &override_mode);
 
-log_printf(0, "QWERT: fname=%s override=%d\n", fname, override_mode);
     //** See if there is anything to do
     if ((override_mode & PACL_MODE_PERMS) == 0) return(NULL);
 
@@ -698,8 +677,6 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     if (opa->acl_ns) { //** We have a NS so let'ssee if any of the prefixes use it
         or = &(opa->override);
         or->override_mode = pacl_override_settings(opa->pa);
-log_printf(0, "QWERT: override=%d forcing PERMS\n",  or->override_mode);
-//or->override_mode = PACL_MODE_PERMS;
         if (or->override_mode) { //** Got something so process the attr list
             if (or->override_mode & PACL_MODE_PERMS) {
                 snprintf(attr, sizeof(attr)-1, "%s.perms", opa->acl_ns);
