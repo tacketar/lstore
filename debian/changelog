@@ -1,5 +1,7 @@
-lstore (2.4.4) stable; urgency=low
+lstore (2.4.5) stable; urgency=low
   * Fix management scripts on hung mount.
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Th Jul 24 2025 10:09 -0500
 
 lstore (2.4.4) stable; urgency=low
   * Fix management scripts
