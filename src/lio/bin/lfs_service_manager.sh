@@ -671,11 +671,16 @@ health_check_instance() {
         return
     fi
 
-    # If we made it here then the current stat hung but the pending succeeded or doesn't exist so kick on off
-    ${LFS_PENDING_STAT_CHECK_SCRIPT} ${CK_PENDING_TIMEOUT} ${INSTANCE_LOGS}/pending_stat ${INSTANCE_MNT}/${CK_FILE} ${LFS_ROOTS}/service.log >/dev/null &
+    if [ -e ${INSTANCE_LOGS} ]; then
+        # We're in a holding pattern
+        # If we made it here then the current stat hung but the pending succeeded or doesn't exist so kick on off
+        ${LFS_PENDING_STAT_CHECK_SCRIPT} ${CK_PENDING_TIMEOUT} ${INSTANCE_LOGS}/pending_stat ${INSTANCE_MNT}/${CK_FILE} ${LFS_ROOTS}/service.log >/dev/null &
 
-    # We're in a holding pattern
-    echo "PENDING"
+        echo "PENDING"
+    else
+        # Something is really borked with the instance
+        echo "HUNG"
+    fi
 }
 
 #******************************************************************************
@@ -705,7 +710,7 @@ health_checkup() {
                 ;;
             HUNG)
                 log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary}"
-                stop_instance $id
+                FORCE_UMOUNT="1" stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
                     service_restart
