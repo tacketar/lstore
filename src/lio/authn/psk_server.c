@@ -64,6 +64,7 @@ typedef struct {
 } psk_creds_t;
 
 static gop_op_status_t bad_creds_status = {.op_status = OP_STATE_FAILURE, .error_code = -ENOKEY };
+void apsk_cred_destroy(lio_creds_t *c);
 
 //***********************************************************************
 // _psk_destroy -Destroys the PSK context
@@ -270,6 +271,9 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
     lio_authn_psk_server_priv_t *ap = an->priv;
     lio_creds_t *c = NULL;
     psk_creds_t *pc;
+    psk_account_t *a;
+    char *ca = (char *)args[0];
+    char buf[1024];
 
     if (type == AUTHN_INIT_LOOKUP) {
         apr_thread_mutex_lock(ap->lock);
@@ -280,6 +284,38 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
             c = &(pc->c);
         }
         apr_thread_mutex_unlock(ap->lock);
+    } else if (type == AUTHN_INIT_DEFAULT) { //** This can ONLY be called from the current process so we make a creds for use without checking PW
+        //** Make the new creds
+        apr_thread_mutex_lock(ap->lock);
+        a = apr_hash_get(ap->ctx->accounts, ca, APR_HASH_KEY_STRING);
+        if (a == NULL) {
+            fprintf(stderr, "ERROR: apsk_cred_init: Unknown user: %s\n", ca);
+            apr_thread_mutex_unlock(ap->lock);
+            return(NULL);
+        }
+        apr_thread_mutex_unlock(ap->lock);
+
+        tbx_type_malloc_clear(pc, psk_creds_t, 1);
+        cred_default_init(&(pc->c), NULL, NULL);
+        pc->an = an;
+        pc->count = 1;
+        pc->c.priv = pc;
+        pc->c.destroy = apsk_cred_destroy;
+        if (pc->c.id) free(pc->c.id);
+        sprintf(buf, "%s:INTERNAL", ca);
+        pc->c.id = strdup(ca); pc->c.id_len = strlen(ca);
+        if (pc->c.account) free(pc->c.account);
+        pc->c.account = strdup(ca); pc->c.account_len = strlen(ca);
+        if (pc->c.descriptive_id) free(pc->c.descriptive_id);
+        pc->c.descriptive_id = strdup(buf); pc->c.descriptive_id_len = strlen(buf);
+        tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
+        pc->c.handle = pc->handle;
+        pc->c.handle_len = PSK_HANDLE_LEN;
+        pc->a = a;
+        tbx_stack_push(a->creds, pc);
+        pc->ele = tbx_stack_get_current_ptr(a->creds);
+        apr_hash_set(ap->ctx->creds, pc->c.handle, pc->c.handle_len, pc);
+        c = &(pc->c);
     }
     return(c);
 }
