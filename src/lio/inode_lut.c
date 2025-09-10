@@ -681,6 +681,7 @@ dentry_list_dump(ilut->dentry_table, "B2");
 
     de = rold->hardlink_list;  //** Loop over any additional references
     deprev = NULL;
+    de2 = NULL;
     while (de) {
 log_printf(0, "HARDLINK-SWAP: inode=" XIDT " r.dentry=%s hardlink=%p de=%s de->len=%d\n", r->r.inode, r->r.dentry.dentry, r->hardlink_list, de->dentry, de->len);
         err = tbx_list_remove(ilut->dentry_table, de, rold);

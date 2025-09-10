@@ -504,7 +504,8 @@ void walk_local_add_fixed_prefix(walk_local_t *w, char *path)
         wdir->de_fixed.d_ino = ino;
         wdir->de_fixed.d_type = os_local_filetype_stat(old, &link_stat, &obj_stat);
         wdir->de_fixed.d_reclen = strlen(base);
-        strncpy(wdir->de_fixed.d_name, base, sizeof(wdir->de_fixed.d_name));
+        strncpy(wdir->de_fixed.d_name, base, sizeof(wdir->de_fixed.d_name)-1);
+        wdir->de_fixed.d_name[sizeof(wdir->de_fixed.d_name)-1] = '\0';
         free(base);
 
         //** Need to get and store the parent dir inode

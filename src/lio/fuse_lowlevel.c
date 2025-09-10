@@ -127,6 +127,7 @@ log_printf(0, "QWERT: START inode=" XIDT "\n", inode_target);
     //** We got a valid object so parse and update the iLUT
     used = tbx_zigzag_decode((uint8_t *)blob, v_size, &v); n = v;
 
+    ftype = 0;
     path[0] = '\0';
     k = 0;
     parent = 0;  //** This is the root inode who's parent is always 0
