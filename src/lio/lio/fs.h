@@ -46,13 +46,15 @@ LIO_API void lio_fs_destroy_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *u
 LIO_API void lio_fs_fill_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug, uid_t uid, gid_t gid);
 LIO_API int lio_fs_same_namespace(lio_fs_t *fs1, lio_fs_t *fs2);
 LIO_API int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink, int no_cache_stat_if_file);
+LIO_API int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, int *ftype, char **symlink, int stat_symlink, int no_cache_stat_if_file);
 LIO_API int lio_fs_fstat(lio_fs_t *fs, lio_fd_t *fd, struct stat *sbuf);
 LIO_API lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int stat_symlink);
 LIO_API int lio_fs_realpath(lio_fs_t *fs, const char *path, char *realpath);
 LIO_API int lio_fs_exists(lio_fs_t *fs, const char *path);
+LIO_API int lio_fs_is_open(lio_fs_t *fs, const char *path);
 LIO_API int lio_fs_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int mode);
 LIO_API int lio_fs_fadvise(lio_fs_t *fs, lio_fd_t *fd, off_t offset, off_t len, int advice);
-LIO_API int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink);
+LIO_API int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink, int *ftype);
 LIO_API int lio_fs_closedir(lio_fs_dir_iter_t *dit);
 LIO_API int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path);
 LIO_API int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath);

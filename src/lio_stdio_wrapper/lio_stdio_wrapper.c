@@ -412,15 +412,15 @@ int lio_dir_is_empty(lio_fs_t *fs, const char *path)
     if (!dir) return(-1);
 
     //** This should be the 1st entry of "."
-    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
     //** This is ".."
-    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
     //** This should be the 1st real entry
-    if (lio_fs_readdir(dir, &dname, &stat, NULL) != 0) { lio_fs_closedir(dir); return(1); }
+    if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
     if (dname) free(dname);
 
     lio_fs_closedir(dir);
@@ -2347,7 +2347,7 @@ struct dirent64 *WRAPPER_PREFIX(readdir64)(DIR *dirp)
     if (CFD_IS_STD(fd, cfd)) return(readdir64_stdio(cfd->sdir));
 
     dentry = &(cfd->ldentry64);
-    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL);
+    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, NULL);
     FPRINTF("readdir64: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         if (err < 0) errno = err;
@@ -2394,7 +2394,7 @@ struct dirent *WRAPPER_PREFIX(readdir)(DIR *dirp)
     if (CFD_IS_STD(fd, cfd)) return(readdir_stdio(cfd->sdir));
 
     dentry = &(cfd->ldentry);
-    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL);
+    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, NULL);
     FPRINTF("readdir: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         if (err < 0) errno = err;
@@ -2438,7 +2438,7 @@ int WRAPPER_PREFIX(readdir_r)(DIR *dirp, struct dirent *dentry, struct dirent **
     cfd = fd_table[fd].cfd;
     if (CFD_IS_STD(fd, cfd)) return(readdir_r_stdio(cfd->sdir, dentry, result));
 
-    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL);
+    err = lio_fs_readdir(cfd->ldir, &dname, &stat, NULL, NULL);
     FPRINTF("readdir_r: slot=%d err=%d\n", fd, err); fflush(stderr);
     if (err != 0) {
         *result = NULL;

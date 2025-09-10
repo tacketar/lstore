@@ -78,6 +78,7 @@
 #include <tbx/log.h>
 #include <tbx/lio_monitor.h>
 #include <tbx/io.h>
+#include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
@@ -162,6 +163,7 @@ static char *_tape_keys[] = { "system.owner", "system.exnode" };
 
 typedef struct {
     char *dentry;
+    int ftype;
     struct stat stat;
 } fs_dir_entry_t;
 
@@ -176,6 +178,7 @@ typedef struct {
 typedef struct {  //** This is the que structure for prefetching
     char *dentry;
     char *symlink;
+    int ftype;
     struct stat stat;
 } fs_dentry_stat_t;
 
@@ -276,6 +279,8 @@ struct lio_fs_t {
     apr_pool_t *mpool;
     apr_thread_mutex_t *lock;
     apr_hash_t *open_files;
+    char *pending_delete_prefix;
+    int pending_delete_prefix_len;
     char *id;
     lio_segment_rw_hints_t *rw_hints;
     lio_os_authz_t *osaz;
@@ -422,6 +427,19 @@ int lio_fs_realpath(lio_fs_t *fs, const char *path, char *realpath)
 int lio_fs_exists(lio_fs_t *fs, const char *path)
 {
     return(lio_exists(fs->lc, fs->lc->creds, (char *)path));
+}
+
+//***********************************************************************
+
+int lio_fs_is_open(lio_fs_t *fs, const char *path)
+{
+    fs_open_file_t *fop;
+
+    fs_lock(fs);
+    fop = apr_hash_get(fs->open_files, path, APR_HASH_KEY_STRING);
+    fs_unlock(fs);
+
+    return((fop) ? 1 : 0);
 }
 
 //***********************************************************************
@@ -647,10 +665,10 @@ int lio_fs_access(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, int
 }
 
 //*************************************************************************
-// lio_fs_stat - Does a stat on the file/dir.
+// lio_fs_stat_full - Does a stat on the file/dir.
 //*************************************************************************
 
-int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink, int no_cache_stat_if_file)
+int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, int *ftype, char **symlink, int stat_symlink, int no_cache_stat_if_file)
 {
     char *val[fs->_inode_key_size];
     int v_size[fs->_inode_key_size], i, err, lflags;
@@ -714,7 +732,7 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 
     //** The whole remote fetch and merging with open files is locked to
     //** keep quickly successive stat calls to not get stale information
-    _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 1);
+    *ftype = _fs_parse_stat_vals(fs, (char *)fname, stat, val, v_size, symlink, stat_symlink, 1);
 
     if (hit == 1) {  //** Unlock if needed
         apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
@@ -728,12 +746,23 @@ int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struc
 }
 
 //*************************************************************************
+// lio_fs_stat - Does a stat on the file/dir.
+//*************************************************************************
+
+int lio_fs_stat(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, struct stat *stat, char **symlink, int stat_symlink, int no_cache_stat_if_file)
+{
+    int ftype;
+    return(lio_fs_stat_full(fs, ug, fname, stat, &ftype, symlink, stat_symlink, no_cache_stat_if_file));
+}
+
+//*************************************************************************
 // lio_fs_fstat - Does a stat on the open file.
 //*************************************************************************
 
 int lio_fs_fstat(lio_fs_t *fs, lio_fd_t *fd, struct stat *sbuf)
 {
-    return(lio_fs_stat(fs, NULL, fd->path, sbuf, NULL, 1, 0));
+    int ftype;
+    return(lio_fs_stat_full(fs, NULL, fd->path, sbuf, &ftype, NULL, 1, 0));
 }
 
 //*************************************************************************
@@ -808,6 +837,7 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         if (ftype <= 0) break; //** No more files
 
         de.dentry = strdup(fname+prefix_len+1);
+        de.ftype = ftype;
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
         free(fname);
 
@@ -911,7 +941,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 
     //** Add "."
     dit->dot_path = strdup(fname);
-    if (lio_fs_stat(fs, ug, fname, &(dit->dot_de.stat), NULL, 1, 0) != 0) {
+    if (lio_fs_stat_full(fs, ug, fname, &(dit->dot_de.stat), &(dit->dot_de.ftype), NULL, 1, 0) != 0) {
         tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
         tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].finished);
         lio_fs_closedir(dit);
@@ -930,7 +960,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 
     log_printf(2, "dot=%s dotdot=%s\n", dit->dot_path, dit->dotdot_path);
 
-    if (lio_fs_stat(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), NULL, 1, 0) != 0) {
+    if (lio_fs_stat_full(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), &(dit->dotdot_de.ftype), NULL, 1, 0) != 0) {
         lio_fs_closedir(dit);
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
@@ -953,7 +983,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 // lio_fs_readdir - Returns the next file in the directory
 //*************************************************************************
 
-int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink)
+int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, char **symlink, int *ftype)
 {
     fs_dentry_stat_t de;
 
@@ -967,9 +997,11 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     if (dit->state == 0) {
         *dentry = strdup(".");
         *stat = dit->dot_de.stat;
+        if (ftype) *ftype = dit->dot_de.ftype;
     } else if (dit->state == 1) {
         *dentry = strdup("..");
         *stat = dit->dotdot_de.stat;
+        if (ftype) *ftype = dit->dotdot_de.ftype;
     }
 
     tbx_monitor_obj_message(&(dit->mo), "FS_READDIR");
@@ -981,6 +1013,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     //** If we made it here then grab the next file and look it up.
     if (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {
         *stat = de.stat;
+        if (ftype) *ftype = de.ftype;
         if (symlink) {
             *symlink = de.symlink;
         } else if (de.symlink) {
@@ -1217,6 +1250,35 @@ int lio_fs_mkpath(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mod
     return(lio_fs_object_create(fs, ug, fname, mode, mkpath));
 }
 
+//*************************************************************************
+//  _fs_pending_delete_relocate_object - Relocates the .fuse_hidden object
+//*************************************************************************
+
+int _fs_pending_delete_relocate_object(lio_fs_t *fs, const char *fname)
+{
+    char mapping[OS_PATH_MAX];
+    uint32_t n;
+    int err = 0;
+
+log_printf(0, "START: PENMDING-REMOVE: fname=%s pending_prefix=%s\n", fname, fs->pending_delete_prefix); tbx_log_flush();
+
+    if (fs->pending_delete_prefix == NULL) return(0);  //** Not enabled so kick out
+    if (strncmp(fs->pending_delete_prefix, fname, fs->pending_delete_prefix_len) == 0) return(0); //** Already tagged for removal
+
+    //** Make the mapping name
+    tbx_random_get_bytes(&n, sizeof(n));
+    snprintf(mapping, OS_PATH_MAX-1, "%s/" TT ".%u.%s", fs->pending_delete_prefix, time(NULL), n, fs->id);
+    mapping[OS_PATH_MAX-1] = '\0';
+
+log_printf(0, "START: PENMDING-REMOVE: err=%d fname=%s mapping=%s\n", err, fname, mapping); tbx_log_flush();
+
+    //** Do the move
+    err = lio_fs_rename(fs , NULL, fname, mapping);
+log_printf(0, "PENMDING-REMOVE: err=%d fname=%s mapping=%s\n", err, fname, mapping);
+
+    return(err);
+}
+
 //*****************************************************************
 // fs_actual_remove - Does the actual removal
 //*****************************************************************
@@ -1246,6 +1308,7 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     FS_MON_OBJ_CREATE("FS_OBJECT_REMOVE: fname=%s ftype=%d", fname,ftype);
 
+
     slot = (ftype & OS_OBJECT_FILE_FLAG) ? FS_SLOT_REMOVE : FS_SLOT_RMDIR;
 
     //** Make sure we can access it
@@ -1260,14 +1323,17 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     tbx_atomic_inc(fs->stats.op[slot].submitted);
     fs_lock(fs);
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
+log_printf(0, "BEFORE: fname=%s ftype=%d fop=%p\n", fname, ftype, fop); tbx_log_flush();
     if (fop != NULL) {
         tbx_atomic_inc(fs->stats.op[slot].errors);
         tbx_atomic_inc(fs->stats.op[slot].finished);
         fop->remove_on_close = 1;
         fs_unlock(fs);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("In use. Remove on close");
+        err = _fs_pending_delete_relocate_object(fs, fname);
         return(0);
     }
+log_printf(0, "AFTER: fname=%s fop=%p\n", fname, fop); tbx_log_flush();
     fs_unlock(fs);
 
     err = fs_actual_remove(fs, ug, fname, ftype);
@@ -3007,7 +3073,6 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     } else {
         buf[0] = 0;
     }
-    buf[bsize] = 0;
 
     i=bsize;
     log_printf(15, "fname=%s bsize=%d link=%s\n", fname, i, buf);
@@ -3202,13 +3267,14 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     lio_fs_t *fs;
     char *atype;
     osaz_create_t *osaz_create;
-    int i, n;
+    int i, n, err;
 
     tbx_type_malloc_clear(fs, lio_fs_t, 1);
 
     fs->lc = (lc) ? lc : lio_gc;
     fs->fs_section = (fs_section) ? strdup(fs_section) : strdup("fs");
 
+    fs->pending_delete_prefix = tbx_inip_get_string(fd, fs->fs_section, "pending_delete_prefix", "/.lfs");
     fs->enable_tape = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_tape", 0);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
@@ -3282,6 +3348,21 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
 
     tbx_siginfo_handler_add(SIGUSR1, lio_fs_info_fn, fs);
 
+    //** Make sure we have a location to store open files to be deleted
+    fs->pending_delete_prefix = tbx_inip_get_string(fd, fs->fs_section, "pending_delete_prefix", "/.lfs");
+    if (fs->pending_delete_prefix) {
+        fs->pending_delete_prefix_len = strlen(fs->pending_delete_prefix);
+        if (lio_exists(fs->lc, fs->lc->creds, fs->pending_delete_prefix) == 0) {
+            err = lio_fs_mkdir(fs, NULL, fs->pending_delete_prefix, 0);
+            if (err != 0) {
+                fprintf(stderr, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, fs->pending_delete_prefix);
+                log_printf(0, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, fs->pending_delete_prefix);
+                notify_printf(fs->lc->notify, 1, fs->lc->creds, "ERROR: err=%d Unable to make pending_delete directory: %s\n", err, fs->pending_delete_prefix);
+                exit(1);
+            }
+        }
+    }
+
     log_printf(15, "END\n");
     return(fs);
 }
@@ -3316,6 +3397,7 @@ void lio_fs_destroy(lio_fs_t *fs)
     osaz_destroy(fs->osaz);
 
     //** Clean up everything else
+    if (fs->pending_delete_prefix) free(fs->pending_delete_prefix);
     if (fs->authz_section) free(fs->authz_section);
     if (fs->fs_section) free(fs->fs_section);
     if (fs->rw_lock_attr_string) {
