@@ -864,7 +864,8 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
         }
     } else {
         inode[0] = '\0';
-        strncpy(istr, fullkey + inode_offset + 1, sizeof(istr));
+        strncpy(istr, fullkey + inode_offset + 1, sizeof(istr)-1);
+        istr[sizeof(istr)-1] = '\0';
         ilen = ilen - 15 - 1;
         if (ilen <= 0) {  //** Missing the inode
             *atype = OS_OBJECT_VIRTUAL_FLAG;
