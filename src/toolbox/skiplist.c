@@ -621,7 +621,7 @@ int tbx_sl_remove(tbx_sl_t *sl, tbx_sl_key_t *key, tbx_sl_data_t *data)
         destroy_skiplist_node(sl, sn2);
     }
 
-    found = (found == 1) ? 0 : 1;
+    found = (found == 1) ? 0 : 2;
     return(found);
 }
 
