@@ -24,9 +24,11 @@ limitations under the License.
 #ifdef HAS_FUSE3
     #define FUSE_USE_VERSION (3*100 + 16)
     #include <fuse3/fuse.h>
+    #include <fuse3/fuse_lowlevel.h>
 #else
     #define FUSE_USE_VERSION 26
     #include <fuse.h>
+    #include <fuse_lowlevel.h>
 #endif
 
 #include <lio/visibility.h>
@@ -42,16 +44,19 @@ typedef struct lio_fuse_t lio_fuse_t;
 
 // Functions
 
-// Global constants
-LIO_API extern struct fuse_operations lfs_fops;
-
 // Exported types. To be obscured
 struct lio_fuse_init_args_t {
     lio_config_t *lc;
+    lio_fuse_t *lfs;
     char *mount_point;
+    int use_lowlevel_api;
     int lio_argc;
     char **lio_argv;
 };
+
+// Global constants
+LIO_API extern struct fuse_operations lfs_fops;
+LIO_API extern struct fuse_lowlevel_ops lfs_ll_ops;
 
 #ifdef __cplusplus
 }

@@ -718,7 +718,7 @@ LFS_READDIR()
     for (;;) {
         //** If we made it here then grab the next file and look it up.
         tbx_type_malloc(de, lfs_dir_entry_t, 1);
-        err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->stat), NULL);
+        err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->stat), NULL, NULL);
         if (err != 0) {   //** Nothing left to process
             free(de);
             return((err == 1) ? 0 : -EIO);
@@ -1451,91 +1451,88 @@ int lfs_statvfs(const char *fname, struct statvfs *sfs)
 // lio_fuse_cap_fn - Dumps the fuse CAP info
 //*************************************************************************
 
-#define IS_CAP(cap, var) (((cap) & (var)) ? 1 : 0)
-#define CAP_MANGLE(cap, conn) IS_CAP(cap, conn->capable), IS_CAP(cap, conn->want)
-#define CAP_PRINTF(fd, cap, conn) fprintf(fd, "#" #cap " : %d - %d\n", CAP_MANGLE(cap, conn)) \
-
 void lio_fuse_cap_info(void *arg, FILE *fd)
 {
     lio_fuse_t *lfs = arg;
 
-    fprintf(fd, "#FUSE version: %d.%d\n", lfs->conn->proto_major, lfs->conn->proto_minor);
+    fprintf(fd, "#FUSE version: %d.%d\n", FUSE_MAJOR_VERSION, FUSE_MINOR_VERSION);
+    fprintf(fd, "#FUSE protocol version: %d.%d\n", lfs->conn->proto_major, lfs->conn->proto_minor);
 #ifdef HAS_FUSE3
     fprintf(fd, "#FUSE max_read = %d # 0 == no limit.  Must be specified on the command line, -o max_read=<nn> and on the connection\n\n", lfs->conn->max_read);
 #endif
 
     fprintf(fd, "#---- FUSE Caps -- capable - want -------\n");
 #ifdef FUSE_CAP_ASYNC_READ
-    CAP_PRINTF(fd, FUSE_CAP_ASYNC_READ, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_ASYNC_READ);
 #endif
 #ifdef FUSE_CAP_POSIX_LOCKS
-    CAP_PRINTF(fd, FUSE_CAP_POSIX_LOCKS, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_POSIX_LOCKS);
 #endif
 #ifdef FUSE_CAP_ATOMIC_O_TRUNC
-    CAP_PRINTF(fd, FUSE_CAP_ATOMIC_O_TRUNC, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_ATOMIC_O_TRUNC);
 #endif
 #ifdef FUSE_CAP_EXPORT_SUPPORT
-    CAP_PRINTF(fd, FUSE_CAP_EXPORT_SUPPORT, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_EXPORT_SUPPORT);
 #endif
 #ifdef FUSE_CAP_DONT_MASK
-    CAP_PRINTF(fd, FUSE_CAP_DONT_MASK, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_DONT_MASK);
 #endif
 #ifdef FUSE_CAP_SPLICE_WRITE
-    CAP_PRINTF(fd, FUSE_CAP_SPLICE_WRITE, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_SPLICE_WRITE);
 #endif
 #ifdef FUSE_CAP_SPLICE_MOVE
-    CAP_PRINTF(fd, FUSE_CAP_SPLICE_MOVE, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_SPLICE_MOVE);
 #endif
 #ifdef FUSE_CAP_SPLICE_READ
-    CAP_PRINTF(fd, FUSE_CAP_SPLICE_READ, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_SPLICE_READ);
 #endif
 #ifdef FUSE_CAP_FLOCK_LOCKS
-    CAP_PRINTF(fd, FUSE_CAP_FLOCK_LOCKS, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_FLOCK_LOCKS);
 #endif
 #ifdef FUSE_CAP_IOCTL_DIR
-    CAP_PRINTF(fd, FUSE_CAP_IOCTL_DIR, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_IOCTL_DIR);
 #endif
 #ifdef FUSE_CAP_AUTO_INVAL_DATA
-    CAP_PRINTF(fd, FUSE_CAP_AUTO_INVAL_DATA, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_AUTO_INVAL_DATA);
 #endif
 #ifdef FUSE_CAP_READDIRPLUS
-    CAP_PRINTF(fd, FUSE_CAP_READDIRPLUS, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_READDIRPLUS);
 #endif
 #ifdef FUSE_CAP_READDIRPLUS_AUTO
-    CAP_PRINTF(fd, FUSE_CAP_READDIRPLUS_AUTO, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_READDIRPLUS_AUTO);
 #endif
 #ifdef FUSE_CAP_ASYNC_DIO
-    CAP_PRINTF(fd, FUSE_CAP_ASYNC_DIO, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_ASYNC_DIO);
 #endif
 #ifdef FUSE_CAP_WRITEBACK_CACHE
-    CAP_PRINTF(fd, FUSE_CAP_WRITEBACK_CACHE, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_WRITEBACK_CACHE);
 #endif
 #ifdef FUSE_CAP_NO_OPEN_SUPPORT
-    CAP_PRINTF(fd, FUSE_CAP_NO_OPEN_SUPPORT, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_NO_OPEN_SUPPORT);
 #endif
 #ifdef FUSE_CAP_PARALLEL_DIROPS
-    CAP_PRINTF(fd, FUSE_CAP_PARALLEL_DIROPS, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_PARALLEL_DIROPS);
 #endif
 #ifdef FUSE_CAP_POSIX_ACL
-    CAP_PRINTF(fd, FUSE_CAP_POSIX_ACL, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_POSIX_ACL);
 #endif
 #ifdef FUSE_CAP_HANDLE_KILLPRIV
-    CAP_PRINTF(fd, FUSE_CAP_HANDLE_KILLPRIV, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_HANDLE_KILLPRIV);
 #endif
 #ifdef FUSE_CAP_CACHE_SYMLINKS
-    CAP_PRINTF(fd, FUSE_CAP_CACHE_SYMLINKS, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_CACHE_SYMLINKS);
 #endif
 #ifdef FUSE_CAP_NO_OPENDIR_SUPPORT
-    CAP_PRINTF(fd, FUSE_CAP_NO_OPENDIR_SUPPORT, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_NO_OPENDIR_SUPPORT);
 #endif
 #ifdef FUSE_CAP_EXPLICIT_INVAL_DATA
-    CAP_PRINTF(fd, FUSE_CAP_EXPLICIT_INVAL_DATA, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_EXPLICIT_INVAL_DATA);
 #endif
 #ifdef FUSE_CAP_EXPIRE_ONLY
-    CAP_PRINTF(fd, FUSE_CAP_EXPIRE_ONLY, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_CAP_EXPIRE_ONLY);
 #endif
 #ifdef FUSE_IOCTL_COMPAT
-    CAP_PRINTF(fd, FUSE_IOCTL_COMPAT, lfs->conn);
+    CAP_PRINTF(fd, lfs->conn, FUSE_IOCTL_COMPAT);
 #endif
     fprintf(fd, "\n");
 
@@ -1575,12 +1572,14 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "max_background = %d\n", lfs->conn->max_background);
     fprintf(fd, "congestion_threshold = %d\n", lfs->conn->congestion_threshold);
 #ifdef FUSE_CAP_WRITEBACK_CACHE
-    fprintf(fd, "enable_writeback_cache = %d\n", IS_CAP(FUSE_CAP_WRITEBACK_CACHE, lfs->conn->want));
+    fprintf(fd, "enable_writeback_cache = %d\n", CAP_GET_WANT(lfs->conn, FUSE_CAP_WRITEBACK_CACHE));
 #endif
     fprintf(fd, "enable_pending_delete_relocate = %d\n", lfs->enable_pending_delete_relocate);
     fprintf(fd, "pending_delete_prefix = %s\n", lfs->pending_delete_prefix);
     n = tbx_atomic_get(lfs->n_pending_delete);
     fprintf(fd, "n_pending_delete = %d\n", n);
+    fprintf(fd, "use_lowlevel_api = %d\n", lfs->use_lowlevel_api);
+    if (lfs->use_lowlevel_api) lfs_ll_print_fuse_info(arg, fd);
     fprintf(fd, "\n");
 
     lio_fuse_cap_info(arg, fd);
@@ -1596,36 +1595,12 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
 //
 //*************************************************************************
 
-void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn,
-                    int argc,
-                    char **argv,
-                    const char *mount_point)
+void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn, lio_fuse_init_args_t *init_args)
 {
     lio_fuse_t *lfs;
     char *section =  "lfs";
     ex_off_t n;
     int err;
-    lio_fuse_init_args_t *init_args;
-    lio_fuse_init_args_t real_args;
-
-    // Retrieve the fuse_context, the last argument of fuse_main(...) is passed in the private_data field for use as a generic user arg. We pass the mount point in it.
-    struct fuse_context *ctx;
-    if ((argc == 0) && (argv == NULL) && (mount_point == NULL)) {
-        ctx = fuse_get_context();
-        if (NULL == ctx || NULL == ctx->private_data) {
-            log_printf(0, "ERROR_CTX:  unable to access fuse context or context is invalid. (Hint: last arg of fuse_main(...) must be lio_fuse_init_args_t* and have the mount point set)");
-            return(NULL); //TODO: what is the best way to signal failure in the init function? Note that the return value of this function overwrites the .private_data field of the fuse context
-        } else {
-            init_args = (lio_fuse_init_args_t*)ctx->private_data;
-        }
-    } else {
-        // We weren't called by fuse, so the args are function arguments
-        // AMM - 9/23/13
-        init_args = &real_args;
-        init_args->lio_argc = argc;
-        init_args->lio_argv = argv;
-        init_args->mount_point = (char *)mount_point;
-    }
 
     lio_init(&init_args->lio_argc, &init_args->lio_argv); //This sets the global lio_gc, it also uses a reference count to safely handle extra calls to init
     init_args->lc = lio_gc;
@@ -1655,7 +1630,6 @@ void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn,
 
     //** Most of the heavy lifting is done in the filesystem object
     lfs->fs = lio_fs_create(lfs->lc->ifd, section, lfs->lc, getuid(), getgid());
-log_printf(0, "lfs->fs=%p\n", lfs->fs);
     lfs->fs_checks_acls = tbx_inip_get_integer(lfs->lc->ifd, section, "fs_checks_acls", 1);
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
     lfs->no_cache_stat_if_file = tbx_inip_get_integer(lfs->lc->ifd, section, "no_cache_stat_if_file", 1);
@@ -1664,8 +1638,8 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 0);
     if (n == 1) {
-        if (conn->capable & FUSE_CAP_WRITEBACK_CACHE) {
-            conn->want |= FUSE_CAP_WRITEBACK_CACHE; //** Enable writeback cache
+        if (CAP_GET_CAPABLE(conn,FUSE_CAP_WRITEBACK_CACHE)) {
+            CAP_SET_WANT(conn, FUSE_CAP_WRITEBACK_CACHE); //** Enable writeback cache
         } else {
             log_printf(0, "WARNING: FUSE_CAP_WRITEBACK_CACHE not supported by the kernel but requested!\n");
             fprintf(stderr, "WARNING: FUSE_CAP_WRITEBACK_CACHE not supported by the kernel but requested!\n");
@@ -1674,8 +1648,8 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 #endif
 #ifdef FUSE_CAP_POSIX_ACL
     if (lfs->enable_osaz_acl_mappings) {
-        if (conn->capable & FUSE_CAP_POSIX_ACL) {
-            conn->want |= FUSE_CAP_POSIX_ACL;  //** enable POSIX ACLs
+        if (CAP_GET_CAPABLE(conn, FUSE_CAP_POSIX_ACL)) {
+            CAP_SET_WANT(conn, FUSE_CAP_POSIX_ACL);  //** enable POSIX ACLs
         } else {
             log_printf(0, "WARNING: FUSE_CAP_POSIX_ACL not supported by the kernel but requested!\n");
             fprintf(stderr, "WARNING: FUSE_CAP_POSIX_ACL not supported by the kernel but requested!\n");
@@ -1738,10 +1712,17 @@ log_printf(0, "lfs->fs=%p\n", lfs->fs);
 LFS_INIT()
 {
     struct fuse_config *fuse_cfg = NULL;
+    lio_fuse_init_args_t *init_args;
+    struct fuse_context *ctx;
+
 #ifdef HAS_FUSE3
     fuse_cfg = cfg;   //** Pass in the FUSE config if available
 #endif
-    return lfs_init_real(fuse_cfg, conn,0,NULL,NULL);
+
+    ctx = fuse_get_context();
+    init_args = (lio_fuse_init_args_t*)ctx->private_data;
+
+    return lfs_init_real(fuse_cfg, conn,init_args);
 }
 
 //*************************************************************************
