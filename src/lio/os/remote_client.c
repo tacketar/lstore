@@ -2110,6 +2110,7 @@ gop_op_status_t osrc_response_object_iter(void *task_arg, int tid)
     }
     if (status.op_status == OP_STATE_FAILURE) {
         gop_mq_stream_destroy(it->mqs);
+        it->mqs = NULL;
     } else {
         //** Remove the response from the task to keep it from being freed.
         //** We'll do it manually
@@ -2182,7 +2183,7 @@ os_object_iter_t *osrc_create_object_iter(lio_object_service_fn_t *os, lio_creds
 
 
         if (again == 1) {
-            bufsize = bpos + 10;
+            bufsize = 2*bpos + 10;
             free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
@@ -2202,12 +2203,12 @@ os_object_iter_t *osrc_create_object_iter(lio_object_service_fn_t *os, lio_creds
     //** Make the gop and execute it
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_object_iter, it, NULL, osrc->timeout);
     err = gop_waitall(gop);
+    gop_free(gop, OP_DESTROY);
     if (err != OP_STATE_SUCCESS) {
         log_printf(5, "ERROR status=%d\n", err);
         free(it);
         return(NULL);
     }
-    gop_free(gop, OP_DESTROY);
 
     //** Go ahead and make the regex attr iter if needed
     if (it_attr != NULL) {
@@ -2224,6 +2225,27 @@ os_object_iter_t *osrc_create_object_iter(lio_object_service_fn_t *os, lio_creds
     log_printf(5, "END\n");
 
     return(it);
+}
+
+//***********************************************************************
+// osrc_destroy_object_iter - Destroy the object iterator
+//***********************************************************************
+
+void osrc_destroy_object_iter(os_object_iter_t *oit)
+{
+    osrc_object_iter_t *it = (osrc_object_iter_t *)oit;
+
+    if (it == NULL) {
+        log_printf(0, "ERROR: it=NULL\n");
+        return;
+    }
+
+    if (it->mqs != NULL) gop_mq_stream_destroy(it->mqs);
+    if (it->response != NULL) gop_mq_msg_destroy(it->response);
+    if (it->v_size_initial != NULL) free(it->v_size_initial);
+    if (it->ait != NULL) free(*(it->ait));
+
+    free(it);
 }
 
 //***********************************************************************
@@ -2292,7 +2314,7 @@ os_object_iter_t *osrc_create_object_iter_alist(lio_object_service_fn_t *os, lio
 
 
         if (again == 1) {
-            bufsize = bpos + 10;
+            bufsize = 2*bpos + 10;
             free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
@@ -2315,37 +2337,16 @@ os_object_iter_t *osrc_create_object_iter_alist(lio_object_service_fn_t *os, lio
     //** Make the gop and execute it
     gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_object_iter, it, NULL, osrc->timeout);
     err = gop_waitall(gop);
+    gop_free(gop, OP_DESTROY);
     if (err != OP_STATE_SUCCESS) {
         log_printf(5, "ERROR status=%d\n", err);
-        free(it);
+        osrc_destroy_object_iter(it);
         return(NULL);
     }
-    gop_free(gop, OP_DESTROY);
 
     log_printf(5, "END\n");
 
     return(it);
-}
-
-//***********************************************************************
-// osrc_destroy_object_iter - Destroy the object iterator
-//***********************************************************************
-
-void osrc_destroy_object_iter(os_object_iter_t *oit)
-{
-    osrc_object_iter_t *it = (osrc_object_iter_t *)oit;
-
-    if (it == NULL) {
-        log_printf(0, "ERROR: it=NULL\n");
-        return;
-    }
-
-    if (it->mqs != NULL) gop_mq_stream_destroy(it->mqs);
-    if (it->response != NULL) gop_mq_msg_destroy(it->response);
-    if (it->v_size_initial != NULL) free(it->v_size_initial);
-    if (it->ait != NULL) free(*(it->ait));
-
-    free(it);
 }
 
 //***********************************************************************
