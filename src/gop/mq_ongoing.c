@@ -535,7 +535,7 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
 {
     ongoing_close_defer_t *defer = task_arg;
     gop_op_generic_t *gop;
-    int count, count_prev;
+    int count, count_prev, auto_clean;
     MQ_DEBUG(int has_oh = (defer->ohandle) ? 1 : 0;)
 
     MQ_DEBUG(
@@ -576,6 +576,10 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
             MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: KICKOUT oo->count=%d oo->remove=%d oh->remove_pending=MISSING tweak=%d autoclean=%d\n", defer->oo->count, defer->oo->remove, defer->tweak_remove_pending, defer->oo->auto_clean);
         }
     )
+
+    //** Get this BEFORE we run the on_fail task since after it completes the oo could be free'ed.
+    auto_clean = defer->oo->auto_clean;
+
     //** Now we can call the on_fail task
     gop = defer->oo->on_fail(defer->oo->on_fail_arg, defer->oo->handle);
     gop_sync_exec(gop);
@@ -587,7 +591,7 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
     }
 
     if (defer->ohandle) free(defer->ohandle);
-    if (defer->oo->auto_clean) free(defer->oo);
+    if (auto_clean) free(defer->oo);  //** Free the oo if the caller didn't do it.
     free(defer);
 
     MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: END\n");
