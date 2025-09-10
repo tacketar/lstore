@@ -286,6 +286,7 @@ struct lio_config_t {
     int tpc_max_recursion;
     int init_complete;
     int update_parent;
+    int tracks_inodes;  // ** Set to 1 if the LSErver tracks inodes.  Checks if "os.inode" returns a value
     int ref_cnt;
 };
 

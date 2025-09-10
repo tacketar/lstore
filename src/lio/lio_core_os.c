@@ -323,10 +323,11 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     lio_exnode_exchange_t *exp;
     lio_exnode_t *ex, *cex;
     ex_id_t ino;
-    char inode[32];
+    char inode[64], parent[64];
     char *val[_n_lio_create_keys + op->n_extra];
     char *attrs[_n_lio_create_keys + op->n_extra];
     char **create_keys;
+    char *iptr;
     gop_op_status_t status, status2;
     int v_size[_n_lio_create_keys + op->n_extra];
     int ll, i, n;
@@ -359,6 +360,16 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - opening parent=%s error_code=%d\n", dir, status.error_code);
             free(dir);
             goto fail;
+        }
+
+        //** Also get the parent inode so we don't have to fetch it separately for the create
+        v_size[0] = sizeof(parent);
+        parent[0] = '\0';
+        iptr = parent;
+        status = gop_sync_exec_status(os_get_attr(op->lc->os, op->creds, fd, "system.inode", (void **)&iptr, &(v_size[0])));
+        if (status.op_status != OP_STATE_SUCCESS) {
+            log_printf(ll, "ERROR: getting parent exnode parent=%s\n", dir);
+            notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn  - getting parent exnode parent=%s error_code=%d\n", dir, status.error_code);
         }
 
         v_size[0] = -op->lc->max_attr;
@@ -455,7 +466,11 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     v_size[3] = v_size[1];
     ino = 0;
     generate_ex_id(&ino);
-    snprintf(inode, 32, XIDT, ino);
+    if ((op->lc->tracks_inodes) && (parent[0] != '\0')) {
+        snprintf(inode, sizeof(inode), XIDT " %s", ino, parent);
+    } else {
+        snprintf(inode, sizeof(inode), XIDT, ino);
+    }
     if (op->inode) *op->inode = ino;
     val[4] = inode;
     v_size[4] = strlen(inode);

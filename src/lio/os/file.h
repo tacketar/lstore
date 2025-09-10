@@ -27,6 +27,8 @@
 #include <tbx/iniparse.h>
 
 #include "authn.h"
+#include "inode.h"
+#include "inode_lut.h"
 #include "os.h"
 #include "service_manager.h"
 
@@ -87,9 +89,15 @@ struct lio_osfile_priv_t {
     int rebalance_running;
     int rebalance_count;
     int rebalance_path_len;
+    int running_merge;
     double delta_fraction;
     tbx_atomic_int_t hardlink_count;
+    os_inode_ctx_t *inode_ctx;
+    char *inode_path;
+    os_inode_lut_t *ilut;
+    char *ilut_section;
     apr_thread_t *rebalance_thread;
+    apr_thread_t *inode_merge_thread;
     tbx_notify_t *rebalance_log;
     char *rebalance_path;
     char *rebalance_notify_section;
@@ -103,6 +111,8 @@ struct lio_osfile_priv_t {
     char *section;
     char *authz_section;
     char *os_activity;
+    char *changelog_name;
+    char *mergelog_name;
     tbx_notify_t *olog;
     tbx_notify_t *rlog;
     gop_thread_pool_context_t *tpc;
@@ -110,12 +120,14 @@ struct lio_osfile_priv_t {
     lio_os_authz_t *osaz;
     lio_authn_t *authn;
     apr_pool_t *mpool;
+    apr_pool_t *merge_mpool;
     apr_hash_t *vattr_hash;
     tbx_list_t *vattr_prefix;
     tbx_list_t *open_fd_obj;
     tbx_list_t *open_fd_rp;
     apr_thread_mutex_t *open_fd_lock;
     apr_thread_mutex_t *rebalance_lock;
+    apr_thread_mutex_t *merge_lock;
     fobject_lock_t *os_lock;
     fobject_lock_t *os_lock_user;
     lio_os_virtual_attr_t lock_va;
@@ -125,10 +137,12 @@ struct lio_osfile_priv_t {
     lio_os_virtual_attr_t link_count_va;
     lio_os_virtual_attr_t type_va;
     lio_os_virtual_attr_t create_va;
+    lio_os_virtual_attr_t inode_va;
     lio_os_virtual_attr_t attr_link_pva;
     lio_os_virtual_attr_t attr_type_pva;
     lio_os_virtual_attr_t timestamp_pva;
     lio_os_virtual_attr_t append_pva;
+    lio_os_virtual_attr_t inode_lookup_pva;
     int max_copy;
 };
 

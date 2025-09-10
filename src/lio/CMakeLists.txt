@@ -118,6 +118,10 @@ set(LSTORE_PROJECT_OBJS
 		ex3/id.c
 		ex3/service.c
 		fs_core.c
+		fuse_lowlevel.c
+		inode.c
+		inode_lut.c
+		inode_walk.c
 		lio_base_rw.c
 		lio_config.c
 		lio_core_io.c
@@ -203,6 +207,7 @@ set(LSTORE_PROJECT_EXECUTABLES
 		lio_gen_psk
 		lio_get
 		lio_getattr
+		lio_inode_mgmt
 		lio_inspect
 		lio_ln
 		lio_ls

@@ -220,6 +220,8 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     fprintf(fd, "monitor_fname = %s\n", lio->monitor_fname);
     fprintf(fd, "monitor_enable = %d  #touch %s-enable to start logging or touch %s-disable to stop logging and then trigger a state dump\n", lio->monitor_enable, lio->monitor_fname, lio->monitor_fname);
     fprintf(fd, "#lun_max_retry_size = ....  #See the LUN global retry stats below for the value\n");
+    fprintf(fd, "# tracks_inodes = %d # Internal flag reflecting if the LServer supports inode tracking\n", lio->tracks_inodes);
+
     lio_print_flag_service(lio->ess, ESS_RUNNING, fd);
     fprintf(fd, "\n");
 
@@ -664,7 +666,7 @@ int lio_path_wildcard_auto_append(lio_path_tuple_t *tuple)
 {
     int n;
 
-    if (tuple->path == NULL) return(0);
+    if ((tuple->path == NULL) || (tuple->lc->path_is_literal)) return(0);
 
     n = strlen(tuple->path);
     if (tuple->path[n-1] == '/') {
@@ -1268,6 +1270,28 @@ void lio_destroy(lio_config_t *lio)
 }
 
 //***************************************************************
+//  _check_for_inode_tracking - Checks if the LServer supports inode tracking
+//     and enbales it if so for the context
+//***************************************************************
+
+void _check_for_inode_tracking(lio_config_t *lio)
+{
+    int v_size;
+    char *blob;
+
+    v_size = -lio->max_attr;
+    blob = NULL;
+    lio_getattr(lio, lio->creds, "/", NULL, "os.inode", (void **)&blob, &v_size);
+
+    if (blob) {
+        lio->tracks_inodes = 1;
+        free(blob);
+    } else {
+        lio->tracks_inodes = 0;
+    }
+}
+
+//***************************************************************
 // lio_create_nl - Creates a lio configuration according to the config file
 //   NOTE:  No locking is used
 //***************************************************************
@@ -1685,6 +1709,9 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     tbx_siginfo_handler_add(SIGUSR1, lio_open_files_info_fn, lio);
     tbx_siginfo_handler_add(SIGUSR1, lio_dump_running_config_fn, lio);
     tbx_siginfo_handler_add(SIGUSR1, lio_monitor_fn, lio);
+
+    //** Last thing is to ceck if the LServer supports tracking inodes
+    _check_for_inode_tracking(lio);
 
     log_printf(1, "END: uri=%s\n", obj_name);
 

@@ -52,12 +52,13 @@
 #include <tbx/log.h>
 #include <tbx/io.h>
 #include <tbx/pigeon_coop.h>
+#include <tbx/que.h>
 #include <tbx/random.h>
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
-#include <tbx/que.h>
+#include <tbx/varint.h>
 #include <unistd.h>
 
 #include "authn.h"
@@ -93,7 +94,11 @@ static lio_osfile_priv_t osf_default_options = {
     .rebalance_notify_section = "rebalance_notify",
     .rebalance_config_fname = "/tmp/rebalance.cfg",
     .rebalance_section = "rebalance",
-    .delta_fraction = 0.05
+    .changelog_name = "/tmp/change.log",
+    .mergelog_name = "/tmp/merge.log",
+    .delta_fraction = 0.05,
+    .inode_path = NULL,
+    .ilut_section = NULL
 };
 
 typedef struct {
@@ -407,7 +412,7 @@ gop_op_status_t osf_get_multiple_attr_fn(void *arg, int id);
 char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_prefix);
 apr_thread_mutex_t *osf_retrieve_lock(lio_object_service_fn_t *os, const char *path, int *table_slot);
 int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void *val, int v_size, int *atype, int append_val);
-int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath, int flag_missing_as_error);
+int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, const char *realpath, int flag_missing_as_error);
 gop_op_generic_t *osfile_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *fd, char *key, void *val, int v_size);
 os_attr_iter_t *osfile_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, lio_os_regex_table_t *attr, int v_max);
 void osfile_destroy_attr_iter(os_attr_iter_t *oit);
@@ -421,10 +426,570 @@ int osfile_next_object(os_object_iter_t *oit, char **fname, int *prefix_len);
 void osfile_destroy_object_iter(os_object_iter_t *it);
 gop_op_status_t osf_set_multiple_attr_fn(void *arg, int id);
 int lowlevel_set_attr(lio_object_service_fn_t *os, char *attr_dir, char *attr, void *val, int v_size);
-char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int ftype);
+char *object_attr_dir(lio_object_service_fn_t *os, const char *prefix, const char *path, int ftype);
 int osf_purge_dir(lio_object_service_fn_t *os, const char *path, int depth);
 int safe_remove(lio_object_service_fn_t *os, const char *path);
 gop_op_status_t osfile_abort_lock_user_object_fn(void *arg, int id);
+int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, const char *rpath, int ftype, char *inode, int *inode_len);
+int osf_resolve_attr_path(lio_object_service_fn_t *os, char *attr_dir, char *real_path, char *path, char *key, int ftype, int *atype, int max_recurse);
+
+//*************************************************************
+// osf_inode_ctx_get - Fetches a record fro mthe inode CTX
+//*************************************************************
+
+int osf_inode_ctx_get(lio_object_service_fn_t *os, const char *inode, int inode_len, ex_id_t *parent_inode, int *ftype, int *len, char **dentry)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    ex_id_t ino;
+
+    if (inode_len <= 0) return(1);
+    ino = OS_INODE_MISSING;
+    if (sscanf(inode, XIDT, &ino) != 1) return(1);
+
+    if (osf->ilut) {
+        return(os_inode_get_with_lut(osf->inode_ctx, osf->ilut, ino, parent_inode, ftype, len, dentry));
+    } else if (osf->inode_ctx) {
+        return(os_inode_get(osf->inode_ctx, ino, parent_inode, ftype, len, dentry));
+    }
+
+    return(1);
+}
+
+//*************************************************************
+// osf_inode_ctx_hardlink_match - Just returns if the path matches what's stored in the DB
+//*************************************************************
+
+int osf_inode_ctx_hardlink_match(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, int ftype, const char *inode, int inode_len)
+{
+    ex_id_t parent, parent2;
+    char inode2[64];
+    int inode2_len, match, ftype2, len;
+    char *dir, *file, *dentry;
+
+    match = 0;
+
+    //** We need to get the parent inode and the RP's dentry to compare before deleting the entry
+    dir = file = NULL;
+    lio_os_path_split(path, &dir, &file);
+    inode2_len = sizeof(inode2);
+    osf_get_inode(os, creds, dir, OS_OBJECT_DIR_FLAG, inode2, &inode2_len);
+    if (inode2_len <= 0) {  //** Error getting the parent
+        goto failed;
+    }
+
+    //** Get the parent inode
+    parent = OS_INODE_MISSING;
+    if (sscanf(inode2, XIDT, &parent) != 1) { goto failed; }
+
+    //** If we made it here then we have a valid parent so fetch the entry from the Inode CTX
+    if (osf_inode_ctx_get(os, inode, inode_len, &parent2, &ftype2, &len, &dentry) != 0) {
+        goto failed;
+    }
+
+    //** Finally do the dentry and parent inode comparison
+    if ((parent == parent2) && (strcmp(file, dentry) == 0)) { //Got a match!
+        match = 1;
+    }
+    if (dentry) free(dentry);
+
+failed:
+    if (dir) free(dir);
+    if (file) free(file);
+
+    return(match);
+}
+
+//*************************************************************
+// osf_inode_ctx_remove - Calls the Inode DB remove routines
+//   NOTE: This routine is not foolproof and WILL only REMOVE
+//         the inode entry stored in the DB. So is the stored path
+//         is removed and there are still hardlinks they will be orphaned
+//         in the inode DB and must be added back via a changelog/merge
+//*************************************************************
+
+void osf_inode_ctx_remove(lio_object_service_fn_t *os, lio_creds_t *creds, const char *path, int ftype, const char *inode, int inode_len)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    ex_id_t ino;
+
+//log_printf(0, "QWERT: ilen=%d inode=%s\n", inode_len, inode);
+
+    if (inode_len <= 0) return;
+    ino = OS_INODE_MISSING;
+    if (sscanf(inode, XIDT, &ino) != 1) return;
+    if (ino == OS_INODE_MISSING) return;
+
+
+    if (ftype & OS_OBJECT_HARDLINK_FLAG) {  //** If a hard link we need to check if this is the one stored in the Inode DB
+        if (osf_inode_ctx_hardlink_match(os, creds, path, ftype, inode, inode_len) == 0) return;
+    }
+
+    if (osf->ilut) {
+        os_inode_del_with_lut(osf->inode_ctx, osf->ilut, ino, ftype);
+    } else if (osf->inode_ctx) {
+        os_inode_del(osf->inode_ctx, ino, ftype);
+    }
+
+    return;
+}
+
+//*************************************************************
+// osf_inode_ctx_move - Updates the parent and dentry in the Inode CTX.
+//    NOTE: This assumes the actual object has been successfully moved.
+//          So the inode is fetched from the dpath
+//*************************************************************
+
+void osf_inode_ctx_move(lio_object_service_fn_t *os, lio_creds_t *creds, const char *spath, const char *dpath, int ftype)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    ex_id_t parent, inode;
+    char pistr[64], istr[64];
+    int plen, ilen;
+    char *dir, *file;
+
+    //** We need to get the parent inode and dest dentry
+    dir = file = NULL;
+    lio_os_path_split(dpath, &dir, &file);
+    plen = sizeof(pistr);
+    osf_get_inode(os, creds, dir, OS_OBJECT_DIR_FLAG, pistr, &plen);
+//log_printf(0, "QWERT: spath=%s dpath=%s dir=%s pinode=%s plen=%d\n", spath, dpath, dir, pistr, plen);
+    if (plen <= 0) {  //** Error getting the parent
+        goto failed;
+    }
+
+    //** Get the parent inode
+    parent = OS_INODE_MISSING;
+    if (sscanf(pistr, XIDT, &parent) != 1) { goto failed; }
+//log_printf(0, "QWERT: spath=%s dpath=%s dir=%s parent=" XIDT "\n", spath, dpath, dir, parent);
+
+    //** Also get the objects inode
+    ilen = sizeof(istr);
+    osf_get_inode(os, creds, dpath, ftype, istr, &ilen);
+//log_printf(0, "QWERT: spath=%s dpath=%s finode=%s flen=%d\n", spath, dpath, istr, ilen);
+    if (ilen <= 0) {  //** Error getting the object
+        goto failed;
+    }
+
+    //** Get the object inode
+    inode = OS_INODE_MISSING;
+    if (sscanf(istr, XIDT, &inode) != 1) { goto failed; }
+
+    //** Now we have all the bits to do the update
+    if (osf->ilut) {
+        os_inode_put_with_lut(osf->inode_ctx, osf->ilut, inode, parent, ftype, strlen(file), file);
+    } else if (osf->inode_ctx) {
+        os_inode_put(osf->inode_ctx, inode, parent, ftype, strlen(file), file);
+    }
+
+failed:
+    if (dir) free(dir);
+    if (file) free(file);
+
+    return;
+}
+
+
+//***********************************************************************
+// va_inode_get_attr - Fetches the inode for the file
+//***********************************************************************
+
+int va_inode_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_fd_t *fd = (osfile_fd_t *)ofd;
+    FILE *afd;
+    char inode[64];
+    char fname[OS_PATH_MAX];
+    char *iptr = inode;
+    int n, ilen;
+
+    //** Store it
+    n = osf_resolve_attr_path(os, fd->attr_dir, fname, fd->object_name, "system.inode", fd->ftype, atype, 20);
+    if (n != 0) {
+        log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, fd->opath, "system.inode");
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", atype);
+        return(1);
+    }
+
+    *atype |= OS_OBJECT_VIRTUAL_FLAG;
+    afd = tbx_io_fopen(fname, "r");
+//log_printf(0, "QWERT: fname=%s afd=%p\n", fd->realpath, afd);
+    if (afd == NULL) { log_printf(0, "ERROR opening attr file attr=%s fname=%s\n", "system.inode", fname); };
+    if (afd != NULL) {
+        ilen = sizeof(inode)-1;
+        n = tbx_io_fread(inode, 1, ilen, afd);
+        inode[n] = '\0';  //** NULL Terminate it
+        tbx_io_fclose(afd);
+    } else {
+        iptr = OS_INODE_MISSING_TEXT;
+        n = OS_INODE_MISSING_TEXT_LEN;
+    }
+
+//log_printf(0, "QWERT: fname=%s iptr=%s\n", fd->realpath, iptr);
+
+    *atype |= OS_OBJECT_VIRTUAL_FLAG;
+    return(osf_store_val(iptr, n, val, v_size));
+}
+
+//***********************************************************************
+// va_inode_set_attr - Set the inode for the object.  Enforces that the inode
+//      is unique.  this means it WILL CHANGE the value stored if needed!
+//***********************************************************************
+
+int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void *val, int v_size, int *atype)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    osfile_fd_t *fd = (osfile_fd_t *)ofd;
+    FILE *afd;
+    ex_id_t ino, parent;
+    char inode[64], pinode[64];
+    int n, ftype, ilen, plen, len, at2, simple_change, got_parent;
+    char *dentry, *dir, *file, *iptr;
+    char fname[OS_PATH_MAX];
+
+    simple_change = 0;
+    if (fd->object_name == NULL) { *atype = OS_OBJECT_VIRTUAL_FLAG; return(1); }
+    if (v_size <= 0) return(1);  //** We don't support wiping it
+
+    //** Fetch the current inode value if available and remove it from the InodeDB and LUT
+    at2 = 0;
+    dentry = NULL;
+    ilen = sizeof(inode);
+    iptr = inode;
+    osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", (void **)&iptr, &ilen, &at2);
+//log_printf(0, "QWERT: fname=%s inode=%s ilen=%d\n", fd->realpath, inode, ilen);
+    if (ilen > 0) { //** Got something
+        //** Fetch the record so we don't have to look up the parent
+        if (osf_inode_ctx_get(os, inode, ilen, &parent, &ftype, &len, &dentry) == 0) {
+            simple_change = 1;
+        }
+        osf_inode_ctx_remove(os, creds, fd->object_name, 0, inode, ilen);
+        if (dentry) free(dentry);
+    }
+
+    //** Loop until we get a unique value
+    memcpy(inode, val, v_size);
+//log_printf(0, "QWERT: fname=%s initial inode val=%s v_size=%d\n", fd->realpath, (char *)val, v_size);
+    ilen = v_size;
+    ino = OS_INODE_MISSING;
+    got_parent = sscanf(inode, XIDT " " XIDT, &ino, &parent);
+    while ((ino == OS_INODE_MISSING) && (osf_inode_ctx_get(os, inode, ilen, &parent, &ftype, &len, &dentry) == 0)) {
+        generate_ex_id(&ino);
+        ilen = snprintf(inode, sizeof(inode), XIDT, ino);
+    }
+    if (got_parent == 2) {  //** if they supplied the parent we need to reformat the inode string
+        ilen = sprintf(inode, XIDT, ino);
+    }
+
+    //** Store it
+    n = osf_resolve_attr_path(os, fd->attr_dir, fname, fd->object_name, "system.inode", fd->ftype, atype, 20);
+    if (n != 0) {
+        log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, fd->opath, "system.inode");
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", atype);
+        return(1);
+    }
+
+    *atype |= OS_OBJECT_VIRTUAL_FLAG;
+    afd = tbx_io_fopen(fname, "w");
+    if (afd == NULL) { log_printf(0, "ERROR opening attr file attr=%s val=%p v_size=%d fname=%s\n", "system.inode", inode, ilen, fname); };
+    if (afd == NULL) return(-1);
+    tbx_io_fwrite(inode, ilen, 1, afd);
+    tbx_io_fclose(afd);
+
+    dir = file = NULL;
+    lio_os_path_split(fd->realpath, &dir, &file);
+//log_printf(0, "QWERT: fname=%s simple_change=%d got_parent=%d paren=" XIDT "\n", fd->realpath, simple_change, got_parent, parent);
+    if ( !(simple_change || (got_parent==2))) {
+        //** If we made it here then we have a new object and the parent was supplied so we have to fetch the parent inode
+        plen = sizeof(pinode);
+        osf_get_inode(os, creds, dir, OS_OBJECT_DIR_FLAG, pinode, &plen);
+//log_printf(0, "QWERT: rp=%s dir=%s pinode=%s plen=%d\n", fd->realpath, dir, pinode, plen);
+        if (plen <= 0) {  //** Error getting the parent
+            goto failed;
+        }
+
+        //** Get the parent inode
+        parent = OS_INODE_MISSING;
+        if (sscanf(pinode, XIDT, &parent) != 1) { goto failed; }
+//log_printf(0, "QWERT: rp=%s dir=%s parent=" XIDT "\n", fd->realpath, dir, parent);
+    }
+
+        //** Now we have all the bits to do the update
+    if (osf->ilut) {
+        os_inode_put_with_lut(osf->inode_ctx, osf->ilut, ino, parent, fd->ftype, strlen(file), file);
+    } else if (osf->inode_ctx) {
+        os_inode_put(osf->inode_ctx, ino, parent, fd->ftype, strlen(file), file);
+    }
+
+failed:
+    if (dir) free(dir);
+    if (file) free(file);
+
+    return(0);
+}
+
+//***********************************************************************
+// _inode_lookup_text - Converts the inode lookup information to a human readable string
+//    The return value is the number of characters stored
+//***********************************************************************
+
+int _inode_lookup_text(char *buf, int bufsize, int n, char **dentry, ex_id_t *inode, int *ftype)
+{
+    int i, used;
+
+    //** Store the attribute
+    used = 0;
+    tbx_append_printf(buf, &used, bufsize, "ENTRIES: %d\n", n);
+
+    //** 1st store the path
+    tbx_append_printf(buf, &used, bufsize, "PATH: ");
+    os_inode_lookup2path(buf + used, n, inode, dentry);
+    for (i=n-1; i>=0; i--) {
+        if (dentry[i]) free(dentry[i]);
+    }
+    used = strlen(buf);
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    //** Now the inode table
+    tbx_append_printf(buf, &used, bufsize, "INODE: ");
+    for (i=n-1; i>=0; i--) {
+        if (i >= n-1) {
+            tbx_append_printf(buf, &used, bufsize, XIDT, inode[i]);
+        } else {
+            tbx_append_printf(buf, &used, bufsize, "/" XIDT, inode[i]);
+        }
+    }
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    //** and the ftypes
+    tbx_append_printf(buf, &used, bufsize, "FTYPE(hex): ");
+    for (i=n-1; i>=0; i--) {
+       if (i >= n-1) {
+           tbx_append_printf(buf, &used, bufsize, "%X", ftype[i]);
+       } else {
+           tbx_append_printf(buf, &used, bufsize, "/%X", ftype[i]);
+       }
+    }
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    return(used);
+}
+
+//***********************************************************************
+// _inode_lookup_binary - Converts the inode lookup information to a portable binary string
+//    The return value is the number of characters stored
+//***********************************************************************
+
+int _inode_lookup_binary(char *buf, int bufsize, int n, char **dentry, ex_id_t *inode, int *ftype)
+{
+    int i, used, len;
+
+    //** Store the number of entries
+    used = tbx_zigzag_encode(n, (unsigned char *)buf);
+
+    //** Now store each entry in reverse order.  It makes it easier to decode
+    for (i=n-1; i>=0; i--) {
+        used += tbx_zigzag_encode(inode[i], (unsigned char *)buf + used);
+        used += tbx_zigzag_encode(ftype[i], (unsigned char *)buf + used);
+        if (dentry[i] != NULL) {
+//log_printf(0, "QWERT: n=%d i=%d inode=" XIDT " ftype=%d de=%s\n", n, i, inode[i], ftype[i], dentry[i]);
+            len = strlen(dentry[i]) + 1;   //** We go ahead and copy the NULL for simplicity
+            used += tbx_zigzag_encode(len, (unsigned char *)buf + used);
+            memcpy(buf + used, dentry[i], len);
+            free(dentry[i]);  //** We are responsible for cleaning up
+            dentry[i] = NULL;
+        } else {
+//log_printf(0, "QWERT: HELP! NULL de! n=%d i=%d inode=" XIDT " ftype=%d\n", n, i, inode[i], ftype[i]);
+            len = 1; //** Just store a NULL byte
+            used += tbx_zigzag_encode(len, (unsigned char *)buf + used);
+            buf[used] = '\0';
+        }
+        used += len;
+    }
+
+    return(used);
+}
+
+//***********************************************************************
+// va_inode_lookup_get_attr - Fetches the inode or does a lookup
+//***********************************************************************
+
+int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio_creds_t *creds, os_fd_t *ofd, char *fullkey, void **val, int *v_size, int *atype)
+{
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    char istr[64];
+    char *iptr = istr;
+    int n, ilen, at2, used, is_binary, inode_offset;
+    char buf[30*OS_PATH_MAX + 10];
+    char *dentry[OS_PATH_MAX];
+    ex_id_t inode[OS_PATH_MAX];
+    int ftype[OS_PATH_MAX];
+    ex_id_t ino;
+
+//log_printf(0, "QWERT: START fullkey=%s\n", fullkey);
+    if (strcmp(fullkey, va->attribute) == 0) { //** Got a simple inode fetch
+//log_printf(0, "QWERT: getting my inode\n");
+        return(osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", val, v_size, atype));
+    }
+
+
+    //** See if it's a lookup
+    ilen = strlen(fullkey);
+    if (strncmp(fullkey, "os.inode.lookup", 15) != 0) {  //** Unknown extension so throw an error
+//log_printf(0, "QWERT: OOPS unknown key=%s", fullkey);
+        *atype = OS_OBJECT_VIRTUAL_FLAG;
+        *v_size = 0;
+        return(0);
+    }
+
+//log_printf(0, "QWERT: Got a lookup ilen=%d\n", ilen);
+    //** See if we are doing a binary or text return object
+    if (strncmp(fullkey + 15, ".binary", 7) == 0) {  //** Binary encoding
+        inode_offset = 15 + 7;
+        is_binary = 1;
+    } else {
+        inode_offset = 15;
+        is_binary = 0;
+    }
+
+    //** If we made it here then we are either doing a lookup of the object or another inode
+    if (ilen == inode_offset) {  //** Lookup up ourself
+        ilen = sizeof(istr);
+        n = osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", (void **)&iptr, &ilen, &at2);
+//log_printf(0, "QWERT: Lookup up ourself so getting out inode=%s v_size=%d n=%d\n", iptr, ilen, n);
+        if (n != 0) {  //** Missing the inode
+            *atype = OS_OBJECT_VIRTUAL_FLAG;
+            *v_size = 0;
+            return(0);
+        }
+    } else {
+        inode[0] = '\0';
+        strncpy(istr, fullkey + inode_offset + 1, sizeof(istr));
+        ilen = ilen - 15 - 1;
+        if (ilen <= 0) {  //** Missing the inode
+            *atype = OS_OBJECT_VIRTUAL_FLAG;
+            *v_size = 0;
+            return(0);
+        }
+    }
+
+//ino = OS_INODE_MISSING;
+//int k = sscanf(istr, XIDT, &ino);
+//log_printf(0, "QWERT: istr=%s ino=" XIDT " sscanf=%d\n", istr, ino, k);
+
+    //** If we made it here then we have an inode string so convert it to an ex_id_t
+    ino = OS_INODE_MISSING;
+    if (sscanf(istr, XIDT, &ino) != 1) {
+        *atype = OS_OBJECT_VIRTUAL_FLAG;
+        *v_size = 0;
+        return(0);
+    }
+
+//log_printf(0, "QWERT: lookup inode=" XIDT "\n", ino);
+    //** Now look it up
+    if (osf->ilut) {
+        os_inode_lookup_path_with_lut(osf->inode_ctx, osf->ilut, ino, inode, ftype, dentry, &n);
+    } else if (osf->inode_ctx) {
+        os_inode_lookup_path(osf->inode_ctx, ino, inode, ftype, dentry, &n);
+    }
+
+    if (n == 0) {  //** No entry
+        *atype |= OS_OBJECT_VIRTUAL_FLAG;
+        *v_size = 0;
+        return(0);
+    }
+
+//log_printf(0, "QWERT: lookup inode=" XIDT " is_binary=%d n=%d\n", ino, is_binary, n);
+
+    //** Store the attribute
+    if (is_binary == 1) {
+        used = _inode_lookup_binary(buf, sizeof(buf), n, dentry, inode, ftype);
+    } else {
+        used = _inode_lookup_text(buf, sizeof(buf), n, dentry, inode, ftype);
+    }
+
+    //** And officially store it
+    *atype |= OS_OBJECT_VIRTUAL_FLAG;
+    return(osf_store_val(buf, used, val, v_size));
+}
+
+//*************************************************************
+// perform_inode_merge_thread - Performs an inode DB merge using the configured changelog
+//*************************************************************
+
+void *perform_inode_merge_thread(apr_thread_t *th, void *data)
+{
+    lio_object_service_fn_t *os = data;
+    lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
+    FILE *fdin, *fdout;
+    char entry[OS_PATH_MAX + 1024], date[128];
+    int n, count;
+    time_t now;
+    struct tm tm_now;
+
+    //** Open the output  merge log
+    fdout = fopen(osf->mergelog_name, "w");
+    if (fdout == NULL) {
+        notify_printf(osf->olog, 1, NULL, "ERROR: Unable to open mergelog output! fname=%s errno=%d\n", osf->mergelog_name, errno);
+        goto done;
+    }
+
+    //** Open the changelog
+    fdin = fopen(osf->changelog_name, "r");
+    if (fdout == NULL) {
+        fprintf(fdout, "ERROR: Unable to open input changelog! fname=%s errno=%d\n", osf->mergelog_name, errno);
+        fclose(fdin);
+        goto done;
+    }
+
+    //** Add starting timestamp
+    now = time(NULL);
+    localtime_r(&now, &tm_now);
+    asctime_r(&tm_now, date);  date[strlen(date)-1] = '\0';
+    fprintf(fdout, "[%s] START\n", date);
+
+    //** Loop over the entries
+    n = 0;
+    count = 0;
+    while (fgets(entry, sizeof(entry), fdin)) {
+        count++;
+        now = time(NULL);
+        localtime_r(&now, &tm_now);
+        asctime_r(&tm_now, date);  date[strlen(date)-1] = '\0';
+        fprintf(fdout, "[%s] CHECKING: %s", date, entry);  //** The entry has a \n already
+        os_inode_process_entry(osf->inode_ctx, osf->ilut, entry, fdout);
+        if ((n % 100) == 0) { //** Check for an about
+            apr_thread_mutex_lock(osf->merge_lock);
+            n = osf->running_merge;
+            apr_thread_mutex_unlock(osf->merge_lock);
+            if (n == -1) {
+                now = time(NULL);
+                localtime_r(&now, &tm_now);
+                asctime_r(&tm_now, date);  date[strlen(date)-1] = '\0';
+                fprintf(fdout, "[%s] ABORT requested\n", date);
+                break;
+            }
+            n = 0;
+        }
+    }
+
+    //** Add ending timestamp
+    now = time(NULL);
+    localtime_r(&now, &tm_now);
+    asctime_r(&tm_now, date);  date[strlen(date)-1] = '\0';
+    fprintf(fdout, "[%s] FINISHED. Processed %d records\n", date, count);
+
+    fclose(fdin);
+    fclose(fdout);
+
+    //** Flag we are done
+done:
+    apr_thread_mutex_lock(osf->merge_lock);
+    osf->running_merge = -2;
+    apr_thread_mutex_unlock(osf->merge_lock);
+
+    return(NULL);
+}
 
 //*************************************************************
 // osaz_attr_filter_apply - Applies any OSAZ filter required on the attr
@@ -653,6 +1218,7 @@ char *_osf_realpath(lio_object_service_fn_t *os, const char *path, char *rpath, 
     char *rp, *dir, *file;
     int n;
 
+//log_printf(0, "QWERT: path=%s include_basename=%d\n", path, include_basename);
 retry:
     dir = NULL; file = NULL;
 
@@ -667,19 +1233,34 @@ retry:
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, dir);
     if (dir != path) free(dir);
     rp = realpath(fname, real_path);
+//log_printf(0, "QWERT: path=%s include_basename=%d fname=%s realpath=%s\n", path, include_basename, fname, (rp ? rp : "NULL"));
     if (!rp) {  //** This could be a bad symlink. If so retry but drop the basename
         if (file) free(file);
         if (include_basename == -1) return(NULL);
         include_basename = -1;
         goto retry;
     }
+//QWERT FIXME
+if ((rp[0] == '/') && (rp[1] == '/')) {
+    log_printf(0, "QWERT:  OOPS-A include_basename=%d path=%s rpath=%s\n", include_basename, path, rp);
+}
+
     strncpy(rpath, rp+osf->file_path_len, OS_PATH_MAX);
-    if (file) {  //** Need to now add the file name afte resolving the parent
-        n = strlen(rpath);
-        snprintf(rpath + n, OS_PATH_MAX-n, "/%s", file);
+    if (file) {
+        if (strcmp("/", file) != 0) {  //** Need to now add the file name after resolving the parent
+            n = strlen(rpath);
+            snprintf(rpath + n, OS_PATH_MAX-n, "/%s", file);
+if ((rpath[0] == '/') && (rpath[1] == '/')) {
+    log_printf(0, "QWERT:  OOPS-B include_basename=%d path=%s rpath=%s file=%s\n", include_basename, path, rpath, file);
+}
+        }
         free(file);
     }
     log_printf(15, "fname=%s  realpath=%s rp=%s strlen(realpath)=" ST "\n", path, rpath, rp, strlen(rpath));
+if ((rpath[0] == '/') && (rpath[1] == '/')) {
+    log_printf(0, "QWERT:  OOPS-C include_basename=%d path=%s rpath=%s\n", include_basename, path, rpath);
+}
+
 
     if (rpath[0] == '\0') {
         if ((strlen(path) == 1) && (path[0] == '/')) {
@@ -687,6 +1268,9 @@ retry:
         }
     }
 
+if ((rpath[0] == '/') && (rpath[1] == '/')) {
+    log_printf(0, "QWERT:  OOPS include_basename=%d path=%s rpath=%s\n", include_basename, path, rpath);
+}
     return(rpath);
 }
 
@@ -2517,7 +3101,7 @@ int safe_remove(lio_object_service_fn_t *os, const char *path)
 // object_attr_dir - Returns the object attribute directory
 //***********************************************************************
 
-char *object_attr_dir(lio_object_service_fn_t *os, char *prefix, char *path, int ftype)
+char *object_attr_dir(lio_object_service_fn_t *os, const char *prefix, const char *path, int ftype)
 {
     char fname[OS_PATH_MAX];
     char *dir, *base;
@@ -3322,7 +3906,7 @@ void osfile_free_realpath(void *arg)
 // osf_object_exec_modify - Sets/clears the exec bit for the file
 //***********************************************************************
 
-int osf_object_exec_modify(lio_object_service_fn_t *os, char *path, int mode)
+int osf_object_exec_modify(lio_object_service_fn_t *os, char *path, int mode, int *ftype_new)
 {
     int ftype, err;
     struct stat stat_obj, stat_link;
@@ -3338,10 +3922,12 @@ int osf_object_exec_modify(lio_object_service_fn_t *os, char *path, int mode)
     err = 0;
     if (ftype & OS_OBJECT_EXEC_FLAG) {
         if (mode == 0) {
+            if (ftype_new) *ftype_new = ftype ^ OS_OBJECT_EXEC_FLAG;
             stat_obj.st_mode ^= S_IXUSR;
             err = chmod(path, stat_obj.st_mode);
         }
     } else if (mode == 1) {
+        if (ftype_new) *ftype_new = ftype | OS_OBJECT_EXEC_FLAG;
         stat_obj.st_mode |= S_IXUSR;
         err = chmod(path, stat_obj.st_mode);
     }
@@ -3361,6 +3947,9 @@ gop_op_status_t osfile_object_exec_modify_fn(void *arg, int id)
     char rp[OS_PATH_MAX];
     gop_op_status_t status;
     apr_thread_mutex_t *lock;
+    ex_id_t ino, parent;
+    int ftype, ft2, ilen, delen;
+    char istr[64], *de;
 
     if (osaz_object_access(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->src_path, rp, 1), OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
@@ -3368,8 +3957,40 @@ gop_op_status_t osfile_object_exec_modify_fn(void *arg, int id)
     lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
 
-    if (osf_object_exec_modify(op->os, fname, op->type) == 0) {
+fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s mode=%d\n", fname, op->type);
+
+    if (osf_object_exec_modify(op->os, fname, op->type, &ftype) == 0) {
         status = gop_success_status;
+fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d  ilut=%p\n", fname, ftype, osf->ilut);
+
+        //** Update the bit in the ilut if enabled
+        if (osf->inode_ctx) {
+            ilen = sizeof(istr);
+            istr[0] = '\0';
+            osf_get_inode(op->os, op->creds, rp, OS_OBJECT_FILE_FLAG, istr, &ilen);
+fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d istr=%s ilen=%d\n", fname, ftype, istr, ilen);
+
+            if (ilen > 0) {
+                ino = OS_INODE_MISSING;
+                if (sscanf(istr, XIDT, &ino) == 1) {
+                    de = NULL;
+fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
+                    if (osf->ilut) {
+                        if (os_inode_get_with_lut(osf->inode_ctx, osf->ilut, ino, &parent, &ft2, &delen, &de) == 0) {
+                            os_inode_put_with_lut(osf->inode_ctx, osf->ilut, ino, parent, ftype, delen, de);
+fprintf(stderr, "QWERT: AAAAA osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
+                        }
+                    } else if (osf->inode_ctx) {
+                        if (os_inode_get(osf->inode_ctx, ino, &parent, &ft2, &delen, &de) == 0) {
+                            os_inode_put(osf->inode_ctx, ino, parent, ftype, delen, de);
+fprintf(stderr, "QWERT: BBBBB osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
+                        }
+                    }
+
+                    if (de) free(de);
+                }
+            }
+        }
     } else {
         status = gop_failure_status;
     }
@@ -3501,7 +4122,7 @@ int osf_object_remove(lio_object_service_fn_t *os, char *path, int ftype)
 //   NOTE: No need to do any locking since aren't officially an open FD being tracked
 //***********************************************************************
 
-int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath, int ftype, char *inode, int *inode_len)
+int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, const char *rpath, int ftype, char *inode, int *inode_len)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     osfile_fd_t fd;
@@ -3509,11 +4130,11 @@ int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, char *rpath,
 
     memset(&fd, 0, sizeof(fd));
     strncpy(fd.realpath, rpath, sizeof(fd.realpath)); fd.realpath[sizeof(fd.realpath)-1] = '\0';
-    fd.object_name = rpath;
+    fd.object_name = (char *)rpath;
     osf_retrieve_lock(os, rpath, &(fd.ilock_rp));
     fd.ilock_obj = fd.ilock_rp;
     fd.attr_dir = object_attr_dir(os, osf->file_path, rpath, ftype);
-    fd.opath = rpath;
+    fd.opath = (char *)rpath;
     fd.ftype = ftype;
 
     n = osf_get_attr(os, creds, &fd, "system.inode", (void **)&inode, inode_len, &atype, NULL, rpath, 1);
@@ -3568,6 +4189,7 @@ gop_op_status_t osfile_remove_object_fn(void *arg, int id)
     char *etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', ((ftype & OS_OBJECT_SYMLINK_FLAG) ? op->src_path : rp));
     if (status.op_status == OP_STATE_SUCCESS) {
         notify_printf(osf->olog, 1, op->creds, "REMOVE(%d, %s, %s)\n", ftype, etext, inode);
+        if (osf->inode_ctx) osf_inode_ctx_remove(op->os, op->creds, rp, ftype, inode, inode_len);
     } else {
         notify_printf(osf->olog, 1, op->creds, "ERROR: REMOVE(%d, %s, %s)\n", ftype, etext, inode);
     }
@@ -3970,6 +4592,8 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
+//fprintf(stderr, "QWERT: fname=%s mode=%d\n", fname, op->type);
+
     log_printf(15, "base=%s src=%s fname=%s mode=%x\n", osf->file_path, op->src_path, fname, op->type);
 
     if (op->no_lock == 0) {
@@ -4003,7 +4627,7 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
         }
 
         if (op->type & OS_OBJECT_EXEC_FLAG) { //** See if we need to set the executable bit
-            osf_object_exec_modify(op->os, fname, op->type);
+            osf_object_exec_modify(op->os, fname, op->type, NULL);
         }
 
         //** Also need to make the attributes directory
@@ -4225,7 +4849,12 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     apr_thread_mutex_t *lock;
     int err, eno, did_lock;
 
+//_osf_realpath(op->os, op->dest_path, rpath, 0);
+//err = osaz_object_create(osf->osaz, op->creds, NULL, rpath);
+//log_printf(0, "QWERT: dest=%s src=%s rpath=%s osaz_object_create=%d\n", op->dest_path, op->src_path, rpath, err);
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
+
+log_printf(0, "QWERT: dest=%s src=%s drp=%s\n", op->dest_path, op->src_path, rpath);
 
     char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
     char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
@@ -4244,6 +4873,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     REBALANCE_LOCK(op->os, osf, rpath, did_lock);
 
     status = osfile_create_object_fn(&dop, id);
+//log_printf(0, "QWERT: dest=%s creatre_object_fn=%d\n", op->dest_path, status.op_status);
     if (status.op_status != OP_STATE_SUCCESS) {
         osf_obj_unlock(lock);
         REBALANCE_UNLOCK(osf, did_lock);
@@ -4270,6 +4900,8 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
         notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
     }
     err = symlink(sfname, dfname);
+//log_printf(0, "QWERT: dest=%s src=%s sfname=%s dfname=%s symlink=%d\n", op->dest_path, op->src_path, sfname, dfname, err);
+
     if (err != 0) {
         eno = errno;
         log_printf(15, "Failed making symlink %s -> %s  err=%d\n", sfname, dfname, eno);
@@ -4700,7 +5332,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
 fail:
     if (dolock == 1) {
         if (err == 0) {
-            //** This just updates teh table index which uses the RP
+            //** This just updates the table index which uses the RP
             _osf_update_fobj_path(os, osf->os_lock, srpath, drpath);
             _osf_update_fobj_path(os, osf->os_lock_user, srpath, drpath);
 
@@ -4723,6 +5355,7 @@ fail:
 
     if (!err) {
         status = gop_success_status;
+        if (osf->inode_ctx) osf_inode_ctx_move(os, creds, srpath, drpath, ftype);
     } else {
         status = gop_failure_status;
         status.error_code = rename_errno;
@@ -5059,7 +5692,7 @@ gop_op_generic_t *osfile_move_attr(lio_object_service_fn_t *os, lio_creds_t *cre
 //     NOTE: Assumes that the ofd ilock_obj and ilock_rp are held
 //***********************************************************************
 
-int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, char *realpath, int flag_missing_as_error)
+int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *ofd, char *attr, void **val, int *v_size, int *atype, lio_os_authz_local_t *ug, const char *realpath, int flag_missing_as_error)
 {
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     lio_os_virtual_attr_t *va;
@@ -5951,6 +6584,8 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
     char fname[OS_PATH_MAX];
     int i;
 
+    if (path == NULL) return(NULL);
+
     tbx_type_malloc_clear(it, osf_object_iter_t, 1);
 
     it->os = os;
@@ -6209,7 +6844,7 @@ gop_op_status_t osfile_open_object_fn(void *arg, int id)
 
     tbx_type_malloc_clear(fd, osfile_fd_t, 1);
 
-    osf_retrieve_lock(op->os, rpath, &(fd->ilock_rp));
+    osf_retrieve_lock(op->os, rp, &(fd->ilock_rp));
     osf_retrieve_lock(op->os, op->path, &(fd->ilock_obj));
 
     fd->os = op->os;
@@ -6855,7 +7490,7 @@ void osfile_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
     info_printf(lio_ifd, 0, "Directories -- Total: " XOT "  Bad: " XOT "\n", it->n_objects_processed_dir, it->n_objects_bad_dir);
     info_printf(lio_ifd, 0, "Files       -- Total: " XOT "  Bad: " XOT "\n", it->n_objects_processed_file, it->n_objects_bad_file);
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
-    
+
     if (it->ad != NULL) closedir(it->ad);
     if (it->ad_path != NULL) {
         log_printf(15, "free(ad_path=%s)\n", it->ad_path);
@@ -7860,7 +8495,13 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     int i;
     char pp[4096];
+    char fname[OS_PATH_MAX];
     apr_status_t value;
+
+    if (osf->ilut) {
+        fprintf(fd, "[%s]\n", osf->ilut_section);
+        os_inode_lut_print_running_config(osf->ilut, fd);
+    }
 
     if (print_section_heading) fprintf(fd, "[%s]\n", osf->section);
     fprintf(fd, "type = %s\n", OS_TYPE_FILE);
@@ -7934,7 +8575,56 @@ void osfile_print_running_config(lio_object_service_fn_t *os, FILE *fd, int prin
         fprintf(fd, "n_piter_attr_size = %d #** Max size in bytes for each que attr object\n", osf->n_piter_attr_size);
     }
 
+    //** Print the Inode info
+    if (osf->inode_ctx) {
+        //** Get the current merge state
+        apr_thread_mutex_lock(osf->merge_lock);
+        i = osf->running_merge;
+        apr_thread_mutex_unlock(osf->merge_lock);
+        if (i == -2) { //** Need to join an old thread
+            apr_thread_join(&value, osf->inode_merge_thread);
+            apr_thread_mutex_lock(osf->merge_lock);
+            osf->running_merge = 0;
+            apr_thread_mutex_unlock(osf->merge_lock);
+        }
+
+        //** See if we start/stop a merge
+        if (i == 0) {  //** Nothing running so see if we kick one off
+            snprintf(fname, sizeof(fname)-1, "%s.enable", osf->mergelog_name);
+            if (lio_os_local_filetype(fname) != 0) { //** Got the flag
+                remove(fname);
+                apr_thread_mutex_lock(osf->merge_lock);
+                osf->running_merge = 1;
+                apr_thread_mutex_unlock(osf->merge_lock);
+                tbx_thread_create_assert(&(osf->inode_merge_thread), NULL, perform_inode_merge_thread, (void *)os, osf->mpool);
+            }
+        } else if (osf->running_merge == 1) {  //** Already running so see if we stop
+            snprintf(fname, sizeof(fname)-1, "%s.disable", osf->mergelog_name);
+            if (lio_os_local_filetype(fname) != 0) { //** Got the flag
+                remove(fname);
+                apr_thread_mutex_lock(osf->merge_lock);
+                osf->running_merge = -1;
+                apr_thread_mutex_unlock(osf->merge_lock);
+            }
+        }
+
+        fprintf(fd, "inode_path = %s\n", osf->inode_path);
+        fprintf(fd, "changelog_name = %s  # Changelog to process for merges\n", osf->changelog_name);
+        fprintf(fd, "mergelog_name = %s  # Output file for merge.\n", osf->mergelog_name);
+        fprintf(fd, "#running_merge = %d   To trigger or stop a merge touch %s.enable or %s.disable and then trigger a state dump. 0=not running, 1=running, -1=aborting\n", i, osf->mergelog_name, osf->mergelog_name);
+    } else {
+        fprintf(fd, "inode_path = %s  # DISABLED\n", osf->inode_path);
+        fprintf(fd, "changelog_name = %s  #C hangelog to process for merges. (DISABLED)\n", osf->changelog_name);
+        fprintf(fd, "mergelog_name = %s  # Output file for merge. (DISABLED)\n", osf->mergelog_name);
+    }
+    if (osf->ilut) {
+        fprintf(fd, "ilut_section = %s\n", osf->ilut_section);
+    } else {
+        fprintf(fd, "ilut_section = %s  # DISABLED\n", osf->ilut_section);
+    }
+
     fprintf(fd, "\n");
+
 
     //** Print the notification log section
     if (strcmp(osf->os_activity, "global") != 0) tbx_notify_print_running_config(osf->olog, fd, 1);
@@ -7982,6 +8672,14 @@ void osfile_destroy(lio_object_service_fn_t *os)
         }
         free(osf->shard_prefix);
     }
+
+    //** Teardown the Inode DB and LUT
+    if (osf->ilut) os_inode_lut_destroy(osf->ilut);
+    if (osf->inode_ctx) os_inode_close_ctx(osf->inode_ctx);
+    if (osf->inode_path) free(osf->inode_path);
+    if (osf->ilut_section) free(osf->ilut_section);
+    if (osf->changelog_name) free(osf->changelog_name);
+    if (osf->mergelog_name) free(osf->mergelog_name);
 
     osaz_destroy(osf->osaz);
 
@@ -8063,6 +8761,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     tbx_type_malloc_clear(os, lio_object_service_fn_t, 1);
     tbx_type_malloc_clear(osf, lio_osfile_priv_t, 1);
     os->priv = (void *)osf;
+    apr_pool_create(&osf->mpool, NULL);
 
     osf->section = strdup(section);
 
@@ -8142,6 +8841,30 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
             osf->n_piter_que_attr = tbx_inip_get_integer(fd, section, "n_piter_que_attr", osf_default_options.n_piter_que_attr);
             osf->n_piter_attr_size = tbx_inip_get_integer(fd, section, "n_piter_attr_size", osf_default_options.n_piter_attr_size);
         }
+
+        //** See if we are tracking inodes
+        osf->inode_path = tbx_inip_get_string(fd, section, "inode_path", osf_default_options.inode_path);
+fprintf(stderr, "INODE_PATH=%s\n", osf->inode_path);
+        if (osf->inode_path) {  //** Open the Inode DB
+            osf->inode_ctx = os_inode_open_ctx(osf->inode_path, OS_INODE_OPEN_READ_WRITE, -1);
+            if (osf->inode_ctx == NULL) {
+                log_printf(0, "ERROR: Unable to open DB ctx! prefix=%s mode=%d n_shards=%d\n", osf->inode_path, OS_INODE_OPEN_READ_WRITE, -1);
+                if (osf->inode_path) { free(osf->inode_path); osf->inode_path = NULL; }
+            } else {
+                os_inode_walk_setup(1);
+                osf->ilut_section = tbx_inip_get_string(fd, section, "ilut_section", osf_default_options.ilut_section);
+                if (osf->ilut_section) {
+                    osf->ilut = os_inode_lut_load(ess, fd, osf->ilut_section);
+                    if (osf->ilut == NULL) {
+                        log_printf(0, "ERROR: Unable to create Inode LUT ctx! section=%s\n", osf->ilut_section);
+                    }
+                }
+            }
+
+            osf->changelog_name = tbx_inip_get_string(fd, section, "changelog_name", osf_default_options.changelog_name);
+            osf->mergelog_name = tbx_inip_get_string(fd, section, "mergelog_name", osf_default_options.mergelog_name);
+            apr_thread_mutex_create(&(osf->merge_lock), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
+        }
     }
 
 next:
@@ -8169,7 +8892,6 @@ next:
     osf->hardlink_path = strdup(pname);
     osf->hardlink_path_len = strlen(osf->hardlink_path);
 
-    apr_pool_create(&osf->mpool, NULL);
     tbx_type_malloc_clear(osf->internal_lock, apr_thread_mutex_t *, osf->internal_lock_size);
     for (i=0; i<osf->internal_lock_size; i++) {
         apr_thread_mutex_create(&(osf->internal_lock[i]), APR_THREAD_MUTEX_DEFAULT, osf->mpool);
@@ -8235,6 +8957,15 @@ next:
     osf->create_va.set = va_null_set_attr;
     osf->create_va.get_link = va_null_get_link_attr;
 
+    if (osf->inode_ctx) {
+        osf->inode_va.attribute = "system.inode";
+        osf->inode_va.priv = os;
+        osf->inode_va.get = va_inode_get_attr;
+        osf->inode_va.set = va_inode_set_attr;
+        osf->inode_va.get_link = va_null_get_link_attr;  //** The timestamp routine just peels off the PVA so can reuse it
+        apr_hash_set(osf->vattr_hash, osf->inode_va.attribute, APR_HASH_KEY_STRING, &(osf->inode_va));
+    }
+
     apr_hash_set(osf->vattr_hash, osf->lock_va.attribute, APR_HASH_KEY_STRING, &(osf->lock_va));
     apr_hash_set(osf->vattr_hash, osf->lock_user_va.attribute, APR_HASH_KEY_STRING, &(osf->lock_user_va));
     apr_hash_set(osf->vattr_hash, osf->realpath_va.attribute, APR_HASH_KEY_STRING, &(osf->realpath_va));
@@ -8266,6 +8997,15 @@ next:
     osf->append_pva.get = va_append_get_attr;
     osf->append_pva.set = va_append_set_attr;
     osf->append_pva.get_link = va_timestamp_get_link_attr;  //** The timestamp routine just peels off the PVA so can reuse it
+
+    if (osf->inode_ctx) {
+        osf->inode_lookup_pva.attribute = "os.inode";
+        osf->inode_lookup_pva.priv = (void *)(long)(strlen(osf->inode_lookup_pva.attribute));
+        osf->inode_lookup_pva.get = va_inode_lookup_get_attr;
+        osf->inode_lookup_pva.set = va_null_set_attr;
+        osf->inode_lookup_pva.get_link = va_null_get_link_attr;
+        tbx_list_insert(osf->vattr_prefix, osf->inode_lookup_pva.attribute, &(osf->inode_lookup_pva));
+    }
 
     tbx_list_insert(osf->vattr_prefix, osf->attr_link_pva.attribute, &(osf->attr_link_pva));
     tbx_list_insert(osf->vattr_prefix, osf->attr_type_pva.attribute, &(osf->attr_type_pva));
