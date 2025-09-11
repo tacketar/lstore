@@ -3916,7 +3916,10 @@ int osf_object_exec_modify(lio_object_service_fn_t *os, char *path, int mode, in
 
     log_printf(15, "ftype=%d path=%s\n", ftype, path);
 
-    if (ftype & OS_OBJECT_DIR_FLAG) return(0);  //** It's a directory so nothing to do
+    if (ftype & OS_OBJECT_DIR_FLAG) { //** It's a directory so nothing to do
+        if (ftype_new) *ftype_new = ftype;
+        return(0);
+    }
     if (ftype == 0) return(1);  //** Doesn't exist
 
     //** If we made it here it's a normal file or a symlink to a file
