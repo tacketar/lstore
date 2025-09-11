@@ -137,7 +137,7 @@ log_printf(0, "QWERT: START inode=" XIDT "\n", inode_target);
         used += tbx_zigzag_decode((uint8_t *)blob + used, v_size, &v); len = v;
         de = blob + used;
         used += len;
-log_printf(0, "QWERT: n=%d i=%d inode=" XIDT " ftype=%d len=%d de=%s path=%s\n", n, i, inode, ftype, len, de, path);
+//log_printf(0, "QWERT: n=%d i=%d inode=" XIDT " ftype=%d len=%d de=%s path=%s\n", n, i, inode, ftype, len, de, path);
         os_inode_lut_put(lfs->ilut, 1, inode, parent, ftype, len-1, de);
         parent = inode;
         if (i > 0) tbx_append_printf(path, &k, OS_PATH_MAX, "/%s", de);
@@ -435,7 +435,6 @@ void ll_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr, int to_set, s
     char path[OS_PATH_MAX];
     char *fname;
     lio_os_authz_local_t ug;
-    char *mpath;
     uid_t uid;
     gid_t gid;
     struct stat sbuf;
@@ -454,23 +453,22 @@ retry:
         fname = path;
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
     _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req));
 
     if (to_set & FUSE_SET_ATTR_MODE) {
-        err = lio_fs_chmod(lfs->fs, &ug, mpath, attr->st_mode);
+        err = lio_fs_chmod(lfs->fs, &ug, fname, attr->st_mode);
         if (err) goto oops;
     }
 
 	if (to_set & (FUSE_SET_ATTR_UID | FUSE_SET_ATTR_GID)) {
         uid = (to_set & FUSE_SET_ATTR_UID) ? attr->st_uid : (uid_t) -1;
         gid = (to_set & FUSE_SET_ATTR_GID) ? attr->st_gid : (gid_t) -1;
-        err = lio_fs_chown(lfs->fs, &ug, mpath, uid, gid);
+        err = lio_fs_chown(lfs->fs, &ug, fname, uid, gid);
         if (err) goto oops;
 	}
 
 	if (to_set & FUSE_SET_ATTR_SIZE) {
-        err = lio_fs_truncate(lfs->fs, &ug, mpath, attr->st_size);
+        err = lio_fs_truncate(lfs->fs, &ug, fname, attr->st_size);
         if (err) goto oops;
 	}
 
@@ -478,16 +476,13 @@ retry:
     if (err != 0) goto oops;
 
     _lfs_hint_release(lfs, &ug);
-    if (mpath != fname) free(mpath);
     fuse_reply_attr(req, &sbuf, lfs->ll_stat_timeout);
     return;
 
 oops:
     _lfs_hint_release(lfs, &ug);
-    if (mpath != fname) free(mpath);
     if (force_os == 0) { force_os = 1; goto retry; }
     fuse_reply_err(req, -err);
-
 }
 
 
@@ -504,7 +499,6 @@ void ll_listxattr(fuse_req_t req, fuse_ino_t ino,  size_t size)
     char tmpbuf[32*1024];
     char *buf;
     int err, ftype;
-    char *mpath;
     int force_os = 0;
 
     //** See if we have a valid inode
@@ -520,10 +514,8 @@ retry:
         tbx_type_malloc(buf, char, size);
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
-    err = lio_fs_listxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), mpath, buf, size);
+    err = lio_fs_listxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, buf, size);
     _lfs_hint_release(lfs, &ug);
-    if (mpath != fname) free(mpath);
 
     if (err < 0) {  //** On error err is negative
         if (buf != tmpbuf) free(buf);
@@ -556,7 +548,6 @@ void ll_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
     char tmpbuf[32*1024];
     char *buf;
     int err, ftype;
-    char *mpath;
     int force_os = 0;
 
 //log_printf(0, "QWERT: inode=" XIDT " attr=%s\n", ino, name);
@@ -574,11 +565,8 @@ retry:
     if (size > sizeof(tmpbuf)) {
         tbx_type_malloc(buf, char, size);
     }
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
-    err = lio_fs_getxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), mpath, name, buf, size);
+    err = lio_fs_getxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, name, buf, size);
     _lfs_hint_release(lfs, &ug);
-
-    if (mpath != fname) free(mpath);
 
 //log_printf(0, "QWERT: inode=" XIDT " attr=%s fname=%s err=%d\n", ino, name, fname, err);
 
@@ -613,7 +601,6 @@ void ll_setxattr(fuse_req_t req, fuse_ino_t ino, const char *name, const char *v
     lio_os_authz_local_t ug;
     char fname[OS_PATH_MAX];
     int err, ftype;
-    char *mpath;
     int force_os = 0;
 
     //** See if we have a valid inode
@@ -623,11 +610,8 @@ retry:
         return;
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
-    err = lio_fs_setxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), mpath, name, value, size, flags);
+    err = lio_fs_setxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, name, value, size, flags);
     _lfs_hint_release(lfs, &ug);
-
-    if (mpath != fname) free(mpath);
 
     if (force_os == 0) { force_os = 1; goto retry; }
 
@@ -644,7 +628,6 @@ void ll_removexattr(fuse_req_t req, fuse_ino_t ino, const char *name)
     lio_os_authz_local_t ug;
     char fname[OS_PATH_MAX];
     int err, ftype;
-    char *mpath;
     int force_os = 0;
 
     //** See if we have a valid inode
@@ -654,11 +637,8 @@ retry:
         return;
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
-    err = lio_fs_removexattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), mpath, name);
+    err = lio_fs_removexattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, name);
     _lfs_hint_release(lfs, &ug);
-
-    if (mpath != fname) free(mpath);
 
     if (force_os == 0) { force_os = 1; goto retry; }
 
@@ -999,7 +979,7 @@ void ll_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
     lio_fuse_t *lfs = _get_lfs_context();
     int err, ftype;
     char fname[OS_PATH_MAX];
-    char *mpath, *cptr;
+    char *cptr;
     lio_os_authz_local_t ug;
     ex_id_t inode;
     int force_os = 0;
@@ -1012,22 +992,16 @@ retry:
         return;
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, fname);
-    if (mpath != fname) { //** We have a pending delete removal
-        err = lfs_pending_delete_remove_object(lfs, fname, mpath);
-        if (mpath) free(mpath);
-    } else {
-        err = lio_fs_object_remove(lfs->fs, &ug, fname, OS_OBJECT_FILE_FLAG);
+    err = lio_fs_object_remove(lfs->fs, &ug, fname, OS_OBJECT_FILE_FLAG);
 log_printf(0, "REMOVE: inode=" XIDT " parent=" XIDT " dentry=%s fname=%s err=%d\n", inode, parent, name, fname, err);
-        if (err != 0) { //** We have an error so let's see if it could be a race issue with a .fuse_hidden file
-            cptr = rindex(fname, '/');
-            if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
-                err = 0;   //** Probably a false positive so go ahead and clear it
-                notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "SOFT_ERROR: Most likely the .fuse_hidden file was deleted on close before FUSE tried. Ignoring. fname=%s\n", fname);
-            }
-        } else {
-            os_inode_lut_dentry_del(lfs->ilut, 1, parent, name);
+    if (err != 0) { //** We have an error so let's see if it could be a race issue with a .fuse_hidden file
+        cptr = rindex(fname, '/');
+        if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
+            err = 0;   //** Probably a false positive so go ahead and clear it
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "SOFT_ERROR: Most likely the .fuse_hidden file was deleted on close before FUSE tried. Ignoring. fname=%s\n", fname);
         }
+    } else {
+        os_inode_lut_dentry_del(lfs->ilut, 1, parent, name);
     }
 
     _lfs_hint_release(lfs, &ug);
@@ -1195,7 +1169,6 @@ void ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
     lio_os_authz_local_t ug;
     char path[OS_PATH_MAX];
     int ftype;
-    char *mpath;
     lio_fd_t *fd;
     int force_os = 0;
 
@@ -1206,9 +1179,7 @@ retry:
         return;
     }
 
-    mpath = lfs_pending_delete_mapping_get(lfs, path);
-
-    fd = lio_fs_open(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), mpath, lio_open_flags(fi->flags, 0));
+    fd = lio_fs_open(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, lio_open_flags(fi->flags, 0));
 //log_printf(0, "QWERT: fd=%p path=%s ino=" XIDT " force_os=%d\n", fd, path, ino, force_os);
     _lfs_hint_release(lfs, &ug);
     fi->fh = (uint64_t)fd;
