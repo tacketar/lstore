@@ -172,6 +172,7 @@ typedef struct {
     ex_id_t sid;
     int ref_count;
     int remove_on_close;
+    int ftype;
     int special;
 }  fs_open_file_t;
 
@@ -424,23 +425,32 @@ int lio_fs_realpath(lio_fs_t *fs, const char *path, char *realpath)
 
 //***********************************************************************
 
-int lio_fs_exists(lio_fs_t *fs, const char *path)
+int lio_fs_is_open(lio_fs_t *fs, const char *path)
 {
-    return(lio_exists(fs->lc, fs->lc->creds, (char *)path));
+    fs_open_file_t *fop;
+    int ftype = 0;
+
+    fs_lock(fs);
+    fop = apr_hash_get(fs->open_files, path, APR_HASH_KEY_STRING);
+    if (fop) ftype = fop->ftype;
+    fs_unlock(fs);
+
+    return(ftype);
 }
 
 //***********************************************************************
 
-int lio_fs_is_open(lio_fs_t *fs, const char *path)
+int lio_fs_exists(lio_fs_t *fs, const char *path)
 {
-    fs_open_file_t *fop;
+    int ftype;
 
-    fs_lock(fs);
-    fop = apr_hash_get(fs->open_files, path, APR_HASH_KEY_STRING);
-    fs_unlock(fs);
+    //** If it's open we know it exists and it's ftype already
+    ftype = lio_fs_is_open(fs, path);
+    if (ftype != 0) return(ftype);
 
-    return((fop) ? 1 : 0);
+    return(lio_exists(fs->lc, fs->lc->creds, (char *)path));
 }
+
 
 //***********************************************************************
 
@@ -1482,6 +1492,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         tbx_type_malloc_clear(fop, fs_open_file_t, 1);
         fop->fname = strdup(fd->path);
         fop->sid = segment_id(fd->fh->seg);
+        fop->ftype = fd->ftype;
         if ((fd->ftype & OS_OBJECT_SYMLINK_FLAG) || (fd->sfd != -1)) fop->special = 1;
         apr_hash_set(fs->open_files, fop->fname, APR_HASH_KEY_STRING, fop);
     }
@@ -3274,7 +3285,6 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     fs->lc = (lc) ? lc : lio_gc;
     fs->fs_section = (fs_section) ? strdup(fs_section) : strdup("fs");
 
-    fs->pending_delete_prefix = tbx_inip_get_string(fd, fs->fs_section, "pending_delete_prefix", "/.lfs");
     fs->enable_tape = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_tape", 0);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);
     fs->enable_osaz_secondary_gids = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_secondary_gids", 0);
