@@ -605,8 +605,8 @@ int os_local_filetype_stat(const char *path, struct stat *stat_link, struct stat
         } else {
             ftype |= OS_OBJECT_FILE_FLAG|OS_OBJECT_BROKEN_LINK_FLAG;  //** Broken link so flag it as a file anyhow
         }
-    } else {
-        log_printf(1, "lstat error!  fname=%s errno=%d\n", path, errno);
+//QWERT    } else {
+//QWERT        log_printf(1, "lstat error!  fname=%s errno=%d\n", path, errno);
     }
 
     return(ftype);
