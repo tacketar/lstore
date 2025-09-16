@@ -1711,7 +1711,8 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     tbx_siginfo_handler_add(SIGUSR1, lio_monitor_fn, lio);
 
     //** Last thing is to ceck if the LServer supports tracking inodes
-    _check_for_inode_tracking(lio);
+    n = tbx_inip_get_integer(lio->ifd, section, "_check_for_inode_tracking", 1);
+    if (n) _check_for_inode_tracking(lio);
 
     log_printf(1, "END: uri=%s\n", obj_name);
 
