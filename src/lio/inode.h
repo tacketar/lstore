@@ -35,7 +35,7 @@ extern "C" {
 #define OS_INODE_OPEN_READ_ONLY         8  //** Open in READ-only mode. Not compatible with the create modes
 #define OS_INODE_OPEN_READ_WRITE       16  //** OPen R/W mode.  This is the default for the create modes
 
-#define OS_INODE_IS_DIR(ftype) (((ftype) & OS_OBJECT_DIR_FLAG) && (((ftype) & OS_OBJECT_SYMLINK_FLAG) == 0))
+#define OS_INODE_IS_DIR(ftype) ((ftype) & OS_OBJECT_DIR_FLAG)
 
 #define OS_MSG_DELETE_INODE    "DELETE-INODE"    //** Delete the inode
 #define OS_MSG_NO_INODE        "NO-INODE"        //** No system.inode attr
