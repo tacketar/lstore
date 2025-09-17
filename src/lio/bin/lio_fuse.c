@@ -76,8 +76,8 @@ void print_usage(void)
     printf("\n"
            "lio_fuse mount_point [FUSE_OPTIONS] [--lio LIO_COMMON_OPTIONS] [--disable-flock]\n"
            "    --disable-flock           Disable LStore integrated flock() functionality\n"
-           "    --api-low                 Use the FUSE low-level API. Default if LServer supported\n"
-           "    --api-high                Use the FUSE high-level API\n");
+           "    --api-low                 Use the FUSE low-level API.\n"
+           "    --api-high                Use the FUSE high-level API (default)\n");
     lio_print_options(stdout);
     printf("    FUSE_OPTIONS:\n"
            "       -h   --help            print this help\n"
@@ -112,7 +112,7 @@ int main(int argc, char **argv)
     // these defaults hold if --lio is not used on the commandline
     fuse_argc = argc;
     fuse_argv = argv;
-    lio_args.use_lowlevel_api = 1;   // ** Defail to useing the Low-Level FUSE API if LServer supports it
+    lio_args.use_lowlevel_api = 0;   // ** Default to useing the High-Level FUSE API
     lio_args.lio_argc = 1;
     lio_args.lio_argv = argv;
     lio_args.mount_point = argv[1];
@@ -123,8 +123,8 @@ int main(int argc, char **argv)
             lfs_ll_ops.flock = NULL;
             lfs_ll_ops.getlk = NULL;
             lfs_ll_ops.setlk = NULL;
-        } else if (strcmp(argv[idx], "--api-high") == 0) {
-            lio_args.use_lowlevel_api = 0;
+        } else if (strcmp(argv[idx], "--api-low") == 0) {
+            lio_args.use_lowlevel_api = 1;
         }
         if (strcmp(argv[idx], "--lio") == 0) {
             fuse_argc = idx;
