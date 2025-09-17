@@ -287,10 +287,11 @@ update_known_hosts() {
 #**************************************************************************************************
 
 create_lstore_mount() {
-    local creds="${1}"
-    local user="${2}"
-    local luser="${3}"
-    local mnt="${4}"
+    local publish="${1}"
+    local creds="${2}"
+    local user="${3}"
+    local luser="${4}"
+    local mnt="${5}"
 
     #Make the temp vars.sh
     vars=$(mktemp)
@@ -302,14 +303,14 @@ create_lstore_mount() {
         sed "s%^LIO_CREDS=.*%LIO_CREDS=\"--fcreds ${creds} -u ${user}\"%g"  > ${vars}
 
     # Make the /lfs_roots directory if needed
-    if [ ! -f "${LFS_ROOTS}" ]; then
+    if [ ! -e "${LFS_ROOTS}" ]; then
         mkdir "${LFS_ROOTS}"
         chown "${luser}:" "${LFS_ROOTS}"
         chmod 0755 "${LFS_ROOTS}"
     fi
 
     # Make the /lfs directory if needed
-    if [ ! -f "${LFS_MNT}" ]; then
+    if [ ! -e "${LFS_MNT}" ]; then
         mkdir "${LFS_MNT}"
         chown "${luser}:" "${LFS_MNT}"
         chmod 0755 "${LFS_MNT}"
@@ -321,14 +322,14 @@ create_lstore_mount() {
 
     #Add the public key if needed
     if [ "${MNT_PKEY}" != "" ]; then
-        if [ ! -f "${LFS_ROOTS}/${mnt}/known_hosts" ]; then
+        if [ ! -e "${LFS_ROOTS}/${mnt}/known_hosts" ]; then
             touch "${LFS_ROOTS}/${mnt}/known_hosts"
             chown "${luser}:" "${LFS_ROOTS}/${mnt}/known_hosts"
             chmod 0755 "${LFS_ROOTS}/${mnt}/known_hosts"
         fi
         update_known_hosts "${mnt}" "${LFS_ROOTS}/${mnt}/known_hosts"
 
-        if [ ! -f "/etc/lio/known_hosts" ]; then
+        if [ ! -e "/etc/lio/known_hosts" ]; then
             touch "/etc/lio/known_hosts"
             chown "${luser}:" "/etc/lio/known_hosts"
             chmod 0755 "/etc/lio/known_hosts"
@@ -349,7 +350,9 @@ create_lstore_mount() {
     echo "ROOT: ${MNT_ROOT}" >> ${LFS_ROOTS}/${mnt}/info
 
     #Finally add the global entry
-    ln -s ${LFS_ROOTS}/${mnt}/lmnt ${LFS_MNT}/${mnt}
+    if [ "${publish}" == "1" ]; then
+        ln -s ${LFS_ROOTS}/${mnt}/lmnt ${LFS_MNT}/${mnt}
+    fi
 }
 
 #**************************************************************************************************
@@ -358,10 +361,11 @@ create_lstore_mount() {
 #**************************************************************************************************
 
 create_link_mount() {
-    local creds="${1}"
-    local user="${2}"
-    local luser="${3}"
-    local mnt="${4}"
+    local publish="${1}"
+    local creds="${2}"
+    local user="${3}"
+    local luser="${4}"
+    local mnt="${5}"
 
     #Make the temp vars.sh
     vars=$(mktemp)
@@ -384,20 +388,23 @@ create_link_mount() {
     echo "ROOT: ${MNT_ROOT}" >> ${LFS_ROOTS}/${mnt}/info
 
     #Finally add the global entry
-    ln -s ${LFS_ROOTS}/${mnt}/lmnt ${LFS_MNT}/${mnt}
+    if [ "${publish}" == "1" ]; then
+        ln -s ${LFS_ROOTS}/${mnt}/lmnt ${LFS_MNT}/${mnt}
+    fi
 }
 
 
 #**************************************************************************************************
-# add_mount - Adds amount
-#    <creds-file> <creds-user> <local-user> <lfs_mount>
+# add_mount - Adds amount. 0|1 controls mount publishing in /lfs
+#    0|1 <creds-file> <creds-user> <local-user> <lfs_mount>
 #**************************************************************************************************
 
 add_mount() {
-    local fcreds="${1}"
-    local user="${2}"
-    local luser="${3}"
-    local lmnt="${4}"
+    local publish="${1}"
+    local fcreds="${2}"
+    local user="${3}"
+    local luser="${4}"
+    local lmnt="${5}"
 
     local my_type=""
     local my_cfg=""
@@ -411,7 +418,7 @@ add_mount() {
         exit 1
     fi
 
-    echo "add_mount: fcreds=${fcreds} user=${user} lmnt=${lmnt}"
+    echo "add_mount: publish=${publish} fcreds=${fcreds} user=${user} lmnt=${lmnt}"
 
     #Get the mount info
     lookup_mount_info "${lmnt}"
@@ -423,7 +430,7 @@ add_mount() {
     # Make the entry in the LFS_ROOTS directory
     #    NOTE: the MNT_* are global variables so the create routines pick them up automatically
     if [ "${MNT_TYPE}" == "lstore" ]; then
-        create_lstore_mount "${fcreds}" "${user}" "${luser}" "${lmnt}"
+        create_lstore_mount "${publish}" "${fcreds}" "${user}" "${luser}" "${lmnt}"
     else # It's a link so we may need to recurse
         #Preserve our mounting vars in case we recurse
         my_type="${MNT_TYPE}"
@@ -434,7 +441,7 @@ add_mount() {
         # Recurse if needed to create the links
         if [ ! -e ${LFS_ROOTS}/${my_cfg} ]; then
             echo "Recursing to create ${my_cfg}"
-            add_mount "${fcreds}" "${user}" "${luser}" "${my_cfg}"
+            add_mount ${publish} "${fcreds}" "${user}" "${luser}" "${my_cfg}"
         fi
 
         # Now we can make our LFS_ROOTS
@@ -442,7 +449,7 @@ add_mount() {
         MNT_CFG="${my_cfg}"
         MNT_ROOT="${my_root}"
         MNT_PKEY="${my_pkey}"
-        create_link_mount "${fcreds}" "${user}" "${luser}" "${lmnt}"
+        create_link_mount "${publish}" "${fcreds}" "${user}" "${luser}" "${lmnt}"
     fi
 }
 
@@ -851,7 +858,8 @@ mount_log_cleanup() {
 usage() {
     echo "Usage: $0 OPTION <lfs_mount>"
     echo "Valid OPTIONs:"
-    echo "    add <creds-file> <creds-user> <local-user> - Add an <lfs_mount> to the supported/configured for use to the list"
+    echo "    add <creds-file> <creds-user> <local-user> - Add an <lfs_mount> to the supported/configured for public use to the list"
+    echo "    add-private <creds-file> <creds-user> <local-user> - Adds an <lfs_mount> to the supported/configured for private use to the list"
     echo "                     Use the <creds-user> from the provided <creds-file>."
     echo "                     <local-user> is the local user for owning the mount"
     echo "    remove         - Remove an <lfs_mount> from the configured list"
@@ -914,7 +922,14 @@ case "${1}" in
             echo "******Missing required parameters for add a mount****"
             usage
         fi
-        add_mount "${2}" "${3}" "${4}" "${5}"
+        add_mount 1 "${2}" "${3}" "${4}" "${5}"
+        ;;
+    add-private)
+        if [ $# -lt 5 ]; then
+            echo "******Missing required parameters for add a mount****"
+            usage
+        fi
+        add_mount 0 "${2}" "${3}" "${4}" "${5}"
         ;;
     remove)
         mount_remove "${2}"
