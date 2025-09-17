@@ -30,6 +30,9 @@
 #   CK_PENDING_TIMEOUT - Background Mount health check timeout
 #   CK_FILE        - File to stat for determining health
 #   CK_MEM_GB      - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
+#   BIND_ENABLE    - If "1" then a bind mount is added in the config directory: /lfs_roots/<name>/bmnt
+#   BIND_PRESCRIPT - The script to call before cycling a mount which unmounts the the bind mount
+#   BIND_POPSTSCRIPT - Script to call after a mount has been cycled and the new bind mount is created
 #
 # Organization of files
 #    ${LFS_ROOTS}
@@ -74,6 +77,9 @@ vars_default() {
     CK_PENDING_TIMEOUT="600"
     CK_FILE=""
     CK_MEM_GB=""
+    BIND_ENABLE="0"
+    BIND_PRESCRIPT=""
+    BIND_POSTSCRIPT=""
 }
 
 #******************************************************************************
@@ -164,7 +170,9 @@ install() {
     echo "CK_PENDING_TIMEOUT=\"${CK_PENDING_TIMEOUT}\"" >> ${VARS}
     echo "CK_FILE=\"${CK_FILE}\"" >> ${VARS}
     echo "CK_MEM_GB=\"${CK_MEM_GB}\"" >> ${VARS}
-
+    echo "BIND_ENABLE=\"${BIND_ENABLE}\"" >> ${VARS}
+    echo "BIND_PRESCRIPT=\"${BIND_PRESCRIPT}\"" >> ${VARS}
+    echo "BIND_POSTSCRIPT=\"${BIND_POSTSCRIPT}\"" >> ${VARS}
     chown "${user}:" "${VARS}"
     chmod +x ${VARS}
     echo "Please edit ${VARS} as needed"
@@ -181,6 +189,86 @@ log_message() {
     echo "${NOW} $*" >> ${LFS_ROOTS}/service.log
 }
 
+#******************************************************************************
+# bind_mount - Performs a bind mount if enabled
+#******************************************************************************
+
+bind_mount() {
+    #Kickout if not enabled
+    if [ "${BIND_ENABLE}" == "0" ]; then
+        return
+    fi
+
+    if [ ! -e ${MOUNT_BIND} ]; then
+        mkdir ${MOUNT_BIND}
+    fi
+
+    mount --bind ${MOUNT_SYMLINK} ${MOUNT_BIND}
+}
+
+#******************************************************************************
+# bind_unmount - Performs a bind unmount if enabled
+#******************************************************************************
+
+bind_unmount() {
+    #Kickout if not enabled
+    if [ "${BIND_ENABLE}" == "0" ]; then
+        return
+    fi
+
+    umount ${MOUNT_BIND}
+}
+
+#******************************************************************************
+# bind_prescript - Performs the user provided script before unbinding an existing mount
+#******************************************************************************
+
+bind_prescript() {
+
+    #Kickout if not enabled
+    if [ "${BIND_ENABLE}" == "0" ]; then
+        return
+    fi
+    if [ "${BIND_PRESCRIPT}" == "" ]; then
+        return
+    fi
+
+    ${BIND_PRESCRIPT} ${MOUNT_BIND}
+}
+
+#******************************************************************************
+# bind_postscript - Performs the user provided script after swinging the bind mount
+#******************************************************************************
+
+bind_postscript() {
+    #Kickout if not enabled
+    if [ "${BIND_ENABLE}" == "0" ]; then
+        return
+    fi
+    if [ "${BIND_POSTSCRIPT}" == "" ]; then
+        return
+    fi
+
+    ${BIND_POSTSCRIPT} ${MOUNT_BIND}
+}
+
+#******************************************************************************
+# perform_bind - Performs the bind operation
+#******************************************************************************
+
+perform_bind() {
+    bind_mount
+    bind_postscript
+}
+
+#******************************************************************************
+# perform_unbind - Performs the unbind operation
+#******************************************************************************
+
+perform_unbind() {
+    bind_prescript
+    bind_unmount
+}
 
 #******************************************************************************
 # update_symlink - Updates the symlink
@@ -242,6 +330,8 @@ start_instance() {
         TCMOPT=""
     fi
 
+    perform_unbind  #Unbind the existing mount if enabled
+
     # Drop set +u in subshell because function library doesn't work
     # This may be centos-specific
     (
@@ -253,6 +343,8 @@ start_instance() {
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
     update_symlink $NESTED_CURRENT_SYMLINK $INSTANCE_RELATIVE_MNT
+    perform_bind  #Add it back after starting if enabled
+
     echo "Instance with ID $INSTANCE_ID based in $INSTANCE_PATH started, link to mount: $MOUNT_SYMLINK"
 }
 
@@ -564,6 +656,7 @@ service_cleanup() {
 stop_all() {
     log_message "STOPPING_ALL"
     echo "Attempting to stop all instances ..."
+    perform_unbind
     service_status | grep 'is_running=yes' | while read id everything_else; do
         echo "Stopping instance '$id'"
         stop_instance $id
@@ -897,6 +990,7 @@ LIO_LOG_SCRIPT=$(dirname $(realpath $0) )/lio_log_manager.sh
 LFS_PENDING_STAT_CHECK_SCRIPT=$(dirname $(realpath $0) )/lfs_pending_stat_check.sh
 INSTANCE_ROOT="${LFS_ROOTS}/instances"
 MOUNT_SYMLINK="${LFS_ROOTS}/mnt"
+MOUNT_BIND="${LFS_ROOTS}/bmnt"
 CURRENT_SYMLINK="${LFS_ROOTS}/current"
 WDIR="${CURRENT_SYMLINK}/logs"
 LIO_FUSE=${LIO_FUSE:=$(which lio_fuse)}   # Allow the lio_fuse binary to be overridden as well
