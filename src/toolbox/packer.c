@@ -72,7 +72,7 @@ int pack_read_zlib(tbx_pack_t *pack, unsigned char *data, int len)
 
     log_printf(15, "START z.avail_out=%d z.avail_in=%d len=%d\n", p->z.avail_out, p->z.avail_in, len);
 
-    if (len == 0) return(0);
+    if (len <= 0) return(0);
 
     nbytes = inflate(&(p->z), Z_NO_FLUSH);
     log_printf(15, "inflate=%d\n", nbytes);
@@ -119,7 +119,7 @@ int pack_write_zlib(tbx_pack_t *pack, unsigned char *data, int len)
     tbx_pack_zlib_t *p = &(pack->data.zlib);
     int nbytes;
 
-    if (len == 0) return(0);
+    if (len <= 0) return(0);
 
     p->z.avail_in = len;
     p->z.next_in = data;
@@ -285,7 +285,7 @@ int pack_read_raw(tbx_pack_t *pack, unsigned char *data, int len)
 
     nbytes = (len > p->nleft) ? p->nleft : len;
 
-    if (nbytes == 0) return(0);
+    if (nbytes <= 0) return(0);
 
     memcpy(data, &(p->buffer[p->bpos]), nbytes);
 
@@ -330,7 +330,7 @@ int pack_write_raw(tbx_pack_t *pack, unsigned char *data, int len)
 
     nbytes = (len > p->nleft) ? p->nleft : len;
 
-    if (nbytes == 0) return(PACK_FULL);
+    if (nbytes <= 0) return(PACK_FULL);
 
     memcpy(&(p->buffer[p->bpos]), data, nbytes);
 
@@ -350,7 +350,7 @@ void pack_write_resized_raw(tbx_pack_t *pack, unsigned char *buffer, unsigned in
 {
     tbx_pack_raw_t *p = &(pack->data.raw);
 
-   FATAL_UNLESS(bufsize >= p->bpos);
+    FATAL_UNLESS(bufsize >= p->bpos);
 
     p->buffer = buffer;
     p->bufsize = bufsize;
