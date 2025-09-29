@@ -585,6 +585,7 @@ int main(int argc, char **argv)
 
     //** See if we are running in local or LStore mode
     lio_mode = 0;
+    changelog = NULL;
     if (strcmp(argv[1], "-c") == 0) {
 fprintf(stderr, "LSTORE MODE\n");
         lio_init(&argc, &argv);  //** Load the LStore config
