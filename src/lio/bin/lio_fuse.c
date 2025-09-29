@@ -34,36 +34,38 @@ int launch_fuse_lowlevel(int fuse_argc, char **fuse_argv, struct fuse_lowlevel_o
 	struct fuse_cmdline_opts opts;
 	struct fuse_loop_config *config;
 
-	if (fuse_parse_cmdline(&args, &opts) != 0) return(1);
+    if (fuse_parse_cmdline(&args, &opts) != 0) return(1);
 
-	se = fuse_session_new(&args, ll_ops, sizeof(struct fuse_lowlevel_ops), lfs_args);
-	if (se == NULL) goto err_out1;
+    err = 1;
 
-	if (fuse_set_signal_handlers(se) != 0) goto err_out2;
+    se = fuse_session_new(&args, ll_ops, sizeof(struct fuse_lowlevel_ops), lfs_args);
+    if (se == NULL) goto err_out1;
 
-	if (fuse_session_mount(se, opts.mountpoint) != 0) goto err_out3;
+    if (fuse_set_signal_handlers(se) != 0) goto err_out2;
 
-	fuse_daemonize(opts.foreground);
+    if (fuse_session_mount(se, opts.mountpoint) != 0) goto err_out3;
 
-	/* Block until ctrl+c or fusermount -u */
-	if (opts.singlethread)
-		err = fuse_session_loop(se);
-	else {
-		config = fuse_loop_cfg_create();
-		fuse_loop_cfg_set_max_threads(config, opts.max_threads);
-		err = fuse_session_loop_mt(se, config);
-		fuse_loop_cfg_destroy(config);
-		config = NULL;
-	}
+    fuse_daemonize(opts.foreground);
 
-	fuse_session_unmount(se);
+    /* Block until ctrl+c or fusermount -u */
+    if (opts.singlethread)
+        err = fuse_session_loop(se);
+    else {
+        config = fuse_loop_cfg_create();
+        fuse_loop_cfg_set_max_threads(config, opts.max_threads);
+        err = fuse_session_loop_mt(se, config);
+        fuse_loop_cfg_destroy(config);
+        config = NULL;
+    }
+
+    fuse_session_unmount(se);
 err_out3:
-	fuse_remove_signal_handlers(se);
+    fuse_remove_signal_handlers(se);
 err_out2:
-	fuse_session_destroy(se);
+    fuse_session_destroy(se);
 err_out1:
-	free(opts.mountpoint);
-	fuse_opt_free_args(&args);
+    free(opts.mountpoint);
+    fuse_opt_free_args(&args);
 
 	return(err);
 }
