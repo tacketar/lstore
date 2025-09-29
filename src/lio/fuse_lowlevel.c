@@ -226,7 +226,7 @@ int ll_inode2path_dentry(lio_fuse_t *lfs, lio_os_authz_local_t *ug, fuse_ino_t p
     if (ll_new_object_prep(lfs, parent, name, path, force_os) != 0) return(1);
 
     //** Do the FS stat call
-    err = lio_fs_stat_full(lfs->fs, ug, path, &(fe.attr), ftype, NULL, 0, lfs->no_cache_stat_if_file);
+    err = lio_fs_stat_full(lfs->fs, ug, path, &(fe.attr), ftype, NULL, 1, lfs->no_cache_stat_if_file);
     if (err != 0) return(1);  //** No matching entry
 
     //** Add the inode
@@ -251,7 +251,7 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
 
     //** Do the FS stat call
     ftype = 0;
-    err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 0, lfs->no_cache_stat_if_file);
+    err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
 //log_printf(0, "QWERT: A.fs_stat=%d parent=" XIDT " name=%s fname=%s\n", err, parent, name, path);
     if (err != 0) {  //** We may have a stale entry so try again but go direct to the LServer
 //log_printf(0, "QWERT: Trying a fresh lookup parent=" XIDT " name=%s\n", parent, name);
@@ -264,7 +264,7 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
         //** Add the dentry
         len = strlen(fname);
         snprintf(fname+len, OS_PATH_MAX-len, "/%s", name);
-        err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, &(fe.attr), &ftype, NULL, 0, lfs->no_cache_stat_if_file);
+        err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
 //log_printf(0, "QWERT: B.fs_stat=%d parent=" XIDT " name=%s fname=%s\n", err, parent, name, fname);
     }
     _lfs_hint_release(lfs, &ug);
@@ -314,7 +314,7 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     int err, ftype;
     char *ptr;
 
-//log_printf(0, "QWERT: parent=" XIDT " name=%s\n", parent, name);
+log_printf(0, "QWERT: parent=" XIDT " name=%s\n", parent, name);
     //** See if we have a valid parent
     if ((strcmp(".", name) == 0) || (strcmp("..", name) == 0)) goto direct_lookup;
 
@@ -352,7 +352,7 @@ log_printf(0, "QWERT: DIRECT LOOKUP parent=" XIDT " name=%s TRUNCATED fname=%s\n
     }
 
     //** Do the FS stat call
-    err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 0, lfs->no_cache_stat_if_file);
+    err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
     _lfs_hint_release(lfs, &ug);
 log_printf(0, "QWERT: DIRECT LOOKUP path=%s err=%d\n", path, err);
     if (err != 0) {
@@ -411,7 +411,7 @@ retry:
         }
 
         //** Do the FS stat call
-        err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &sbuf, &ftype, NULL, 0, lfs->no_cache_stat_if_file);
+        err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &sbuf, &ftype, NULL, 1, lfs->no_cache_stat_if_file);
         _lfs_hint_release(lfs, &ug);
         if (err != 0) {
             if (force_os == 0) { force_os = 1; goto retry; }
@@ -472,7 +472,7 @@ retry:
         if (err) goto oops;
 	}
 
-    err = lio_fs_stat_full(lfs->fs, &ug, fname, &sbuf, &ftype, NULL, 0, lfs->no_cache_stat_if_file);
+    err = lio_fs_stat_full(lfs->fs, &ug, fname, &sbuf, &ftype, NULL, 1, lfs->no_cache_stat_if_file);
     if (err != 0) goto oops;
 
     _lfs_hint_release(lfs, &ug);
@@ -1180,7 +1180,7 @@ retry:
     }
 
     fd = lio_fs_open(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, lio_open_flags(fi->flags, 0));
-//log_printf(0, "QWERT: fd=%p path=%s ino=" XIDT " force_os=%d\n", fd, path, ino, force_os);
+log_printf(0, "QWERT: fd=%p path=%s ino=" XIDT " force_os=%d\n", fd, path, ino, force_os);
     _lfs_hint_release(lfs, &ug);
     fi->fh = (uint64_t)fd;
 
