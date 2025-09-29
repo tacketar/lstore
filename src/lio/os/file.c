@@ -657,7 +657,6 @@ int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
     ilen = sizeof(inode);
     iptr = inode;
     osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", (void **)&iptr, &ilen, &at2);
-//log_printf(0, "QWERT: fname=%s inode=%s ilen=%d\n", fd->realpath, inode, ilen);
     if (ilen > 0) { //** Got something
         //** Fetch the record so we don't have to look up the parent
         if (osf_inode_ctx_get(os, inode, ilen, &parent, &ftype, &len, &dentry) == 0) {
@@ -669,7 +668,6 @@ int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
 
     //** Loop until we get a unique value
     memcpy(inode, val, v_size);
-//log_printf(0, "QWERT: fname=%s initial inode val=%s v_size=%d\n", fd->realpath, (char *)val, v_size);
     ilen = v_size;
     ino = OS_INODE_MISSING;
     got_parent = sscanf(inode, XIDT " " XIDT, &ino, &parent);
@@ -697,13 +695,11 @@ int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
     tbx_io_fclose(afd);
 
     dir = file = NULL;
-    lio_os_path_split(fd->realpath, &dir, &file);
-//log_printf(0, "QWERT: fname=%s simple_change=%d got_parent=%d paren=" XIDT "\n", fd->realpath, simple_change, got_parent, parent);
+    lio_os_path_split(fd->opath, &dir, &file);  //** Use the original path which has the ACTUAL parent dir if we have a symlink
     if ( !(simple_change || (got_parent==2))) {
         //** If we made it here then we have a new object and the parent was supplied so we have to fetch the parent inode
         plen = sizeof(pinode);
         osf_get_inode(os, creds, dir, OS_OBJECT_DIR_FLAG, pinode, &plen);
-//log_printf(0, "QWERT: rp=%s dir=%s pinode=%s plen=%d\n", fd->realpath, dir, pinode, plen);
         if (plen <= 0) {  //** Error getting the parent
             goto failed;
         }
@@ -711,10 +707,9 @@ int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
         //** Get the parent inode
         parent = OS_INODE_MISSING;
         if (sscanf(pinode, XIDT, &parent) != 1) { goto failed; }
-//log_printf(0, "QWERT: rp=%s dir=%s parent=" XIDT "\n", fd->realpath, dir, parent);
     }
 
-        //** Now we have all the bits to do the update
+    //** Now we have all the bits to do the update
     if (osf->ilut) {
         os_inode_put_with_lut(osf->inode_ctx, osf->ilut, ino, parent, fd->ftype, strlen(file), file);
     } else if (osf->inode_ctx) {
