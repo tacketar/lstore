@@ -1052,40 +1052,49 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
     uid_t _u_keep = -1;   //** These are special values passed the chown which mean no change
     gid_t _g_keep = -1;
     mode_t _mode;
-    int err, ftype;
-    int v_size = 64;
-    char val[v_size];
-    char *vptr = val;
+    int err, ftype, n;
+    int v_size[2];
+    char *val[2];
+    char *keys[2];
     char *attr;
+    char perms[64];
+    int no_cache_stat_if_file = 0;  //NOTE: Setting this to 0 can lead to stale MD when using os_timecache
 
     attr = osaz_perms_attr(fs->osaz, fname);
     if (attr == NULL) return(1);  //** Not supported
 
-    err = lio_getattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, attr, (void **)&vptr, &v_size);
-    if (err != OP_STATE_SUCCESS) {
-        v_size = -1;
+    keys[0] = attr;
+    keys[1] = "os.type";
+    val[0] = val[1] = NULL;
+    v_size[0] = v_size[1] = -fs->lc->max_attr;
+
+    err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, fs->id, keys, (void **)&val, v_size, 2, no_cache_stat_if_file);
+    ftype = 0;
+    if (v_size[1] > 0) {
+        sscanf(val[1], "%d", &ftype);
+        free(val[1]);
     }
 
-    ftype = lio_exists(fs->lc, fs->lc->creds, (char *)fname);
     _mode = ftype_lio2posix(ftype);  //** Initialize the file type bits in the mode
     _uid = _gid = 0;
-    if (osaz_perms_decode(fs->osaz, fname, ftype, val, v_size, &_uid, &_gid, &_mode) == 0) {  //** Returns 0 on success and -1 if it doesn't exists
+    if (osaz_perms_decode(fs->osaz, fname, ftype, val[0], v_size[0], &_uid, &_gid, &_mode) == 0) {  //** Returns 0 on success and -1 if it doesn't exists
         //** Override what's in the attr based on what's supplied
         if ((uid) && (*uid != _u_keep)) _uid = *uid;
         if ((gid) && (*gid != _g_keep)) _gid = *gid;
         if (mode) _mode = *mode;
     }
 
+    if (val[0]) free(val[0]);
+
     //** Store it back
-    v_size = osaz_perms_encode(fs->osaz, fname, ftype, val, v_size, _uid, _gid, _mode);
-    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)attr, (void *)val, v_size);
+    n = osaz_perms_encode(fs->osaz, fname, ftype, perms, sizeof(perms), _uid, _gid, _mode);
+    err = lio_setattr(fs->lc, fs->lc->creds, (char *)fname, fs->id, (char *)attr, (void *)perms, n);
     if (err != OP_STATE_SUCCESS) {
         return(-EREMOTEIO);
     }
 
     return(0);
 }
-
 
 //*************************************************************************
 // lio_fs_object_create
