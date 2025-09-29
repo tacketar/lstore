@@ -36,7 +36,6 @@
 // NOTE: Assumes a valid LStore context has been stored in lio_gc.
 //*************************************************************************
 
-#define _lio_walk_n_keys 1
 char *_lio_walk_keys[] = { "system.inode" };
 const int _lio_object_types = OS_OBJECT_FILE_FLAG|OS_OBJECT_DIR_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_HARDLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG;
 
@@ -53,8 +52,8 @@ typedef struct {
     int is_fixed;
     int processed;
     ex_id_t dir_inode;
-    char *val[_lio_walk_n_keys];
-    int v_size[_lio_walk_n_keys];
+    char *val[1];
+    int v_size[1];
 } walk_lio_dir_t;
 
 typedef struct {
@@ -313,9 +312,9 @@ void *walk_lio_create(const char *prefix, int max_recurse_depth)
     if (wdir->prefix_len < 1) wdir->prefix_len++;
     walk_info(walk_arg, wdir->prefix, &(wdir->dir_inode), &ftype);
 
-    wdir->val[0] = wdir->val[1] = NULL;
-    wdir->v_size[0] = wdir->v_size[1] = -lio_gc->max_attr;
-    wdir->it = lio_create_object_iter_alist(w->tuple.lc, w->tuple.creds, w->rp_single, NULL, _lio_object_types, max_recurse_depth, _lio_walk_keys, (void **)(wdir->val), wdir->v_size, _lio_walk_n_keys);
+    wdir->val[0] = NULL;
+    wdir->v_size[0] = -lio_gc->max_attr;
+    wdir->it = lio_create_object_iter_alist(w->tuple.lc, w->tuple.creds, w->rp_single, NULL, _lio_object_types, max_recurse_depth, _lio_walk_keys, (void **)(wdir->val), wdir->v_size, 1);
     if (wdir->it == NULL) { //**Bad iterator
         fprintf(stderr,  "ERROR: creating iterator! path=%s\n", w->tuple.path);
         lio_path_release(&(w->tuple));
