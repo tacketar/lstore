@@ -1413,8 +1413,9 @@ int osrc_store_val(gop_mq_stream_t *mqs, int src_size, void **dest, int *v_size)
     char *buf;
 
     if (*v_size >= 0) {
-        if (src_size < 0) {    //** Doesn't exist so just store the size
+        if (src_size < 0) {    //** Buffer to small so just return the size
             *v_size = src_size;
+            return(0);
         } else if (*v_size < src_size) {
             *v_size = -src_size;
             gop_mq_stream_read(mqs, NULL, src_size);  //** This drops the values
@@ -1431,6 +1432,7 @@ int osrc_store_val(gop_mq_stream_t *mqs, int src_size, void **dest, int *v_size)
         } else {
             *v_size = src_size;
             if (dest) *dest = NULL;
+            if (src_size > 0) gop_mq_stream_read(mqs, NULL, src_size);  //** Just drop it
             return(0);
         }
     }
