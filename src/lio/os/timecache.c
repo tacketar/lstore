@@ -1529,12 +1529,12 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
     //** Store them in the cache on success
     if (status.op_status == OP_STATE_SUCCESS) {
         base = ostc_attr_cacheprep_info_process(&cp, &err);
-        log_printf(1, "storing=%s ftype=%d end=%d len=%d v_size[0]=%d err=%d\n", fname, base.ftype, end, len, cp.v_size[0], err);
+        log_printf(2, "storing=%s ftype=%d end=%d len=%d v_size[0]=%d err=%d\n", fname, base.ftype, end, len, cp.v_size[0], err);
         if (err == OP_STATE_SUCCESS) {
             ostc_cache_process_attrs(os, fname, &base, cp.key, cp.val, cp.v_size, cp.n_keys);
             ostc_attr_cacheprep_copy(&cp, (void **)val_array, v_size);
             if (end < (len-1)) { //** Recurse and add the next layer
-                log_printf(1, "recursing object=%s\n", path);
+                log_printf(2, "recursing object=%s\n", path);
                 err = ostc_cache_populate_prefix(os, creds, path, end, id);
             }
         }
@@ -3316,7 +3316,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
         os_create = lio_lookup_service(ess, OS_AVAILABLE, ctype);
         ostc->os_child = (*os_create)(ess, fd, str);
         if (ostc->os_child == NULL) {
-            log_printf(1, "Error loading object service!  type=%s section=%s\n", ctype, str);
+            log_printf(0, "Error loading object service!  type=%s section=%s\n", ctype, str);
             fprintf(stderr, "Error loading object service!  type=%s section=%s\n", ctype, str);
             fflush(stderr);
             abort();

@@ -159,12 +159,10 @@ os_inode_shard_t *os_inode_open_a_shard(const char *db_path, rocksdb_comparator_
 
     tbx_type_malloc_clear(db, os_inode_shard_t, 1);
 
-fprintf(stderr, "os_inode_open_a_shard: AAAAAAAAAAAAAAAA mode=%d\n", mode);
     if (mode & OS_INODE_OPEN_CREATE_ONLY) { //** Throw an error if it already exists
         opts2 = rocksdb_options_create();
         rocksdb_options_set_error_if_exists(opts2, 1);
         rocksdb_options_set_create_if_missing(opts2, 1);
-fprintf(stderr, "os_inode_open_a_shard: BBBBBBBBB\n");
 
         db->db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists
@@ -185,24 +183,17 @@ fprintf(stderr, "os_inode_open_a_shard: BBBBBBBBB\n");
         rocksdb_options_destroy(opts2);
     }
 
-fprintf(stderr, "os_inode_open_a_shard: CCCCCCC\n");
-
     //** Try opening it for real
     opts = rocksdb_options_create();
     if (cmp) rocksdb_options_set_comparator(opts, cmp);
     if (mode & (OS_INODE_OPEN_CREATE_ONLY|OS_INODE_OPEN_CREATE_IF_NEEDED)) rocksdb_options_set_create_if_missing(opts, 1);
 
-fprintf(stderr, "os_inode_open_a_shard: DDDDDDDD\n");
-
     errstr = NULL;
     if (mode & OS_INODE_OPEN_READ_ONLY) {  //** Open Read only
-fprintf(stderr, "os_inode_open_a_shard: DDDDDDDD-READ_ONLY\n");
         db->db = rocksdb_open_for_read_only(opts, db_path, 0, &errstr);
     } else {  //** OPen R/W
-fprintf(stderr, "os_inode_open_a_shard: DDDDDDDD-READ_WRITE db_path=%s\n", db_path);
         db->db = rocksdb_open(opts, db_path, &errstr);
     }
-fprintf(stderr, "os_inode_open_a_shard: EEEEEEEE db->db=%p errstr=%s\n", db->db, errstr);
 
     if ((errstr != NULL) || (db->db == NULL)) {  //** An Error occured
         fprintf(stderr, "ERROR: Failed Opening/Creating %s. DB error:%s mode=%d\n", db_path, errstr, mode);
@@ -455,7 +446,6 @@ int os_inode_put(os_inode_ctx_t *ctx, ex_id_t inode, ex_id_t parent_inode, int f
         }
     }
 
-//fprintf(stderr, "os_inode_put: err=%d inode= " XIDT " parent=" XIDT " de=%s\n", err, inode, parent_inode, dentry);
     return(err);
 }
 
@@ -486,7 +476,6 @@ int os_inode_shard_get(os_inode_shard_t *s, ex_id_t inode, ex_id_t *parent_inode
     *parent_inode = OS_INODE_MISSING;
     buf = (char *)rocksdb_get(s->db, s->ropt, (const char *)&inode, sizeof(ex_id_t), &nbytes, &errstr);
     if (nbytes == 0) {
-//        fprintf(stderr, "os_inode_shard_get: inode=" XIDT " MISSING\n", inode);
         return(1);
     }
     r = (os_inode_rec_t *)buf;
@@ -496,8 +485,6 @@ int os_inode_shard_get(os_inode_shard_t *s, ex_id_t inode, ex_id_t *parent_inode
     if (dentry) *dentry = strdup(r->dentry.dentry);
 
     free(buf);
-
-//fprintf(stderr, "os_inode_shard_get: inode=" XIDT " parent=" XIDT " ftype=%d\n", inode, *parent_inode, *ftype);
 
     return(0);
 }
@@ -589,8 +576,6 @@ int os_inode_db_del(os_inode_db_t *db, ex_id_t inode)
     char *errstr = NULL;
     int n;
 
-//fprintf(stderr, "os_inode_db_del: inode=" XIDT "\n", inode);
-
     //** Remove it from the inode DB
     n = inode % db->n_shards;
     s = db->shard[n];
@@ -618,7 +603,6 @@ int os_inode_del(os_inode_ctx_t *ctx, ex_id_t inode, int ftype)
 
     //** See if we also need to delete from the dir DB
     if ((ftype == 0) || OS_INODE_IS_DIR(ftype)) { //** Unknown type of a dir so purge from the dir DB
-//fprintf(stderr, "os_inode_del: DIR inode=" XIDT "\n", inode);
         os_inode_db_del(ctx->dir, inode);
     }
 
@@ -650,7 +634,6 @@ void os_inode_lookup2path(char *path, int n, ex_id_t *inode, char **dentry)
     pos = 0;
     nbytes = OS_PATH_MAX;
     for (i=n-1; i>=0; i--) {
-//fprintf(stderr, "os_inode_lookup2path: n=%d i=%d de=!%s!\n", n, i, dentry[i]);
         if (i >= n-2) {
             tbx_append_printf(path, &pos, nbytes, "%s", dentry[i]);
         } else {
@@ -659,8 +642,6 @@ void os_inode_lookup2path(char *path, int n, ex_id_t *inode, char **dentry)
             if (etext) free(etext);
         }
     }
-
-//fprintf(stderr, "os_inode_lookup2path: n=%d fname=!%s!\n", n, path);
 }
 
 
@@ -681,8 +662,6 @@ int os_inode_lookup_path_db(os_inode_db_t *db, ex_id_t inode_target, ex_id_t *in
     int f, len, i, err;
     char *de;
 
-//fprintf(stderr, "os_inode_lookup_path_db: START inode=" XIDT " db=%s\n", inode_target, db->prefix);
-
     *n_dirs = 0;
     inode_curr = inode_target;
     i = 0;
@@ -692,7 +671,6 @@ int os_inode_lookup_path_db(os_inode_db_t *db, ex_id_t inode_target, ex_id_t *in
         dentry[i] = de;
         inode_curr = parent;
 
-//fprintf(stderr, "os_inode_lookup_path_db: i=%d inode=" XIDT " parent=" XIDT " ftype=%d de=%s\n", i, inode[i], parent, f, de);
         i++;
 
         if (parent == 0) break;  //** We've reached the root directory
@@ -703,8 +681,6 @@ int os_inode_lookup_path_db(os_inode_db_t *db, ex_id_t inode_target, ex_id_t *in
     }
 
     *n_dirs = i;
-
-//fprintf(stderr, "os_inode_lookup_path_db: AFTER inode=" XIDT " n_dirs=%d err=%d\n", inode_target, i, err);
 
     if (err) {  //** Didn't make it to root so clean up
         for (i=0; i<*n_dirs; i++) {
@@ -783,11 +759,8 @@ int os_inode_lookup_path(os_inode_ctx_t *ctx, ex_id_t inode_target, ex_id_t *ino
     int f, len;
     char *de;
 
-//fprintf(stderr, "os_inode_lookup_path: START inode=" XIDT "\n", inode_target);
-
     //** Get the terminal from the inode
     if (os_inode_db_get(ctx->inode, inode_target, &parent, &f, &len, &de) == 0) {
-//fprintf(stderr, "os_inode_lookup_path: inode=" XIDT " parent=" XIDT " de=%s\n", inode_target, parent, de);
         //** The rest of the entries can come from the smaller dir DB
         inode[0] = inode_target;
         ftype[0] = f;
@@ -799,12 +772,10 @@ int os_inode_lookup_path(os_inode_ctx_t *ctx, ex_id_t inode_target, ex_id_t *ino
         if (os_inode_lookup_path_db(ctx->dir, parent, inode + 1, ftype + 1, dentry + 1, n_dirs) != 0) {
             if (de) free(de);
             *n_dirs = 0;
-//fprintf(stderr, "os_inode_lookup_path: FAILED-1 lookup inode=" XIDT "\n", inode_target);
             return(1);
         }
         (*n_dirs)++;  //** This accounts for the initial entry, ie 0.
     } else {
-//fprintf(stderr, "os_inode_lookup_path: FAILED-2 lookup inode=" XIDT "\n", inode_target);
         *n_dirs = 0;
         return(1);
     }

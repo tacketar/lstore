@@ -169,14 +169,11 @@ void _lut_epoch_update_min(os_inode_lut_t *ilut)
 {
     int min_epoch, i, es, slot;
 
-int total = apr_hash_count(ilut->table);
     min_epoch = ilut->min_epoch;
     for (i=0; i<ilut->n_epoch; i++) {
         es = i + min_epoch;
         slot = es % ilut->n_epoch;
-//QWERT fprintf(stderr, "lut_epoch_update_min: epoch=%d count=%d\n", es, ilut->epoch_tally[slot]);
         if (ilut->epoch_tally[slot] > 0) {
-fprintf(stderr, "lut_epoch_update_min: KICKOUT new min_epoch=%d i=%d slot=%d count=%d apr_hash_count=%d\n", es, i, slot, ilut->epoch_tally[slot], total);
             ilut->min_epoch = es;
             return;
         }
@@ -650,7 +647,6 @@ void _dentry_redo(os_inode_lut_t *ilut, os_inode_lut_rec_t *rold, ex_id_t parent
 {
     os_inode_lut_rec_t *r;
     os_inode_dentry_t *de, *de2, *deprev;
-int err;
 
     //** Use the 1st entry as the new primary key
     de = rold->hardlink_list;
@@ -661,38 +657,23 @@ int err;
     r->hardlink_list = rold->hardlink_list;
     r->epoch = rold->epoch;  //** Copy over the epoch
 
-log_printf(0, "A.START Dumping all dentries----------- rold=%s:" XIDT " rnew=%s:" XIDT "\n", rold->r.dentry.dentry, rold->r.dentry.parent_inode, r->r.dentry.dentry, r->r.dentry.parent_inode);
-dentry_list_dump(ilut->dentry_table, "A2");
-log_printf(0, "A.END Dumping all dentries-----------\n");
-
     //** Replace the hash entry
     apr_hash_set(ilut->table, &(r->r.inode), sizeof(ex_id_t), NULL); //** Clear the old one since it's key is with the old record
     apr_hash_set(ilut->table, &(r->r.inode), sizeof(ex_id_t), r);    //** Store the new one with the same key
     if (ilut->dentry_table == NULL) return;
 
     //** Remove the old dentry but hold off adding the new primary in
-    err = tbx_list_remove(ilut->dentry_table, &(rold->r.dentry), rold);
-TBX_LIST_REMOVE_CHECK("C", err, r, &(rold->r.dentry));
-
-log_printf(0, "QWERT: rold dentry state inode=" XIDT " tbx_list_remove=%d\n", rold->r.inode, err);
-dentry_dump(rold);
-
-dentry_list_dump(ilut->dentry_table, "B2");
+    tbx_list_remove(ilut->dentry_table, &(rold->r.dentry), rold);
 
     de = rold->hardlink_list;  //** Loop over any additional references
     deprev = NULL;
     de2 = NULL;
     while (de) {
-log_printf(0, "HARDLINK-SWAP: inode=" XIDT " r.dentry=%s hardlink=%p de=%s de->len=%d\n", r->r.inode, r->r.dentry.dentry, r->hardlink_list, de->dentry, de->len);
-        err = tbx_list_remove(ilut->dentry_table, de, rold);
-TBX_LIST_REMOVE_CHECK("D", err, r, de);
-log_printf(0, "tbx_list_remove=%d de->dentry=%s de->parent=" XIDT "\n", err, de->dentry, de->parent_inode);
+        tbx_list_remove(ilut->dentry_table, de, rold);
         if (dentry_cmp_fn(NULL, &(r->r.dentry), de) == 0) { //** This is the "new" primary dentry
             if (deprev == NULL) {
                 memcpy(&(r->hardlink_list), &(de->dentry[de->len + 1]), sizeof(os_inode_dentry_t *));
-log_printf(0, "HARDLINK-DELETE: ROOT inode=" XIDT " hardlink=%p r.dentry=%s de2=%p de=%s deprev=NULL\n", r->r.inode, r->hardlink_list, r->r.dentry.dentry, de2, de->dentry);
              } else {
-log_printf(0, "HARDLINK-DELETE: LIST inode=" XIDT " hardlink=%p r.dentry=%s de2=%p de=%s deprev=%s\n", r->r.inode, r->hardlink_list, r->r.dentry.dentry, de2, de->dentry, deprev->dentry);
                 memcpy(deprev->dentry + deprev->len + 1, de->dentry + de->len + 1, sizeof(os_inode_dentry_t *));
              }
              de2 = de;
@@ -700,24 +681,13 @@ log_printf(0, "HARDLINK-DELETE: LIST inode=" XIDT " hardlink=%p r.dentry=%s de2=
              free(de2);
         } else { //** Only add it back if still on the list
             tbx_list_insert(ilut->dentry_table, de, r);
-TBX_LIST_INSERT("D", r, de);
             deprev = de;
             de = dentry_next(de);
         }
-//        de = dentry_next(de);
-log_printf(0, "HARDLINK-SWAP: inode=" XIDT " hardlink=%p de->next=%p\n", r->r.inode, r->hardlink_list, de);
     }
-
-dentry_list_dump(ilut->dentry_table, "C2");
 
     //** It should be purged now and safe to add back in
     tbx_list_insert(ilut->dentry_table, &(r->r.dentry), r);
-TBX_LIST_INSERT("E", r, &(r->r.dentry));
-
-log_printf(0, "QWERT: rnew dentry state inode=" XIDT "\n", r->r.inode);
-dentry_dump(r);
-
-dentry_list_dump(ilut->dentry_table, "D2");
 
     free(rold);
 }
@@ -732,7 +702,6 @@ void os_inode_lut_dentry_del(os_inode_lut_t *ilut, int do_lock, ex_id_t parent, 
     os_inode_lut_rec_t *r;
     os_inode_dentry_t *de, *de2, *deprev;
     char buf[sizeof(os_inode_lut_rec_t) + OS_PATH_MAX + 1];
-//int err;
 
     //** Make the tmp record which holds the "key"
     de = (os_inode_dentry_t *)buf;
@@ -744,7 +713,6 @@ void os_inode_lut_dentry_del(os_inode_lut_t *ilut, int do_lock, ex_id_t parent, 
     r = tbx_list_search(ilut->dentry_table, de);
     if (r == NULL) return;
 
-log_printf(0, "inode=" XIDT " parent=" XIDT " de=!%s! hardlink=%p\n", r->r.inode, r->r.dentry.parent_inode, r->r.dentry.dentry, r->hardlink_list);
     if (r->hardlink_list == NULL) { //** Simple removal
         os_inode_lut_del(ilut, 0, r->r.inode);
         if (do_lock) apr_thread_mutex_unlock(ilut->lock);
@@ -756,15 +724,11 @@ log_printf(0, "inode=" XIDT " parent=" XIDT " de=!%s! hardlink=%p\n", r->r.inode
         de2 = r->hardlink_list;  //** Loop over any additional references
         deprev = NULL;
         while (de2) {
-log_printf(0, "DENTRY: inode=" XIDT " r.dentry.dentry=%s dematch=%s de2=%s deprev=%p\n", r->r.inode, r->r.dentry.dentry, de->dentry, de2->dentry, deprev);
             if (dentry_cmp_fn(NULL, de, de2) == 0) { //** Found it
                 tbx_list_remove(ilut->dentry_table, de2, r);
-//err = tbx_list_remove(ilut->dentry_table, de2, r);
-//TBX_LIST_REMOVE_CHECK("E", err, r, de2);
                 if (deprev == NULL) {
                     memcpy(&(r->hardlink_list), &(de2->dentry[de2->len + 1]), sizeof(os_inode_dentry_t *));
                 } else {
-log_printf(0, "HARDLINK-DELETE: inode=" XIDT " hardlink=%p r.dentry=%s de2=%s de=%s deprev=%s\n", r->r.inode, r->hardlink_list, r->r.dentry.dentry, de2->dentry, de->dentry, deprev->dentry);
                     memcpy(deprev->dentry + deprev->len + 1, de2->dentry + de2->len + 1, sizeof(os_inode_dentry_t *));
                 }
                 free(de2);
@@ -790,11 +754,6 @@ log_printf(0, "HARDLINK-DELETE: inode=" XIDT " hardlink=%p r.dentry=%s de2=%s de
 
 void os_inode_lut_dentry_rename(os_inode_lut_t *ilut, int do_lock, ex_id_t inode, int ftype, ex_id_t oldparent, const char *oldname, ex_id_t newparent, const char *newname)
 {
-//    os_inode_lut_rec_t *r;
-//    int len;
-//    os_inode_dentry_t *de;
-
-log_printf(0, "RENAME: inode=" XIDT " ftype=%d oldparent=" XIDT " oldname=%s newparent=" XIDT " newname=%s\n", inode, ftype, oldparent, oldname, newparent, newname);
     //** IF we don't support hardlinks then do a simple put
     if (ilut->dentry_table == NULL) {
         os_inode_lut_put(ilut, do_lock, inode, newparent, ftype, strlen(newname), newname);
@@ -804,37 +763,11 @@ log_printf(0, "RENAME: inode=" XIDT " ftype=%d oldparent=" XIDT " oldname=%s new
     //** Got to handle hardlinks
     if (do_lock) apr_thread_mutex_lock(ilut->lock);
 
-    //** See if it already exists
-//    r = apr_hash_get(ilut->table, &inode, sizeof(ex_id_t));
-//    if (r == NULL) {
-//        if (do_lock) apr_thread_mutex_unlock(ilut->lock);
-//        return;
-//    }
-
     //** Delete the old dentry
     os_inode_lut_dentry_del(ilut, 0, oldparent, oldname);
 
     //** Add in the new version which could be a hardlink
     os_inode_lut_put(ilut, 0, inode, newparent, ftype, strlen(newname), newname);
-
-    //** Add in our new entry
-//    len = strlen(newname);
-//    de = _dentry_new(newparent, len, newname);  //** Make the new entry
-//    if (tbx_list_search(ilut->dentry_table, de)) { //** Alread exists
-//        free(de);
-//        goto finished;
-//    }
-    //** Insert it in the record hardlink list
-//log_printf(0, "HARDLINK-INSERT: inode=" XIDT " hardlink=%p r.dentry=%s new dentry=%s\n", inode, r->hardlink_list, r->r.dentry.dentry, de->dentry);
-//    memcpy(&(de->dentry[len + 1]), &(r->hardlink_list), sizeof(os_inode_dentry_t *));
-//    r->hardlink_list = de;
-
-    //** Add it to the dentry_table
-//    tbx_list_insert(ilut->dentry_table, de, r);
-
-//finished:
-    //** Delete the old one
-//    os_inode_lut_dentry_del(ilut, 0, oldparent, oldname);
 
     if (do_lock) apr_thread_mutex_unlock(ilut->lock);
 }
@@ -856,7 +789,6 @@ os_inode_lut_t *os_inode_lut_create(int n_lut_max, double shrink_fraction, int n
         ilut->dentry_table = tbx_sl_new_full(nlevels, 0.5, 0, &dentry_cmp, NULL, NULL, NULL);
     }
 
-fprintf(stderr, "QWERT: ilut_create: n_new_epoch=%d\n", n_new_epoch);
     ilut->epoch = 0;
     ilut->n_lut_max = n_lut_max;
     ilut->n_lut_shrink = shrink_fraction * n_lut_max;
@@ -879,8 +811,6 @@ void os_inode_lut_destroy(os_inode_lut_t *ilut)
     apr_ssize_t hlen;
     apr_hash_index_t *hi;
     os_inode_lut_rec_t *r;
-
-dentry_list_dump(ilut->dentry_table, "os_inode_lut_destroy");
 
     //** Destroy all the LUT records
     for (hi=apr_hash_first(NULL, ilut->table); hi != NULL; hi = apr_hash_next(hi)) {
@@ -914,8 +844,6 @@ os_inode_lut_t *os_inode_lut_load(lio_service_manager_t *ess, tbx_inip_file_t *f
     n_epoch = tbx_inip_get_integer(fd, section, "n_epoch", 10000);
     n_new_epoch = tbx_inip_get_integer(fd, section, "n_new_epoch", 10000);
     shrink_fraction = tbx_inip_get_double(fd, section, "shrink_fraction", 0.5);
-
-fprintf(stderr, "QWERT: ilut_load: n_new_epoch=%d\n", n_new_epoch);
 
     return(os_inode_lut_create(n_lut_max, shrink_fraction, n_epoch, n_new_epoch, enable_dentry));
 }

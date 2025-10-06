@@ -114,7 +114,8 @@ int ll_inode2path_from_os(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int
     char attr[1024];
     char *blob, *de;
 
-log_printf(0, "QWERT: START inode=" XIDT "\n", inode_target);
+    log_printf(2, "START inode=" XIDT "\n", inode_target);
+
     //** We are going to look it up in binary format
     snprintf(attr, sizeof(attr), "os.inode.lookup.binary." XIDT, inode_target);
     v_size = -lfs->lc->max_attr;
@@ -137,20 +138,14 @@ log_printf(0, "QWERT: START inode=" XIDT "\n", inode_target);
         used += tbx_zigzag_decode((uint8_t *)blob + used, v_size, &v); len = v;
         de = blob + used;
         used += len;
-//log_printf(0, "QWERT: n=%d i=%d inode=" XIDT " ftype=%d len=%d de=%s path=%s\n", n, i, inode, ftype, len, de, path);
         os_inode_lut_put(lfs->ilut, 1, inode, parent, ftype, len-1, de);
         parent = inode;
         if (i > 0) tbx_append_printf(path, &k, OS_PATH_MAX, "/%s", de);
-//        if (i == 0) {
-//            tbx_append_printf(path, &k, OS_PATH_MAX, "/");
-//        } else {
-//            tbx_append_printf(path, &k, OS_PATH_MAX, "/%s", de);
-//        }
     }
 
     if (n == 1) sprintf(path, "/");
 
-log_printf(0, "QWERT: END inode=" XIDT " path=%s\n", inode_target, path);
+    log_printf(2, "END inode=" XIDT " path=%s\n", inode_target, path);
 
     if (blob) free(blob);
 
@@ -164,7 +159,6 @@ log_printf(0, "QWERT: END inode=" XIDT " path=%s\n", inode_target, path);
 
 int ll_inode2path(lio_fuse_t *lfs, ex_id_t ino, char *fname, int *ftype, int force_os)
 {
-log_printf(0, "force_os=%d ino=" XIDT "\n", force_os, ino);
     if (force_os) {
         if (ll_inode2path_from_os(lfs, ino, fname, ftype) != 0) {
             return(-ENOENT);
@@ -174,7 +168,6 @@ log_printf(0, "force_os=%d ino=" XIDT "\n", force_os, ino);
             return(-ENOENT);
         }
     }
-log_printf(0, "force_os=%d ino=" XIDT " fname=%s\n", force_os, ino, fname);
 
     return(0);
 }
@@ -252,9 +245,7 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
     //** Do the FS stat call
     ftype = 0;
     err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
-//log_printf(0, "QWERT: A.fs_stat=%d parent=" XIDT " name=%s fname=%s\n", err, parent, name, path);
     if (err != 0) {  //** We may have a stale entry so try again but go direct to the LServer
-//log_printf(0, "QWERT: Trying a fresh lookup parent=" XIDT " name=%s\n", parent, name);
         if ((retry == 0) || (ll_inode2path_from_os(lfs, parent, fname, &ftype) != 0)) {
             _lfs_hint_release(lfs, &ug);
             fuse_reply_err(req, -err);
@@ -265,7 +256,6 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
         len = strlen(fname);
         snprintf(fname+len, OS_PATH_MAX-len, "/%s", name);
         err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
-//log_printf(0, "QWERT: B.fs_stat=%d parent=" XIDT " name=%s fname=%s\n", err, parent, name, fname);
     }
     _lfs_hint_release(lfs, &ug);
     if (err != 0) {
@@ -279,11 +269,11 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
             if (lio_fs_exists(lfs->fs, fname) != 0) goto hl_exists;
         }
 
-log_printf(0, "QWERT: CHECKING primary HARDLINK inode=" XIDT " parent=" XIDT " fname=%s\n", fe.attr.st_ino, hparent,fname);
+        log_printf(1, "CHECKING primary HARDLINK inode=" XIDT " parent=" XIDT " fname=%s\n", fe.attr.st_ino, hparent,fname);
 
         //** If we made it here something is not right so remove the dentry
         if (os_inode_lut_get(lfs->ilut, 1, fe.attr.st_ino, &hparent, &hftype, &hlen, &hde) == 0) { //** Get the inode record
-log_printf(0, "QWERT: REMOVING primary HARDLINK hparent=" XIDT " hde=%s fname=%s\n", hparent, hde, fname);
+            log_printf(1, "REMOVING primary HARDLINK hparent=" XIDT " hde=%s fname=%s\n", hparent, hde, fname);
             os_inode_lut_dentry_del(lfs->ilut, 1, hparent, hde);
             if (hde) free(hde);
         }
@@ -314,47 +304,37 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     int err, ftype;
     char *ptr;
 
-log_printf(0, "QWERT: parent=" XIDT " name=%s\n", parent, name);
     //** See if we have a valid parent
     if ((strcmp(".", name) == 0) || (strcmp("..", name) == 0)) goto direct_lookup;
 
     if (ll_new_object_prep(lfs, parent, name, path, 0) != 0) {
-log_printf(0, "QWERT: OOPS parent=" XIDT " name=%s\n", parent, name);
         fuse_reply_err(req, ENOENT);
         return;
     }
-
-log_printf(0, "QWERT: parent=" XIDT " name=%s path=%s\n", parent, name, path);
 
     ll_object_reply_entry(lfs, req, parent, name, path, 0);
     return;
 
 direct_lookup:
-log_printf(0, "QWERT: DIRECT LOOKUP parent=" XIDT " name=%s\n", parent, name);
-
     //** If we made it here we are doing a direct lookup so we need to get the path and then split it
     if (ll_inode2path(lfs, parent, path, &ftype, 0) != 0) {
         fuse_reply_err(req, ENOENT);
         return;
     }
 
-log_printf(0, "QWERT: DIRECT LOOKUP parent=" XIDT " name=%s FULL fname=%s\n", parent, name, path);
     if (strcmp("..", name) == 0) { //** Looking up the directories parent's so peel off the last entry
         ptr = rindex(path, '/');
         if (!ptr) {  //** If not found throw an error
-log_printf(0, "QWERT: DIRECT LOOKUP OOPS! rindex = NULL parent=" XIDT " name=%s FULL fname=%s\n", parent, name, path);
             fuse_reply_err(req, ENOENT);
             return;
         }
 
         *ptr = '\0';
-log_printf(0, "QWERT: DIRECT LOOKUP parent=" XIDT " name=%s TRUNCATED fname=%s\n", parent, name, path);
     }
 
     //** Do the FS stat call
     err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
     _lfs_hint_release(lfs, &ug);
-log_printf(0, "QWERT: DIRECT LOOKUP path=%s err=%d\n", path, err);
     if (err != 0) {
         fuse_reply_err(req, -err);
         return;
@@ -550,15 +530,12 @@ void ll_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
     int err, ftype;
     int force_os = 0;
 
-//log_printf(0, "QWERT: inode=" XIDT " attr=%s\n", ino, name);
     //** See if we have a valid inode
 retry:
     if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
         fuse_reply_err(req, ENOENT);
         return;
     }
-
-//log_printf(0, "QWERT: inode=" XIDT " attr=%s fname=%s\n", ino, name, fname);
 
     //** Adjust the buffer
     buf = tmpbuf;
@@ -567,8 +544,6 @@ retry:
     }
     err = lio_fs_getxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, name, buf, size);
     _lfs_hint_release(lfs, &ug);
-
-//log_printf(0, "QWERT: inode=" XIDT " attr=%s fname=%s err=%d\n", ino, name, fname, err);
 
     if (err < 0) {  //** On error err is negative
         if (buf != tmpbuf) free(buf);
@@ -741,8 +716,6 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
     bmax = (size > sizeof(buf)) ? sizeof(buf) : size;
     bused = 0; bleft = bmax;
 
-//log_printf(0, "QWERT: START inode=" XIDT " bmax=%d size=" ST " sizeof=" ST "\n", ino, bmax, size, sizeof(buf));
-
     memset(&stbuf, 0, sizeof(stbuf));
     n = tbx_stack_count(dit->stack);
     tbx_stack_move_to_bottom(dit->stack);  //** Go from the bottom up.
@@ -753,7 +726,6 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         while (de != NULL) {
             log_printf(2, "dname=%s off=" XOT "\n", de->dentry, off);
             be = fuse_add_direntry_plus(req, buf + bused, bleft, de->dentry, &(de->fe), off);
-//log_printf(0, "QWERT: be=%d bleft=%d off=%lu inode=" XIDT " parent=" XIDT " ftype=%d de=%s\n", be, bleft, off, de->fe.attr.st_ino, dit->parent, ftype, de->dentry);
             if (be > bleft) {
                 fuse_reply_buf(req, buf, bused);
                 bused = 0; bleft = bmax; be = 0;
@@ -773,7 +745,6 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         tbx_type_malloc(de, ll_dir_entry_t, 1);
         ftype = 0;
         err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->fe.attr), NULL, &ftype);
-//log_printf(0, "QWERT: err=%d\n", err);
         if (err != 0) {   //** Nothing left to process
             free(de);
             if (err == 1) {
@@ -801,7 +772,6 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         }
 
         be = fuse_add_direntry_plus(req, buf + bused, bleft, de->dentry, &(de->fe), off);
-//log_printf(0, "QWERT: be=%d bleft=%d off=%lu inode=" XIDT " parent=" XIDT " ftype=%d de=%s\n", be, bleft, off, de->fe.attr.st_ino, dit->parent, ftype, de->dentry);
         if (be > bleft) {
             fuse_reply_buf(req, buf, bused);  //** Buf is full
             bused = 0; bleft = bmax; be = 0;  //** Reset it
@@ -893,15 +863,12 @@ void ll_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char 
     lio_os_authz_local_t ug;
     int force_os = 0;
 
-//log_printf(0, "QWERT: inode=" XIDT " newname=%s link=%s\n", parent, newname, link);
     //** See if we have a valid parent
 retry:
     if (ll_new_object_prep(lfs, parent, newname, path, force_os) != 0) {
         fuse_reply_err(req, ENOENT);
         return;
     }
-
-//log_printf(0, "QWERT: inode=" XIDT " newname=%s link=%s fname=%s\n", parent, newname, link, path);
 
     //** If the link is an absolute path we need to peel off the mount point to the get attribs to link correctly
     //** We only support symlinks within LFS
@@ -915,12 +882,8 @@ retry:
         }
     }
 
-//log_printf(0, "QWERT: inode=" XIDT " newname=%s tweaked link2=%s fname=%s\n", parent, newname, link2, path);
-
     err = lio_fs_symlink(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), link2, path);
     _lfs_hint_release(lfs, &ug);
-
-//log_printf(0, "QWERT: inode=" XIDT " newname=%s tweaked link2=%s fname=%s err=%d\n", parent, newname, link2, path, err);
 
     if (err != 0) {  //** Kick out on error
         if (force_os == 0) { force_os = 1; goto retry; }
@@ -993,7 +956,6 @@ retry:
     }
 
     err = lio_fs_object_remove(lfs->fs, &ug, fname, OS_OBJECT_FILE_FLAG);
-log_printf(0, "REMOVE: inode=" XIDT " parent=" XIDT " dentry=%s fname=%s err=%d\n", inode, parent, name, fname, err);
     if (err != 0) { //** We have an error so let's see if it could be a race issue with a .fuse_hidden file
         cptr = rindex(fname, '/');
         if (strncmp(cptr, "/.fuse_hidden", 13) == 0) {
@@ -1074,8 +1036,6 @@ retry:
         return;
     }
 
-log_printf(0, "inode=" XIDT " oldparent=" XIDT " oldname=%s newparent=" XIDT " newname=%s oldpath=%s newpath=%s flags=%u EXCHANGE=%u NOREPLACE=%u\n", inode, parent, name, newparent, newname, oldpath, newpath, flags, RENAME_EXCHANGE, RENAME_NOREPLACE);
-
     //**FIXME  Not sure how this works with the low-level drivers
     //** See if this is a .fuse_hidden rename
     cptr = rindex(newpath, '/');
@@ -1118,7 +1078,6 @@ retry:
     bsize = sizeof(buf);
     err = lio_fs_readlink(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, buf, bsize);
     _lfs_hint_release(lfs, &ug);
-//log_printf(0, "QWERT: inode=" XIDT " fname=%s link=%s err=%d\n", ino, path, buf, err);
 
     if (err < 0) {
         if (force_os == 0) { force_os = 1; goto retry; }
@@ -1180,7 +1139,6 @@ retry:
     }
 
     fd = lio_fs_open(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, lio_open_flags(fi->flags, 0));
-log_printf(0, "QWERT: fd=%p path=%s ino=" XIDT " force_os=%d\n", fd, path, ino, force_os);
     _lfs_hint_release(lfs, &ug);
     fi->fh = (uint64_t)fd;
 

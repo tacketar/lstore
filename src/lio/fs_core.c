@@ -1279,8 +1279,6 @@ int _fs_pending_delete_relocate_object(lio_fs_t *fs, const char *fname)
     uint32_t n;
     int err = 0;
 
-log_printf(0, "START: PENMDING-REMOVE: fname=%s pending_prefix=%s\n", fname, fs->pending_delete_prefix); tbx_log_flush();
-
     if (fs->pending_delete_prefix == NULL) return(0);  //** Not enabled so kick out
     if (strncmp(fs->pending_delete_prefix, fname, fs->pending_delete_prefix_len) == 0) return(0); //** Already tagged for removal
 
@@ -1289,11 +1287,8 @@ log_printf(0, "START: PENMDING-REMOVE: fname=%s pending_prefix=%s\n", fname, fs-
     snprintf(mapping, OS_PATH_MAX-1, "%s/" TT ".%u.%s", fs->pending_delete_prefix, time(NULL), n, fs->id);
     mapping[OS_PATH_MAX-1] = '\0';
 
-log_printf(0, "START: PENMDING-REMOVE: err=%d fname=%s mapping=%s\n", err, fname, mapping); tbx_log_flush();
-
     //** Do the move
     err = lio_fs_rename(fs , NULL, fname, mapping);
-log_printf(0, "PENMDING-REMOVE: err=%d fname=%s mapping=%s\n", err, fname, mapping);
 
     return(err);
 }
@@ -1327,7 +1322,6 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     FS_MON_OBJ_CREATE("FS_OBJECT_REMOVE: fname=%s ftype=%d", fname,ftype);
 
-
     slot = (ftype & OS_OBJECT_FILE_FLAG) ? FS_SLOT_REMOVE : FS_SLOT_RMDIR;
 
     //** Make sure we can access it
@@ -1342,7 +1336,6 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     tbx_atomic_inc(fs->stats.op[slot].submitted);
     fs_lock(fs);
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
-log_printf(0, "BEFORE: fname=%s ftype=%d fop=%p\n", fname, ftype, fop); tbx_log_flush();
     if (fop != NULL) {
         tbx_atomic_inc(fs->stats.op[slot].errors);
         tbx_atomic_inc(fs->stats.op[slot].finished);
@@ -1352,7 +1345,6 @@ log_printf(0, "BEFORE: fname=%s ftype=%d fop=%p\n", fname, ftype, fop); tbx_log_
         err = _fs_pending_delete_relocate_object(fs, fname);
         return(0);
     }
-log_printf(0, "AFTER: fname=%s fop=%p\n", fname, fop); tbx_log_flush();
     fs_unlock(fs);
 
     err = fs_actual_remove(fs, ug, fname, ftype);
@@ -1632,12 +1624,6 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     dti = apr_time_now() - now;
     tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
     fd->tally_dt[0] += dti;
-
-    if (tbx_log_level() > 0) {
-        t2 = size+off-1;
-        log_printf(1, "LFS_READ:START " XOT " %zu\n", off, size);
-        log_printf(1, "LFS_READ:END " XOT "\n", t2);
-    }
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
