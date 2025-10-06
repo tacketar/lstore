@@ -174,9 +174,15 @@ typedef struct {
     uint64_t my_id;
 } osrc_set_regex_t;
 
-#define OSRC_DEBUG(...) __VA_ARGS__
-#define OSRC_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
-#define OSRC_DEBUG_MQ_PRINTF(msg, fmt, ...) char _b64[1024]; if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, "OSRC_GOP id=%s " fmt, _print_mq_id(msg, _b64, 1024), ## __VA_ARGS__)
+#ifdef ENABLE_OSRC_DEBUG
+    #define OSRC_DEBUG(...) __VA_ARGS__
+    #define OSRC_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
+    #define OSRC_DEBUG_MQ_PRINTF(msg, fmt, ...) char _b64[1024]; if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, "OSRC_GOP id=%s " fmt, _print_mq_id(msg, _b64, 1024), ## __VA_ARGS__)
+#else
+    #define OSRC_DEBUG(...)
+    #define OSRC_DEBUG_NOTIFY(fmt, ...)
+    #define OSRC_DEBUG_MQ_PRINTF(msg, fmt, ...)
+#endif
 
 //***********************************************************************
 //  _print_mq_id - Just gets the ID and size
