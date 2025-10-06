@@ -621,8 +621,7 @@ void mqc_response(gop_mq_conn_t *c, mq_msg_t *msg, int do_exec)
     //** Execute the task in the thread pool
     if(do_exec != 0) {
         log_printf(5, "Submitting repsonse for exec gid=%d\n", gop_id(tn->task->gop));
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_RESPONSE: mq_count=" LU " Submitting gid=%d\n", c->counter, gop_id(tn->task->gop));
-        tbx_log_flush();
+        if ((tbx_log_level() > 1) && (tbx_notify_handle)) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_RESPONSE: mq_count=" LU " Submitting gid=%d\n", c->counter, gop_id(tn->task->gop));
         tn->task->response = msg;
         _tp_submit_op(NULL, tn->task->gop);
     }
