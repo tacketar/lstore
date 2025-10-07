@@ -1,3 +1,11 @@
+lstore (2.5.0) stable; urgency=low
+  * Add Inode tracking in the LServer to support persistent file handles
+  * Add support for using both the low-level and high-level FUSE APIs.
+  * Support for persistent file handles when using the Low-Level FUSE API and supporting LServer
+  * Better logging management and various obther bug fixes
+
+ -- Alan Tackett <alan.tackett@accre.vanderbilt.edu>  Te Oct 07 2025 09:08 -0500
+
 lstore (2.4.5) stable; urgency=low
   * Fix management scripts on hung mount.
 
