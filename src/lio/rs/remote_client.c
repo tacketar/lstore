@@ -174,7 +174,7 @@ gop_op_status_t rsrc_response_get_config(void *task_arg, int tid)
     char dt[128];
     char *data, *config;
     uint64_t *id;
-    int n, n_config, err;
+    int n, n_config, err, eno;
     gop_op_status_t status;
     FILE *fd;
     char *fname_tmp;
@@ -273,6 +273,7 @@ gop_op_status_t rsrc_response_get_config(void *task_arg, int tid)
             goto fail;
         }
         err = fwrite(config, n_config, 1, fd);
+        eno = errno;  //** Preserve it
         fclose(fd);
 
         //** Now move it into the place of the child target
@@ -285,8 +286,8 @@ gop_op_status_t rsrc_response_get_config(void *task_arg, int tid)
             }
         } else {
             status = gop_failure_status;
-            log_printf(0, "ERROR: creating target temp file!  tmp=%s target=%s err=%d\n", fname_tmp, rsrc->child_target_file, err);
-            fprintf(stderr, "ERROR: creating target temp file!  tmp=%s target=%s err=%d\n", fname_tmp, rsrc->child_target_file, err);
+            log_printf(0, "ERROR: writing target temp file!  tmp=%s target=%s n_config=%d errno=%d\n", fname_tmp, rsrc->child_target_file, n_config, eno);
+            fprintf(stderr, "ERROR: writing target temp file!  tmp=%s target=%s n_config=%d errno=%d\n", fname_tmp, rsrc->child_target_file, n_config, eno);
         }
         free(fname_tmp);
     }

@@ -1535,15 +1535,16 @@ hportal_t *hp_create(gop_portal_context_t *hpc, char *hostport)
 {
     hportal_t *hp;
     char *hp2 = strdup(hostport);
-    char *bstate;
-    int fin, n;
+    char *bstate, *h;
+    int fin;
 
     tbx_type_malloc_clear(hp, hportal_t, 1);
 
-    n = strlen(hp2);
-    hp->host = tbx_stk_string_token(hp2, HP_HOSTPORT_SEPARATOR, &bstate, &fin);
-    hp->host[n-1] = '\0';
+    h = tbx_stk_string_token(hp2, HP_HOSTPORT_SEPARATOR, &bstate, &fin);
+    if (h) hp->host = strdup(h);
+
     hp->port = atoi(bstate);
+    free(hp2);
     log_printf(15, "hostport: %s host=%s port=%d\n", hostport, hp->host, hp->port);
 
     hp->skey = strdup(hostport);
@@ -1567,8 +1568,8 @@ void hp_destroy(hportal_t *hp)
 
     log_printf(10, "CONN_LIST=%d\n", tbx_stack_count(hp->conn_list));
 
-    free(hp->skey);
-    free(hp->host);
+    if (hp->skey) free(hp->skey);
+    if (hp->host) free(hp->host);
     tbx_stack_free(hp->conn_list, 0);
     tbx_stack_free(hp->pending, 0);
     free(hp);
