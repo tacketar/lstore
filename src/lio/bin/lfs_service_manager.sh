@@ -308,13 +308,18 @@ systemd_clear_instance() {
 start_instance() {
     INSTANCE_ID=$1
     set_instance_vars $INSTANCE_ID
-    mkdir -p "$INSTANCE_PATH"
+    oops=$(mkdir "$INSTANCE_PATH" 2>&1)
+    if [ "${oops}" != "" ]; then
+        log_message "START_INSTANCE ${INSTANCE_ID}  ERROR: ${oops}"
+        return
+    fi
+
     chmod 0755 "${INSTANCE_PATH}"
     mkdir -p "$INSTANCE_LOGS"
     mkdir -p "$INSTANCE_MNT"
     mkdir -p "$INSTANCE_CFG"
     date +%s > "$INSTANCE_PATH/created"
-    chown -R "${LFS_USER}:" "$INSTANCE_PATH"
+    chown  "${LFS_USER}:" "$INSTANCE_PATH" "$INSTANCE_LOGS" "$INSTANCE_MNT" "$INSTANCE_CFG"
 
     # allow coredumps, set working dir
     cd $WDIR
