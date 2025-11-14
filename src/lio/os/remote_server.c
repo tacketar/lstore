@@ -1409,7 +1409,14 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
 
     fhid = mq_msg_pop(msg);  //** Host handle
     gop_mq_get_frame(fhid, (void **)&fhandle, &hsize);
-   FATAL_UNLESS(hsize == sizeof(intptr_t));
+
+    //** Check if the file handle is the correect size
+    if (hsize != sizeof(intptr_t)) {
+        log_printf(0, "ERROR invalid handle size=%d\n", hsize);
+        if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "osrs_close_object_cb: ERROR invalid handle size=%d\n", hsize);
+        status = gop_failure_status;
+        goto failed;
+    }
 
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
@@ -1430,6 +1437,7 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_failure_status;
     }
 
+failed:
     gop_mq_frame_destroy(fhid);
     gop_mq_frame_destroy(fuid);
 
@@ -1507,6 +1515,8 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     gop_op_status_t status;
     pending_lock_entry_t *entry;
 
+    status = gop_failure_status;
+
     log_printf(5, "Processing incoming request\n");
     //** Parse the command.
     msg = task->msg;
@@ -1524,7 +1534,14 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
 
     fhid = mq_msg_pop(msg);  //** Host handle
     gop_mq_get_frame(fhid, (void **)&fhandle, &hsize);
-    FATAL_UNLESS(hsize == sizeof(intptr_t));
+
+    //** Check if the file handle is the correect size
+    if (hsize != sizeof(intptr_t)) {
+        log_printf(0, "ERROR invalid handle size=%d\n", hsize);
+        if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "osrs_lock_user_object_cb: ERROR invalid handle size=%d\n", hsize);
+        gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the mode/wait time frame
+        goto bad_handle;
+    }
 
     key = *(intptr_t *)fhandle;
     log_printf(5, "PTR key=%" PRIdPTR "\n", key);
@@ -1532,8 +1549,9 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
 
     //** Do the host lookup
     if ((fd = gop_mq_ongoing_get(osrs->ongoing, id, idsize, key, &ohandle)) == NULL) {
-        log_printf(6, "ERROR missing host=%s\n", id);
+        log_printf(0, "ERROR missing host=%s\n", id);
         if (os_notify_handle) tbx_notify_printf(os_notify_handle, 1, NULL, "ERROR missing host=%s\n", id);
+        gop_mq_frame_destroy(mq_msg_pop(msg));  //** Drop the mode/wait time frame
         status = gop_failure_status;
     } else {
         log_printf(6, "Found handle\n");
@@ -1571,6 +1589,7 @@ fail_fd:
         gop_mq_frame_destroy(fdata);
     }
 
+bad_handle:
     gop_mq_frame_destroy(fhid);
     gop_mq_frame_destroy(fuid);
     gop_mq_frame_destroy(fabort);
@@ -1582,7 +1601,6 @@ fail_fd:
 
     //** Lastly send it
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
-
     OSRS_DEBUG_NOTIFY("FLOCK: mq_count=" LU " END key=%" PRIdPTR "\n", task->uuid, key);
 }
 
