@@ -79,7 +79,7 @@ usage() {
      echo "Usage: $0 status [units] [<fname-wildcard> | cleanup <max-used-GB> <fname-wildcard>"
      echo "   status  - Print a summary of namespace log usage"
      echo "   cleanup - Remove older files to get the log usage below <max-used-GB>"
-     exho "   units            - Output units passed to df.  See \"df\" for details"
+     echo "   units            - Output units passed to df.  See \"df\" for details"
      echo "   <fname-wildcard> - List of files to operate on"
      echo "   <max-used-GB>    - Max space to use in GB"
 }
