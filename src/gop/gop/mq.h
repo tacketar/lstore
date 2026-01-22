@@ -237,6 +237,7 @@ struct gop_mq_task_t {      // ** Generic containter for MQ messages for both th
     apr_time_t timeout;     // ** Initially the DT in sec for the command to complete and converted to abs timeout when sent
     gop_mq_task_arg_free_fn_t my_arg_free;
     int pass_through;       // ** Flag to set when a task is only used to pass a message; no heartbeating necessary
+    int progress_state;     // ** Track the progress in sending the command and receiving a response. Used for debugging.
     uint64_t uuid;          // ** UUID for logging purposes.
 };
 

@@ -605,7 +605,7 @@ void mqc_response(gop_mq_conn_t *c, mq_msg_t *msg, int do_exec)
     tn = apr_hash_get(c->waiting, id, size);
     if (tn == NULL) {  //** Nothing matches so drop it
         log_printf(1, "ERROR: No matching ID! sid=%s\n", gop_mq_id2str(id, size, b64, sizeof(b64)));
-        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: mq_count=" LU " No matching ID sid=%s\n", c->counter, b64);
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: mq_count=" LU " No matching ID sid=%s sid_len=%d\n", c->counter, gop_mq_id2str(id, size, b64, sizeof(b64)), size);
         tbx_log_flush();
         gop_mq_msg_destroy(msg);
         return;
@@ -618,11 +618,14 @@ void mqc_response(gop_mq_conn_t *c, mq_msg_t *msg, int do_exec)
     //** and also dec the heartbeat entry
     if (tn->tracking != NULL) mqc_heartbeat_dec(c, tn->tracking);
 
+    tn->task->progress_state = 7;
+
     //** Execute the task in the thread pool
     if(do_exec != 0) {
         log_printf(5, "Submitting repsonse for exec gid=%d\n", gop_id(tn->task->gop));
         if ((tbx_log_level() > 1) && (tbx_notify_handle)) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_RESPONSE: mq_count=" LU " Submitting gid=%d\n", c->counter, gop_id(tn->task->gop));
         tn->task->response = msg;
+        tn->task->progress_state = 8;
         _tp_submit_op(NULL, tn->task->gop);
     }
 
@@ -1030,6 +1033,7 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
                         tbx_log_flush();
                         FATAL_UNLESS(tn->task);
                         FATAL_UNLESS(tn->task->gop);
+                        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: ERROR! FAILING task uuid=%s sid_len=%d sid=%s tn->task->gop=%d\n", c->mq_uuid, klen, gop_mq_id2str(key, klen, b64, sizeof(b64)), gop_id(tn->task->gop));
                         thread_pool_direct(c->pc->tp, mqtp_failure, tn->task);
 
                         //** Free the container. The gop_mq_task_t is handled by the response
@@ -1100,6 +1104,7 @@ next:
             tbx_log_flush();
             FATAL_UNLESS(tn->task);
             FATAL_UNLESS(tn->task->gop);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQ_CONN_HEARTBEAT: ERROR! FAILING task uuid=%s sid_len=%d sid=%s tn->task->gop=%d hash_count(waiting)=%d\n", c->mq_uuid, klen, gop_mq_id2str(key, klen, b64, sizeof(b64)), gop_id(tn->task->gop), apr_hash_count(c->waiting));
             thread_pool_direct(c->pc->tp, mqtp_failure, tn->task);
 
             //** Free the container. The gop_mq_task_t is handled by the response
@@ -1344,7 +1349,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
 
         //** Convert the MAx exec time in sec to an abs timeout in usec
         task->timeout = apr_time_now() + apr_time_from_sec(task->timeout);
-
+        task->progress_state = 1;
 
         //** Check if we expect a response
         //** Skip over the address
@@ -1359,6 +1364,8 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
         if (f == NULL) { //** Missing empty frame
             log_printf(0, "Missing empty frame!\n");
             if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Missing empty frame! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
+            task->progress_state = 2;
+            mq_task_complete(c, task, OP_STATE_FAILURE);
             return_code = 1;
             continue;
         }
@@ -1370,6 +1377,8 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             log_printf(0, "Invalid version!\n");
             log_printf(0, "length = %d\n", size);
             if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: Invalid version! %s\n", gop_mq_msg_dump(task->msg, mbuf, &mlen));
+            task->progress_state = 3;
+            mq_task_complete(c, task, OP_STATE_FAILURE);
             return_code = 1;
             continue;
         }
@@ -1412,19 +1421,11 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: mq_count=" LU " ERROR: Unknown key found! key=%s\n", c->counter, data);
         }
 
-        //** Send it on
-        i = gop_mq_send(c->sock, task->msg, 0);
-        if (i == -1) {
-            log_printf(0, "Error sending msg! errno=%d\n", errno);
-            mq_task_complete(c, task, OP_STATE_FAILURE);
-            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: mq_count=" LU " ERROR: Failed sending message! errno=%d\n", c->counter, errno);
-            return_code = 1;
-            continue;
-        }
 
-        if (tracking == 0) {     //** Exec the callback if not tracked
-            mq_task_complete(c, task, OP_STATE_SUCCESS);
-        } else {                 //** Track the task
+        //** Add the task to the waiting for response queue if needed.
+        //** This way we have the response handle before we do the send
+        //** Technically since we are single threaded this isn't needed but in case things change....
+        if (tracking != 0) {
             log_printf(3, "TRACKING id_size=%d sid=%s\n", size, gop_mq_id2str(data, size, b64, sizeof(b64)));
             if (task->gop != NULL) log_printf(3, "TRACKING gid=%d\n", gop_id(task->gop));
             //** Insert it in the monitoring table
@@ -1433,6 +1434,30 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             tn->id = data;
             tn->id_size = size;
             apr_hash_set(c->waiting,  tn->id, tn->id_size, tn);
+        }
+
+        //** Send it on
+        i = gop_mq_send(c->sock, task->msg, 0);
+        if (i == -1) {
+            task->progress_state = 4;
+            log_printf(0, "Error sending msg! errno=%d\n", errno);
+            if (tracking != 0) { //** We're treacking it so we have to clean that up
+                apr_hash_set(c->waiting,  tn->id, tn->id_size, NULL);
+                free(tn);
+            }
+
+            //** Now process the rest of the task
+            mq_task_complete(c, task, OP_STATE_FAILURE);
+            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: mq_count=" LU " ERROR: Failed sending message! errno=%d\n", c->counter, errno);
+            return_code = 1;
+            continue;
+        }
+
+        task->progress_state = 5;
+
+        if (tracking == 0) {     //** Exec the callback if not tracked
+            task->progress_state = 6;
+            mq_task_complete(c, task, OP_STATE_SUCCESS);
         }
     }
 
