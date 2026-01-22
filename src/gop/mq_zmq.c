@@ -320,10 +320,35 @@ int zero_native_monitor(gop_mq_socket_t *socket, char *address, int events)
 
 //*************************************************************
 
+int _send_frame(gop_mq_socket_t *socket, char *data, int len, int flags)
+{
+    int loop, bytes;
+
+    int count = 0;
+
+    loop = 0;
+    do {
+        bytes = zmq_send(socket->arg, data, len, flags);
+        if (bytes == -1) {
+            if ((errno == EHOSTUNREACH) || (errno == EAGAIN)) {
+                usleep(100);
+            } else {
+                log_printf(15, "ERROR: sending frame=%d len=%d bytes=%d errno=%d loop=%d\n", count, len, bytes, errno, loop);
+                return(-1);
+            }
+        }
+        loop++;
+    } while ((bytes == -1) && (loop < 10));
+
+    return(bytes);
+}
+
+//*************************************************************
+
 int zero_native_send(gop_mq_socket_t *socket, mq_msg_t *msg, int flags)
 {
     gop_mq_frame_t *f, *fn;
-    int n, loop, bytes, len;
+    int n, bytes, len;
 
     int count = 0;
 
@@ -337,35 +362,20 @@ int zero_native_send(gop_mq_socket_t *socket, mq_msg_t *msg, int flags)
 
     while ((fn = gop_mq_msg_next(msg)) != NULL) {
         len = (count > 0) ? f->len : mq_id_bytes(f->data, f->len); //** 1st frame we need to tweak the address
-        loop = 0;
-        do {
-            bytes = zmq_send(socket->arg, f->data, len, ZMQ_SNDMORE);
-            if (bytes == -1) {
-                if (errno == EHOSTUNREACH) {
-                    usleep(100);
-                } else {
-                    FATAL_UNLESS(errno == EHOSTUNREACH);
-                }
-            }
-            loop++;
-            log_printf(15, "sending frame=%d len=%d bytes=%d errno=%d loop=%d\n", count, f->len, bytes, errno, loop);
-            if (f->len>0) {
-                log_printf(15, "byte=%uc\n", (unsigned char)f->data[0]);
-            }
-        } while ((bytes == -1) && (loop < 10));
-        n += bytes;
+        bytes = _send_frame(socket, f->data, len, ZMQ_SNDMORE);
+        if (bytes == -1) { return(-1); }  //** Kick out on an error
+        n = n + len;
         count++;
         f = fn;
     }
 
-    if (f != NULL) n += zmq_send(socket->arg, f->data, f->len, 0);
-
     if (f != NULL) {
-        log_printf(5, "last frame frame=%d len=%d ntotal=%d\n", count, f->len, n);
-    } else {
-        log_printf(0, "ERROR: missing last frame!\n");
+        bytes = _send_frame(socket, f->data, f->len, 0);
+        if (bytes == -1) { return(-1); }  //** Kick out on an error
+        n = n + len;
     }
-    return((n>0) ? 0 : -1);
+
+    return(0);
 }
 
 
