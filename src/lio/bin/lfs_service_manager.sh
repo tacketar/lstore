@@ -725,6 +725,12 @@ health_check_instance() {
         return
     fi
 
+    #This normally means the mount has lost it's connection to the LServer and has bad creds
+    if [[ ${STAT} =~ MISSING-FILE ]]; then
+        echo "HUNG"
+        return
+    fi
+
     #We do a few special checks if it's the primary
     if [ "${PRIMARY}" == "primary=yes" ]; then
         # Check the memory
