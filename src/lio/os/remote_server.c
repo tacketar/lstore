@@ -1397,6 +1397,8 @@ void osrs_close_object_cb(void *arg, gop_mq_task_t *task)
 
     log_printf(5, "Processing incoming request\n");
 
+    key = 0;   //** Clear it
+
     //** Parse the command.
     msg = task->msg;
     gop_mq_remove_header(msg, 0);
@@ -1516,6 +1518,7 @@ void osrs_lock_user_object_cb(void *arg, gop_mq_task_t *task)
     pending_lock_entry_t *entry;
 
     status = gop_failure_status;
+    key = 0;   //** Clear it
 
     log_printf(5, "Processing incoming request\n");
     //** Parse the command.
