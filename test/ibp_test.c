@@ -73,7 +73,6 @@ void base_async_test(ibp_depot_t *depot)
 //  char buffer_cmp[size+1];
     char *buffer, *buffer_cmp;
     char c;
-    char block_buf[block+1];
     tbx_tbuf_t *buf[block+1];
     ibp_attributes_t attr;
     ibp_capset_t caps;
@@ -121,8 +120,6 @@ void base_async_test(ibp_depot_t *depot)
     memset(buffer, '*', size);
     buffer_cmp[size] = '\0';
     memset(buffer_cmp, '_', size);
-    block_buf[block] = '\0';
-    memset(block_buf, '0', block);
 
     //-------------------------------
     //** Do the initial upload
@@ -221,8 +218,6 @@ void base_async_test(ibp_depot_t *depot)
 
 //  printf("base_async_test: buffer_cmp=%s\n", buffer_cmp);
 //  printf("base_async_test:     buffer=%s\n", buffer);
-//  printf("base_async_test:block_buffer=%s\n", block_buf);
-
 
     //-------------------------------
 
@@ -270,7 +265,6 @@ void base_tbx_iovec_test(ibp_depot_t *depot)
 //  int block = 500000;
     char *buffer, *buffer_cmp;
     char c;
-    char block_buf[block+1];
     tbx_tbuf_t *buf;
     ibp_tbx_iovec_t *vec;
     ibp_attributes_t attr;
@@ -324,8 +318,6 @@ void base_tbx_iovec_test(ibp_depot_t *depot)
     memset(buffer, '*', size);
     buffer_cmp[size] = '\0';
     memset(buffer_cmp, '_', size);
-    block_buf[block] = '\0';
-    memset(block_buf, '0', block);
 
     //-------------------------------
     //** Do the initial upload
