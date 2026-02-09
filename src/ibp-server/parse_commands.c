@@ -1476,7 +1476,7 @@ int read_internal_get_alloc(ibp_task_t *task, char **bstate)
     if (sscanf(str, LU, &(arg->id)) != 1) {
         log_printf(10, "ERROR parsing ID!\n");
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
-        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad ID");
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad ID: Got=%s", cmd->name, str);
         tbx_monitor_obj_destroy(&(task->mo));
         return(-1);
     }
@@ -1878,7 +1878,7 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
     }
     debug_printf(1, "read_internal_mount: Successfully parsed rescan command\n");
 
-    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s force_rebuild=%d RID=%s", cmd->name, arg->crid, opt);
+    tbx_monitor_obj_create(&(task->mo), "[%s] RID=%s force_rebuild=%d", cmd->name, arg->crid, opt);
 
     return (0);
 }

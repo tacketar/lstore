@@ -5290,7 +5290,7 @@ gop_op_status_t osf_move_object(lio_object_service_fn_t *os, lio_creds_t *creds,
     err = rename_object(os, sfname, dfname);  //** Move the file/dir
     if (err) {
         rename_errno = errno;
-        notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the namespace entry sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, src_path, dest_path);
+        notify_printf(osf->olog, 1, creds, "ERROR: OSF_MOVE_OBJECT error moving the namespace entry sfname=%s dfname=%s errno=%d ftype=%d src=%s dest=%s\n", sfname, dfname, rename_errno, ftype, src_path, dest_path);
     }
 
     log_printf(15, "sfname=%s dfname=%s err=%d\n", sfname, dfname, err);
@@ -7092,7 +7092,7 @@ gop_op_status_t osfile_lock_user_object_fn(void *arg, int id)
         } else if (umode & OS_MODE_WRITE_BLOCKING) {
             if (op->mode & OS_MODE_READ_BLOCKING) {
                 full_object_downgrade_lock(FOL_USER, osf->os_lock_user, op->fd);
-                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: DOWNGRADE-LOCK fname=%s user_mode=%d err=%d\n",op->fd->opath, op->mode);
+                tbx_notify_printf(osf->olog, 1, op->fd->id, "FLOCK: DOWNGRADE-LOCK fname=%s user_mode=%d\n",op->fd->opath, op->mode);
                 tbx_atomic_set(op->fd->user_mode, op->mode);
             }
             return(gop_success_status);
