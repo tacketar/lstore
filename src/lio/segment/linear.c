@@ -994,13 +994,11 @@ gop_op_status_t seglin_inspect_func(void *arg, int id)
     }
 
     //** Form the query to use
-    args = *(op->args);
+    args = *(op->args);  //** Args shouldn't be NULL but some of it's fields can be
     query = rs_query_dup(s->rs, s->rsq);
-    if (op->args != NULL) {
-        if (op->args->query != NULL) {  //** Local query needs to be added
-            rs_query_append(s->rs, query, op->args->query);
-            rs_query_add(s->rs, &query, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
-        }
+    if (op->args->query != NULL) {  //** Local query needs to be added
+        rs_query_append(s->rs, query, op->args->query);
+        rs_query_add(s->rs, &query, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
     }
     args.query = query;
     op->args = &args;

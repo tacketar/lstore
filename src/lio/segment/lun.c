@@ -2058,11 +2058,9 @@ gop_op_status_t seglun_inspect_func(void *arg, int id)
 
     //** Form the query to use
     query = rs_query_dup(s->rs, s->rsq);
-    if (si->args != NULL) {
-        if (si->args->query != NULL) {  //** Local query needs to be added
-            rs_query_append(s->rs, query, si->args->query);
-            rs_query_add(s->rs, &query, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
-        }
+    if (si->args->query != NULL) {  //** Local query needs to be added
+        rs_query_append(s->rs, query, si->args->query);
+        rs_query_add(s->rs, &query, RSQ_BASE_OP_AND, NULL, 0, NULL, 0);
     }
     args.query = query;
 
