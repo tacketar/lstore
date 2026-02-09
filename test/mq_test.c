@@ -1294,8 +1294,8 @@ int main(int argc, char **argv)
     apr_thread_join(&dummy, server_thread);
     apr_thread_join(&dummy, deferred_thread);
 
-    tbx_stack_del(deferred_ready, 0);
-    tbx_stack_del(deferred_pending, 0);
+    tbx_stack_free(deferred_ready, 0);
+    tbx_stack_free(deferred_pending, 0);
 
     gop_mq_pipe_destroy(ctx, control_efd);
     gop_mq_pipe_destroy(ctx, server_efd);
