@@ -357,7 +357,7 @@ void lio_os_path_split(const char *mypath, char **dir, char **file)
 {
     int i, n;
     char *c;
-    char *path;
+    char *path, *ptr;
 
     *file = NULL;
     path = (char *)mypath;
@@ -367,16 +367,19 @@ again:
         if (path[1] == '.') {
             if (path[2] == '\0') {
                 *dir = strdup(".");
+                if (*file) free(*file);
                 *file = strdup("..");
                 goto finished;
             }
         } else if (path[1] == '\0') {
             *dir = strdup(".");
+            if (*file) free(*file);
             *file = strdup(".");
             goto finished;
         }
     } else if ((path[0] == '/') && (path[1] == '\0')) {
         *dir = strdup("/");
+        if (*file) free(*file);
         *file = strdup("/");
         goto finished;
     }
@@ -384,11 +387,13 @@ again:
     c = rindex(path, '/');
     if (c == NULL) {
         *dir = strdup(".");
+        if (*file) free(*file);
         *file = strdup(path);
         goto finished;
     }
 
     //** See if we terminate with a "/"
+    if (*file) free(*file);
     *file = strdup(c + 1);
     i = strlen(*file);
     if (i>0) {
@@ -398,8 +403,9 @@ again:
             free(*file);
             *file = NULL;
             i = c - path + n;
+            ptr = strndup(path, i);
             if (path != mypath) free(path);
-            path = strndup(path, i);
+            path = ptr;
             goto again;
         }
     } else {
@@ -407,25 +413,33 @@ again:
         n = i;
         while (path[n-1] == '/') n--;
         if (n != i) {
+            ptr = strndup(path, i);
             if (path != mypath) free(path);
-            path = strndup(path, n);
+            path = ptr;
             goto again;
         } else {
+            ptr = strndup(path, i);
             if (path != mypath) free(path);
-            path = strdup(path);
+            path = ptr;
             path[n] = '\0';
             c = rindex(path, '/');
             if (*file != NULL) free(*file);
-            *file = strdup(c + 1);
+            *file = (c) ? strdup(c + 1) : NULL;
         }
     }
 
-    i = c - path;
-    while ((i>0) && (path[i-1] == '/')) i--;
-    if (i == 0) {
-        *dir = strdup("/");
+    if (c == NULL) {
+        *dir = strdup(".");
+        if (*file != NULL) free(*file);
+        *file = (path != mypath) ? strdup(path) : strdup(mypath);
     } else {
-        *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
+        i = c - path;
+        while ((i>0) && (path[i-1] == '/')) i--;
+        if (i == 0) {
+            *dir = strdup("/");
+        } else {
+            *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
+        }
     }
 
 finished:
