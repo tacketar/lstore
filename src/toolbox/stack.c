@@ -42,7 +42,16 @@ TBX_TYPE_SIZEOF_DEFAULT(tbx_stack_t, tbx_stack);
 TBX_TYPE_INIT_DEFAULT(tbx_stack_t, tbx_stack);
 TBX_TYPE_FINI_DEFAULT(tbx_stack_t, tbx_stack);
 TBX_TYPE_NEW_DEFAULT(tbx_stack_t, tbx_stack);
-TBX_TYPE_DEL_DEFAULT(tbx_stack_t, tbx_stack);
+//TBX_TYPE_DEL_DEFAULT(tbx_stack_t, tbx_stack);
+
+//**************************************
+// tbx_stack_del - this has to be done manually since we have to tell it to remove the data as well.
+//**************************************
+
+void tbx_stack_del(tbx_stack_t *stack)
+{
+    tbx_stack_free(stack, 1);
+}
 
 //**************************************
 // check_ends - Checks to see if an
