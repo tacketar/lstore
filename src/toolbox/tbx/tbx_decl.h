@@ -30,7 +30,7 @@
      */ \
     typedef struct TYPENAME TYPENAME; \
     TBX_API TBX_MALLOC TYPENAME * FUNCNAME ## _new(); \
-    TBX_API void FUNCNAME ## _del(); \
+    TBX_API void FUNCNAME ## _del(TYPENAME *self); \
     TBX_API TBX_NONNULL int FUNCNAME ## _init(TYPENAME * self); \
     TBX_API void FUNCNAME ## _fini(TYPENAME * self); \
     TBX_API size_t FUNCNAME ## _sizeof()
@@ -49,7 +49,7 @@
         } \
         int ret = FUNCNAME ## _init(self); \
         if (ret) { \
-            FUNCNAME ## _del(); \
+            FUNCNAME ## _del(self); \
             return NULL; \
         } \
         return self; \
