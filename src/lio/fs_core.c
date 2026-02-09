@@ -119,8 +119,8 @@ static tbx_atomic_int_t _fs_atomic_counter = 0;
 
 // Original macros
 #ifndef NOTIFY_LOG
-#define FS_MON_OBJ_CREATE(...) tbx_mon_object_t mo; \
-                               tbx_monitor_obj_create(tbx_monitor_object_fill(&mo, MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), __VA_ARGS__); \
+#define FS_MON_OBJ_CREATE(fmt, ...) tbx_mon_object_t mo; \
+                               tbx_monitor_obj_create(tbx_monitor_object_fill(&mo, MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), fmt, __VA_ARGS__); \
                                tbx_monitor_thread_group(&mo, MON_MY_THREAD)
 #define FS_MON_OBJ_CREATE_IRATE(size, ...) tbx_mon_object_t mo; \
                                tbx_monitor_obj_create_irate(tbx_monitor_object_fill(&mo, MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), size, __VA_ARGS__); \
