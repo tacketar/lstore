@@ -50,6 +50,8 @@ int main(int argc, char **argv)
     ex_off_t bufsize = 100*1024*1024;
     ex_off_t n;
     gop_op_status_t status;
+    lio_inspect_args_t args;
+
     FILE *fd;
 
     if (argc < 2) {
@@ -135,11 +137,24 @@ int main(int argc, char **argv)
 
     printf("whattodo=%d\n", whattodo);
     //** Execute the inspection operation
-    gop = segment_inspect(seg, lio_gc->da, lio_ifd, whattodo, bufsize, NULL, lio_gc->timeout);
+    memset(&args, 0, sizeof(args));
+    args.qs = gop_opque_new();
+    args.qf = gop_opque_new();
+    gop = segment_inspect(seg, lio_gc->da, lio_ifd, whattodo, bufsize, &args, lio_gc->timeout);
     tbx_log_flush();
     gop_waitany(gop);
     tbx_log_flush();
     status = gop_get_status(gop);
+
+    //** Do the post-processing cleanup tasks
+    if (status.op_status == OP_STATE_SUCCESS) {
+        opque_waitall(args.qs);
+    } else {
+        opque_waitall(args.qf);
+    }
+    gop_opque_free(args.qs, OP_DESTROY);
+    gop_opque_free(args.qf, OP_DESTROY);
+
     gop_free(gop, OP_DESTROY);
 
     //** Print out the results
