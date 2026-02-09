@@ -95,7 +95,7 @@ int _get_perms(lio_os_authz_t *osa, const char *fname, int ftype, unsigned char 
     void *data;
 
     if (v_size <= 0) { //** No attribute so get if from the PACL
-        m = (*mode) ? *mode : 0;
+        m = (mode) ? *mode : 0;
         pacl_lfs_get_acl(osaz->pa, (char *)fname, ftype, &data, &n, &u, &g, &m, 0, &override_mode);
         if (uid) *uid = u;
         if (gid) *gid = g;
