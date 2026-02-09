@@ -52,7 +52,7 @@ int get_partitions(char *prefix)
     }
 
     n = -1;
-    if (fscanf(fd, "%d", &n) == 0) n = -1;
+    if (fscanf(fd, "%d", &n) != 1) n = -1;
     fclose(fd);
 
     return(n);
