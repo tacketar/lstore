@@ -572,7 +572,7 @@ void lio_path_release(lio_path_tuple_t *tuple)
         }
     }
 
-    tuple->lc = NULL;
+    if (anon == 0) tuple->lc = NULL;  //** Clear the context if not an anonymouns tuple
     log_printf(15, "END object=%s\n", buffer);
 
     apr_thread_mutex_unlock(_lc_lock);
