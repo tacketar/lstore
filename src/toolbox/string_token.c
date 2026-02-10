@@ -37,6 +37,37 @@ char NULL_TERMINATOR = '\0';
 
 
 //***************************************************************
+// tbx_stk_strncpy - Safe version of strncpy() routine
+//***************************************************************
+
+char *tbx_stk_strncpy(char *dest, const char *src, size_t size, size_t n_dest)
+{
+    if (size > n_dest) size = n_dest;
+    strncpy(dest, src, size-1);
+    dest[size-1] = '\0';
+
+    return(dest);
+}
+
+//***************************************************************
+// tbx_stk_strncpy - Safe version of strncpy() routine
+//***************************************************************
+
+char *tbx_stk_strncat(char *dest, const char *src, size_t n_cat, size_t n_dest)
+{
+    size_t len, max;
+
+    len = strlen(dest);
+    max = n_dest - len - 1;
+    if (n_cat > max) n_cat = max;
+    strncpy(dest+len, src, n_cat);
+    dest[n_dest-1] = '\0';
+
+    return(dest);
+}
+
+
+//***************************************************************
 // tbx_stk_string_remove_space - Removes the spaces from the string
 //   Returns the new strlen
 //***************************************************************

@@ -27,6 +27,8 @@ extern "C" {
 #endif
 
 // Functions
+TBX_API char *tbx_stk_strncpy(char *dest, const char *src, size_t size, size_t n_dest);
+TBX_API char *tbx_stk_strncat(char *dest, const char *src, size_t n_cat, size_t n_dest);
 TBX_API int tbx_stk_string_remove_space(char *str);
 TBX_API int tbx_stk_string2args(char *str, int *argc, char ***eargv);
 TBX_API char *tbx_stk_argv2format(char *arg);
