@@ -2892,11 +2892,11 @@ int va_timestamp_get_link_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_
 
     if ((int)strlen(fullkey) > n) {  //** Normal attribute timestamp
         n = (long)osf->attr_link_pva.priv;
-        strncpy(buffer, osf->attr_link_pva.attribute, OS_PATH_MAX);
+        tbx_stk_strncpy(buffer, osf->attr_link_pva.attribute, OS_PATH_MAX, OS_PATH_MAX);
         buffer[n] = '.';
         n++;
 
-        strncpy(&(buffer[n]), key, OS_PATH_MAX-n);
+        tbx_stk_strncpy(&(buffer[n]), key, OS_PATH_MAX-n, OS_PATH_MAX-n);
         n = osf->attr_link_pva.get(&osf->attr_link_pva, os, creds, fd, buffer, val, v_size, atype);
     } else {  //** No attribute specified os return 0
         *atype = OS_OBJECT_VIRTUAL_FLAG;
@@ -3105,8 +3105,7 @@ char *object_attr_dir(lio_object_service_fn_t *os, const char *prefix, const cha
     int n;
 
     if ((ftype & (OS_OBJECT_FILE_FLAG|OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_FIFO_FLAG|OS_OBJECT_SOCKET_FLAG)) != 0) {
-        strncpy(fname, path, OS_PATH_MAX);
-        fname[OS_PATH_MAX-1] = '\0';
+        tbx_stk_strncpy(fname, path, OS_PATH_MAX, OS_PATH_MAX);
         lio_os_path_split(fname, &dir, &base);
         n = strlen(dir);
         if (dir[n-1] == '/') dir[n-1] = 0; //** Peel off a trialing /
@@ -3338,8 +3337,8 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                 itl = &(it->level_info[it->curr_level]);
 
                                 //** Initialize the level for use
-                                strncpy(itl->path, fname, OS_PATH_MAX); itl->path[OS_PATH_MAX-1] = 0;
-                                strncpy(itl->realpath, rp, OS_PATH_MAX); itl->realpath[OS_PATH_MAX-1] = 0;
+                                tbx_stk_strncpy(itl->path, fname, OS_PATH_MAX, OS_PATH_MAX);
+                                tbx_stk_strncpy(itl->realpath, rp, OS_PATH_MAX, OS_PATH_MAX);
                                 itl->d = my_opendir(fullname, itl->fragment);
                             }
                         } else { //** Off the static table or on the last level.  From here on all hits are matches. Just have to check ftype
@@ -3368,14 +3367,14 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
                                     if (rmatch == 0) { //** IF a match return
                                         *myfname=strdup(fname);
-                                        strncpy(it->rp, rp, OS_PATH_MAX); it->rp[OS_PATH_MAX-1] = 0; it->realpath = it->rp;
+                                        tbx_stk_strncpy(it->rp, rp, OS_PATH_MAX, OS_PATH_MAX); it->realpath = it->rp;
                                         if (*prefix_len == 0) {
                                             *prefix_len = (it_top != NULL) ? strlen(it_top->path) : 0;
                                             if (*prefix_len == 0) *prefix_len = tweak;
                                         }
                                         log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                         if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
-                                        strncpy(it->prev_match, itl->path, OS_PATH_MAX); it->prev_match[OS_PATH_MAX-1] = '\0';
+                                        tbx_stk_strncpy(it->prev_match, itl->path, OS_PATH_MAX, OS_PATH_MAX);
                                         if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                         return(i);
                                     }
@@ -3392,8 +3391,8 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                     //** Make a new level and initialize it for use
                                     if (it->curr_level < it->max_level) {
                                         tbx_type_malloc_clear(itl, osf_obj_level_t, 1);
-                                        strncpy(itl->realpath, rp, OS_PATH_MAX); itl->realpath[OS_PATH_MAX-1] = 0;
-                                        strncpy(itl->path, fname, OS_PATH_MAX); itl->path[OS_PATH_MAX-1] = 0;
+                                        tbx_stk_strncpy(itl->realpath, rp, OS_PATH_MAX, OS_PATH_MAX);
+                                        tbx_stk_strncpy(itl->path, fname, OS_PATH_MAX, OS_PATH_MAX);
                                         itl->d = my_opendir(fullname, itl->fragment);
                                         itl->curr_pos = my_telldir(itl->d);
                                         itl->firstpass = 1;
@@ -3412,10 +3411,10 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                                 if (*prefix_len == 0) *prefix_len = tweak;
                                             }
                                             *myfname=strdup(fname);
-                                            strncpy(it->rp, rp, OS_PATH_MAX); it->rp[OS_PATH_MAX-1] = '\0'; it->realpath = it->rp;
+                                            tbx_stk_strncpy(it->rp, rp, OS_PATH_MAX, OS_PATH_MAX); it->realpath = it->rp;
                                             log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                             if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
-                                            strncpy(it->prev_match, itl->path, OS_PATH_MAX); it->prev_match[OS_PATH_MAX-1] = '\0';
+                                            tbx_stk_strncpy(it->prev_match, itl->path, OS_PATH_MAX, OS_PATH_MAX);
                                             if (it->curr_level >= it->table->n) tbx_stack_push(it->recurse_stack, itl);  //** Off the static table
                                             return(i);
                                         }
@@ -4128,7 +4127,7 @@ int osf_get_inode(lio_object_service_fn_t  *os, lio_creds_t *creds, const char *
     int n, atype;
 
     memset(&fd, 0, sizeof(fd));
-    strncpy(fd.realpath, rpath, sizeof(fd.realpath)); fd.realpath[sizeof(fd.realpath)-1] = '\0';
+    tbx_stk_strncpy(fd.realpath, rpath, sizeof(fd.realpath), sizeof(fd.realpath));
     fd.object_name = (char *)rpath;
     osf_retrieve_lock(os, rpath, &(fd.ilock_rp));
     fd.ilock_obj = fd.ilock_rp;
@@ -4521,7 +4520,7 @@ gop_op_status_t osfile_realpath_fn(void *arg, int id)
 
     if (osaz_object_access(osf->osaz, op->creds, NULL, rp, OS_MODE_READ_IMMEDIATE) == 0)  return(gop_failure_status);
 
-    strncpy(op->dest_path, rp, OS_PATH_MAX);   //** We're making an assumption here the dest_path is of size OS_PATH_MAX
+    tbx_stk_strncpy(op->dest_path, rp, OS_PATH_MAX, OS_PATH_MAX);   //** We're making an assumption here the dest_path is of size OS_PATH_MAX
     log_printf(15, "fname=%s  realpath=%s\n", op->src_path, op->dest_path);
 
     return(status);
@@ -6327,7 +6326,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
         rp = it->realpath;
     } else {  //** We have to protect accessing the FD->realpath
         slot = osf_realpath_lock(it->fd);
-        strncpy(rpath, it->fd->realpath, OS_PATH_MAX-1); rpath[OS_PATH_MAX-1] = '\0';
+        tbx_stk_strncpy(rpath, it->fd->realpath, OS_PATH_MAX, OS_PATH_MAX);
         rp = rpath;
         apr_thread_mutex_unlock(osf->internal_lock[slot]);
     }

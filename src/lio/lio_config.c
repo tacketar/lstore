@@ -824,8 +824,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
                 goto finished;
             }
 
-            strncpy(uri, obj_name, sizeof(uri));
-            uri[sizeof(uri)-1] = '\0';
+            tbx_stk_strncpy(uri, obj_name, sizeof(uri), sizeof(uri));
             free(obj_name);
 
             ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 1);

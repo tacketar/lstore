@@ -790,43 +790,35 @@ int handle_status(ibp_task_t *task)
         buffer[sizeof(buffer) - 1] = '\0';
         sprintf(result, "%d\n", IBP_OK);
 
-        strncat(result, version, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, version, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         //** Add info on the interfaces
         sprintf(buffer, "Interfaces(%d): ", global_config->server.n_iface);
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         for (i = 0; i < global_config->server.n_iface; i++) {
             iface = &(global_config->server.iface[i]);
             sprintf(buffer, "%s:%d; ", iface->hostname, iface->port);
-            strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-            result[sizeof(result)-1] = '\0';
+            tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         }
-        strncat(result, "\n", sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, "\n", sizeof(result) - 1 - strlen(result), sizeof(result));
 
 
         //** Add the uptime data  **
         print_uptime(buffer, sizeof(buffer));
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         //** Add some stats **
         ui = tbx_network_counter(global_network);
         snprintf(buffer, sizeof(buffer) - 1, "Total Commands: " LU " (%s)  Connections: " LU " (%s)\n",
                  task->tid, tbx_stk_pretty_print_double_with_scale(1000, (double)task->tid, pp1), ui, tbx_stk_pretty_print_double_with_scale(1000, (double)ui, pp2));
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         snprintf(buffer, sizeof(buffer) - 1, "Active Threads: %d\n", currently_running_tasks());
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         reject_count(&i, &total);
         snprintf(buffer, sizeof(buffer) - 1, "Reject stats --- Current: %d  Total: " LU "\n", i,
                  total);
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         //** Get the RID pending list
         //** This should really be done in the resource_list but it's only needed this one place
@@ -834,12 +826,10 @@ int handle_status(ibp_task_t *task)
         apr_thread_mutex_lock(global_config->rl->lock);
         snprintf(buffer, sizeof(buffer) - 1, "Pending RID count: %d\n",
                  tbx_stack_count(global_config->rl->pending));
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         if (tbx_stack_count(global_config->rl->pending) > 0) {
             snprintf(buffer, sizeof(buffer) - 1, "Pending RID list: ");
-            strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-            result[sizeof(result)-1] = '\0';
+            tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
             tbx_stack_move_to_top(global_config->rl->pending);
             while ((prid = (char *) tbx_stack_get_current_data(global_config->rl->pending)) != NULL) {
                 tbx_stack_move_down(global_config->rl->pending);
@@ -848,8 +838,7 @@ int handle_status(ibp_task_t *task)
                 } else {
                     snprintf(buffer, sizeof(buffer) - 1, "%s ", prid);
                 }
-                strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-                result[sizeof(result)-1] = '\0';
+                tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
             }
         }
         apr_thread_mutex_unlock(global_config->rl->lock);
@@ -862,13 +851,11 @@ int handle_status(ibp_task_t *task)
                  " b (%s) Total: " LU " b (%s)\n", rbytes, tbx_stk_pretty_print_double_with_scale(base, (double)rbytes, pp1),
                  wbytes, tbx_stk_pretty_print_double_with_scale(base, (double)wbytes, pp2),
                  total, tbx_stk_pretty_print_double_with_scale(base, (double)total, pp3));
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         snprintf(buffer, sizeof(buffer) - 1, "Depot-Depot copies: " LU " b (%s)\n", cbytes,
                   tbx_stk_pretty_print_double_with_scale(base, (double)cbytes, pp1));
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         total = 0;
         total_used = 0;
@@ -925,15 +912,13 @@ int handle_status(ibp_task_t *task)
                       r_diff,  tbx_stk_pretty_print_double_with_scale(base, r_diff, pp3),
                       r_free,  tbx_stk_pretty_print_double_with_scale(base, r_free, pp4), r_alloc,
                      r_alias, bad_count, ui,  tbx_stk_pretty_print_double_with_scale(base, (double)ui, pp5));
-            strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-            result[sizeof(result)-1] = '\0';
+            tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
             snprintf(buffer, sizeof(buffer) - 1,
                      "Trash stats for RID: %s -- Deleted: " LU " b (%s) in " LU
                      " files  -- Expired: " LU " b (%s) in " LU " files\n", r->name,
                      del_free,  tbx_stk_pretty_print_double_with_scale(base, (double)del_free, pp1), n_del, exp_free,  tbx_stk_pretty_print_double_with_scale(base, (double)exp_free, pp2), n_exp);
-            strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-            result[sizeof(result)-1] = '\0';
+            tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         }
         resource_list_iterator_destroy(global_config->rl, &it);
 
@@ -951,21 +936,17 @@ int handle_status(ibp_task_t *task)
                  total_free,  tbx_stk_pretty_print_double_with_scale(base, (double)total_free, pp4),
                  total_alloc, total_alias,
                  bad_total_count);
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
-
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
         snprintf(buffer, sizeof(buffer) - 1,
                  "Total Trash stats -- Deleted: " LU " b (%s) in " LU " files  -- Expired: "
                  LU " b (%s) in " LU " files\n", del_total,  tbx_stk_pretty_print_double_with_scale(base, (double)del_total, pp1), n_del_total,
                  exp_total,  tbx_stk_pretty_print_double_with_scale(base, (double)exp_total, pp2), n_exp_total);
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
 
-        snprintf(buffer, sizeof(result) - 1 - strlen(result), "\n");
+        snprintf(buffer, sizeof(result) - 1 - strlen(result), "\n");  //**QWERT: Does this do anything????
         snprintf(buffer, sizeof(result) - 1 - strlen(result), "END\n");
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
-        result[sizeof(result)-1] = '\0';
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         i = strlen(result);
         server_ns_write_block(task->ns, task->cmd_timeout, result, i);
 
@@ -993,13 +974,13 @@ int handle_status(ibp_task_t *task)
         it = resource_list_iterator(global_config->rl);
         while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
             snprintf(buffer, sizeof(buffer), "%s ", r->name);
-            strncat(result, buffer, sizeof(result) - 1 - strlen(result));
+            tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
             result[sizeof(result)-1] = '\0';
         }
         resource_list_iterator_destroy(global_config->rl, &it);
 
         sprintf(buffer, "\n");
-        strncat(result, buffer, sizeof(result) - 1 - strlen(result));
+        tbx_stk_strncat(result, buffer, sizeof(result) - 1 - strlen(result), sizeof(result));
         result[sizeof(result)-1] = '\0';
 
         log_printf(10, "handle_status: Sending resource list: %s\n", result);
