@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 #************************************************************************************
 #
 # lfs_pending_stat_check.sh - Performs a background stat operation in an LFS instance
@@ -14,9 +14,11 @@ TIMEOUT=$1
 OUTFILE=$2
 STATFILE=$3
 
+LFS_TIMEOUT_SCRIPT=$(dirname $(realpath $0) )/lfs_timeout.sh
+
 echo "PENDING $(date +'%s')" > $OUTFILE
 
-TMP=$( $(which time) -p -o ${OUTFILE}.time timeout -s 9 ${TIMEOUT} stat ${STATFILE} 2>&1 >/dev/null )
+$(which time) -p -o ${OUTFILE}.time bash -c "${LFS_TIMEOUT_SCRIPT} -v ${TIMEOUT} 9 stat ${STATFILE} 2>&1" >/dev/null
 rcode=$?
 
 if [ "${rcode}" == "0" ]; then

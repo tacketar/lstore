@@ -30,9 +30,11 @@
 #   CK_PENDING_TIMEOUT - Background Mount health check timeout
 #   CK_FILE        - File to stat for determining health
 #   CK_MEM_GB      - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
-#   BIND_ENABLE    - If "1" then a bind mount is added in the config directory: /lfs_roots/<name>/bmnt
-#   BIND_PRESCRIPT - The script to call before cycling a mount which unmounts the the bind mount
-#   BIND_POPSTSCRIPT - Script to call after a mount has been cycled and the new bind mount is created
+#   BIND_ENABLE    - Enable Bind mount management and optionally NFS
+#   BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
+#   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
+#   LIO_INFO       - Location of where the lio_fuse process dumps state when hit with signal USR1. Defaults to /tmp/lio_info.txt
+#   NFS_MNT        - Optional exportfs path to the bind mount. Disabled in BIND_ENABLE=0 and/or NFS_MNT is empty
 #
 # Organization of files
 #    ${LFS_ROOTS}
@@ -41,6 +43,8 @@
 #    ${LFS_ROOTS}/mnt         - Always points to the current active mount
 #    ${LFS_ROOTS}/current     - This is a symlink to the current active instance
 #    ${LFS_ROOTS}/instances   - List of all the mount instances. Format: YY-MM-DD-HH-MM-SS
+#    ${LFS_ROOTS}/lock        - Lock file for high-level singleton exection
+#    ${LFS_ROOTS}/lock.start  - Lock file for singletone exection when starting a new instance
 #
 #******************************************************************************
 
@@ -78,8 +82,10 @@ vars_default() {
     CK_FILE=""
     CK_MEM_GB=""
     BIND_ENABLE="0"
-    BIND_PRESCRIPT=""
-    BIND_POSTSCRIPT=""
+#    BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
+#   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
+    LIO_INFO="/tmp/lio_info.txt"
+#   NFS_MNT        - Optional exportfs path to the bind mount. Disabled in BIND_ENABLE=0 and/or NFS_MNT is empty
 }
 
 #******************************************************************************
@@ -170,9 +176,7 @@ install() {
     echo "CK_PENDING_TIMEOUT=\"${CK_PENDING_TIMEOUT}\"" >> ${VARS}
     echo "CK_FILE=\"${CK_FILE}\"" >> ${VARS}
     echo "CK_MEM_GB=\"${CK_MEM_GB}\"" >> ${VARS}
-    echo "BIND_ENABLE=\"${BIND_ENABLE}\"" >> ${VARS}
-    echo "BIND_PRESCRIPT=\"${BIND_PRESCRIPT}\"" >> ${VARS}
-    echo "BIND_POSTSCRIPT=\"${BIND_POSTSCRIPT}\"" >> ${VARS}
+
     chown "${user}:" "${VARS}"
     chmod +x ${VARS}
     echo "Please edit ${VARS} as needed"
@@ -190,84 +194,81 @@ log_message() {
 }
 
 #******************************************************************************
-# bind_mount - Performs a bind mount if enabled
+# zombie_only - Takes a list of PIDs and checks if they are all Zombie processes
+#    Returns "ZOMBIE" if all procs are zombies and "LIVE" otherwise
 #******************************************************************************
 
-bind_mount() {
-    #Kickout if not enabled
-    if [ "${BIND_ENABLE}" == "0" ]; then
-        return
-    fi
+zombie_only() {
+    for pid in $*; do
+        state=$(ps -p ${pid} -h -o state)
+        if [ "${state}" != "" ]; then  # Got something
+            if [ "${state}" != "Z" ]; then  # Not a zombie so kick out
+                echo "LIVE"
+                return
+            fi
+        fi
+    done
 
-    if [ ! -e ${MOUNT_BIND} ]; then
-        mkdir ${MOUNT_BIND}
-    fi
+    echo "ZOMBIE"
+    return
+}
 
-    mount --bind ${MOUNT_SYMLINK} ${MOUNT_BIND}
+
+#******************************************************************************
+# my_singleton_execute_no_retry - Forces only one instance of the operation can execute
+#     Does not check for zombie blocking processes!
+#      0|1 <lock-file> <command>
+#******************************************************************************
+
+my_singleton_execute_no_retry() {
+    local do_log=$1
+    local lfile=$2
+    shift; shift
+    (
+        flock -xn 100
+        if [ $? -eq 1 ]; then
+            if [ "${do_log}" == "1" ]; then
+                log_message "BLOCKED: $*"
+            fi
+            echo "BLOCKED: $*"
+            return 1
+        fi
+
+        $*
+    ) 100>${lfile}
+
+    return 0
 }
 
 #******************************************************************************
-# bind_unmount - Performs a bind unmount if enabled
+# my_singleton_execute - Forces only one instance of the operation can execute
+#     Gracefully handles zombie processes
+#      <lock-file> <command>
 #******************************************************************************
 
-bind_unmount() {
-    #Kickout if not enabled
-    if [ "${BIND_ENABLE}" == "0" ]; then
-        return
-    fi
+my_singleton_execute() {
+    local lfile=$1
+    local zonly
+    local pids
 
-    umount ${MOUNT_BIND}
+    my_singleton_execute_no_retry 0 $*
+    if [ "$?" == "1" ]; then  # Blocked so see if we are blocked by zombie procs
+        pids=$(fuser ${lfile} | cut -f2- -d\  )
+        zonly=$(zombie_only ${pids})
+        if [ "${zonly}" == "ZOMBIE" ]; then  # Zombie processes so clean up and try again
+            rm ${lfile}
+        fi
+
+        my_singleton_execute_no_retry 1 $*  #This time we log if we are blocked
+    fi
 }
 
 #******************************************************************************
-# bind_prescript - Performs the user provided script before unbinding an existing mount
+# singleton_execute - Forces only one instance of the operation can execute
 #******************************************************************************
 
-bind_prescript() {
-
-    #Kickout if not enabled
-    if [ "${BIND_ENABLE}" == "0" ]; then
-        return
-    fi
-    if [ "${BIND_PRESCRIPT}" == "" ]; then
-        return
-    fi
-
-    ${BIND_PRESCRIPT} ${MOUNT_BIND}
-}
-
-#******************************************************************************
-# bind_postscript - Performs the user provided script after swinging the bind mount
-#******************************************************************************
-
-bind_postscript() {
-    #Kickout if not enabled
-    if [ "${BIND_ENABLE}" == "0" ]; then
-        return
-    fi
-    if [ "${BIND_POSTSCRIPT}" == "" ]; then
-        return
-    fi
-
-    ${BIND_POSTSCRIPT} ${MOUNT_BIND}
-}
-
-#******************************************************************************
-# perform_bind - Performs the bind operation
-#******************************************************************************
-
-perform_bind() {
-    bind_mount
-    bind_postscript
-}
-
-#******************************************************************************
-# perform_unbind - Performs the unbind operation
-#******************************************************************************
-
-perform_unbind() {
-    bind_prescript
-    bind_unmount
+singleton_execute() {
+    my_singleton_execute ${LFS_ROOTS}/lock $*
 }
 
 #******************************************************************************
@@ -301,6 +302,49 @@ systemd_clear_instance() {
 }
 
 #******************************************************************************
+# generate_core - Generates a core and lio_info.txt file for the mount
+#    INSTANCE_ID - Local instance ID
+#******************************************************************************
+
+generate_core() {
+    INSTANCE_ID=$1
+
+    #Get the PID
+    FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
+    if [ "${FPID}" == "" ]; then
+        log_message "GENERATE_CORE ${INSTANCE_ID}  ERROR: Unable to determine PID!"
+        return
+    fi
+
+    GCORE=$(which gcore)
+    if [ "${GCORE}" == "" ]; then
+        log_message "GENERATE_CORE ${INSTANCE_ID}  ERROR: Missing gcore!"
+    fi
+
+    COREDIR="${INSTANCE_ROOT}/cores/${INSTANCE_ID}"
+
+    #Make the directory for the core
+    mkdir -p ${COREDIR}
+
+    #Now generate the core
+    ${GCORE} -o ${COREDIR}/core ${FPID}
+
+    #And dump the state
+    kill -USR1 ${FPID}
+
+    #Wait until everything is dumped
+    sleep 0.1
+    while [ $(grep -cF 'Thread Pool Concurrency Stats' ${LIO_INFO}) == "0" ]; do
+        sleep 1
+    done
+
+    #Lastly copy it over
+    cp ${LIO_INFO} ${COREDIR}/
+
+    log_message "GENERATE_CORE ${INSTANCE_ID} SUCCESS!"
+}
+
+#******************************************************************************
 # start_instance - Starts a new instance
 #    INSTANCE_ID - Local instance ID
 #******************************************************************************
@@ -322,9 +366,9 @@ start_instance() {
     chown  "${LFS_USER}:" "$INSTANCE_PATH" "$INSTANCE_LOGS" "$INSTANCE_MNT" "$INSTANCE_CFG"
 
     # allow coredumps, set working dir
-    cd $WDIR
+    cd ${INSTANCE_LOGS}
     echo "Core dumps enabled (unlimited size), working directory is '$(pwd)' and the current destination/handler is '$(cat /proc/sys/kernel/core_pattern)' (set using /proc/sys/kernel/core_pattern)"
-    COMMAND="${LIO_FUSE} ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${WDIR} ${LFS_CFG} ${LIO_CREDS} ${LIO_OPTS}"
+    COMMAND="${LIO_FUSE} ${FUSE_OPTS} $INSTANCE_MNT --lio -C ${INSTANCE_LOGS} ${LFS_CFG} ${LIO_CREDS} ${LIO_OPTS}"
     echo "COMMAND=${COMMAND}"
     # ulimits are done twice, once as root to raise the hard limit and once
     # after the sudo to raise user's soft limit
@@ -334,8 +378,6 @@ start_instance() {
     if [ "${TCM_ENABLE}" != "1" ]; then   #** Disable TCMalloc use
         TCMOPT=""
     fi
-
-    perform_unbind  #Unbind the existing mount if enabled
 
     # Drop set +u in subshell because function library doesn't work
     # This may be centos-specific
@@ -348,8 +390,9 @@ start_instance() {
     update_symlink $MOUNT_SYMLINK $INSTANCE_MNT
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
     update_symlink $NESTED_CURRENT_SYMLINK $INSTANCE_RELATIVE_MNT
-    perform_bind  #Add it back after starting if enabled
-
+    if [ "${BIND_ENABLE}" == "1" ]; then
+        nohup ${LFS_BIND_AND_NFS_UPDATE_SCRIPT} ${LFS_ROOTS}/lock.bind  ${LIO_INFO} ${LFS_ROOTS}/service.log ${BIND_MNT} ${BIND_TARGET} ${NFS_MNT} > /dev/null 2>&1 &
+    fi
     echo "Instance with ID $INSTANCE_ID based in $INSTANCE_PATH started, link to mount: $MOUNT_SYMLINK"
 }
 
@@ -365,11 +408,35 @@ stop_instance() {
     ${FUSE_PATH}/bin/fusermount3 -u $INSTANCE_MNT
     status=$?
     if [ "${status}" != "0" ] && [ "${FORCE_UMOUNT}" == "1" ]; then
-        ${FUSE_PATH}/bin/fusermount3 -u -z $INSTANCE_MNT
+        echo "Instance ${INSTANCE_ID} failed to unmount and FORCE_UNMOUNT is requested"
+
+        #Get the PID
         #FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | cut -f1 -d" ")
         FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
+
+        #First try and tell lio_fuse to quit on it's own
         if [ "${FPID}" != "" ]; then
+            echo "Issuing kill -QUIT ${FPID} to instance ${INSANCE_ID}"
+            kill -QUIT ${FPID}
+            timeout 60 tail --pid=${FPID} -f /dev/null #Give it a bit of time to exit on it's own
+        fi
+
+        echo "Trying again but this time doing a lazy unmount instance=${INSTANCE_ID}"
+        #Now try and do an unmount
+        ${FUSE_PATH}/bin/fusermount3 -u -z $INSTANCE_MNT
+
+        #See if it's still alive and do a hard kill if needed
+        FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
+        if [ "${FPID}" != "" ]; then
+            echo "Having to do a hard kill -9 ${FPID} to instance ${INSANCE_ID}"
             kill -9 ${FPID}
+            sleep 5
+
+            tmp=$(mount | grep ${INSTANCE_ID})
+            if [ "${tmp}" != "" ]; then
+                echo "Try one last time after the hard kill instance ${INSANCE_ID}"
+                ${FUSE_PATH}/bin/fusermount3 -u -z $INSTANCE_MNT
+            fi
         fi
     fi
 
@@ -410,7 +477,7 @@ get_stat_instance() {
     INSTANCE_ID=$1
     set_instance_vars $INSTANCE_ID
 
-    TMP=$( $(which time) -p -o ${INSTANCE_LOGS}/stat_time timeout -s 9 ${CK_TIMEOUT} stat ${INSTANCE_MNT}/${CK_FILE} 2>&1 >/dev/null )
+    $(which time) -p -o ${INSTANCE_LOGS}/stat_time bash -c "${LFS_TIMEOUT_SCRIPT} -v ${CK_TIMEOUT} 9 stat ${INSTANCE_MNT}/${CK_FILE} 2>&1" >/dev/null
     rcode=$?
 
     if [ "${rcode}" == "0" ]; then
@@ -488,21 +555,37 @@ get_instance_health() {
     fi
 
     # Is the filesystem process running?
-    PSINFO=$(ps -eo pid,rss,args | grep -v grep | grep ${INSTANCE_ID})
+    PSINFO=$(ps -eo pid,rss,%cpu,args | grep -v grep | grep ${INSTANCE_ID})
     if [ "${PSINFO}" == "" ]; then
         STATUS+=" is_running=NO"
         echo "$STATUS"
         return
     fi
 
-    # Get the RSS and PID and add it
+    # Get the RSS,PID, and CPU and add it
     IPID=$(echo ${PSINFO} | awk '{print $1}')
     IMEM=$(echo ${PSINFO} | awk '{printf "%.2f", $2/1024}')
+    ICPU=$(echo ${PSINFO} | awk '{printf $3}')
     STATUS+=$(printf " %-23s" "is_running=yes(${IPID})")
-    STATUS+=$(printf " %-16s" "rss_mb=${IMEM}")
+    STATUS+=$(printf " %-16s" "rss_mb=${IMEM} %cpu=${ICPU}")
 
     # Is it in use?
-    FILE_USE_COUNT=$($TIMEOUT 10 bash -c "lsof +f --  $INSTANCE_MNT 2>/dev/null | grep -Ev '^COMMAND ' | wc -l" || echo 'TIMEOUT')
+    PID_USE_COUNT=$($TIMEOUT 10 bash -c "fuser -m  $INSTANCE_MNT 2>/dev/null | cut -f2- -d\  | tr ' ' '\n' | xargs -P1 -I{} ls -l /proc/{}/fd | grep $INSTANCE_MNT | wc -l" || echo 'TIMEOUT')
+    KERNEL_USE_COUNT=$($TIMEOUT 10 bash -c "fuser -vm  $INSTANCE_MNT 2>&1 | grep ' kernel ' | grep -v ' mount ' | wc -l" || echo 'TIMEOUT')
+    OTHER_MNTS=$($TIMEOUT 10 bash -c "fuser -vm  $INSTANCE_MNT 2>&1 | grep ' kernel ' | grep ' mount '" | grep -v $INSTANCE_MNT |  tr -s ' ' | cut -f5 -d\ )
+    N_OTHER="${KERNEL_USE_COUNT}"
+    if [ "${OTHER_MNTS}" != "" ]; then
+        for m in ${OTHER_MNTS}; do
+            cnt=$($TIMEOUT 10 bash -c "fuser -m  ${m} 2>/dev/null | cut -f2- -d\  | tr ' ' '\n' | xargs -P1 -I{} ls -l /proc/{}/fd | grep ${m} | wc -l" || echo 'TIMEOUT')
+            if [ "${cnt}" != "" ]; then
+                N_OTHER="${N_OTHER}+${cnt}"
+            fi
+        done
+    else
+        N_OTHER="${N_OTHER}+0"
+    fi
+
+    FILE_USE_COUNT="${PID_USE_COUNT}+${N_OTHER}"
     STATUS+=$( printf " %-18s" "files_in_use=${FILE_USE_COUNT}")
 
     # Do a stat
@@ -602,7 +685,7 @@ service_restart() {
         log_message "RESTART Skipping service is already STOPPED"
     else
         log_message "RESTART"
-        start_instance $(generate_instance_id)
+        my_singleton_execute "${LFS_ROOTS}/lock.start" start_instance $(generate_instance_id)
     fi
 }
 
@@ -613,7 +696,7 @@ service_restart() {
 stop_inactive() {
     log_message "STOP_INACTIVE"
     echo "Stopping inactive instances ..."
-    service_status | grep -E 'is_running=yes|mounted=yes' | grep 'files_in_use:0' | grep 'primary=NO' | while read id everything_else; do
+    service_status | grep -E 'is_running=yes|mounted=yes' | grep 'files_in_use=0+0+0' | grep 'primary=NO' | while read id everything_else; do
         echo "Stopping inactive instance '$id'"
         stop_instance $id
     done
@@ -661,7 +744,6 @@ service_cleanup() {
 stop_all() {
     log_message "STOPPING_ALL"
     echo "Attempting to stop all instances ..."
-    perform_unbind
     service_status | grep 'is_running=yes' | while read id everything_else; do
         echo "Stopping instance '$id'"
         stop_instance $id
@@ -713,6 +795,8 @@ health_check_instance() {
         RSS=$( echo "scale=4; ${d} * 1024 * 1024" | bc | cut -f1 -d\. )
         FILES_IN_USE=$7
         STAT=$8
+    else
+        FILES_IN_USE="files_in_use=0+0+0"
     fi
 
     MAX_SIZE=$( echo "scale=4; ${CK_MEM_GB} * 1024 * 1024 * 1024" | bc | cut -f1 -d\. )
@@ -738,7 +822,7 @@ health_check_instance() {
             echo "HI_MEM"
             return
         fi
-    elif [ "${FILES_IN_USE}" == "files_in_use=0" ]; then # Not being used and not the primary
+    elif [ "${FILES_IN_USE}" == "files_in_use=0+0+0" ]; then # Not being used and not the primary
         echo "UNUSED"
         return
     fi
@@ -814,6 +898,7 @@ health_checkup() {
                 ;;
             HUNG)
                 log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary}"
+                generate_core $id
                 FORCE_UMOUNT="1" stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
@@ -999,9 +1084,10 @@ fi
 #We don't assume the LFS/LIO management sccripts are in the search path but are in the same directory as this script
 LIO_LOG_SCRIPT=$(dirname $(realpath $0) )/lio_log_manager.sh
 LFS_PENDING_STAT_CHECK_SCRIPT=$(dirname $(realpath $0) )/lfs_pending_stat_check.sh
+LFS_BIND_AND_NFS_UPDATE_SCRIPT=$(dirname $(realpath $0) )/lfs_bind_and_nfs_update.sh
+LFS_TIMEOUT_SCRIPT=$(dirname $(realpath $0) )/lfs_timeout.sh
 INSTANCE_ROOT="${LFS_ROOTS}/instances"
 MOUNT_SYMLINK="${LFS_ROOTS}/mnt"
-MOUNT_BIND="${LFS_ROOTS}/bmnt"
 CURRENT_SYMLINK="${LFS_ROOTS}/current"
 WDIR="${CURRENT_SYMLINK}/logs"
 LIO_FUSE=${LIO_FUSE:=$(which lio_fuse)}   # Allow the lio_fuse binary to be overridden as well
@@ -1023,28 +1109,28 @@ case "${2:-}" in
         remove_root
         ;;
     start)
-        service_start
+        singleton_execute service_start
         ;;
     stop)
-        service_stop
+        singleton_execute service_stop
         ;;
     restart)
-        service_restart
+        singleton_execute service_restart
         ;;
     status)
-        service_status
+        singleton_execute service_status
         ;;
     cleanup)
-        service_cleanup "${3:-}" "${4:-}"
+        singleton_execute service_cleanup "${3:-}" "${4:-}"
         ;;
     log-status)
         log_status "${3:-}"
         ;;
     log-cleanup)
-        log_cleanup
+        singleton_execute log_cleanup
         ;;
     health-checkup)
-        health_checkup
+        singleton_execute health_checkup
         ;;
     *)
         usage;
