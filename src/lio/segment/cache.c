@@ -4632,7 +4632,7 @@ log_printf(0, "RLOG: psid=" XIDT " rsid=" XIDT " inspect child gs.op_status=%d\n
         break;
     }
 
-    gop_opque_free(q, 1);
+    gop_opque_free(q, OP_DESTROY);
     return(status);
 }
 
