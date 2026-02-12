@@ -302,6 +302,16 @@ systemd_clear_instance() {
 }
 
 #******************************************************************************
+# mnt_top_info - Returns the mounts %cpu and %mem usage
+#******************************************************************************
+
+mnt_top_info() {
+    INSTANCE_ID=$1
+
+    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
+}
+
+#******************************************************************************
 # generate_core - Generates a core and lio_info.txt file for the mount
 #    INSTANCE_ID - Local instance ID
 #******************************************************************************
@@ -886,18 +896,20 @@ health_checkup() {
             on_primary=""
         fi
 
+        top_info=$( mnt_top_info ${id} )
+
         case "${STATE}" in
             GOOD)
-                log_message "HEALTH-CHECKUP ${id} GOOD ${on_primary}"
+                log_message "HEALTH-CHECKUP ${id} GOOD ${on_primary} ${top_info}"
                 ;;
             HI_MEM)
-                log_message "HEALTH-CHECKUP ${id} HI_MEM ${on_primary}"
+                log_message "HEALTH-CHECKUP ${id} HI_MEM ${on_primary} ${top_info}"
                 if [ "$on_primary" != "" ]; then
                     service_restart
                 fi
                 ;;
             HUNG)
-                log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary}"
+                log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary} ${top_info}"
                 generate_core $id
                 FORCE_UMOUNT="1" stop_instance $id
                 remove_instance $id
@@ -914,7 +926,7 @@ health_checkup() {
                 fi
                 ;;
             UNUSED)
-                log_message "HEALTH-CHECKUP ${id} UNUSED ${on_primary}"
+                log_message "HEALTH-CHECKUP ${id} UNUSED ${on_primary} ${top_info}"
                 stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
