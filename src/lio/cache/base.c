@@ -62,9 +62,33 @@ void cache_base_destroy(lio_cache_t *c)
 void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
 {
     apr_pool_create(&(c->mpool), NULL);
-    apr_thread_mutex_create(&(c->lock), APR_THREAD_MUTEX_DEFAULT, c->mpool);
+    
+    //** Create mutex with error checking
+    if (apr_thread_mutex_create(&(c->lock), APR_THREAD_MUTEX_DEFAULT, c->mpool) != APR_SUCCESS) {
+        log_printf(0, "ERROR: Failed to create cache lock mutex\n");
+        apr_pool_destroy(c->mpool);
+        return;
+    }
+    
+    //** Create segments list with error checking
     c->segments = tbx_list_create(0, &skiplist_compare_ex_id, NULL, NULL, NULL);
+    if (c->segments == NULL) {
+        log_printf(0, "ERROR: Failed to create cache segments list\n");
+        apr_thread_mutex_destroy(c->lock);
+        apr_pool_destroy(c->mpool);
+        return;
+    }
+    
+    //** Create condition coop with error checking
     c->cond_coop = tbx_pc_new("cache_cond_coop", 50, sizeof(lio_cache_cond_t), c->mpool, cache_cond_new, cache_cond_free);
+    if (c->cond_coop == NULL) {
+        log_printf(0, "ERROR: Failed to create cache condition coop\n");
+        tbx_list_destroy(c->segments);
+        apr_thread_mutex_destroy(c->lock);
+        apr_pool_destroy(c->mpool);
+        return;
+    }
+    
     c->da = da;
     c->timeout = timeout;
     c->default_page_size = 16*1024;
