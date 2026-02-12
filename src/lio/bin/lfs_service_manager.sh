@@ -308,7 +308,16 @@ systemd_clear_instance() {
 mnt_top_info() {
     INSTANCE_ID=$1
 
-    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
+    #Get the PID
+    FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
+    if [ "${FPID}" == "" ]; then
+        return
+    fi
+
+    top -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%cpu=" $9 " %mem=" ${10}}
+
+#    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
+#    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
 }
 
 #******************************************************************************
@@ -803,8 +812,8 @@ health_check_instance() {
     if [[ "$IS_RUNNING" =~ "is_running=yes" ]]; then
         d=$(echo "$6" | cut -f2 -d=)
         RSS=$( echo "scale=4; ${d} * 1024 * 1024" | bc | cut -f1 -d\. )
-        FILES_IN_USE=$7
-        STAT=$8
+        FILES_IN_USE=$8
+        STAT=$9
     else
         FILES_IN_USE="files_in_use=0+0+0"
     fi
@@ -812,7 +821,6 @@ health_check_instance() {
     MAX_SIZE=$( echo "scale=4; ${CK_MEM_GB} * 1024 * 1024 * 1024" | bc | cut -f1 -d\. )
 
     # Now check them
-
     # See if it's running
     if [ "${IS_RUNNING}" == "is_running=NO" ]; then
         echo "DEAD"
