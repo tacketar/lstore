@@ -314,7 +314,7 @@ mnt_top_info() {
         return
     fi
 
-    top -b -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%CPU=" $9 " %mem=" $10}' | tail -n 1
+    top -b -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%cpu=" $9 " %mem=" $10}' | tail -n 1
 }
 
 #******************************************************************************
