@@ -314,10 +314,7 @@ mnt_top_info() {
         return
     fi
 
-    top -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%cpu=" $9 " %mem=" ${10}}
-
-#    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
-#    ps -eo %cpu,%mem,cmd | grep -v grep | grep $INSTANCE_ID | awk '{print "%cpu=" $1 " %mem="$2}'
+    top -b -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%CPU=" $9 " %mem=" $10}' | tail -n 1
 }
 
 #******************************************************************************
@@ -584,9 +581,9 @@ get_instance_health() {
     # Get the RSS,PID, and CPU and add it
     IPID=$(echo ${PSINFO} | awk '{print $1}')
     IMEM=$(echo ${PSINFO} | awk '{printf "%.2f", $2/1024}')
-    ICPU=$(echo ${PSINFO} | awk '{printf $3}')
+    ICPU=$(mnt_top_info $INSTANCE_ID | awk '{print $1}')
     STATUS+=$(printf " %-23s" "is_running=yes(${IPID})")
-    STATUS+=$(printf " %-16s" "rss_mb=${IMEM} %cpu=${ICPU}")
+    STATUS+=$(printf " %-16s" "rss_mb=${IMEM} ${ICPU}")
 
     # Is it in use?
     PID_USE_COUNT=$($TIMEOUT 10 bash -c "fuser -m  $INSTANCE_MNT 2>/dev/null | cut -f2- -d\  | tr ' ' '\n' | xargs -P1 -I{} ls -l /proc/{}/fd | grep $INSTANCE_MNT | wc -l" || echo 'TIMEOUT')
