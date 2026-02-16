@@ -30,6 +30,7 @@
 #   CK_PENDING_TIMEOUT - Background Mount health check timeout
 #   CK_FILE        - File to stat for determining health
 #   CK_MEM_GB      - If the mounts memory usage reaches this level then go ahead and cycle the mount if it's the primary
+#   HUNG_GCORE_ENABLE - Enables generaing a core for a hung mount before killing it
 #   BIND_ENABLE    - Enable Bind mount management and optionally NFS
 #   BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
 #   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
@@ -81,6 +82,7 @@ vars_default() {
     CK_PENDING_TIMEOUT="600"
     CK_FILE=""
     CK_MEM_GB=""
+    HUNG_GCORE_ENABLED="0"
     BIND_ENABLE="0"
 #    BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
 #   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
@@ -325,6 +327,8 @@ mnt_top_info() {
 generate_core() {
     INSTANCE_ID=$1
 
+    local now=$(date +"%s")
+
     #Get the PID
     FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
     if [ "${FPID}" == "" ]; then
@@ -337,13 +341,13 @@ generate_core() {
         log_message "GENERATE_CORE ${INSTANCE_ID}  ERROR: Missing gcore!"
     fi
 
-    COREDIR="${INSTANCE_ROOT}/cores/${INSTANCE_ID}"
+    COREDIR="${LFS_ROOTS}/cores/${INSTANCE_ID}"
 
     #Make the directory for the core
     mkdir -p ${COREDIR}
 
     #Now generate the core
-    ${GCORE} -o ${COREDIR}/core ${FPID}
+    ${GCORE} -o ${COREDIR}/core.${now} ${FPID}
 
     #And dump the state
     kill -USR1 ${FPID}
@@ -355,9 +359,9 @@ generate_core() {
     done
 
     #Lastly copy it over
-    cp ${LIO_INFO} ${COREDIR}/
+    cp ${LIO_INFO} ${COREDIR}/$(basename ${LIO_INFO}.${now})
 
-    log_message "GENERATE_CORE ${INSTANCE_ID} SUCCESS!"
+    log_message "GENERATE_CORE ${INSTANCE_ID} SUCCESS! COREDIR=${COREDIR} timestamp=${now}"
 }
 
 #******************************************************************************
@@ -495,7 +499,6 @@ get_stat_instance() {
 
     $(which time) -p -o ${INSTANCE_LOGS}/stat_time bash -c "${LFS_TIMEOUT_SCRIPT} -v ${CK_TIMEOUT} 9 stat ${INSTANCE_MNT}/${CK_FILE} 2>&1" >/dev/null
     rcode=$?
-
     if [ "${rcode}" == "0" ]; then
         DT=$(grep real < ${INSTANCE_LOGS}/stat_time | awk '{print $2}')
     elif [ "${rcode}" == "1" ]; then
@@ -915,7 +918,9 @@ health_checkup() {
                 ;;
             HUNG)
                 log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary} ${top_info}"
-                generate_core $id
+                if [ "${HUNG_GCORE_ENABLED}" == "1" ]; then
+                    generate_core $id
+                fi
                 FORCE_UMOUNT="1" stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
