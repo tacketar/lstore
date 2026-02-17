@@ -1,3 +1,8 @@
+lstore (2.5.4) stable; urgency=medium
+  * Rearrange the collision check to work with the remote client resource service which uses it's own MQ IDs
+
+ -- Alan Tackett <alan@atackett.com>  Tu Feb 17 2026 08:14 -0500
+
 lstore (2.5.3) stable; urgency=medium
   * Handle message ID collisions in most cases.  In extremely rare cases ID collision occur with 4-byte IDs
   * Update management scripts to support bind mounts, more hardening, and ability to dump a core
