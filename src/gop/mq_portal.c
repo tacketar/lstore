@@ -1396,6 +1396,34 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             gop_mq_get_frame(f, (void **)&data, &size);
             tracking = 1;
 
+            //** We need to add the message to the waiting queue but we also need to verify there aren't any collisions with an existing op
+            if (f->auto_free == MQF_MSG_AUTO_FREE) { //** We only do the check if it is auto-freed which implies mq_make_id_frame() was used
+                //** Add the task to the waiting for response queue
+                //** This way we have the response handle before we do the send
+                //** Technically since we are single threaded this isn't needed but in case things change....
+                //** But we also hope to check for collisions
+                log_printf(3, "TRACKING id_size=%d sid=%s\n", size, gop_mq_id2str(data, size, b64, sizeof(b64)));
+                if (task->gop != NULL) log_printf(3, "TRACKING gid=%d\n", gop_id(task->gop));
+
+                //** Insert it in the monitoring table
+                tbx_type_malloc_clear(tn, gop_mq_task_monitor_t, 1);
+                tn->task = task;
+                tn->id = data;
+                tn->id_size = size;
+
+                //** Make sure we don't have a duplicate
+                while (apr_hash_get(c->waiting, tn->id, tn->id_size) != NULL) {
+                    log_printf(-1, "WARNING: Prevented a collision! side=%s sid_len=%d apr_hash_count(c->waiting)=%d\n", gop_mq_id2str(tn->id, tn->id_size, b64, sizeof(b64)), tn->id_size, apr_hash_count(c->waiting));
+                    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: WARNING: Prevented a collision! side=%s sid_len=%d apr_hash_count(c->waiting)=%d\n", gop_mq_id2str(tn->id, tn->id_size, b64, sizeof(b64)), tn->id_size, apr_hash_count(c->waiting));
+                    tbx_random_get_bytes(tn->id, tn->id_size);
+                }
+
+                //** Now add it to the hash
+                apr_hash_set(c->waiting,  tn->id, tn->id_size, tn);
+            } else {
+                log_printf(-1, "WARNING: Possible collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
+                if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: WARNING: Possible collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
+            }
             log_printf(5, "tracking enabled id_size=%d\n", size);
             MQ_DEBUG_NOTIFY("MQ_PROCCESS_TASK: MQF_TRACKEXEC_KEY mq_count=" LU "\n", c->counter);
             c->stats.outgoing[MQS_TRACKEXEC_INDEX]++;
@@ -1419,21 +1447,6 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             c->stats.outgoing[MQS_UNKNOWN_INDEX]++;
             log_printf(10, "Unknown key found! key = %s\n", data);
             if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: mq_count=" LU " ERROR: Unknown key found! key=%s\n", c->counter, data);
-        }
-
-
-        //** Add the task to the waiting for response queue if needed.
-        //** This way we have the response handle before we do the send
-        //** Technically since we are single threaded this isn't needed but in case things change....
-        if (tracking != 0) {
-            log_printf(3, "TRACKING id_size=%d sid=%s\n", size, gop_mq_id2str(data, size, b64, sizeof(b64)));
-            if (task->gop != NULL) log_printf(3, "TRACKING gid=%d\n", gop_id(task->gop));
-            //** Insert it in the monitoring table
-            tbx_type_malloc_clear(tn, gop_mq_task_monitor_t, 1);
-            tn->task = task;
-            tn->id = data;
-            tn->id_size = size;
-            apr_hash_set(c->waiting,  tn->id, tn->id_size, tn);
         }
 
         //** Send it on
