@@ -1,3 +1,10 @@
+lstore (2.5.3) stable; urgency=medium
+  * Handle message ID collisions in most cases.  In extremely rare cases ID collision occur with 4-byte IDs
+  * Update management scripts to support bind mounts, more hardening, and ability to dump a core
+  * Fix nasty tiny memory leaks in lio_os_path_split() and not properly destroying a GOP in segment_cache
+
+ -- Alan Tackett <alan@atackett.com>  Tu Feb 17 2026 07:16 -0500
+
 lstore (2.5.2) stable; urgency=low
   * Handle bad file handle frames on the LServer gracefully and return a client response
   * Add some sanity checking to starting a new instance and drop chown -R
