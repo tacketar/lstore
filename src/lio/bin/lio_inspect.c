@@ -853,6 +853,7 @@ gop_op_status_t inspect_task(void *arg, int id)
     }
     if (n_manage == 0) {
         info_printf(lfd, 1, XIDT ": Data blocks --- total:%d read:%d write:%d manage:%d (ERROR: Missing MANAGE caps!)\n", segment_id(seg), n_blocks, n_read, n_write, n_manage);
+	return(gop_failure_status);
     } else {
         info_printf(lfd, 1, XIDT ": Data blocks --- total:%d read:%d write:%d manage:%d\n", segment_id(seg), n_blocks, n_read, n_write, n_manage);
     }
