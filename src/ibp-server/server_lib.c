@@ -232,7 +232,6 @@ void print_uptime(char *str, int n)
 
     apr_time_t dt = get_starttime();
     apr_ctime(time_str, dt);
-    time_str[strlen(time_str) - 1] = '\0';      //**Strip the CR
 
     dt = apr_time_now() - get_starttime();
     dt = apr_time_sec(dt);
@@ -245,7 +244,6 @@ void print_uptime(char *str, int n)
     sec = d - min * 60;
 
     snprintf(up_str, sizeof(up_str), "%d:%02d:%02d:%02d", days, hours, min, sec);
-
     snprintf(str, n, "Depot start time: %s\nUptime(d:h:m:s): %s\n", time_str, up_str);
 
     return;
