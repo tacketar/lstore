@@ -512,8 +512,6 @@ void osf_inode_ctx_remove(lio_object_service_fn_t *os, lio_creds_t *creds, const
     lio_osfile_priv_t *osf = (lio_osfile_priv_t *)os->priv;
     ex_id_t ino;
 
-//log_printf(0, "QWERT: ilen=%d inode=%s\n", inode_len, inode);
-
     if (inode_len <= 0) return;
     ino = OS_INODE_MISSING;
     if (sscanf(inode, XIDT, &ino) != 1) return;
@@ -552,7 +550,6 @@ void osf_inode_ctx_move(lio_object_service_fn_t *os, lio_creds_t *creds, const c
     lio_os_path_split(dpath, &dir, &file);
     plen = sizeof(pistr);
     osf_get_inode(os, creds, dir, OS_OBJECT_DIR_FLAG, pistr, &plen);
-//log_printf(0, "QWERT: spath=%s dpath=%s dir=%s pinode=%s plen=%d\n", spath, dpath, dir, pistr, plen);
     if (plen <= 0) {  //** Error getting the parent
         goto failed;
     }
@@ -560,12 +557,10 @@ void osf_inode_ctx_move(lio_object_service_fn_t *os, lio_creds_t *creds, const c
     //** Get the parent inode
     parent = OS_INODE_MISSING;
     if (sscanf(pistr, XIDT, &parent) != 1) { goto failed; }
-//log_printf(0, "QWERT: spath=%s dpath=%s dir=%s parent=" XIDT "\n", spath, dpath, dir, parent);
 
     //** Also get the objects inode
     ilen = sizeof(istr);
     osf_get_inode(os, creds, dpath, ftype, istr, &ilen);
-//log_printf(0, "QWERT: spath=%s dpath=%s finode=%s flen=%d\n", spath, dpath, istr, ilen);
     if (ilen <= 0) {  //** Error getting the object
         goto failed;
     }
@@ -613,7 +608,6 @@ int va_inode_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
 
     *atype |= OS_OBJECT_VIRTUAL_FLAG;
     afd = tbx_io_fopen(fname, "r");
-//log_printf(0, "QWERT: fname=%s afd=%p\n", fd->realpath, afd);
     if (afd == NULL) { log_printf(0, "ERROR opening attr file attr=%s fname=%s\n", "system.inode", fname); };
     if (afd != NULL) {
         ilen = sizeof(inode)-1;
@@ -624,8 +618,6 @@ int va_inode_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
         iptr = OS_INODE_MISSING_TEXT;
         n = OS_INODE_MISSING_TEXT_LEN;
     }
-
-//log_printf(0, "QWERT: fname=%s iptr=%s\n", fd->realpath, iptr);
 
     *atype |= OS_OBJECT_VIRTUAL_FLAG;
     return(osf_store_val(iptr, n, val, v_size));
@@ -787,14 +779,12 @@ int _inode_lookup_binary(char *buf, int bufsize, int n, char **dentry, ex_id_t *
         used += tbx_zigzag_encode(inode[i], (unsigned char *)buf + used);
         used += tbx_zigzag_encode(ftype[i], (unsigned char *)buf + used);
         if (dentry[i] != NULL) {
-//log_printf(0, "QWERT: n=%d i=%d inode=" XIDT " ftype=%d de=%s\n", n, i, inode[i], ftype[i], dentry[i]);
             len = strlen(dentry[i]) + 1;   //** We go ahead and copy the NULL for simplicity
             used += tbx_zigzag_encode(len, (unsigned char *)buf + used);
             memcpy(buf + used, dentry[i], len);
             free(dentry[i]);  //** We are responsible for cleaning up
             dentry[i] = NULL;
         } else {
-//log_printf(0, "QWERT: HELP! NULL de! n=%d i=%d inode=" XIDT " ftype=%d\n", n, i, inode[i], ftype[i]);
             len = 1; //** Just store a NULL byte
             used += tbx_zigzag_encode(len, (unsigned char *)buf + used);
             buf[used] = '\0';
@@ -821,9 +811,7 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
     int ftype[OS_PATH_MAX];
     ex_id_t ino;
 
-//log_printf(0, "QWERT: START fullkey=%s\n", fullkey);
     if (strcmp(fullkey, va->attribute) == 0) { //** Got a simple inode fetch
-//log_printf(0, "QWERT: getting my inode\n");
         return(osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", val, v_size, atype));
     }
 
@@ -831,13 +819,11 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
     //** See if it's a lookup
     ilen = strlen(fullkey);
     if (strncmp(fullkey, "os.inode.lookup", 15) != 0) {  //** Unknown extension so throw an error
-//log_printf(0, "QWERT: OOPS unknown key=%s", fullkey);
         *atype = OS_OBJECT_VIRTUAL_FLAG;
         *v_size = 0;
         return(0);
     }
 
-//log_printf(0, "QWERT: Got a lookup ilen=%d\n", ilen);
     //** See if we are doing a binary or text return object
     if (strncmp(fullkey + 15, ".binary", 7) == 0) {  //** Binary encoding
         inode_offset = 15 + 7;
@@ -851,7 +837,6 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
     if (ilen == inode_offset) {  //** Lookup up ourself
         ilen = sizeof(istr);
         n = osf->inode_va.get(&(osf->inode_va), os, creds, ofd, "system.inode", (void **)&iptr, &ilen, &at2);
-//log_printf(0, "QWERT: Lookup up ourself so getting out inode=%s v_size=%d n=%d\n", iptr, ilen, n);
         if (n != 0) {  //** Missing the inode
             *atype = OS_OBJECT_VIRTUAL_FLAG;
             *v_size = 0;
@@ -869,10 +854,6 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
         }
     }
 
-//ino = OS_INODE_MISSING;
-//int k = sscanf(istr, XIDT, &ino);
-//log_printf(0, "QWERT: istr=%s ino=" XIDT " sscanf=%d\n", istr, ino, k);
-
     //** If we made it here then we have an inode string so convert it to an ex_id_t
     ino = OS_INODE_MISSING;
     if (sscanf(istr, XIDT, &ino) != 1) {
@@ -881,7 +862,6 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
         return(0);
     }
 
-//log_printf(0, "QWERT: lookup inode=" XIDT "\n", ino);
     //** Now look it up
     if (osf->ilut) {
         os_inode_lookup_path_with_lut(osf->inode_ctx, osf->ilut, ino, inode, ftype, dentry, &n);
@@ -894,8 +874,6 @@ int va_inode_lookup_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t 
         *v_size = 0;
         return(0);
     }
-
-//log_printf(0, "QWERT: lookup inode=" XIDT " is_binary=%d n=%d\n", ino, is_binary, n);
 
     //** Store the attribute
     if (is_binary == 1) {
@@ -1214,7 +1192,6 @@ char *_osf_realpath(lio_object_service_fn_t *os, const char *path, char *rpath, 
     char *rp, *dir, *file;
     int n;
 
-//log_printf(0, "QWERT: path=%s include_basename=%d\n", path, include_basename);
 retry:
     dir = NULL; file = NULL;
 
@@ -1229,34 +1206,22 @@ retry:
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, dir);
     if (dir != path) free(dir);
     rp = realpath(fname, real_path);
-//log_printf(0, "QWERT: path=%s include_basename=%d fname=%s realpath=%s\n", path, include_basename, fname, (rp ? rp : "NULL"));
     if (!rp) {  //** This could be a bad symlink. If so retry but drop the basename
         if (file) free(file);
         if (include_basename == -1) return(NULL);
         include_basename = -1;
         goto retry;
     }
-//QWERT FIXME
-if ((rp[0] == '/') && (rp[1] == '/')) {
-    log_printf(0, "QWERT:  OOPS-A include_basename=%d path=%s rpath=%s\n", include_basename, path, rp);
-}
 
     strncpy(rpath, rp+osf->file_path_len, OS_PATH_MAX);
     if (file) {
         if (strcmp("/", file) != 0) {  //** Need to now add the file name after resolving the parent
             n = strlen(rpath);
             snprintf(rpath + n, OS_PATH_MAX-n, "/%s", file);
-if ((rpath[0] == '/') && (rpath[1] == '/')) {
-    log_printf(0, "QWERT:  OOPS-B include_basename=%d path=%s rpath=%s file=%s\n", include_basename, path, rpath, file);
-}
         }
         free(file);
     }
     log_printf(15, "fname=%s  realpath=%s rp=%s strlen(realpath)=" ST "\n", path, rpath, rp, strlen(rpath));
-if ((rpath[0] == '/') && (rpath[1] == '/')) {
-    log_printf(0, "QWERT:  OOPS-C include_basename=%d path=%s rpath=%s\n", include_basename, path, rpath);
-}
-
 
     if (rpath[0] == '\0') {
         if ((strlen(path) == 1) && (path[0] == '/')) {
@@ -1264,9 +1229,6 @@ if ((rpath[0] == '/') && (rpath[1] == '/')) {
         }
     }
 
-if ((rpath[0] == '/') && (rpath[1] == '/')) {
-    log_printf(0, "QWERT:  OOPS include_basename=%d path=%s rpath=%s\n", include_basename, path, rpath);
-}
     return(rpath);
 }
 
@@ -3955,33 +3917,26 @@ gop_op_status_t osfile_object_exec_modify_fn(void *arg, int id)
     lock = osf_retrieve_lock(op->os, rp, NULL);
     osf_obj_lock(lock);
 
-fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s mode=%d\n", fname, op->type);
-
     if (osf_object_exec_modify(op->os, fname, op->type, &ftype) == 0) {
         status = gop_success_status;
-fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d  ilut=%p\n", fname, ftype, osf->ilut);
 
         //** Update the bit in the ilut if enabled
         if (osf->inode_ctx) {
             ilen = sizeof(istr);
             istr[0] = '\0';
             osf_get_inode(op->os, op->creds, rp, OS_OBJECT_FILE_FLAG, istr, &ilen);
-fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d istr=%s ilen=%d\n", fname, ftype, istr, ilen);
 
             if (ilen > 0) {
                 ino = OS_INODE_MISSING;
                 if (sscanf(istr, XIDT, &ino) == 1) {
                     de = NULL;
-fprintf(stderr, "QWERT: osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
                     if (osf->ilut) {
                         if (os_inode_get_with_lut(osf->inode_ctx, osf->ilut, ino, &parent, &ft2, &delen, &de) == 0) {
                             os_inode_put_with_lut(osf->inode_ctx, osf->ilut, ino, parent, ftype, delen, de);
-fprintf(stderr, "QWERT: AAAAA osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
                         }
                     } else if (osf->inode_ctx) {
                         if (os_inode_get(osf->inode_ctx, ino, &parent, &ft2, &delen, &de) == 0) {
                             os_inode_put(osf->inode_ctx, ino, parent, ftype, delen, de);
-fprintf(stderr, "QWERT: BBBBB osfile_object_exec_modify_fn fname=%s new ftype=%d inode=" XIDT "\n", fname, ftype, ino);
                         }
                     }
 
@@ -4590,8 +4545,6 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
 
     snprintf(fname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
 
-//fprintf(stderr, "QWERT: fname=%s mode=%d\n", fname, op->type);
-
     log_printf(15, "base=%s src=%s fname=%s mode=%x\n", osf->file_path, op->src_path, fname, op->type);
 
     if (op->no_lock == 0) {
@@ -4847,12 +4800,7 @@ gop_op_status_t osfile_symlink_object_fn(void *arg, int id)
     apr_thread_mutex_t *lock;
     int err, eno, did_lock;
 
-//_osf_realpath(op->os, op->dest_path, rpath, 0);
-//err = osaz_object_create(osf->osaz, op->creds, NULL, rpath);
-//log_printf(0, "QWERT: dest=%s src=%s rpath=%s osaz_object_create=%d\n", op->dest_path, op->src_path, rpath, err);
     if (osaz_object_create(osf->osaz, op->creds, NULL, _osf_realpath(op->os, op->dest_path, rpath, 0)) == 0) return(gop_failure_status);
-
-log_printf(0, "QWERT: dest=%s src=%s drp=%s\n", op->dest_path, op->src_path, rpath);
 
     char *etext1 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->src_path);
     char *etext2 = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', op->dest_path);
@@ -4871,7 +4819,6 @@ log_printf(0, "QWERT: dest=%s src=%s drp=%s\n", op->dest_path, op->src_path, rpa
     REBALANCE_LOCK(op->os, osf, rpath, did_lock);
 
     status = osfile_create_object_fn(&dop, id);
-//log_printf(0, "QWERT: dest=%s creatre_object_fn=%d\n", op->dest_path, status.op_status);
     if (status.op_status != OP_STATE_SUCCESS) {
         osf_obj_unlock(lock);
         REBALANCE_UNLOCK(osf, did_lock);
@@ -4883,7 +4830,6 @@ log_printf(0, "QWERT: dest=%s src=%s drp=%s\n", op->dest_path, op->src_path, rpa
     }
 
     //** Now remove the placeholder and replace it with the link
-//  snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
     if (op->src_path[0] == '/') {
         snprintf(sfname, OS_PATH_MAX, "%s%s", osf->file_path, op->src_path);
     } else {
@@ -4897,9 +4843,8 @@ log_printf(0, "QWERT: dest=%s src=%s drp=%s\n", op->dest_path, op->src_path, rpa
         log_printf(15, "Failed removing dest place holder %s  err=%d\n", dfname, err);
         notify_printf(osf->olog, 1, op->creds, "SYMLINK(%s, %s)\n", etext1, etext2);
     }
-    err = symlink(sfname, dfname);
-//log_printf(0, "QWERT: dest=%s src=%s sfname=%s dfname=%s symlink=%d\n", op->dest_path, op->src_path, sfname, dfname, err);
 
+    err = symlink(sfname, dfname);
     if (err != 0) {
         eno = errno;
         log_printf(15, "Failed making symlink %s -> %s  err=%d\n", sfname, dfname, eno);
