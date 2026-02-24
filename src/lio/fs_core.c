@@ -1102,7 +1102,6 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
 
 int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode, int mkpath)
 {
-    char fullname[OS_PATH_MAX];
     int err, n, exec_mode, slot;
     gop_op_status_t status;
     const char *attr;
@@ -1123,7 +1122,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     //** Make sure it doesn't exists
     n = lio_fs_exists(fs, fname);
     if (n != 0) {  //** File already exists
-        log_printf(15, "File already exist! fname=%s\n", fullname);
+        log_printf(15, "File already exist! fname=%s\n", fname);
         tbx_atomic_inc(fs->stats.op[slot].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EEXIST");
         return(-EEXIST);
@@ -1156,10 +1155,10 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
         status = gop_sync_exec_status(lio_mkpath_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id, (const char **)a_array, (const char **)v_array, v_size, n_extra));
     }
     if (status.op_status != OP_STATE_SUCCESS) {
-        log_printf(1, "Error creating object! fname=%s\n", fullname);
+        log_printf(1, "Error creating object! fname=%s\n", fname);
         tbx_atomic_inc(fs->stats.op[slot].finished);
         tbx_atomic_inc(fs->stats.op[slot].errors);
-        if (strlen(fullname) > 3900) {  //** Probably a path length issue
+        if (strlen(fname) > 3900) {  //** Probably a path length issue
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENAMETOOLONG");
             return(-ENAMETOOLONG);
         }
