@@ -225,7 +225,6 @@ gop_op_status_t lio_exnode_clone_gop_func(void *arg, int gid)
 
         if (!gop_completed_successfully(gop)) {
             nfailed++;
-            tbx_obj_put(&segptr[1]->obj);
         } else {
             if (did == segment_id(segptr[0])) ex->default_seg = segptr[1];
             tbx_list_insert(ex->view, &segment_id(segptr[1]), segptr[1]);
