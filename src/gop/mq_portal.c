@@ -1418,8 +1418,13 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
                     tbx_random_get_bytes(tn->id, tn->id_size);
                 }
             } else {
-                log_printf(-1, "WARNING: Possible collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
-                if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: WARNING: Possible collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
+                if (apr_hash_get(c->waiting, tn->id, tn->id_size) != NULL) {
+                    log_printf(-1, "ERROR: MQ Tracking collision! side=%s sid_len=%d apr_hash_count(c->waiting)=%d\n", gop_mq_id2str(tn->id, tn->id_size, b64, sizeof(b64)), tn->id_size, apr_hash_count(c->waiting));
+                    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: ERROR: MQ Tracking collision! side=%s sid_len=%d apr_hash_count(c->waiting)=%d\n", gop_mq_id2str(tn->id, tn->id_size, b64, sizeof(b64)), tn->id_size, apr_hash_count(c->waiting));
+                } else {
+                    log_printf(-1, "ERROR: Collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
+                    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "MQC_PROCESS_TASK: WARNING: Possible collision when tracking messages sid_len=%d! MQF_MSG_AUTO_FREE not set so checking is disabled!\n", size);
+                }
             }
 
             //** Now add it to the hash
