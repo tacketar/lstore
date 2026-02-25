@@ -788,6 +788,25 @@ remove_root() {
 }
 
 #******************************************************************************
+# kill_orphaned - Kills all orphaned FUSE processes associated with the namespace
+#******************************************************************************
+
+kill_orphaned() {
+    local orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | grep -v grep | awk '{print $2}')
+    if [ "${orphans}" != "" ]; then
+        log_message "KILL-ORPHANED  Found orphaned LFS processes to QUIT: ${orphans}"
+        kill -QUIT ${orphans}
+        sleep 5
+
+        orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | grep -v grep | awk '{print $2}')
+        if [ "${orphans}" != "" ]; then
+            log_message "KILL-ORPHANED  Found orphaned LFS processes to KILL: ${orphans}"
+            kill -9 ${orphans}
+        fi
+    fi
+}
+
+#******************************************************************************
 # health_check_instance - Checks the health of the instance by processing the
 #     output of service_status which is passed in as arguments.
 #
@@ -896,6 +915,9 @@ health_check_instance() {
 
 health_checkup() {
     log_message "HEALTH-CHECKUP  START"
+
+    kill_orphaned #Remove any orphaned processes
+
     service_status | grep primary | while read id primary everything_else; do
         STATE=$(health_check_instance $id $primary $everything_else)
         if [ "${primary}" == "primary=yes" ]; then
