@@ -348,6 +348,14 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
         goto fail;
     }
 
+    //** And make sure we have a valid type selected
+    if ((op->type & (OS_OBJECT_FILE_FLAG|OS_OBJECT_DIR_FLAG))
+        log_printf(ll, "ERROR: No object type specified! ftype=%d fname=%s\n", op->type, op->src_path);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - No object type specified! ftype=%d fname=%s\n", op->type, op->src_path);
+        _op_set_status(status, OP_STATE_FAILURE, EPERM);
+        goto fail;
+    }
+
     //** Get the parent exnode to dup
     if (op->ex == NULL) {
         lio_os_path_split(op->src_path, &dir, &fname);
