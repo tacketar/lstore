@@ -792,13 +792,40 @@ remove_root() {
 #******************************************************************************
 
 kill_orphaned() {
-    local orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | grep -v grep | awk '{print $2}')
+    local ns_mnts=$(mount | grep ${LFS_NAME} | awk '{print $3}')
+    local orphans
+    local mnt_pids=""
+    local pid
+    local filter
+
+    #Walk through the existing mounts adding PIDs
+    for m in ${ns_mnts}; do
+        pid=$(ps agux |grep ${m} | grep -v grep | awk '{print $2}')
+        if [ "${pid}" != "" ]; then
+            if [ "${mnt_pids}" == "" ]; then
+                mnt_pids="${pid}"
+            else
+                mnt_pids="${mnt_pids}|${pid}"
+            fi
+        fi
+    done
+
+    #Make the "filter". If no PIDs then we just use cat to pass text through
+    filter="cat"
+    if [ "${mnt_pids}" != "" ]; then
+        filter="grep -vE (${mnt_pids})"
+    fi
+
+    #Generate the orphaned PIDs
+    orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | awk '{print $2}' | ${filter} | grep -v grep)
+
+    #Now do the cleanup if needed
     if [ "${orphans}" != "" ]; then
         log_message "KILL-ORPHANED  Found orphaned LFS processes to QUIT: ${orphans}"
         kill -QUIT ${orphans}
         sleep 5
 
-        orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | grep -v grep | awk '{print $2}')
+        orphans=$(ps agux | grep lio_fuse | grep ${LFS_NAME} | grep -v $(basename $(readlink ${LFS_ROOTS}/current)) | awk '{print $2}' | ${filter} | grep -v grep)
         if [ "${orphans}" != "" ]; then
             log_message "KILL-ORPHANED  Found orphaned LFS processes to KILL: ${orphans}"
             kill -9 ${orphans}
