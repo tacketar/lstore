@@ -27,6 +27,7 @@ set(NETWORK_OBJS
 
 set(TOOL_OBJS
     append_printf.c
+    apr_pool_wrapper.c
     atomic_counter.c
     chksum.c
     constructor.c
@@ -61,6 +62,7 @@ set(TOOL_OBJS
 set(LSTORE_PROJECT_OBJS ${TOOL_OBJS} ${NETWORK_OBJS})
 set(LSTORE_PROJECT_INCLUDES
     tbx/append_printf.h
+    tbx/apr_pool_wrapper.h
     tbx/apr_wrapper.h
     tbx/assert_result.h
     tbx/atomic_counter.h
