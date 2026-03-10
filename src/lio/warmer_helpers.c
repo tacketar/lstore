@@ -775,7 +775,7 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
     log_printf(15, "fname=%s\n", fname);
 
     //** Make the misc structs
-    apr_pool_create(&mpool, NULL);
+    tbx_apr_pool_create(&mpool, NULL);
     rids = apr_hash_make(mpool);
     n_allocs = 0;
 
@@ -884,5 +884,5 @@ no_exnode:
         apr_hash_this(hi, (const void **)&etext, &hlen, NULL);
         free(etext);
     }
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
 }

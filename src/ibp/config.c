@@ -16,7 +16,7 @@
 
 #define _log_module_index 129
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
 #include <apr_time.h>
@@ -802,7 +802,7 @@ ibp_context_t *ibp_context_create()
 
     default_ibp_config(ic);
 
-    apr_pool_create(&(ic->mpool), NULL);
+    tbx_apr_pool_create(&(ic->mpool), NULL);
 
     if (_ibp_context_count == 0) {
         ibp_errno_init();
@@ -837,7 +837,7 @@ void ibp_context_destroy(ibp_context_t *ic)
 
     apr_thread_mutex_destroy(ic->lock);
 
-    apr_pool_destroy(ic->mpool);
+    tbx_apr_pool_destroy(ic->mpool);
 
     _ibp_context_count--;
     if (_ibp_context_count == 0) {

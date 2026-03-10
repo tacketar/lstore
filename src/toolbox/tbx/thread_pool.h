@@ -26,6 +26,7 @@
 
 #include <apu.h>
 #include <apr_thread_proc.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/visibility.h>
 
 /**

@@ -19,7 +19,7 @@
 #include <apr.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_signal.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -106,7 +106,7 @@ void signal_shutdown(int sig)
 void install_signal_handler()
 {
     //** Make the APR stuff
-    assert_result(apr_pool_create(&shutdown_mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&shutdown_mpool, NULL), APR_SUCCESS);
     apr_thread_mutex_create(&shutdown_lock, APR_THREAD_MUTEX_DEFAULT, shutdown_mpool);
 
     //***Attach the signal handler for shutdown
@@ -433,7 +433,7 @@ int main(int argc, char **argv)
     gop_opque_free(q, OP_DESTROY);
 
     apr_thread_mutex_destroy(shutdown_lock);
-    apr_pool_destroy(shutdown_mpool);
+    tbx_apr_pool_destroy(shutdown_mpool);
 
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
     info_printf(lio_ifd, 0, "Submitted: " XOT "   Success: " XOT "   Fail: " XOT "   Objects modified: " XOT "   Segments modified: " XOT "\n", submitted, good, bad, objs_modded, segs_modded);

@@ -17,7 +17,7 @@
 #define _log_module_index 128
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <stdlib.h>
@@ -82,7 +82,7 @@ void *gop_control_new(void *arg, int size)
     memset(shelf, 0, i);
 
     pool_ptr = (apr_pool_t **)&(shelf[size]);
-    assert_result(apr_pool_create(pool_ptr, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(pool_ptr, NULL), APR_SUCCESS);
 
     for (i=0; i<size; i++) {
         assert_result(apr_thread_mutex_create(&(shelf[i].lock), APR_THREAD_MUTEX_DEFAULT,*pool_ptr), APR_SUCCESS);
@@ -104,7 +104,7 @@ void gop_control_free(void *arg, int size, void *data)
     pool_ptr = (apr_pool_t **)&(shelf[size]);
 
     //** All the data is in the memory pool
-    apr_pool_destroy(*pool_ptr);
+    tbx_apr_pool_destroy(*pool_ptr);
 
     free(shelf);
     return;

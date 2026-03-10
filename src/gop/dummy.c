@@ -15,7 +15,7 @@
 */
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -88,7 +88,7 @@ static void *gd_thread_func(apr_thread_t *th, void *data)
 void gop_dummy_init()
 {
     //** Make the variables
-    assert_result(apr_pool_create(&gd_pool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&gd_pool, NULL), APR_SUCCESS);
     assert_result(apr_thread_mutex_create(&gd_lock, APR_THREAD_MUTEX_DEFAULT, gd_pool), APR_SUCCESS);
     assert_result(apr_thread_cond_create(&gd_cond, gd_pool), APR_SUCCESS);
     gd_stack = tbx_stack_new();
@@ -120,7 +120,7 @@ void gop_dummy_destroy()
     tbx_stack_free(gd_stack, 0);
     apr_thread_mutex_destroy(gd_lock);
     apr_thread_cond_destroy(gd_cond);
-    apr_pool_destroy(gd_pool);
+    tbx_apr_pool_destroy(gd_pool);
     gop_hp_context_destroy(gop_dummy_pc);
 }
 

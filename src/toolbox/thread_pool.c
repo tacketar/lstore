@@ -373,7 +373,7 @@ APU_DECLARE(apr_status_t) tbx_thread_pool_create(tbx_thread_pool_t ** me,
      * our caller won't use the pool without acquiring the mutex, we must
      * create a new sub pool.
      */
-    rv = apr_pool_create(&tp->pool, pool);
+    rv = tbx_apr_pool_create(&tp->pool, pool);
     if (APR_SUCCESS != rv)
         return rv;
     rv = thread_pool_construct(tp, init_threads, max_threads);
@@ -409,7 +409,7 @@ APU_DECLARE(apr_status_t) tbx_thread_pool_create(tbx_thread_pool_t ** me,
 
 APU_DECLARE(apr_status_t) tbx_thread_pool_destroy(tbx_thread_pool_t * me)
 {
-    apr_pool_destroy(me->pool);
+    tbx_apr_pool_destroy(me->pool);
     return APR_SUCCESS;
 }
 

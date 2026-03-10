@@ -17,7 +17,7 @@
 #define _log_module_index 161
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -1071,7 +1071,7 @@ void *cache_cond_new(void *arg, int size)
     memset(shelf, 0, i);
 
     pool_ptr = (apr_pool_t **)&(shelf[size]);
-    assert_result(apr_pool_create(pool_ptr, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(pool_ptr, NULL), APR_SUCCESS);
 
     log_printf(15, "cache_cond_new: making new shelf of size %d\n", size);
     for (i=0; i<size; i++) {
@@ -1095,7 +1095,7 @@ void cache_cond_free(void *arg, int size, void *data)
     pool_ptr = (apr_pool_t **)&(shelf[size]);
 
     //** All the data is in the memory pool
-    apr_pool_destroy(*pool_ptr);
+    tbx_apr_pool_destroy(*pool_ptr);
 
     free(shelf);
     return;
@@ -5294,7 +5294,7 @@ finished:
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
-    apr_pool_destroy(seg->mpool);
+    tbx_apr_pool_destroy(seg->mpool);
 
     REALTIME_CACHE_STATS_CODE(if (s->c) REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].finished);)
 
@@ -5323,7 +5323,7 @@ lio_segment_t *segment_cache_create(void *arg)
     tbx_type_malloc_clear(seg, lio_segment_t, 1);
     tbx_type_malloc_clear(s, lio_cache_segment_t, 1);
     tbx_obj_init(&seg->obj, (tbx_vtable_t *) &lio_cacheseg_vtable);
-    assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
 

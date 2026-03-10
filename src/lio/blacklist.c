@@ -124,7 +124,7 @@ void blacklist_destroy(lio_blacklist_t *bl)
     }
 
     apr_thread_mutex_destroy(bl->lock);
-    apr_pool_destroy(bl->mpool);
+    tbx_apr_pool_destroy(bl->mpool);
     free(bl);
 }
 
@@ -138,7 +138,7 @@ lio_blacklist_t *blacklist_load(tbx_inip_file_t *ifd, char *section, tbx_notify_
 
     tbx_type_malloc_clear(bl, lio_blacklist_t, 1);
 
-    assert_result(apr_pool_create(&(bl->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(bl->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(bl->lock), APR_THREAD_MUTEX_DEFAULT, bl->mpool);
     bl->table = apr_hash_make(bl->mpool);
     bl->notify = notify;

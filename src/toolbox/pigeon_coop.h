@@ -19,7 +19,7 @@
 #ifndef __PIGEON_COOP_H_
 #define __PIGEON_COOP_H_
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 
 #include "pigeon_hole.h"

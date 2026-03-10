@@ -1418,7 +1418,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fh->data_size = data_size;
     fh->max_data_allocated = data_size;
     fd->fh = fh;
-    assert_result(apr_pool_create(&(fh->mpool), NULL), APR_SUCCESS);   //** These are used for data tiering
+    assert_result(tbx_apr_pool_create(&(fh->mpool), NULL), APR_SUCCESS);   //** These are used for data tiering
     apr_thread_mutex_create(&(fh->lock), APR_THREAD_MUTEX_DEFAULT, fh->mpool);
     apr_thread_cond_create(&(fh->cond), fh->mpool);
 
@@ -1699,7 +1699,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
         if (fh->data) free(fh->data);
         if (fh->stream) free(fh->stream);
         apr_thread_cond_destroy(fh->cond);
-        apr_pool_destroy(fh->mpool);
+        tbx_apr_pool_destroy(fh->mpool);
         free(fh);
         goto finished;
     }
@@ -1773,7 +1773,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
     if (fh->data) free(fh->data);
     if (fh->stream) free(fh->stream);
     apr_thread_cond_destroy(fh->cond);
-    apr_pool_destroy(fh->mpool);
+    tbx_apr_pool_destroy(fh->mpool);
     free(fh);
 
     if (serr.hard != 0) status = gop_failure_status;

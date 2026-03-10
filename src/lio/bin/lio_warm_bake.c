@@ -19,7 +19,7 @@
 #include <rocksdb/c.h>
 #include <apr.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <gop/gop.h>
 #include <gop/opque.h>
 #include <gop/tp.h>
@@ -824,7 +824,7 @@ int main(int argc, char **argv)
     tbx_type_malloc_clear(wp, warm_partition_t, 1);
     wp->wdb = open_prep_db(db_prep_base, DB_OPEN_EXISTS, -1);          //** Open the input DB
     results = create_results_db(db_bake_base, wp->wdb->n_partitions);  //** Create the output DB
-    apr_pool_create(&(wp->mpool), NULL);
+    tbx_apr_pool_create(&(wp->mpool), NULL);
     wp->inode = apr_hash_make(wp->mpool);
     wp->rid_caps = apr_hash_make(wp->mpool);
     wp->rid_tally = apr_hash_make(wp->mpool);
@@ -864,7 +864,7 @@ int main(int argc, char **argv)
 
     close_results_db(results);  //** Close the DBs
     close_prep_db(wp->wdb);
-    apr_pool_destroy(wp->mpool);
+    tbx_apr_pool_destroy(wp->mpool);
     tbx_que_destroy(que_setattr);
     free(wp);
     lio_shutdown();

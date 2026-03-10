@@ -766,7 +766,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
         goto error2;
     }
 
-    if (apr_pool_create(&(nm->mpool), NULL) != APR_SUCCESS) {
+    if (tbx_apr_pool_create(&(nm->mpool), NULL) != APR_SUCCESS) {
         err = -1;
         log_printf(0, "bind_server_port: Failed to create pool\n");
         goto error3;
@@ -821,7 +821,7 @@ error6:
 error5:
     apr_thread_mutex_destroy(nm->lock);
 error4:
-    apr_pool_destroy(nm->mpool);
+    tbx_apr_pool_destroy(nm->mpool);
 error3:
     // ns->unlisten()
 error2:
@@ -865,7 +865,7 @@ void close_server_port(tbx_ns_monitor_t *nm)
     apr_thread_mutex_destroy(nm->lock);
     apr_thread_cond_destroy(nm->cond);
 
-    apr_pool_destroy(nm->mpool);
+    tbx_apr_pool_destroy(nm->mpool);
 
     nm->port = -1;
 }
@@ -887,7 +887,7 @@ tbx_network_t *tbx_network_new()
     net->used_ports = 0;
     net->accept_pending = 0;
     net->monitor_index = 0;
-    assert_result(apr_pool_create(&(net->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(net->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(net->ns_lock), APR_THREAD_MUTEX_DEFAULT,net->mpool);
     apr_thread_cond_create(&(net->cond), net->mpool);
 
@@ -947,7 +947,7 @@ void teardown_netstream(tbx_ns_t *ns)
 
     apr_thread_mutex_destroy(ns->read_lock);
     apr_thread_mutex_destroy(ns->write_lock);
-    apr_pool_destroy(ns->mpool);
+    tbx_apr_pool_destroy(ns->mpool);
 }
 
 //*********************************************************************
@@ -973,7 +973,7 @@ tbx_ns_t *tbx_ns_new()
         abort();
     }
 
-    assert_result(apr_pool_create(&(ns->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(ns->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(ns->read_lock), APR_THREAD_MUTEX_DEFAULT,ns->mpool);
     apr_thread_mutex_create(&(ns->write_lock), APR_THREAD_MUTEX_DEFAULT,ns->mpool);
 
@@ -1011,7 +1011,7 @@ void tbx_network_destroy(tbx_network_t *net)
     //** Free the main net variables
     apr_thread_mutex_destroy(net->ns_lock);
     apr_thread_cond_destroy(net->cond);
-    apr_pool_destroy(net->mpool);
+    tbx_apr_pool_destroy(net->mpool);
 
     free(net);
 }

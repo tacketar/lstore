@@ -262,7 +262,7 @@ void tbx_pc_destroy(tbx_pc_t *pc)
 {
     int i;
     apr_thread_mutex_destroy(pc->lock);
-    apr_pool_destroy(pc->pool);
+    tbx_apr_pool_destroy(pc->pool);
 
     for (i=0; i<pc->nshelves; i++) {
         tbx_ph_destroy(pc->ph_shelf[i]);
@@ -310,7 +310,7 @@ tbx_pc_t *tbx_pc_new(const char *name, int size, int item_size,
         pc->data_shelf[i] = pc->new(new_arg, size);
     }
 
-    apr_pool_create(&(pc->pool), NULL);
+    tbx_apr_pool_create(&(pc->pool), NULL);
     apr_thread_mutex_create(&(pc->lock), APR_THREAD_MUTEX_DEFAULT, pc->pool);
 
     return(pc);

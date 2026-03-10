@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_time.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
@@ -100,7 +100,7 @@ void tbx_que_destroy(tbx_que_t *q)
     apr_thread_mutex_destroy(q->lock);
     apr_thread_cond_destroy(q->get_cond);
     apr_thread_cond_destroy(q->put_cond);
-    apr_pool_destroy(q->mpool);
+    tbx_apr_pool_destroy(q->mpool);
 
     free(q->array);
     free(q);
@@ -116,7 +116,7 @@ tbx_que_t *tbx_que_create(int n_objects, int object_size)
     tbx_type_malloc_clear(q, tbx_que_t, 1);
     tbx_type_malloc_clear(q->array, char, n_objects*object_size);
 
-    assert_result(apr_pool_create(&(q->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(q->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(q->lock), APR_THREAD_MUTEX_DEFAULT, q->mpool);
     apr_thread_cond_create(&(q->get_cond), q->mpool);
     apr_thread_cond_create(&(q->put_cond), q->mpool);

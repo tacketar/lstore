@@ -178,7 +178,7 @@ int tbx_ph_reserve(tbx_ph_t *ph)
 void tbx_ph_destroy(tbx_ph_t *ph)
 {
     apr_thread_mutex_destroy(ph->lock);
-    apr_pool_destroy(ph->pool);
+    tbx_apr_pool_destroy(ph->pool);
 
     free(ph->hole);
     free(ph);
@@ -199,7 +199,7 @@ tbx_ph_t *tbx_ph_new(const char *name, int size)
 
     memset(ph->hole, 0, size);
     ph->name = name;
-    apr_pool_create(&(ph->pool), NULL);
+    tbx_apr_pool_create(&(ph->pool), NULL);
     apr_thread_mutex_create(&(ph->lock), APR_THREAD_MUTEX_DEFAULT, ph->pool);
 
     ph->nholes = size;

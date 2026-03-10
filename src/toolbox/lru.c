@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_hash.h>
 #include <apr_thread_mutex.h>
 #include <tbx/log.h>
@@ -286,7 +286,7 @@ void tbx_lru_destroy(tbx_lru_t *lru)
     tbx_stack_free(lru->unused, 0);
 
     apr_thread_mutex_destroy(lru->lock);
-    apr_pool_destroy(lru->pool);  //** This also destroys the hash
+    tbx_apr_pool_destroy(lru->pool);  //** This also destroys the hash
 
     free(lru);
     return;
@@ -317,7 +317,7 @@ tbx_lru_t *tbx_lru_create(int n_objects, tbx_lru_key_fn_t get_key, tbx_lru_clone
     lru->free = free_item;
     lru->global_arg = free_global_arg;
 
-    assert_result(apr_pool_create(&(lru->pool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(lru->pool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(lru->lock), APR_THREAD_MUTEX_DEFAULT, lru->pool);
     lru->hash = apr_hash_make(lru->pool);
 

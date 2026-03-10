@@ -22,7 +22,7 @@
 
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -395,7 +395,7 @@ void free_ostcdb_object(lio_object_service_fn_t *os, ostcdb_object_t *obj, ex_of
     if (obj->realpath != NULL) free(obj->realpath);
     if (obj->fname != NULL) free(obj->fname);
     if (obj->link != NULL) free(obj->link);
-    if (obj->mpool) apr_pool_destroy(obj->mpool);
+    if (obj->mpool) tbx_apr_pool_destroy(obj->mpool);
     free(obj);
     (*n_objs)++;
 }
@@ -428,7 +428,7 @@ ostcdb_object_t *new_ostcdb_object(char *entry, ostc_base_object_info_t *base, a
     obj->inode = base->inode;
     obj->link_count = base->link_count;
     obj->link = NULL;
-    apr_pool_create(&(obj->mpool), NULL);
+    tbx_apr_pool_create(&(obj->mpool), NULL);
     obj->objects = (base->ftype & OS_OBJECT_DIR_FLAG) ? apr_hash_make(obj->mpool) : NULL;  //** FIXME - properly handle symlinks
     obj->attrs = apr_hash_make(obj->mpool);
 
@@ -3256,7 +3256,7 @@ void ostc_destroy(lio_object_service_fn_t *os)
     //** Do the final cleanup
     apr_thread_mutex_destroy(ostc->lock);
     apr_thread_cond_destroy(ostc->cond);
-    apr_pool_destroy(ostc->mpool);   //** This also destroys the hardlink hash
+    tbx_apr_pool_destroy(ostc->mpool);   //** This also destroys the hardlink hash
 
     if (ostc->n_limit_cache > 0) {
         for (i=0; i<ostc->n_limit_cache; i++) {
@@ -3334,7 +3334,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     ostc->entry_timeout = apr_time_from_sec(tbx_inip_get_integer(fd, section, "entry_timeout", ostc_default_options.entry_timeout));
     ostc->cleanup_interval = apr_time_from_sec(tbx_inip_get_integer(fd, section, "cleanup_interval",ostc_default_options.cleanup_interval));
 
-    apr_pool_create(&ostc->mpool, NULL);
+    tbx_apr_pool_create(&ostc->mpool, NULL);
     apr_thread_mutex_create(&(ostc->lock), APR_THREAD_MUTEX_DEFAULT, ostc->mpool);
     apr_thread_mutex_create(&(ostc->delayed_lock), APR_THREAD_MUTEX_DEFAULT, ostc->mpool);
     apr_thread_cond_create(&(ostc->cond), ostc->mpool);

@@ -21,7 +21,7 @@
 #define _log_module_index 213
 
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <execinfo.h>
@@ -2851,6 +2851,9 @@ void osrc_destroy(lio_object_service_fn_t *os)
     }
 
     gop_mq_msg_destroy(osrc->remote_host);
+
+    tbx_apr_pool_destroy(osrc->mpool);
+
     free(osrc->section);
     if (osrc->temp_section) free(osrc->temp_section);
     free(osrc->remote_host_string);
@@ -2900,7 +2903,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     osrc->spin_interval = tbx_inip_get_integer(fd, section, "spin_interval", osrc_default_options.spin_interval);
     osrc->spin_fail = tbx_inip_get_integer(fd, section, "spin_fail", osrc_default_options.spin_fail);
 
-    apr_pool_create(&osrc->mpool, NULL);
+    tbx_apr_pool_create(&osrc->mpool, NULL);
     apr_thread_mutex_create(&(osrc->lock), APR_THREAD_MUTEX_DEFAULT, osrc->mpool);
     apr_thread_cond_create(&(osrc->cond), osrc->mpool);
 

@@ -50,7 +50,7 @@ TBX_MALLOC tbx_sl_t *tbx_sl_malloc()
     if (!sl) // Do we log here?
         goto error_1;
 
-    apr_status_t ret = apr_pool_create(&(sl->pool), NULL);
+    apr_status_t ret = tbx_apr_pool_create(&(sl->pool), NULL);
     if (ret != APR_SUCCESS)
         goto error_2;
 
@@ -61,7 +61,7 @@ TBX_MALLOC tbx_sl_t *tbx_sl_malloc()
     return sl;
 
 error_3:
-    apr_pool_destroy(sl->pool);
+    tbx_apr_pool_destroy(sl->pool);
 error_2:
     free(sl);
 error_1:
@@ -85,7 +85,7 @@ void tbx_sl_del(tbx_sl_t * self)
 {
     tbx_sl_fini(self);
     apr_thread_mutex_destroy(self->lock);
-    apr_pool_destroy(self->pool);
+    tbx_apr_pool_destroy(self->pool);
     free(self);
 }
 

@@ -995,7 +995,7 @@ void *wq_backend_thread(apr_thread_t *th, void *data)
 
     tbx_monitor_thread_create(MON_MY_THREAD, "wq_backend_thread");
 
-    apr_pool_create(&mpool, NULL);
+    tbx_apr_pool_create(&mpool, NULL);
     table = apr_hash_make(mpool);
 
     finished = 0;
@@ -1004,7 +1004,7 @@ void *wq_backend_thread(apr_thread_t *th, void *data)
         if (finished != 0) wq_process(wq, table, mpool);
     }
 
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
 
     tbx_monitor_thread_destroy(MON_MY_THREAD);
     return(NULL);
@@ -1027,7 +1027,7 @@ void wq_ctx_init(wq_context_t *ctx)
         tbx_type_malloc_clear(ctx->work[i].merged, wq_merged_t, ctx->max_tasks);
     }
 
-    apr_pool_create(&(ctx->mpool), NULL);
+    tbx_apr_pool_create(&(ctx->mpool), NULL);
 }
 
 //***********************************************************************
@@ -1042,7 +1042,7 @@ void wq_ctx_shutdown(wq_context_t *ctx)
     free(ctx->work[OP_READ].tasks); free(ctx->work[OP_WRITE].tasks);
     free(ctx->work[OP_READ].merged); free(ctx->work[OP_WRITE].merged);
 
-    apr_pool_destroy(ctx->mpool);
+    tbx_apr_pool_destroy(ctx->mpool);
 }
 
 //***********************************************************************
@@ -1056,7 +1056,7 @@ void lio_wq_startup(int n_parallel)
 
     wq_global->pipe = tbx_que_create(10000, sizeof(wq_op_t *));
 
-    apr_pool_create(&(wq_global->mpool), NULL);
+    tbx_apr_pool_create(&(wq_global->mpool), NULL);
     apr_thread_mutex_create(&(wq_global->lock), APR_THREAD_MUTEX_DEFAULT, wq_global->mpool);
 
     // ** Launch the backend thread
@@ -1085,7 +1085,7 @@ void lio_wq_shutdown()
 
     //** Cleanup the lock
     apr_thread_mutex_destroy(wq_global->lock);
-    apr_pool_destroy(wq_global->mpool);
+    tbx_apr_pool_destroy(wq_global->mpool);
 
     //** And free the structure
     free(wq_global);

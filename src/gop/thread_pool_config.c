@@ -18,7 +18,7 @@
 
 #include <apr_env.h>
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
 #include <apr_time.h>
@@ -284,6 +284,7 @@ gop_thread_pool_context_t *gop_tp_context_create(char *tp_name, int min_threads,
     if (_tp_stats > 0) tpc->tp_stats = 1;
 
     if (tbx_atomic_inc(_tp_context_count) == 0) {
+        //** This exists for the duration of execution
         apr_pool_create(&_tp_pool, NULL);
         apr_thread_mutex_create(&_tp_lock, APR_THREAD_MUTEX_DEFAULT, _tp_pool);
         thread_pool_stats_init();

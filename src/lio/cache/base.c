@@ -20,7 +20,7 @@
 
 #define _log_module_index 142
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <stdlib.h>
 #include <tbx/assert_result.h>
@@ -52,7 +52,7 @@ void cache_base_destroy(lio_cache_t *c)
     tbx_list_destroy(c->segments);
     tbx_pc_destroy(c->cond_coop);
     apr_thread_mutex_destroy(c->lock);
-    apr_pool_destroy(c->mpool);
+    tbx_apr_pool_destroy(c->mpool);
 }
 
 //*************************************************************************
@@ -61,12 +61,12 @@ void cache_base_destroy(lio_cache_t *c)
 
 void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
 {
-    apr_pool_create(&(c->mpool), NULL);
+    tbx_apr_pool_create(&(c->mpool), NULL);
     
     //** Create mutex with error checking
     if (apr_thread_mutex_create(&(c->lock), APR_THREAD_MUTEX_DEFAULT, c->mpool) != APR_SUCCESS) {
         log_printf(0, "ERROR: Failed to create cache lock mutex\n");
-        apr_pool_destroy(c->mpool);
+        tbx_apr_pool_destroy(c->mpool);
         return;
     }
     
@@ -75,7 +75,7 @@ void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
     if (c->segments == NULL) {
         log_printf(0, "ERROR: Failed to create cache segments list\n");
         apr_thread_mutex_destroy(c->lock);
-        apr_pool_destroy(c->mpool);
+        tbx_apr_pool_destroy(c->mpool);
         return;
     }
     
@@ -85,7 +85,7 @@ void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
         log_printf(0, "ERROR: Failed to create cache condition coop\n");
         tbx_list_destroy(c->segments);
         apr_thread_mutex_destroy(c->lock);
-        apr_pool_destroy(c->mpool);
+        tbx_apr_pool_destroy(c->mpool);
         return;
     }
     

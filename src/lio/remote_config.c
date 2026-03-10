@@ -560,7 +560,7 @@ void _rc_configs_destroy(rc_configs_t *cfgs)
         free(obj->object);
         free(obj);
     }
-    apr_pool_destroy(cfgs->mpool);
+    tbx_apr_pool_destroy(cfgs->mpool);
     free(cfgs);
 }
 
@@ -592,7 +592,7 @@ rc_configs_t  *_rc_configs_create(tbx_inip_file_t *fd)
     int i;
 
     tbx_type_malloc_clear(cfgs, rc_configs_t, 1);
-    assert_result(apr_pool_create(&(cfgs->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(cfgs->mpool), NULL), APR_SUCCESS);
     cfgs->table = apr_hash_make(cfgs->mpool);
 
     stack = tbx_stack_new();
@@ -693,7 +693,7 @@ int rc_server_install(lio_config_t *lc, char *section)
 
     tbx_type_malloc_clear(rc_server, rc_t, 1);
 
-    assert_result(apr_pool_create(&(rc_server->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(rc_server->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(rc_server->lock), APR_THREAD_MUTEX_DEFAULT, rc_server->mpool);
     apr_thread_cond_create(&(rc_server->cond), rc_server->mpool);
 
@@ -767,7 +767,7 @@ void rc_server_destroy()
 
     apr_thread_mutex_destroy(rc_server->lock);
     apr_thread_cond_destroy(rc_server->cond);
-    apr_pool_destroy(rc_server->mpool);
+    tbx_apr_pool_destroy(rc_server->mpool);
 
     if (rc_server->prefix) free(rc_server->prefix);
     if (rc_server->section) free(rc_server->section);

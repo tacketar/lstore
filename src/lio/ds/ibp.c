@@ -23,7 +23,7 @@
 #include <apr.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -985,11 +985,12 @@ void ds_ibp_destroy(lio_data_service_fn_t *dsf)
     apr_thread_join(&value, ds->thread);  //** Wait for it to complete
 
     //** Now we can clean up
+    ibp_context_destroy(ds->ic);
+
     apr_thread_mutex_destroy(ds->lock);
     apr_thread_cond_destroy(ds->cond);
-    apr_pool_destroy(ds->pool);
+    tbx_apr_pool_destroy(ds->pool);
 
-    ibp_context_destroy(ds->ic);
     if (ds->section) free(ds->section);
 
     free(ds);
@@ -1102,7 +1103,7 @@ lio_data_service_fn_t *ds_ibp_create(void *arg, tbx_inip_file_t *ifd, char *sect
     dsf->truncate = ds_ibp_truncate;
 
     //** Launch the warmer
-    assert_result(apr_pool_create(&(ds->pool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(ds->pool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(ds->lock), APR_THREAD_MUTEX_DEFAULT, ds->pool);
     apr_thread_cond_create(&(ds->cond), ds->pool);
     ds->warm_table = apr_hash_make(ds->pool);

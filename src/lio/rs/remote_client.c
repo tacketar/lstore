@@ -22,7 +22,7 @@
 
 #include <apr_errno.h>
 #include <apr_file_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -513,7 +513,7 @@ void rs_remote_client_destroy(lio_resource_service_fn_t *rs)
     if (rsrc->delete_target == 1) remove(rsrc->child_target_file);
 
     //** Now do the normal cleanup
-    apr_pool_destroy(rsrc->mpool);
+    tbx_apr_pool_destroy(rsrc->mpool);
     free(rsrc->host_remote_rs);
     free(rsrc->child_target_file);
     free(rsrc->section);
@@ -545,7 +545,7 @@ lio_resource_service_fn_t *rs_remote_client_create(void *arg, tbx_inip_file_t *f
     rsrc->section = strdup(section);
 
     //** Make the locks and cond variables
-    assert_result(apr_pool_create(&(rsrc->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(rsrc->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(rsrc->lock), APR_THREAD_MUTEX_DEFAULT, rsrc->mpool);
     apr_thread_cond_create(&(rsrc->cond), rsrc->mpool);
 

@@ -20,7 +20,7 @@
 
 #define _log_module_index 154
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <errno.h>
 #include <libgen.h>
@@ -340,7 +340,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
         }
     }
 
-    assert_result(apr_pool_create(&(nlog->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(nlog->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(nlog->lock), APR_THREAD_MUTEX_DEFAULT, nlog->mpool);
 
     if (!ifd) tbx_inip_destroy(fd);
@@ -357,7 +357,7 @@ void tbx_notify_destroy(tbx_notify_t *nlog)
     if (nlog->section) free(nlog->section);
     if (nlog->fname_from_config) free(nlog->fname_from_config);
     if (nlog->fname) free(nlog->fname);
-    apr_pool_destroy(nlog->mpool);
+    tbx_apr_pool_destroy(nlog->mpool);
     free(nlog);
 }
 

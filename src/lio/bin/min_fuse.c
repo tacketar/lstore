@@ -34,7 +34,7 @@
 #include <unistd.h>
 #include <apr_hash.h>
 #include <apr_thread_mutex.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/type_malloc.h>
 
 // *************************************************************************
@@ -84,7 +84,7 @@ min_object_t *ns_object_init(const char *fname, const char *dentry, int ino, mod
     min_object_t *mo;
 
     tbx_type_malloc_clear(mo, min_object_t, 1);
-    assert_result(apr_pool_create(&(mo->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(mo->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(mo->lock), APR_THREAD_MUTEX_DEFAULT, mo->mpool);
     mo->xattrs = apr_hash_make(mo->mpool);
     mo->xattrs_query = apr_hash_make(mo->mpool);
@@ -125,7 +125,7 @@ void ns_object_destroy(min_object_t *mo)
     }
 
     //* Now clean up the object
-    apr_pool_destroy(mo->mpool);
+    tbx_apr_pool_destroy(mo->mpool);
     free(mo);
 }
 

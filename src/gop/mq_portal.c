@@ -95,6 +95,7 @@ void *mqtp_failure(apr_thread_t *th, void *arg);
 void mq_long_running_check()
 {
     if (_mq_long_running_pool == NULL) {
+        //** this pool persists for the duration of execution
         apr_pool_create(&_mq_long_running_pool, NULL);
         apr_threadkey_private_create(&_mq_long_running_key, free, _mq_long_running_pool);
     }
@@ -277,7 +278,7 @@ gop_mq_command_table_t *gop_mq_command_table_new(void *arg, gop_mq_exec_fn_t fn_
 
     t->fn_default = fn_default;
     t->arg_default = arg;
-    apr_pool_create(&(t->mpool), NULL);
+    tbx_apr_pool_create(&(t->mpool), NULL);
     assert_result(apr_thread_mutex_create(&(t->lock), APR_THREAD_MUTEX_DEFAULT,t->mpool),
                   APR_SUCCESS);
     t->table = apr_hash_make(t->mpool);FATAL_UNLESS(t->table != NULL);
@@ -303,7 +304,7 @@ void gop_mq_command_table_destroy(gop_mq_command_table_t *t)
         free(cmd);
     }
 
-    apr_pool_destroy(t->mpool);
+    tbx_apr_pool_destroy(t->mpool);
     free(t);
 
     return;
@@ -1992,7 +1993,7 @@ int mq_conn_create_actual(gop_mq_portal_t *p, int dowait)
     tbx_type_malloc_clear(c, gop_mq_conn_t, 1);
 
     c->pc = p;
-    assert_result(apr_pool_create(&(c->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(c->mpool), NULL), APR_SUCCESS);
     assert_result_not_null(c->waiting = apr_hash_make(c->mpool));
     assert_result_not_null(c->heartbeat_dest = apr_hash_make(c->mpool));
     assert_result_not_null(c->heartbeat_lut = apr_hash_make(c->mpool));
@@ -2061,7 +2062,7 @@ void gop_mq_conn_teardown(gop_mq_conn_t *c)
     apr_hash_clear(c->waiting);
     apr_hash_clear(c->heartbeat_dest);
     apr_hash_clear(c->heartbeat_lut);
-    apr_pool_destroy(c->mpool);
+    tbx_apr_pool_destroy(c->mpool);
     if (c->cefd[0] != -1) {
         tbx_io_close(c->cefd[0]), tbx_io_close(c->cefd[0]);
     }
@@ -2136,7 +2137,7 @@ void gop_mq_portal_destroy(gop_mq_portal_t *p)
 
     apr_thread_mutex_destroy(p->lock);
     apr_thread_cond_destroy(p->cond);
-    apr_pool_destroy(p->mpool);
+    tbx_apr_pool_destroy(p->mpool);
 
     gop_mq_pipe_destroy(p->ctx, p->efd);
     if (p->ctx != NULL) gop_mq_socket_context_destroy(p->ctx);
@@ -2257,7 +2258,7 @@ gop_mq_portal_t *gop_mq_portal_create(gop_mq_context_t *mqc, char *host, gop_mq_
 
     p->ctx = gop_mq_socket_context_new();
 
-    apr_pool_create(&(p->mpool), NULL);
+    tbx_apr_pool_create(&(p->mpool), NULL);
     apr_thread_mutex_create(&(p->lock), APR_THREAD_MUTEX_DEFAULT, p->mpool);
     apr_thread_cond_create(&(p->cond), p->mpool);
 
@@ -2309,7 +2310,7 @@ void gop_mq_destroy_context(gop_mq_context_t *mqc)
     gop_tp_context_destroy(mqc->tp);
 
     apr_thread_mutex_destroy(mqc->lock);
-    apr_pool_destroy(mqc->mpool);
+    tbx_apr_pool_destroy(mqc->mpool);
 
     if (mqc->section) free(mqc->section);
     if (mqc->fname_errors) free(mqc->fname_errors);
@@ -2409,7 +2410,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
     // New socket_type parameter
     mqc->socket_type = tbx_inip_get_integer(ifd, section, "socket_type", MQ_TRACE_ROUTER);
 
-    apr_pool_create(&(mqc->mpool), NULL);
+    tbx_apr_pool_create(&(mqc->mpool), NULL);
     apr_thread_mutex_create(&(mqc->lock), APR_THREAD_MUTEX_DEFAULT, mqc->mpool);
 
     //** Make the thread pool.  All GOP commands run through here.  We replace

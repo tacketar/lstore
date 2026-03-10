@@ -20,7 +20,7 @@
 #define _log_module_index 110
 
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <openssl/rand.h>
 #include <openssl/opensslv.h>
@@ -62,7 +62,7 @@ int tbx_random_startup()
     if (_rnd_lock != NULL) return(0);
 
     assert_result(RAND_load_file("/dev/urandom", max_bytes), max_bytes);
-    apr_pool_create(&_rnd_pool, NULL);
+    tbx_apr_pool_create(&_rnd_pool, NULL);
     apr_thread_mutex_create(&_rnd_lock, APR_THREAD_MUTEX_DEFAULT,_rnd_pool);
 
     return(0);
@@ -78,7 +78,7 @@ int tbx_random_shutdown()
     if (_rnd_count > 0) return(0);
 
     apr_thread_mutex_destroy(_rnd_lock);
-    apr_pool_destroy(_rnd_pool);
+    tbx_apr_pool_destroy(_rnd_pool);
 
     return(0);
 }

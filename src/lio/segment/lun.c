@@ -23,7 +23,7 @@
 
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -180,7 +180,7 @@ void lun_global_state_create(int n_max_retry)
     lg = malloc(n);
     memset(lg, 0, n);
 
-    assert_result(apr_pool_create(&(lg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(lg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(lg->lock), APR_THREAD_MUTEX_DEFAULT, lg->mpool);
     lg->n_max_retry = n_max_retry;
     lg->slot_retry = 0;
@@ -189,7 +189,7 @@ void lun_global_state_create(int n_max_retry)
     if (lun_global == NULL) lun_global = lg;
 
     if (lun_global != lg) {  //** IF different then someone else beat us to it.
-        apr_pool_destroy(lg->mpool);
+        tbx_apr_pool_destroy(lg->mpool);
         free(lg);
     }
 }
@@ -213,7 +213,7 @@ void lun_global_state_destroy()
     apr_thread_mutex_unlock(lun_global->lock);
 
     //** Free the emmory
-    apr_pool_destroy(lun_global->mpool);
+    tbx_apr_pool_destroy(lun_global->mpool);
     free(lun_global);
     lun_global = NULL;
 }
@@ -2991,7 +2991,7 @@ void seglun_destroy(tbx_ref_t *ref)
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
-    apr_pool_destroy(seg->mpool);
+    tbx_apr_pool_destroy(seg->mpool);
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
@@ -3035,7 +3035,7 @@ lio_segment_t *segment_lun_create(void *arg)
     tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
     tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
-    assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
 

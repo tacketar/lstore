@@ -37,6 +37,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <tbx/apr_pool_wrapper.h>
+
 #include "log.h"
 #include "tbx/assert_result.h"
 #include "tbx/atomic_counter.h"
@@ -72,6 +74,8 @@ void _log_init()
 
     tbx_atomic_startup();
     time_start = apr_time_now();
+
+    //** This pool we directly create because it exits for the whole program's execution
     if (apr_pool_create(&_log_mpool, NULL) != APR_SUCCESS) {
         fprintf(stderr, "Could not make log memory pool\n");
         exit(1);

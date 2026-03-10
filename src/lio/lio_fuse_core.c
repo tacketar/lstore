@@ -23,7 +23,7 @@
 
 #include <apr_hash.h>
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
 #include <assert.h>
@@ -1673,7 +1673,7 @@ void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn, l
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "max_readahead", -1);
     if (n > -1) conn->max_readahead = n;
 
-    apr_pool_create(&(lfs->mpool), NULL);
+    tbx_apr_pool_create(&(lfs->mpool), NULL);
 
     //** Get the pending_delete info and set it up
     lfs->enable_pending_delete_relocate = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_pending_delete_relocate", 1);
@@ -1755,7 +1755,7 @@ void lfs_destroy(void *private_data)
     if (lfs->lfs_section) free(lfs->lfs_section);
     if (lfs->id) free (lfs->id);
     free(lfs->mount_point);
-    apr_pool_destroy(lfs->mpool);
+    tbx_apr_pool_destroy(lfs->mpool);
     free(lfs);
 
     lio_shutdown(); // Reference counting in this function protects against shutdown if lio is still in use elsewhere

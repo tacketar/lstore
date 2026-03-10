@@ -19,7 +19,7 @@
 #include <rocksdb/c.h>
 #include <apr.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <gop/gop.h>
 #include <gop/opque.h>
 #include <gop/tp.h>
@@ -141,7 +141,7 @@ void parse_tag_file(char *fname)
     fd = tbx_inip_file_read(fname, 1);
     if (fd == NULL) return;
 
-    apr_pool_create(&tagged_pool, NULL);
+    tbx_apr_pool_create(&tagged_pool, NULL);
     tagged_rids = apr_hash_make(tagged_pool);
     tagged_keys = tbx_stack_new();
 
@@ -165,7 +165,7 @@ void parse_tag_file(char *fname)
 
     if (apr_hash_count(tagged_rids) == 0) {
         tbx_stack_free(tagged_keys, 0);
-        apr_pool_destroy(tagged_pool);
+        tbx_apr_pool_destroy(tagged_pool);
         tagged_pool = NULL;
         tagged_rids = NULL;
     } else {
@@ -790,7 +790,7 @@ int main(int argc, char **argv)
     tbx_type_malloc_clear(w, warm_thread_t, n_warm);
     for (j=0; j<n_warm; j++) {
         w[j].n_bulk = n_bulk;
-        apr_pool_create(&(w[j].mpool), NULL);
+        tbx_apr_pool_create(&(w[j].mpool), NULL);
         w[j].hash = apr_hash_make(w[j].mpool);
         w[j].que = que;
         w[j].que_setattr = que_setattr;
@@ -1055,7 +1055,7 @@ int main(int argc, char **argv)
     tbx_stack_free(stack, 0);
 cleanup:
     for (j=0; j<n_warm; j++) {
-        apr_pool_destroy(w[j].mpool);
+        tbx_apr_pool_destroy(w[j].mpool);
     }
 
     free(w);
@@ -1063,7 +1063,7 @@ cleanup:
 finished:
     if (tagged_rids != NULL) {
         tbx_stack_free(tagged_keys, 1);
-        apr_pool_destroy(tagged_pool);
+        tbx_apr_pool_destroy(tagged_pool);
     }
 
     close_results_db(results);  //** Close the DBs

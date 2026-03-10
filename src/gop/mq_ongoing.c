@@ -399,7 +399,7 @@ gop_mq_ongoing_object_t *gop_mq_ongoing_add(gop_mq_ongoing_t *mqon, bool auto_cl
         sscanf(id, "%d:", &(oh->heartbeat));
         log_printf(5, "heartbeat interval=%d\n", oh->heartbeat);
         oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
-        assert_result(apr_pool_create(&(oh->mpool), NULL), APR_SUCCESS);
+        assert_result(tbx_apr_pool_create(&(oh->mpool), NULL), APR_SUCCESS);
         oh->table = apr_hash_make(oh->mpool);
 
         apr_hash_set(mqon->id_table, oh->id, id_len, oh);
@@ -829,7 +829,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                 if ((apr_hash_count(oh->table) == 0) && (oh->remove_pending <= 0)) { //** Safe to clean up
                     apr_hash_set(mqon->id_table, key, klen, NULL);
                     free(oh->id);
-                    apr_pool_destroy(oh->mpool);
+                    tbx_apr_pool_destroy(oh->mpool);
                     free(oh);
                 }
             }
@@ -911,7 +911,7 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
 
         apr_hash_set(mqon->id_table, key, klen, NULL);
         free(oh->id);
-        apr_pool_destroy(oh->mpool);
+        tbx_apr_pool_destroy(oh->mpool);
         free(oh);
     }
 
@@ -952,7 +952,7 @@ void gop_mq_ongoing_destroy(gop_mq_ongoing_t *mqon)
 
     if (mqon->ongoing_heartbeat_thread) apr_thread_join(&value, mqon->ongoing_heartbeat_thread);
 
-    apr_pool_destroy(mqon->mpool);
+    tbx_apr_pool_destroy(mqon->mpool);
     free(mqon);
 }
 
@@ -973,7 +973,7 @@ gop_mq_ongoing_t *gop_mq_ongoing_create(gop_mq_context_t *mqc, gop_mq_portal_t *
     mqon->send_divisor = 4;
     mqon->tp_fail = tp_fail;   //** This is used for handling client failures that still have a ref
 
-    assert_result(apr_pool_create(&(mqon->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(mqon->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(mqon->lock), APR_THREAD_MUTEX_DEFAULT, mqon->mpool);
     apr_thread_cond_create(&(mqon->thread_cond), mqon->mpool);
     apr_thread_cond_create(&(mqon->object_cond), mqon->mpool);

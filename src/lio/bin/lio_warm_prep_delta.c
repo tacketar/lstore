@@ -19,7 +19,7 @@
 #include <rocksdb/c.h>
 #include <apr.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <gop/gop.h>
 #include <gop/opque.h>
 #include <gop/tp.h>
@@ -576,7 +576,7 @@ int main(int argc, char **argv)
     } while ((start_option < i) && (i<argc));
 
     //** Make the change log hashes
-    assert_result(apr_pool_create(&mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&mpool, NULL), APR_SUCCESS);
     obj_hash = apr_hash_make(mpool);
 
     //** Get the DB's clog timestamp

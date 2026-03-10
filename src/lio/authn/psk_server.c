@@ -96,7 +96,7 @@ void _psk_destroy(lio_authn_t *an)
     }
 
     //** This destroys both hashes.  Everything in the creds hash was handled in the account purge
-    apr_pool_destroy(ctx->mpool);
+    tbx_apr_pool_destroy(ctx->mpool);
     free(ctx);
 }
 
@@ -131,7 +131,7 @@ void _psk_load(lio_authn_t *an)
 
     //** Make the new context
     tbx_type_malloc_clear(ctx, psk_context_t, 1);
-    assert_result(apr_pool_create(&(ctx->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(ctx->mpool), NULL), APR_SUCCESS);
     ctx->accounts = apr_hash_make(ctx->mpool);
     ctx->creds = apr_hash_make(ctx->mpool);
 
@@ -211,7 +211,7 @@ void _psk_load(lio_authn_t *an)
                 a->old_ctx = ap->ctx;
             }
         } else { //** We can go ahead and clean up
-            apr_pool_destroy(ap->ctx->mpool);
+            tbx_apr_pool_destroy(ap->ctx->mpool);
             free(ap->ctx);
         }
     }
@@ -366,7 +366,7 @@ void apsk_cred_destroy(lio_creds_t *c)
                 free(a);
 
                 if (apr_hash_count(ctx->accounts) == 0) { //** Nothing left
-                    apr_pool_destroy(ctx->mpool);
+                    tbx_apr_pool_destroy(ctx->mpool);
                     free(ctx);
                 }
             }
@@ -736,7 +736,7 @@ void authn_psk_server_destroy(lio_authn_t *an)
 
     apr_thread_mutex_destroy(ap->lock);
     apr_thread_cond_destroy(ap->cond);
-    apr_pool_destroy(ap->mpool);
+    tbx_apr_pool_destroy(ap->mpool);
     free(ap);
     free(an);
 }
@@ -762,7 +762,7 @@ lio_authn_t *authn_psk_server_create(lio_service_manager_t *ess, tbx_inip_file_t
     ap->hostname = tbx_inip_get_string(ifd, section, "address", NULL);
 
     //** Make the locks and cond variables
-    assert_result(apr_pool_create(&(ap->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(ap->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(ap->lock), APR_THREAD_MUTEX_DEFAULT, ap->mpool);
     apr_thread_cond_create(&(ap->cond), ap->mpool);
 

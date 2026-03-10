@@ -19,7 +19,7 @@
 #include <apr.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_signal.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -128,7 +128,7 @@ tbx_list_t *seg_index;
 
 int shutdown_now = 0;
 apr_thread_mutex_t *shutdown_lock;
-apr_pool_t *shutdown_mpool;
+apr_pool_t *shutdown_mpool = NULL;
 
 //*************************************************************************
 //  signal_shutdown - QUIT signal handler
@@ -156,7 +156,7 @@ void signal_shutdown(int sig)
 void install_signal_handler()
 {
     //** Make the APR stuff
-    assert_result(apr_pool_create(&shutdown_mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&shutdown_mpool, NULL), APR_SUCCESS);
     apr_thread_mutex_create(&shutdown_lock, APR_THREAD_MUTEX_DEFAULT, shutdown_mpool);
 
     //***Attach the signal handler for shutdown
@@ -1419,7 +1419,7 @@ int main(int argc, char **argv)
 
     //** See if we need to load the pool config for a rebalance
     if ((pool_cfg != NULL) || (key_rebalance != NULL)) {
-        assert_result(apr_pool_create(&rid_mpool, NULL), APR_SUCCESS);
+        assert_result(tbx_apr_pool_create(&rid_mpool, NULL), APR_SUCCESS);
         apr_thread_mutex_create(&rid_lock, APR_THREAD_MUTEX_DEFAULT, rid_mpool);
         rid_changes = (pool_cfg != NULL) ? load_pool_config(pool_cfg, rid_mpool, pools) : rebalance_pool(rid_mpool, pools, key_rebalance, rtol, rtol_mode);
         if (print_pools) {
@@ -1446,7 +1446,7 @@ int main(int argc, char **argv)
 
     tbx_type_malloc_clear(w, inspect_t, lio_parallel_task_count);
     seg_index = tbx_list_create(0, &tbx_list_string_compare, NULL, tbx_list_simple_free, NULL);
-    assert_result(apr_pool_create(&mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&mpool, NULL), APR_SUCCESS);
     apr_thread_mutex_create(&lock, APR_THREAD_MUTEX_DEFAULT, mpool);
 
     q = gop_opque_new();
@@ -1641,7 +1641,7 @@ int main(int argc, char **argv)
     gop_opque_free(q, OP_DESTROY);
 
     apr_thread_mutex_destroy(lock);
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
     tbx_list_destroy(seg_index);
 
     info_printf(lio_ifd, 0, "--------------------------------------------------------------------\n");
@@ -1667,8 +1667,9 @@ int main(int argc, char **argv)
     free(w);
 
     tbx_stdinarray_iter_destroy(piter);
+    if (shutdown_mpool) tbx_apr_pool_destroy(shutdown_mpool);
     if (rid_lock != NULL) apr_thread_mutex_destroy(rid_lock);
-    if (rid_mpool != NULL) apr_pool_destroy(rid_mpool);
+    if (rid_mpool != NULL) tbx_apr_pool_destroy(rid_mpool);
 finished:
     lio_shutdown();
 

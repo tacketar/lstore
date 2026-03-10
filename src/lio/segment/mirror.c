@@ -1581,7 +1581,7 @@ void seg_mirror_destroy(tbx_ref_t *ref)
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
-    apr_pool_destroy(seg->mpool);
+    tbx_apr_pool_destroy(seg->mpool);
 
     free(seg);
 }
@@ -1601,7 +1601,7 @@ lio_segment_t *segment_mirror_create(void *arg)
     tbx_type_malloc_clear(seg, lio_segment_t, 1);
     tbx_type_malloc_clear(s, seg_mirror_priv_t, 1);
     tbx_obj_init(&seg->obj, (tbx_vtable_t *) &lio_mirror_vtable);
-    assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
 

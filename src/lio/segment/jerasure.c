@@ -24,7 +24,7 @@
 #define _log_module_index 178
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -2377,7 +2377,7 @@ void segjerase_destroy(tbx_ref_t *ref)
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
-    apr_pool_destroy(seg->mpool);
+    tbx_apr_pool_destroy(seg->mpool);
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
@@ -2407,7 +2407,7 @@ lio_segment_t *segment_jerasure_create(void *arg)
     generate_ex_id(&(seg->header.id));
     tbx_obj_init(&seg->obj, (tbx_vtable_t *) &lio_jeraseseg_vtable);
     seg->header.type = SEGMENT_TYPE_JERASURE;
-    assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
 

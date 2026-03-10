@@ -17,7 +17,7 @@
 #define _log_module_index 219
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -215,7 +215,7 @@ int main(int argc, char **argv)
     } while ((start_option < i) && (i<argc));
 
     //** Make the APR stuff
-    assert_result(apr_pool_create(&mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&mpool, NULL), APR_SUCCESS);
     apr_thread_mutex_create(&lock, APR_THREAD_MUTEX_DEFAULT, mpool);
     apr_thread_cond_create(&cond, mpool);
 
@@ -261,7 +261,7 @@ int main(int argc, char **argv)
     tbx_info_flush(lio_ifd);
 
     //** Cleanup
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
 
     lio_shutdown();
 

@@ -1272,7 +1272,7 @@ int lio_rw_test_exec(int rw_mode, char *section)
     int tbufsize = 10240;
     char text_buffer[tbufsize];
 
-    apr_pool_create(&mpool, NULL);
+    tbx_apr_pool_create(&mpool, NULL);
 
     rwc.timeout = lio_gc->timeout;
 
@@ -1350,7 +1350,7 @@ int lio_rw_test_exec(int rw_mode, char *section)
     printf("%s", text_buffer);
     printf("----------------------------------------------------------\n");
 
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
     free(workers);
     free(target);
 

@@ -16,7 +16,7 @@
 
 #include <unistd.h>
 #include <sys/syscall.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_hash.h>
 #include <apr_time.h>
 #include <apr_thread_mutex.h>
@@ -147,6 +147,7 @@ int tbx_monitor_enabled() { return(monitor_state); }
 
 int tbx_monitor_create(const char *fname)
 {
+    //** this uses the stock apr_pool_Create because it will persist for the duration of the program
     if (!ctx) {
         tbx_type_malloc_clear(ctx, mon_ctx_t, 1);
         assert_result(apr_pool_create(&(ctx->mpool), NULL), APR_SUCCESS);
@@ -176,6 +177,7 @@ void tbx_monitor_destroy()
     if (ctx->fname) free(ctx->fname);
     monitor_state = 0;
     apr_thread_mutex_unlock(ctx->lock);
+    apr_pool_destroy(ctx->mpool);
 }
 
 //************************************************************************************
@@ -1314,7 +1316,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
 
     //** Make the base structure
     memset(&mp, 0, sizeof(mp));
-    apr_pool_create(&(mp.mpool), NULL);
+    tbx_apr_pool_create(&(mp.mpool), NULL);
     mp.connections = apr_hash_make(mp.mpool);
 
     //** Make the type labels
@@ -1582,7 +1584,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
         }
     }
 
-    apr_pool_destroy(mp.mpool);
+    tbx_apr_pool_destroy(mp.mpool);
 
     return(0);
 }

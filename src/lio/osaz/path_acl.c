@@ -618,7 +618,7 @@ void osaz_pacl_destroy(lio_os_authz_t *az)
     free(osaz->section);
     apr_thread_mutex_destroy(osaz->lock);
     apr_thread_cond_destroy(osaz->cond);
-    apr_pool_destroy(osaz->mpool);
+    tbx_apr_pool_destroy(osaz->mpool);
     free(osaz);
     free(az);
 }
@@ -640,7 +640,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     tbx_type_malloc(opa, osaz_pacl_t, 1);
     osaz->priv = opa;
     opa->section = strdup(section);
-    assert_result(apr_pool_create(&(opa->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(opa->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(opa->lock), APR_THREAD_MUTEX_DEFAULT, opa->mpool);
     apr_thread_cond_create(&(opa->cond), opa->mpool);
 

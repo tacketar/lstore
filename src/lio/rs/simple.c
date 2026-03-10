@@ -23,7 +23,7 @@
 #include <apr.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -1174,7 +1174,7 @@ void rs_simple_destroy(lio_resource_service_fn_t *rs)
     //** Now we can free up all the space
     apr_thread_mutex_destroy(rss->lock);
     apr_thread_cond_destroy(rss->cond);
-    apr_pool_destroy(rss->mpool);  //** This also frees the hash tables
+    tbx_apr_pool_destroy(rss->mpool);  //** This also frees the hash tables
 
     if (rss->rid_table != NULL) tbx_list_destroy(rss->rid_table);
 
@@ -1204,7 +1204,7 @@ lio_resource_service_fn_t *rs_simple_create(void *arg, tbx_inip_file_t *kf, char
 
     rss->section = strdup(section);
 
-    assert_result(apr_pool_create(&(rss->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(rss->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(rss->lock), APR_THREAD_MUTEX_DEFAULT, rss->mpool);
     apr_thread_mutex_create(&(rss->update_lock), APR_THREAD_MUTEX_DEFAULT, rss->mpool);
     apr_thread_cond_create(&(rss->cond), rss->mpool);

@@ -23,7 +23,7 @@
 
 #define _log_module_index 130
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_proc.h>
 #include <stdlib.h>
 
@@ -54,7 +54,7 @@ void ibp_errno_init()
     if (_times_used != 0) return;
 
     _times_used++;
-    apr_pool_create(&_err_mpool, NULL);
+    apr_pool_create(&_err_mpool, NULL);  //** This exists for the duration of execution
     apr_thread_once_init(&_err_once, _err_mpool);
 }
 

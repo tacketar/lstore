@@ -22,7 +22,7 @@
 
 #include <apr_network_io.h>
 #include <apr_poll.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <stddef.h>
 

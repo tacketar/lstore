@@ -22,7 +22,7 @@
 #include <apr_dso.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_signal.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -1100,6 +1100,7 @@ void lio_destroy_nl(lio_config_t *lio)
 {
     lc_object_container_t *lcc;
     lio_path_tuple_t *tuple;
+    lio_creds_t *creds;
     lio_segment_t *seg;
     char lc_obj[1024];
 
@@ -1121,7 +1122,11 @@ void lio_destroy_nl(lio_config_t *lio)
     lcc = tbx_list_search(_lc_object_list, lio->creds_name);
     tuple = (lcc != NULL) ? lcc->object : NULL;
     if (_lc_object_destroy(lio->creds_name) <= 0) {
-        if (lio->creds) an_cred_destroy(lio->creds);
+        if (lio->creds) {
+            creds = lio->creds;
+            lio->creds = NULL;
+            an_cred_destroy(creds);
+        }
         free(tuple);
     }
 
@@ -1246,7 +1251,7 @@ void lio_destroy_nl(lio_config_t *lio)
     if (lio->open_close_lock) free(lio->open_close_lock);
 
     apr_thread_mutex_destroy(lio->lock);
-    apr_pool_destroy(lio->mpool);
+    tbx_apr_pool_destroy(lio->mpool);
 
     if (lio->obj_name) free(lio->obj_name);
     if (lio->root_prefix) free(lio->root_prefix);
@@ -1677,7 +1682,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     //** Table of open files
     lio->open_index = tbx_sl_new_full(10, 0.5, 0, &ex_id_compare, NULL, NULL, NULL);
 
-    assert_result(apr_pool_create(&(lio->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(lio->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(lio->lock), APR_THREAD_MUTEX_DEFAULT, lio->mpool);
 
     //** Make the open/close coordination locks
@@ -1867,7 +1872,7 @@ int lio_init(int *argc, char ***argvp)
     tbx_log_open("stderr", 0); //** But if it's changed via an opt let's have a place to put the output
 
     //** Create the lio object container
-    apr_pool_create(&_lc_mpool, NULL);
+    tbx_apr_pool_create(&_lc_mpool, NULL);
     apr_thread_mutex_create(&_lc_lock, APR_THREAD_MUTEX_DEFAULT, _lc_mpool);
     _lc_object_list = tbx_list_create(0, &tbx_list_string_compare, NULL, tbx_list_no_key_free, tbx_list_no_data_free);
 
@@ -2230,8 +2235,10 @@ int lio_shutdown()
     if (_lio_exe_name) free(_lio_exe_name);
     if (myargv != NULL) free(myargv);
 
+    tbx_list_destroy(_lc_object_list);
+
     apr_thread_mutex_destroy(_lc_lock);
-    apr_pool_destroy(_lc_mpool);
+    tbx_apr_pool_destroy(_lc_mpool);
     _lc_mpool = NULL;
     _lc_lock  = NULL;
 

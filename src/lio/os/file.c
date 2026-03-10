@@ -24,7 +24,7 @@
 #include <apr_errno.h>
 #include <apr_hash.h>
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -1481,7 +1481,7 @@ fobject_lock_t *fobj_lock_create()
     fobject_lock_t *fol;
 
     tbx_type_malloc_clear(fol, fobject_lock_t, 1);
-    apr_pool_create(&(fol->mpool), NULL);
+    tbx_apr_pool_create(&(fol->mpool), NULL);
     apr_thread_mutex_create(&(fol->fobj_lock), APR_THREAD_MUTEX_DEFAULT, fol->mpool);
     fol->fobj_table = tbx_list_create(0, &tbx_list_string_compare, tbx_list_string_dup, tbx_list_simple_free, tbx_list_no_data_free);
     fol->fobj_pc = tbx_pc_new("fobj_pc", 50, sizeof(fobj_lock_t), fol->mpool, fobj_lock_new, fobj_lock_free);
@@ -1500,7 +1500,7 @@ void fobj_lock_destroy(fobject_lock_t *fol)
     tbx_list_destroy(fol->fobj_table);
     tbx_pc_destroy(fol->fobj_pc);
     tbx_pc_destroy(fol->task_pc);
-    apr_pool_destroy(fol->mpool);
+    tbx_apr_pool_destroy(fol->mpool);
     free(fol);
 }
 
@@ -6346,7 +6346,7 @@ os_attr_iter_t *osfile_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t
     //** is create a memory pool just for the hash iterator and destroy it when the attr iter is destroyed.
     //** If this isn't done and you use the osf->mpool you end up with a slow memory accumulator and also need to add locks to protect the
     //** the shared mpoll since they aren't thread safe
-    assert_result(apr_pool_create(&(it->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(it->mpool), NULL), APR_SUCCESS);
     it->va_index = apr_hash_first(it->mpool, osf->vattr_hash);
 
     it->d = opendir(fd->attr_dir);
@@ -6367,7 +6367,7 @@ void osfile_destroy_attr_iter(os_attr_iter_t *oit)
     osfile_attr_iter_t *it = (osfile_attr_iter_t *)oit;
     if (it->d != NULL) closedir(it->d);
 
-    apr_pool_destroy(it->mpool);
+    tbx_apr_pool_destroy(it->mpool);
     free(it);
 }
 
@@ -6552,7 +6552,7 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
     it->recurse_stack = tbx_stack_new();
     it->object_types = object_types;
     if (object_types & OS_OBJECT_FOLLOW_SYMLINK_FLAG) { //** Following symlinks so setup the hash
-        apr_pool_create(&it->mpool, NULL);
+        tbx_apr_pool_create(&it->mpool, NULL);
         it->symlink_loop = apr_hash_make(it->mpool);
     }
 
@@ -6638,7 +6638,7 @@ os_object_iter_t *osfile_create_object_iter_alist(lio_object_service_fn_t *os, l
         n = (it->n_list+2) * (osf->n_piter_que_attr + 1);  //** The (n_list+2) is for the ftype and fname which are the first 2 and the last +1 is used as an fname terminator
         it->piter->que_attr = tbx_que_create(osf->n_piter_que_attr, sizeof(piq_attr_t) * n);
         tbx_type_malloc_clear(it->piter->attr_curr, piq_attr_t, n);
-        assert_result(apr_pool_create(&(it->piter->mpool), NULL), APR_SUCCESS);
+        assert_result(tbx_apr_pool_create(&(it->piter->mpool), NULL), APR_SUCCESS);
         tbx_type_malloc_clear(it->piter->attr_workers, apr_thread_t *, osf->n_piter_threads);
         tbx_atomic_set(it->piter->n_active, osf->n_piter_threads);
         for (i=0; i<osf->n_piter_threads; i++) {
@@ -6695,7 +6695,7 @@ void osfile_destroy_object_iter(os_object_iter_t *oit)
         //** Tear down the piter
         tbx_que_destroy(it->piter->que_fname);
         tbx_que_destroy(it->piter->que_attr);
-        apr_pool_destroy(it->piter->mpool);
+        tbx_apr_pool_destroy(it->piter->mpool);
         free(it->piter);
     }
 
@@ -6726,7 +6726,7 @@ void osfile_destroy_object_iter(os_object_iter_t *oit)
             apr_hash_this(hi, (const void **)&key, &klen, &val);
             free(key);
         }
-        apr_pool_destroy(it->mpool);  //** This should also destroy the hash
+        tbx_apr_pool_destroy(it->mpool);  //** This should also destroy the hash
     }
 
     osaz_ug_hint_free(osf->osaz, it->creds, &(it->ug));
@@ -8626,7 +8626,7 @@ void osfile_destroy(lio_object_service_fn_t *os)
 
     osaz_destroy(osf->osaz);
 
-    apr_pool_destroy(osf->mpool);
+    tbx_apr_pool_destroy(osf->mpool);
 
     if (osf->olog == os_notify_handle) os_notify_handle = NULL;  //** Clear the global handle if we own it
     if (osf->olog && (strcmp(osf->os_activity, "global") != 0)) tbx_notify_destroy(osf->olog);
@@ -8704,7 +8704,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     tbx_type_malloc_clear(os, lio_object_service_fn_t, 1);
     tbx_type_malloc_clear(osf, lio_osfile_priv_t, 1);
     os->priv = (void *)osf;
-    apr_pool_create(&osf->mpool, NULL);
+    tbx_apr_pool_create(&osf->mpool, NULL);
 
     osf->section = strdup(section);
 

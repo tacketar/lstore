@@ -795,7 +795,7 @@ os_inode_lut_t *os_inode_lut_create(int n_lut_max, double shrink_fraction, int n
     ilut->n_epoch = n_epoch;
     ilut->n_new_epoch = n_new_epoch;
 
-    assert_result(apr_pool_create(&(ilut->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(ilut->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(ilut->lock), APR_THREAD_MUTEX_DEFAULT, ilut->mpool);
     ilut->table = apr_hash_make(ilut->mpool);
 
@@ -827,7 +827,7 @@ void os_inode_lut_destroy(os_inode_lut_t *ilut)
     }
 
     apr_thread_mutex_destroy(ilut->lock);
-    apr_pool_destroy(ilut->mpool);
+    tbx_apr_pool_destroy(ilut->mpool);
     free(ilut->epoch_tally);
     free(ilut);
 }

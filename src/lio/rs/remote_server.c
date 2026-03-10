@@ -24,7 +24,7 @@
 #define _log_module_index 216
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>
@@ -528,7 +528,7 @@ void rs_remote_server_destroy(lio_resource_service_fn_t *rs)
     rs_destroy_service(rsrs->rs_child);
 
     //** Now do the normal cleanup
-    apr_pool_destroy(rsrs->mpool);
+    tbx_apr_pool_destroy(rsrs->mpool);
     tbx_stack_free(rsrs->pending, 0);
     free(rsrs->section);
     free(rsrs->rs_local_section);
@@ -559,7 +559,7 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
     rsrs->section = strdup(section);
 
     //** Make the locks and cond variables
-    assert_result(apr_pool_create(&(rsrs->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(rsrs->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(rsrs->lock), APR_THREAD_MUTEX_DEFAULT, rsrs->mpool);
     apr_thread_cond_create(&(rsrs->cond), rsrs->mpool);
 

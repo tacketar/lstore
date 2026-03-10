@@ -24,6 +24,7 @@
 #include <gop/gop.h>
 #include <gop/opque.h>
 #include <gop/portal.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/apr_wrapper.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
@@ -247,7 +248,7 @@ int submit_shutdown(gop_portal_context_t *hpc)
     cmd.cmd = CONN_CLOSE;
     dt = apr_time_from_sec(10);
     n = 0;
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
 	    for (hc = tbx_stack_top_first(hp->conn_list); hc != NULL; hc = tbx_stack_next_down(hp->conn_list)) {
             if ((hc->state == 1) || (hc->state == 0)) {  //**1=Up, 0=trying to come up
@@ -276,7 +277,7 @@ hconn_t *find_conn_to_close(gop_portal_context_t *hpc)
     least_busy = -1;
     best_hc = NULL;
     best_workload = -1;
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
         hp_busy = tbx_stack_count(hp->pending);
 	    for (hc = tbx_stack_top_first(hp->conn_list); hc != NULL; hc = tbx_stack_next_down(hp->conn_list)) {
@@ -543,7 +544,7 @@ double determine_bandwidths(gop_portal_context_t *hpc, int *n_used, hportal_t **
     //** Fill the array
     total_avg_bw = 0;
     n = 0;
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
         if (hp->dead != 0) continue;
         if (tbx_stack_count(hp->conn_list) <= hp->limbo_conn) continue;
@@ -601,9 +602,8 @@ void dump_stats(gop_portal_context_t *hpc, FILE *fd)
         hpc->hp_running, hpc->running_conn, hpc->pending_conn, hpc->max_total_conn, hpc->min_conn, hpc->max_conn, tbx_stk_pretty_print_double_with_scale(1024, hpc->max_workload, ppbuf1));
     determine_bandwidths(hpc, &n_used, &hp_range[0], &hp_range[1], &hp_range[2]);
 
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
-
         fprintf(fd, "    Host: %s\n", hp->skey);
         fprintf(fd, "        Workload - pending: %s executing: %s,  Commands processed: " I64T "  Submitted: " I64T " Retries: " I64T "  Tasks Queued: %d  Max Queued: %d  Merged Commands: " I64T "\n",
             tbx_stk_pretty_print_double_with_scale(1024, hp->workload_pending, ppbuf1),
@@ -677,10 +677,10 @@ void route_gop(gop_portal_context_t *hpc, gop_op_generic_t *gop)
         hp = hp_create(hpc, hop->hostport);
         apr_hash_set(hpc->hp, hp->skey, APR_HASH_KEY_STRING, (const void *)hp);
     }
+
     hp->workload_pending += hop->workload;
     tbx_stack_push(hp->pending, gop);
 
-log_printf(15, "hp=%s gid=%d pending=%d workload=" I64T "\n", hp->skey, gop_id(gop), tbx_stack_count(hp->pending), hp->workload_pending);
     if (hop->on_submit) {
         ele = tbx_stack_get_current_ptr(hp->pending);
         hop->on_submit(hp->pending, ele);
@@ -1089,7 +1089,7 @@ int hpc_submit_tasks(gop_portal_context_t *hpc)
 log_printf(15, "START hpc=%s\n", hpc->name);
 
     ntodo = 0;
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
 log_printf(15, "SUBMIT hpc=%s hp=%s\n", hpc->name, hp->skey);
 
@@ -1132,9 +1132,8 @@ void depot_health_check(gop_portal_context_t *hpc)
     if (hp_min->avg_bw >= min_bw) return;
 
     //** Mark the HP's as dead
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&hp);
-
         if ((hp->dead != 0) || (hp->avg_bw >= min_bw) ||
             (tbx_stack_count(hp->conn_list) <= hp->limbo_conn)) continue;  //** Nothing to do
 
@@ -1181,7 +1180,7 @@ void *hportal_thread(apr_thread_t *th, void *arg)
     wait_for_shutdown(hpc, ntodo);
 
     //** Now destroy all the hportals
-    for (hi=apr_hash_first(hpc->pool, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
+    for (hi=apr_hash_first(NULL, hpc->hp); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, &val);
         hp = (hportal_t *)val;
         apr_hash_set(hpc->hp, hp->skey, APR_HASH_KEY_STRING, NULL);
@@ -1564,8 +1563,6 @@ hportal_t *hp_create(gop_portal_context_t *hpc, char *hostport)
 
 void hp_destroy(hportal_t *hp)
 {
-    apr_hash_set(hp->hpc->hp, hp->skey, APR_HASH_KEY_STRING, NULL);
-
     log_printf(10, "CONN_LIST=%d\n", tbx_stack_count(hp->conn_list));
 
     if (hp->skey) free(hp->skey);
@@ -1705,7 +1702,7 @@ gop_portal_context_t *gop_hp_context_create(gop_portal_fn_t *imp, char *name)
 
     if (!imp->connect) return(hpc);
 
-    assert_result(apr_pool_create(&(hpc->pool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(hpc->pool), NULL), APR_SUCCESS);
     hpc->hp = apr_hash_make(hpc->pool); FATAL_UNLESS(hpc->hp != NULL);
     hpc->que = tbx_que_create(10000, sizeof(hpc_cmd_t));
 
@@ -1779,8 +1776,7 @@ void gop_hp_context_destroy(gop_portal_context_t *hpc)
 
     //** Cleanup
     tbx_que_destroy(hpc->que);
-    apr_hash_clear(hpc->hp);
-    apr_pool_destroy(hpc->pool);
+    tbx_apr_pool_destroy(hpc->pool);
 
 submit_only:
     if (hpc->name) free(hpc->name);

@@ -25,7 +25,7 @@
 #include <apr_errno.h>
 #include <apr_hash.h>
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
 #include <arpa/inet.h>
@@ -69,9 +69,9 @@ DNS_cache_t *_cache = NULL;
 
 void wipe_entries(DNS_cache_t *cache)
 {
-    if (cache->mpool != NULL) apr_pool_destroy(cache->mpool);
+    if (cache->mpool != NULL) tbx_apr_pool_destroy(cache->mpool);
 
-    assert_result(apr_pool_create(&(cache->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(cache->mpool), NULL), APR_SUCCESS);
     cache->table = apr_hash_make(cache->mpool);FATAL_UNLESS(cache->table != NULL);
 
     cache->restart_time = apr_time_now() + apr_time_make(600, 0);
@@ -201,7 +201,7 @@ int tbx_dnsc_startup_sized(int size)
 
     _cache->size = size;
     _cache->mpool = NULL;
-    assert_result(apr_pool_create(&(_cache->lockpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(_cache->lockpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(_cache->lock), APR_THREAD_MUTEX_DEFAULT,_cache->lockpool);
 
     wipe_entries(_cache);
@@ -214,8 +214,8 @@ int tbx_dnsc_shutdown()
 {
     apr_thread_mutex_destroy(_cache->lock);
 
-    if (_cache->mpool != NULL) apr_pool_destroy(_cache->mpool);
-    if (_cache->lockpool != NULL) apr_pool_destroy(_cache->lockpool);
+    if (_cache->mpool != NULL) tbx_apr_pool_destroy(_cache->mpool);
+    if (_cache->lockpool != NULL) tbx_apr_pool_destroy(_cache->lockpool);
 
     free(_cache);
 

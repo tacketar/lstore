@@ -60,7 +60,7 @@ int gop_mqs_id(gop_mq_stream_t *mqs)
 
 void mqs_multipacket_create(gop_mq_stream_t *mqs)
 {
-    apr_pool_create(&mqs->mpool, NULL);
+    tbx_apr_pool_create(&mqs->mpool, NULL);
     apr_thread_mutex_create(&(mqs->lock), APR_THREAD_MUTEX_DEFAULT, mqs->mpool);
     apr_thread_cond_create(&(mqs->cond), mqs->mpool);
 
@@ -369,7 +369,7 @@ void gop_mq_stream_read_destroy(gop_mq_stream_t *mqs)
     tbx_pack_destroy(mqs->pack);
     apr_thread_mutex_destroy(mqs->lock);
     apr_thread_cond_destroy(mqs->cond);
-    apr_pool_destroy(mqs->mpool);
+    tbx_apr_pool_destroy(mqs->mpool);
     if (mqs->remote_host != NULL) gop_mq_msg_destroy(mqs->remote_host);
     free(mqs);
 
@@ -917,7 +917,7 @@ void gop_mq_stream_write_destroy(gop_mq_stream_t *mqs)
     if (mqs->mpool != NULL) {
         apr_thread_mutex_destroy(mqs->lock);
         apr_thread_cond_destroy(mqs->cond);
-        apr_pool_destroy(mqs->mpool);
+        tbx_apr_pool_destroy(mqs->mpool);
     }
 
     if (mqs->hid != NULL) gop_mq_frame_destroy(mqs->hid);

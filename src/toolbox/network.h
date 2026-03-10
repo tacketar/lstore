@@ -21,7 +21,7 @@
 #define __NETWORK_H_
 
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <apr_thread_proc.h>

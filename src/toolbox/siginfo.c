@@ -20,7 +20,7 @@
 #define _log_module_index 110
 
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_signal.h>
 #include <apr_thread_proc.h>
@@ -150,7 +150,7 @@ void tbx_siginfo_handler(int sig)
 void tbx_siginfo_install(char *fname, int signal)
 {
     if (!_si_pool) {
-        apr_pool_create(&_si_pool, NULL);
+        tbx_apr_pool_create(&_si_pool, NULL);
         apr_thread_mutex_create(&_si_lock, APR_THREAD_MUTEX_DEFAULT, _si_pool);
     }
 
@@ -186,7 +186,7 @@ void tbx_siginfo_shutdown()
         if(_siginfo_name[i] != NULL) free(_siginfo_name[i]);
     }
 
-    apr_pool_destroy(_si_pool);
+    tbx_apr_pool_destroy(_si_pool);
 }
 
 // ***************************************************************

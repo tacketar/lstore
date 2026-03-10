@@ -33,7 +33,7 @@
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <tbx/append_printf.h>
 #include <tbx/fmttypes.h>
@@ -2050,7 +2050,7 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls, int n
 
     //** Create the structure
     tbx_type_malloc_clear(pa, path_acl_context_t, 1);
-    assert_result(apr_pool_create(&(pa->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(pa->mpool), NULL), APR_SUCCESS);
     pa->gid2acct_hash = apr_hash_make(pa->mpool);
     pa->a2gid_hash = apr_hash_make(pa->mpool);
     pa->hints_hash = apr_hash_make(pa->mpool);
@@ -2187,7 +2187,7 @@ void pacl_destroy(path_acl_context_t *pa)
     free(pa->a2gid);
 
     //** This also destroys the hash
-    apr_pool_destroy(pa->mpool);
+    tbx_apr_pool_destroy(pa->mpool);
 
     //** and container
     free(pa);

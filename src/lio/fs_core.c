@@ -48,7 +48,7 @@
 
 #include <apr_hash.h>
 #include <apr_network_io.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
 #include <assert.h>
@@ -888,7 +888,7 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
         apr_thread_join(&value, dit->worker_thread);  //** Wait for it to complete
 
         tbx_que_destroy(dit->pipe);
-        apr_pool_destroy(dit->mpool);
+        tbx_apr_pool_destroy(dit->mpool);
     }
 
     tbx_monitor_obj_destroy(&(dit->mo));
@@ -979,7 +979,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     }
 
     //** Make the prefetch pool and thread
-    assert_result(apr_pool_create(&(dit->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(dit->mpool), NULL), APR_SUCCESS);
     dit->pipe = tbx_que_create(fs->readdir_prefetch_size, sizeof(fs_dentry_stat_t));
     tbx_thread_create_assert(&(dit->worker_thread), NULL, fs_readdir_thread, (void *)dit, dit->mpool);
 
@@ -3322,7 +3322,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     fs->copy_bufsize = tbx_inip_get_integer(fd, fs->fs_section, "copy_bufsize", 10*1024*1024);
     fs->readdir_prefetch_size = tbx_inip_get_integer(fd, fs->fs_section, "readdir_prefetch_size", 1000);
 
-    apr_pool_create(&(fs->mpool), NULL);
+    tbx_apr_pool_create(&(fs->mpool), NULL);
     apr_thread_mutex_create(&(fs->lock), APR_THREAD_MUTEX_DEFAULT, fs->mpool);
     fs->open_files = apr_hash_make(fs->mpool);
 
@@ -3411,7 +3411,7 @@ void lio_fs_destroy(lio_fs_t *fs)
     free(fs->stat_keys);  //** All the attrs are static strings
 
     apr_thread_mutex_destroy(fs->lock);
-    apr_pool_destroy(fs->mpool);
+    tbx_apr_pool_destroy(fs->mpool);
 
     if (fs->rw_hints) free(fs->rw_hints);
     free(fs);

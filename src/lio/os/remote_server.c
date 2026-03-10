@@ -23,7 +23,7 @@
 #include <apr.h>
 #include <apr_errno.h>
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_signal.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
@@ -3684,7 +3684,7 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     os_destroy_service(osrs->os_child);
 
     //** Now do the normal cleanup
-    apr_pool_destroy(osrs->mpool);
+    tbx_apr_pool_destroy(osrs->mpool);
 
     free(osrs->section);
     free(osrs->os_local_section);
@@ -3720,7 +3720,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     osrs->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);FATAL_UNLESS(osrs->tpc != NULL);
 
     //** Make the locks and cond variables
-    assert_result(apr_pool_create(&(osrs->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(osrs->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(osrs->lock), APR_THREAD_MUTEX_DEFAULT, osrs->mpool);
     apr_thread_mutex_create(&(osrs->abort_lock), APR_THREAD_MUTEX_DEFAULT, osrs->mpool);
 

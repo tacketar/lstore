@@ -18,7 +18,7 @@
 #ifndef ACCRE_SKIPLIST_H_INCLUDED
 #define ACCRE_SKIPLIST_H_INCLUDED
 
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <stdbool.h>
 #include <tbx/tbx_decl.h>

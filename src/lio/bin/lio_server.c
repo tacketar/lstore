@@ -17,7 +17,7 @@
 #define _log_module_index 218
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_signal.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
@@ -91,10 +91,13 @@ int main(int argc, char **argv)
 
     lio_init(&argc, &argv);
 
+    //** Print a message we are up
     if (background == 1) {
-        log_printf(0, "Running as a daemon.\n");
+        log_printf(0, "Running as a daemon. Initialization complete.\n"); tbx_log_flush();
+    } else {
+        log_printf(0, "Running in the foreground. Initialization complete.\n"); tbx_log_flush();
+        fprintf(stderr, "Running in the foreground. Initialization complete.\n"); fflush(stderr);
     }
-
 
     //** NOTE:  The "-f" option has already been handled but it will still appear in the list below cause lio_init() won't handle it
     i=1;
@@ -117,6 +120,7 @@ int main(int argc, char **argv)
         } while ((start_option < i) && (i<argc));
     }
 
+
     //***Attach the signal handler for shutdown
     apr_signal_unblock(SIGQUIT);
     apr_signal(SIGQUIT, signal_shutdown);
@@ -127,7 +131,7 @@ int main(int argc, char **argv)
 #endif
 
     //** Make the APR stuff
-    assert_result(apr_pool_create(&mpool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&mpool, NULL), APR_SUCCESS);
     apr_thread_mutex_create(&shutdown_lock, APR_THREAD_MUTEX_DEFAULT, mpool);
     apr_thread_cond_create(&shutdown_cond, mpool);
 
@@ -139,7 +143,7 @@ int main(int argc, char **argv)
     apr_thread_mutex_unlock(shutdown_lock);
 
     //** Cleanup
-    apr_pool_destroy(mpool);
+    tbx_apr_pool_destroy(mpool);
 
     lio_shutdown();
 

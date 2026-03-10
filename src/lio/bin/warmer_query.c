@@ -18,7 +18,7 @@
 
 #include <assert.h>
 #include <rocksdb/c.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
 #include <tbx/iniparse.h>

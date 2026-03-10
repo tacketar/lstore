@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 #include <apr_hash.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_mutex.h>
 #include <apr_time.h>
 #include <lio/visibility.h>

@@ -21,7 +21,7 @@
 #define _log_module_index 163
 
 #include <apr_errno.h>
-#include <apr_pools.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <apr_thread_cond.h>
 #include <apr_thread_mutex.h>
 #include <gop/callback.h>
@@ -1665,7 +1665,7 @@ void seglin_destroy(tbx_ref_t *ref)
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
-    apr_pool_destroy(seg->mpool);
+    tbx_apr_pool_destroy(seg->mpool);
 
     free(seg);
 }
@@ -1718,7 +1718,7 @@ lio_segment_t *segment_linear_create(void *arg)
     tbx_monitor_object_fill(&(seg->header.mo), MON_INDEX_SEG, seg->header.id);
     tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
-    assert_result(apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(seg->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(seg->lock), APR_THREAD_MUTEX_DEFAULT, seg->mpool);
     apr_thread_cond_create(&(seg->cond), seg->mpool);
 

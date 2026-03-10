@@ -487,7 +487,7 @@ lio_service_manager_t *clone_service_manager(lio_service_manager_t *sm)
 
 void destroy_service_manager(lio_service_manager_t *sm)
 {
-    apr_pool_destroy(sm->pool);
+    tbx_apr_pool_destroy(sm->pool);
     free(sm);
 }
 
@@ -502,7 +502,7 @@ lio_service_manager_t *create_service_manager()
 
     tbx_type_malloc_clear(sm, lio_service_manager_t, 1);
 
-    apr_pool_create(&sm->pool, NULL);
+    tbx_apr_pool_create(&sm->pool, NULL);
     apr_thread_mutex_create(&sm->lock, APR_THREAD_MUTEX_DEFAULT, sm->pool);
 
     sm->table = apr_hash_make(sm->pool);
