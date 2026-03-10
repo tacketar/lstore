@@ -8,10 +8,20 @@
 #include <tbx/io.h>
 #include <tbx/assert_result.h>
 #include <assert.h>
+#include <openssl/md5.h>
+
 #define BLANK_CHAR '0'
-#define FILE_SIZE (16384ULL * 6000ULL)
+#define BUFFER_SIZE 8192
+
+//#define FILE_SIZE (16384ULL * 6000ULL)
+#define FILE_SIZE (16384ULL * 64000ULL)
 #define BLOCK_SIZE 16384
 
+static double get_wall_seconds(void){
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
 long long getFileSize(const char *filename) {
   FILE *file = fopen(filename, "rb");
@@ -47,8 +57,23 @@ int generateRandomFile(const char *filename) {
     size_t bytesToWrite = (FILE_SIZE - totalBytes < BLOCK_SIZE) ? (size_t)(FILE_SIZE - totalBytes) : BLOCK_SIZE;
 
     for (size_t i = 0; i < bytesToWrite; i++) {
-      buffer[i] = (unsigned char)(32 + (rand() % 95));
-    }
+      int r = rand() % 75;   // 0..62
+      if (r < 26) {
+          buffer[i] = 'a' + r;           // a–z
+      }
+      else if (r < 52) {
+          buffer[i] = 'A' + (r - 26);    // A–Z
+      }
+      else if (r < 62) {
+          buffer[i] = '0' + (r - 52);    // 0–9
+      }
+      else if (r < 75) {
+        buffer[i] = '\n';
+      }
+      else {
+          buffer[i] = ' ';               // space (most common case)
+      }
+    }   
 
     bytesWritten = fwrite(buffer, 1, bytesToWrite, file);
     if (bytesWritten != bytesToWrite) {
@@ -79,6 +104,47 @@ int generateRandomFile(const char *filename) {
   }
 
   return 0;
+}
+
+char* compute_md5_file(const char* filepath) {
+    FILE* file = fopen(filepath, "rb");
+    if (!file) {
+        perror("fopen");
+        return NULL;
+    }
+
+    MD5_CTX ctx;
+    MD5_Init(&ctx);
+
+    unsigned char buffer[BUFFER_SIZE];
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+        MD5_Update(&ctx, buffer, bytes_read);
+    }
+
+    if (ferror(file)) {
+        perror("fread");
+        fclose(file);
+        return NULL;
+    }
+
+    unsigned char digest[MD5_DIGEST_LENGTH];
+    MD5_Final(digest, &ctx);
+    fclose(file);
+
+    // Convert to hex string
+    char* hex = malloc(MD5_DIGEST_LENGTH * 2 + 1);
+    if (!hex) {
+        return NULL;
+    }
+
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+        sprintf(hex + (i * 2), "%02x", digest[i]);
+    }
+    hex[MD5_DIGEST_LENGTH * 2] = '\0';
+
+    return hex;
 }
 
 int copyFile(const char *sourcePath, const char *destPath) {
@@ -114,69 +180,29 @@ int copyFile(const char *sourcePath, const char *destPath) {
     return 1;
   }
 
+  if (compute_md5_file(sourcePath) == compute_md5_file(destPath)){
+    printf("Source and destination files differ, copying failed\n");
+    return 1;
+  }
+
   fclose(source);
   fclose(dest);
   return 0;
 }
 
 int compareFiles(const char *file1Path, const char *file2Path) {
-  FILE *file1 = fopen(file1Path, "rb");
-  if (!file1) {
-    perror("Error opening first file");
-    return -1;
-  }
 
-  FILE *file2 = fopen(file2Path, "rb");
-  if (!file2) {
-    perror("Error opening second file");
-    fclose(file1);
-    return -1;
-  }
-
-  fseek(file1, 0, SEEK_END);
-  fseek(file2, 0, SEEK_END);
-  long long size1 = ftell(file1);
-  long long size2 = ftell(file2);
-  rewind(file1);
-  rewind(file2);
-
-  if (size1 != size2) {
-    fclose(file1);
-    fclose(file2);
+  if (strcmp(compute_md5_file(file1Path),compute_md5_file(file2Path)) == 0){
+    //printf("Source and destination files match\n");
     return 0;
+  } else {
+    /*
+    printf("Files differ \n");
+    printf("MD5 of %s file: %s\n",file1Path, compute_md5_file(file1Path));
+    printf("MD5 of %s file: %s\n",file2Path, compute_md5_file(file2Path));
+    */
+    return 1;
   }
-
-  unsigned char buffer1[BLOCK_SIZE];
-  unsigned char buffer2[BLOCK_SIZE];
-  size_t bytesRead1, bytesRead2;
-
-  while ((bytesRead1 = fread(buffer1, 1, BLOCK_SIZE, file1)) > 0) {
-    bytesRead2 = fread(buffer2, 1, BLOCK_SIZE, file2);
-    if (bytesRead1 != bytesRead2) {
-      fclose(file1);
-      fclose(file2);
-      return 0;
-    }
-
-    for (size_t i = 0; i < bytesRead1; i++) {
-      if (buffer1[i] != buffer2[i]) {
-        fclose(file1);
-        fclose(file2);
-        return 0;
-      }
-    }
-  }
-
-  if (ferror(file1) || ferror(file2)) {
-    perror("Error reading files during comparison");
-    fclose(file1);
-    fclose(file2);
-    return -1;
-  }
-
-  fclose(file1);
-  fclose(file2);
-  return 1;
 }
 
 
@@ -211,7 +237,7 @@ int write_file(const char *filename, char *buffer, size_t size) {
     return 0;
 }
 
-
+/*
 int wipe_blocks(lio_erasure_plan_t *plan, const char *fname, long long int foffset, 
                 const char *pname, long long int poffset, int buffer_size,
                 int num_wipe_file, int num_wipe_parity, int *indices_wipe_file, int *indices_wipe_parity,
@@ -228,13 +254,13 @@ int wipe_blocks(lio_erasure_plan_t *plan, const char *fname, long long int foffs
     for(int i=0; i<num_wipe_parity; i++) { printf(" %d",indices_wipe_parity[i]); }
     printf("\n");
 
-    //** Open the input files
+    // Open the input files
     fd_file = tbx_io_fopen(fname, "r");
     if (fd_file == NULL) {
         printf("\t wipe_blocks: Error opening input data file %s\n", fname);
         return(1);
     }
-    //** Open the input files
+    // Open the input files
     fd_parity = tbx_io_fopen(pname, "r");
     if (fd_file == NULL) {
         printf("\t wipe_blocks: Error opening parity file %s\n", fname);
@@ -303,6 +329,202 @@ int wipe_blocks(lio_erasure_plan_t *plan, const char *fname, long long int foffs
     }
 
     return(0);
+}
+*/
+
+int wipe_blocks(lio_erasure_plan_t *plan,
+                const char *fname,      long long int foffset,
+                const char *pname,      long long int poffset,
+                int buffer_size __attribute__((unused)),  // ignored for now
+                int num_wipe_file,
+                int num_wipe_parity,
+                int *indices_wipe_file,
+                int *indices_wipe_parity)
+{
+    if (!plan || !fname || !pname) {
+        fprintf(stderr, "wipe_blocks: invalid parameters\n");
+        return 1;
+    }
+
+    size_t strip_size = plan->strip_size;
+    if (strip_size <= 0) {
+        fprintf(stderr, "Invalid strip_size: %lld\n", (long long int)strip_size);
+        return 1;
+    }
+
+    int k = plan->data_strips;
+    int m = plan->parity_strips;
+
+    // Print what we're about to erase
+    printf("\t Wiping data blocks in %s :", fname);
+    for (int i = 0; i < num_wipe_file; i++) {
+        printf(" %d", indices_wipe_file[i]);
+    }
+    printf("\n");
+
+    printf("\t Wiping parity blocks in %s :", pname);
+    for (int i = 0; i < num_wipe_parity; i++) {
+        printf(" %d", indices_wipe_parity[i]);
+    }
+    printf("\n");
+
+    // ────────────────────────────────────────────────
+    // Process data file (in place)
+    // ────────────────────────────────────────────────
+    FILE *fp_data = fopen(fname, "r+b");
+    if (!fp_data) {
+        perror("fopen data file (r+b)");
+        return 1;
+    }
+
+    unsigned char *strip_buf = malloc(strip_size);
+    if (!strip_buf) {
+        perror("malloc strip buffer");
+        fclose(fp_data);
+        return 1;
+    }
+
+    // Start from the given offset
+    if (fseek(fp_data, foffset, SEEK_SET) != 0) {
+        perror("fseek data file");
+        goto cleanup_data;
+    }
+
+    //long long current_pos = foffset;
+    int stripe_idx = 0;
+
+    while (1) {
+        for (int i = 0; i < k; i++) {
+            // Remember position before reading
+            long long strip_start = ftell(fp_data);
+
+            size_t nread = fread(strip_buf, 1, strip_size, fp_data);
+            if (nread == 0) {
+                if (feof(fp_data)) goto data_done;
+                perror("fread data strip");
+                goto cleanup_data;
+            }
+            if (nread != (size_t)strip_size) {
+                fprintf(stderr, "Short read in data strip %d at offset %lld\n", i, strip_start);
+                goto cleanup_data;
+            }
+
+            // Check if this block should be wiped
+            int should_wipe = 0;
+            for (int j = 0; j < num_wipe_file; j++) {
+                if (i == indices_wipe_file[j]) {
+                    should_wipe = 1;
+                    break;
+                }
+            }
+
+            if (should_wipe) {
+                //printf("\t → Wiping data block %d (stripe %d) at offset %lld\n", i, stripe_idx, strip_start);
+                memset(strip_buf, 0xFF, strip_size);   // or 0x00
+            }
+
+            // Seek back and overwrite
+            if (fseek(fp_data, strip_start, SEEK_SET) != 0) {
+                perror("fseek back to overwrite data");
+                goto cleanup_data;
+            }
+
+            if (fwrite(strip_buf, 1, strip_size, fp_data) != strip_size) {
+                perror("fwrite wiped data strip");
+                goto cleanup_data;
+            }
+
+            // Move forward for next strip
+            if (fseek(fp_data, strip_start + strip_size, SEEK_SET) != 0) {
+                perror("fseek next data strip");
+                goto cleanup_data;
+            }
+        }
+        stripe_idx++;
+    }
+
+data_done:
+    printf("\t Data file updated in place: %s\n", fname);
+
+    // ────────────────────────────────────────────────
+    // Process parity file (in place)
+    // ────────────────────────────────────────────────
+    FILE *fp_parity = fopen(pname, "r+b");
+    if (!fp_parity) {
+        perror("fopen parity file (r+b)");
+        goto cleanup_data;
+    }
+
+    if (fseek(fp_parity, poffset, SEEK_SET) != 0) {
+        perror("fseek parity file");
+        goto cleanup_parity;
+    }
+
+    stripe_idx = 0;
+
+    while (1) {
+        for (int i = 0; i < m; i++) {
+            long long strip_start = ftell(fp_parity);
+
+            size_t nread = fread(strip_buf, 1, strip_size, fp_parity);
+            if (nread == 0) {
+                if (feof(fp_parity)) goto parity_done;
+                perror("fread parity strip");
+                goto cleanup_parity;
+            }
+            if (nread != (size_t)strip_size) {
+                fprintf(stderr, "Short read in parity strip %d at offset %lld\n", i, strip_start);
+                goto cleanup_parity;
+            }
+
+            int should_wipe = 0;
+            for (int j = 0; j < num_wipe_parity; j++) {
+                if (i == indices_wipe_parity[j]) {
+                    should_wipe = 1;
+                    break;
+                }
+            }
+
+            if (should_wipe) {
+                //printf("\t → Wiping parity block %d (stripe %d) at offset %lld\n", i, stripe_idx, strip_start);
+                memset(strip_buf, 0xFF, strip_size);
+            }
+
+            if (fseek(fp_parity, strip_start, SEEK_SET) != 0) {
+                perror("fseek back to overwrite parity");
+                goto cleanup_parity;
+            }
+
+            if (fwrite(strip_buf, 1, strip_size, fp_parity) != strip_size) {
+                perror("fwrite wiped parity strip");
+                goto cleanup_parity;
+            }
+
+            if (fseek(fp_parity, strip_start + strip_size, SEEK_SET) != 0) {
+                perror("fseek next parity strip");
+                goto cleanup_parity;
+            }
+        }
+        stripe_idx++;
+    }
+
+parity_done:
+    printf("\t Parity file updated in place: %s\n", pname);
+
+    free(strip_buf);
+    fclose(fp_data);
+    fclose(fp_parity);
+    return 0;
+
+cleanup_data:
+    free(strip_buf);
+    if (fp_data) fclose(fp_data);
+    return 1;
+
+cleanup_parity:
+    free(strip_buf);
+    if (fp_parity) fclose(fp_parity);
+    return 1;
 }
 
 // Function to print plan details, including decoding matrix
@@ -399,7 +621,7 @@ int main(int argc, char **argv) {
 
     int method = 3;
     int strip_size = 16 * 1024; // 16 KB
-    int data_strips = 6;
+    int data_strips = 8;
     int parity_strips = 3;
     int w = 8;
     int packet_size = -1;
@@ -408,15 +630,20 @@ int main(int argc, char **argv) {
 
     printf("Testing JErasure Encoding with Cauchy Good Method, Data Strips: %d, Parity strips: %d, Strip Size: %d \n", data_strips, parity_strips, strip_size);
 
-    printf("1. Generating Random file with size: %lld\n", FILE_SIZE);
-    const char *input_file = "random_generated_file.txt";
+    printf("1. Generating Random file with size: %.2f MB\n", (double)FILE_SIZE/1024/1024);
+    const char *input_file = "1GB_random.bin";
+    file_size = getFileSize(input_file);
 
+    /*
+    printf("1. Generating Random file with size: %.2f MB\n", (double)FILE_SIZE/1024/1024);
+    const char *input_file = "random_generated_file.txt";
     if (generateRandomFile(input_file) == 0) {
       file_size = getFileSize(input_file);
       printf("\t File generation completed successfully.\n");
     } else {
       printf("\t File generation failed.\n");
     }
+    */
 
     printf("2. Generating Erasure Plan\n");
     lio_erasure_plan_t *plan = et_generate_plan(data_strips * strip_size, method, data_strips, parity_strips, w, packet_size, base_unit);
@@ -426,8 +653,9 @@ int main(int argc, char **argv) {
     }
     printf("\t Erasure plan generated successfully\n");
 
-    printf("3. Encoding data into parity file: parity.file\n");
-    char *parity_file = "parity.file";
+    char *parity_file = "jerasure.parity";
+    printf("3. Encoding data into parity file: %s\n",parity_file);
+    double t0 = get_wall_seconds();
     int buffer_size = 0;
     long long int file_offset = 0;
     long long int poffset = 0;
@@ -435,57 +663,81 @@ int main(int argc, char **argv) {
     if (result != 0) {
         printf("\t Encoding failed with result: %d\n", result);
     }
-    printf("\t Encoding successful, fragments written to parity.file\n");
+    double t1 = get_wall_seconds();
+    double runtime_en = t1-t0;
+    printf("\t Encoding successfully finished in %.6f s, fragments written to parity.file\n", runtime_en);
 
     //Print plan details
-    //print_plan(plan);
+    printf("Here are the plan details: \n");
+    print_plan(plan);
 
     printf("4. Erasing blocks in data and parity files. \n");
     int num_wipe_data = 2;
     int num_wipe_parity = 1;
-    int indices_wipe_file[] = {1, 3};
+    int indices_wipe_file[] = {2, 4};
     int indices_wipe_parity[] = {2};
-    const char* erased_file_data = "erased_data.txt";
-    const char* erased_file_parity = "erased_parity.txt";
+    const char* erased_file_data = "erased_jerasure.data";
+    const char* erased_file_parity = "erased_jerasure.parity";
+
+    printf("Making a copy of the input file and parity file: \n");
+    if (copyFile(input_file,erased_file_data) == 0) printf("Copied data file %s successfully to %s \n",input_file,erased_file_data);
+    if (copyFile(parity_file,erased_file_parity) == 0) printf("Copied parity file %s successfully to %s \n",parity_file,erased_file_parity);
 
     result = wipe_blocks(plan,
-                        input_file,
+                        erased_file_data,
                         file_offset,
-                        parity_file,
+                        erased_file_parity,
                         0,
                         buffer_size,
                         num_wipe_data,
                         num_wipe_parity,
                         indices_wipe_file,
-                        indices_wipe_parity,
-                        erased_file_data,
-                        erased_file_parity);
+                        indices_wipe_parity);
     if( result == 0) printf("\t Erased blocks successfully.\n");
     else printf("\t Error in erasing blocks.\n");
 
     int compare_result = compareFiles(input_file,erased_file_data);
-    if (compare_result == 0 ) printf("\t Files %s and %s differ\n",input_file,erased_file_data);
+    if (compare_result == 1 ) printf("\t Files %s and %s differ\n",input_file,erased_file_data);
     compare_result = compareFiles(parity_file,erased_file_parity);
-    if (compare_result == 0 ) printf("\t Files %s and %s differ\n",parity_file,erased_file_parity);
+    if (compare_result == 1 ) printf("\t Files %s and %s differ\n",parity_file,erased_file_parity);
 
 
     printf("5. Reconstructing the files\n");
+
+    const char* recovered_file = "recovered_jerasure.data";
+    printf("Making a copy of the input file and parity file: \n");
+    if (copyFile(erased_file_data,recovered_file) == 0) printf("Copied data file %s successfully to %s \n",input_file,erased_file_data);
+    t0 = get_wall_seconds();
     int erasures_array[num_wipe_data+num_wipe_parity+1];
-    for(int i=0; i<num_wipe_data; i++){ erasures_array[i] = indices_wipe_file[i]; }
-    for(int i=num_wipe_data; i<num_wipe_data+num_wipe_parity; i++){ erasures_array[i] = indices_wipe_parity[i-num_wipe_data] + plan->data_strips; }
+    for(int i=0; i<num_wipe_data; i++){
+      erasures_array[i] = indices_wipe_file[i];
+    }
+    for(int i=num_wipe_data; i<num_wipe_data+num_wipe_parity; i++){
+       erasures_array[i] = indices_wipe_parity[i-num_wipe_data] + plan->data_strips; 
+    }
     erasures_array[num_wipe_data+num_wipe_parity]=-1;
     printf("\t Erasures array: ");
     for(int i=0; i<num_wipe_data+num_wipe_parity+1; i++) { printf(" %d",erasures_array[i]); }
     printf("\n");
  
-    result = et_decode(plan, file_size, erased_file_data, file_offset, erased_file_parity, poffset, buffer_size,erasures_array);
+    result = et_decode(plan, file_size, recovered_file, file_offset, erased_file_parity, poffset, buffer_size,erasures_array);
     if (result != 0) {
         printf("Decoding failed with result: %d\n", result);
         goto cleanup;
     }
-    printf("\t Decoding successful\n");
-    compare_result = compareFiles(input_file, erased_file_data);
-    if (compare_result == 1 ) printf("\t Files %s and %s are the same\n",input_file,erased_file_data);
+    t1 = get_wall_seconds();
+    double runtime_de = t1-t0;
+    printf("\t Decoding successfully finished in %.6f s\n", runtime_de);
+    compare_result = compareFiles(input_file,recovered_file);
+    if (compare_result == 0 ) {
+      printf("\t Files %s and %s are the same\n",input_file,recovered_file);
+    }else {
+      printf("\t Decoding failed! Files %s and %s differ\n",input_file,recovered_file);
+    } 
+
+    printf("Summary of run time (JErasure Cauchy Orig): \n");
+    printf("\t Encoding \t %.6f s\n",runtime_en);
+    printf("\t Decoding \t %.6f s\n",runtime_de);
 
 cleanup:
     et_destroy_plan(plan);

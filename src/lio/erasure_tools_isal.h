@@ -14,11 +14,18 @@
    limitations under the License.
 */
 
-#ifndef __ERASURE_TOOLS_H_
-#define __ERASURE_TOOLS_H_
+#ifndef __ERASURE_TOOLS_ISAL_H_
+#define __ERASURE_TOOLS_ISAL_H_
 
 #include <lio/erasure_tools.h>
 #include <stdio.h>
+#include <isa-l/erasure_code.h>
+
+
+#define BLANK_CHAR '0'
+#define N_ISA_METHODS  2
+#define REED_SOL_VAN_ISA  0
+#define CAUCHY_ORIG_ISA  1
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,17 +40,6 @@ extern int _debug;
       printf(__VA_ARGS__); \
    }
 
-
-#define REED_SOL_VAN    0
-#define REED_SOL_R6_OP  1
-#define CAUCHY_ORIG     2
-#define CAUCHY_GOOD     3
-#define BLAUM_ROTH      4
-#define LIBERATION      5
-#define LIBER8TION      6
-#define RAID4           7
-#define N_JE_METHODS    8
-
 extern const char *JE_method[N_JE_METHODS];
 
 
@@ -55,24 +51,19 @@ struct lio_erasure_plan_t {    //** Contains the erasure parameters
     int w;                      //** Word size
     int packet_size;            //** Chunk size for operations
     int base_unit;              //** Typically the register size in bytes
-    int *encode_matrix;         //** Encoding Matrix
-    int *encode_bitmatrix;      //** Encoding bit Matrix
-    int **encode_schedule;      //** Encoding Schedule
+    unsigned char *encode_matrix;         //** Encoding Matrix
+    unsigned char *g_tbls;
+    int (*gen_g_tbls)(lio_erasure_plan_t *plan);  //**Routine to form encoding matrix
+    //int *encode_bitmatrix;      //** Encoding bit Matrix
+    //int **encode_schedule;      //** Encoding Schedule
     int (*form_encoding_matrix)(lio_erasure_plan_t *plan);  //**Routine to form encoding matrix
+    void (*print_plan)(lio_erasure_plan_t *plan);
     int (*form_decoding_matrix)(lio_erasure_plan_t *plan);  //**Routine to form encoding matrix
-    void (*encode_block)(lio_erasure_plan_t *plan, char **ptr, int block_size);  //**Routine for encoding the block
-    int (*decode_block)(lio_erasure_plan_t *plan, char **ptr, int block_size, int *erasures);  //**Routine for decoding the block
+    //void (*encode_block)(lio_erasure_plan_t *plan, char **ptr, int block_size);  //**Routine for encoding the block
+    //int (*decode_block)(lio_erasure_plan_t *plan, char **ptr, int block_size, int *erasures);  //**Routine for decoding the block
 };
 
 int nearest_prime(int w, int which);
-//int et_method_type(char *meth);
-//lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
-//                            int data_strips, int parity_strips, int w, int packet_size, int base_unit);
-//lio_erasure_plan_t *et_generate_plan(long long int file_size, int method,
-//                                 int data_strips, int parity_strips, int w, int packet_low, int packet_high);
-//void et_destroy_plan(lio_erasure_plan_t *plan);
-//int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size);
-//int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size, int *erasures);
 
 #ifdef __cplusplus
 }

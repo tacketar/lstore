@@ -354,7 +354,7 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     }
 
     //** Get the file size
-    tbx_io_fseek(fd_file, 0, SEEK_END);
+    tbx_io_fseek(fd_file, 1, SEEK_END);
     file_size = tbx_io_ftell(fd_file);
     tbx_io_fseek(fd_file, 0, SEEK_SET);
 

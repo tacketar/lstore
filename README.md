@@ -51,8 +51,7 @@ yum install cmake openssl-devel libacl1-devel libsodium-devel zeromq3-devel zlib
 
 On Ubuntu 24.04:
 ```
-sudo apt install libacl-dev libczmq-dev libfuse3-dev libssl-dev zlib1g-dev libczmq-dev libleveldb-dev libapr1-dev libaprutil1-dev libdb-dev rocksdb-dev libjerasure-dev -y
-
+sudo apt install libacl1-dev libczmq-dev libfuse3-dev libssl-dev zlib1g-dev libczmq-dev libleveldb-dev libapr1-dev libaprutil1-dev libdb-dev librocksdb-dev libjerasure-dev -y
 ```
 
 Although RocksDB is only available via Fedora on RedHat/CentOS and will need to be built

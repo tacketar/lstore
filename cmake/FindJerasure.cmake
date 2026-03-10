@@ -10,7 +10,7 @@
 #  JERASURE_LIBRARY and JERASURE_LIBRARY, where to find the Jerasure library.
 
 # Specify your custom Jerasure directory
-set(JERASURE_CUSTOM_PATH "/home/medurys/GitRepos/lstore/vendor/jerasure" CACHE PATH "Custom path to Jerasure")
+set(JERASURE_CUSTOM_PATH "${CMAKE_SOURCE_DIR}/vendor/jerasure" CACHE PATH "Custom path to Jerasure")
 
 FIND_PATH(JERASURE_INCLUDE_DIR NAMES jerasure.h
                     galois.h

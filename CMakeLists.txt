@@ -258,6 +258,7 @@ find_package(LibSodium REQUIRED)
 find_package(Jerasure)
 find_package(ISAL)
 
+
 # Build external dependencies
 set(REBUILD_DEPENDENCIES)
 include(LStoreExternals)
@@ -330,6 +331,9 @@ if(BUILD_TESTS)
     target_include_directories(log_test PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
     add_executable(test_isal test/test_isal.c)
     target_link_libraries(test_isal lio toolbox gop pthread isal)
+    target_include_directories(test_isal PRIVATE ${APR_INCLUDE_DIR})
+    add_executable(isal_simple test/isal_simple.c)
+    target_link_libraries(isal_simple isal)
     add_executable(test_jerasure test/test_jerasure.c)
     target_include_directories(test_jerasure PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
     target_link_libraries(test_jerasure lio jerasure toolbox gop pthread)
