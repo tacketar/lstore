@@ -36,7 +36,7 @@
 #include "mq_portal.h"
 
 //***********************************************************************
-// mq_id_bytes - Returns hte number of bytes for the remote id.
+// mq_id_bytes - Returns the number of bytes for the remote id.
 //     Assumes the host string is of the form: id|tcp://address:port
 //   Returns the number of bytes for the ID
 //***********************************************************************
@@ -62,13 +62,13 @@ int mq_id_bytes(char *host, int len)
 
 gop_mq_frame_t *mq_make_id_frame()
 {
-    unsigned int *id;
+    uint64_t *id;
 
-    tbx_type_malloc(id, unsigned int, 1);
+    tbx_type_malloc(id, uint64_t, 1);
 
-    tbx_random_get_bytes(id, sizeof(unsigned int));
+    tbx_random_get_bytes(id, sizeof(uint64_t));
 
-    return(gop_mq_frame_new(id, sizeof(unsigned int), MQF_MSG_AUTO_FREE));
+    return(gop_mq_frame_new(id, sizeof(uint64_t), MQF_MSG_AUTO_FREE));
 }
 
 
