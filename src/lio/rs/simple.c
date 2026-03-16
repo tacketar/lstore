@@ -230,11 +230,6 @@ gop_op_generic_t *rs_simple_request(lio_resource_service_fn_t *arg, data_attr_t 
     for (i=0; i<req_size; i++) {req[i].rid_key = NULL; req[i].gop = NULL; } //** Clear the result in case of an error
 
     apr_thread_mutex_lock(rss->lock);
-    i = _rs_simple_refresh(arg);  //** Check if we need to refresh the data
-    if (i != 0) {
-        apr_thread_mutex_unlock(rss->lock);
-        return(gop_dummy(gop_failure_status));
-    }
 
     //** Determine the query sizes and make the processing arrays
     memset(&kvq, 0, sizeof(kvq));
