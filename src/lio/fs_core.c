@@ -688,15 +688,18 @@ int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
 
     FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
 
+    //** Incr the counter
+    tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].submitted);
+
+    //** If we can't access it flag it as complete w/o an error and return
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) == 0) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].errors);
+        tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES/ENOENT");
         if (lio_fs_exists(fs, fname) > 0) return(-EACCES);
         return(-ENOENT);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].submitted);
-
+    //** If we made it here we can access the file so fetch the attrs
     //** Get the inode if it exists
     //** Assumes the system.inode is in slot 0 in the _inode_keys
     v_size[0] = -fs->lc->max_attr;
@@ -2637,9 +2640,6 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     char *use_instead;
     int v_size[2], err, ftype, na;
     ex_id_t ino;
-//    uid_t uid;
-//    gid_t gid;
-//    mode_t mode;
     gop_op_status_t status;
     int n_readers, n_writers;
 
@@ -2655,7 +2655,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
             ftype = lio_fs_exists(fs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
+                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                 return(-ENODATA);
             }
@@ -2669,7 +2669,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
                 ftype = lio_fs_exists(fs, (char *)fname);
                 if (ftype <= 0) {
                     log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
+                    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
                     FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                     return(-ENODATA);
                 }
