@@ -227,7 +227,7 @@ gop_op_generic_t *rs_simple_request(lio_resource_service_fn_t *arg, data_attr_t 
 
     log_printf(15, "rs_simple_request: START rss->n_rids=%d n_rid=%d req_size=%d fixed_size=%d ignore=%d\n", rss->n_rids, n_rid, req_size, fixed_size, ignore_fixed_err);
 
-    for (i=0; i<req_size; i++) {req[i].rid_key = NULL; req[i].gop = NULL; } //** Clear the result in case of an error
+    for (i=0; i<req_size; i++) { req[i].rid_key = NULL; req[i].gop = NULL; } //** Clear the result in case of an error
 
     apr_thread_mutex_lock(rss->lock);
 
