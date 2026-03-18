@@ -171,15 +171,15 @@ void memory_usage_dump(FILE *fd)
 
 void memory_release_fn(void *arg, FILE *fd)
 {
+    fprintf(fd, "---------------------------------- Initial usage --------------------------------------------\n");
+    memory_usage_dump(fd);
     if (_tcfree) {
-        fprintf(fd, "---------------------------------- Initial usage --------------------------------------------\n");
-        memory_usage_dump(fd);
         _tcfree();
-        fprintf(fd, "---------------------------------- After release --------------------------------------------\n");
-        memory_usage_dump(fd);
     } else {
-        fprintf(fd, "tcmalloc not used. Option not available\n");
+        malloc_trim(1024*1024);
     }
+    fprintf(fd, "---------------------------------- After release --------------------------------------------\n");
+    memory_usage_dump(fd);
 }
 
 //***************************************************************
