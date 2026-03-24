@@ -20,6 +20,7 @@ limitations under the License.
 #include <sys/types.h>
 #include <regex.h>
 #include <tbx/normalize_path.h>
+#include <tbx/type_malloc.h>
 
 //*****************************************************************************************
 // tbx_normalize_check_make -Makes a normalized check regex for use
@@ -28,7 +29,9 @@ limitations under the License.
 regex_t *tbx_normalize_check_make()
 {
     int err;
-    regex_t *r = malloc(sizeof(regex_t));
+    regex_t *r;
+
+    tbx_type_malloc(r, regex_t, 1);
 
     err = regcomp(r, "(^\\./)|(^\\.\\./)|(/\\.\\./)|(/\\./)|(//)|(/$)|(/\\.$)|(/\\.\\.$)", REG_NOSUB|REG_EXTENDED);
     if (err) return(NULL);

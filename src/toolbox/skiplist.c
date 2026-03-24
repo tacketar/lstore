@@ -46,7 +46,9 @@ tbx_sl_compare_t skiplist_compare_ptr= {skiplist_compare_fn_ptr, NULL};
 //******************************************************************************
 TBX_MALLOC tbx_sl_t *tbx_sl_malloc()
 {
-    tbx_sl_t *sl = (tbx_sl_t *)malloc(sizeof(tbx_sl_t));
+    tbx_sl_t *sl;
+
+    tbx_type_malloc(sl, tbx_sl_t, 1);
     if (!sl) // Do we log here?
         goto error_1;
 
@@ -70,7 +72,8 @@ error_1:
 
 tbx_sl_t *tbx_sl_new()
 {
-    tbx_sl_t * sl = tbx_sl_malloc();
+    tbx_sl_t *sl = tbx_sl_malloc();
+
     if (!sl)
         return NULL;
     if (!tbx_sl_init(sl)) {
@@ -165,7 +168,9 @@ tbx_sl_t *create_skiplist(bool allow_dups,
 //*********************************************************************************
 tbx_sl_ele_t *create_skiplist_ele()
 {
-    tbx_sl_ele_t *se = (tbx_sl_ele_t *)malloc(sizeof(tbx_sl_ele_t));
+    tbx_sl_ele_t *se;
+
+    tbx_type_malloc(se, tbx_sl_ele_t, 1);
     return(se);
 }
 
@@ -174,7 +179,9 @@ tbx_sl_ele_t *create_skiplist_ele()
 //*********************************************************************************
 tbx_sl_node_t *create_skiplist_node(unsigned int level)
 {
-    tbx_sl_node_t *sn = (tbx_sl_node_t *)malloc(sizeof(tbx_sl_node_t));
+    tbx_sl_node_t *sn;
+
+    tbx_type_malloc(sn, tbx_sl_node_t, 1);
     if (!sn)
         goto error_1;
 

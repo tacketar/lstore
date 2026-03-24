@@ -40,6 +40,7 @@
 #include "tbx/fmttypes.h"
 #include "tbx/log.h"
 #include "tbx/string_token.h"
+#include "tbx/type_malloc.h"
 
 #define BUF_SIZE 128
 
@@ -196,7 +197,7 @@ int tbx_dnsc_startup_sized(int size)
 {
     if (_cache != NULL) return 0;
 
-    _cache = (DNS_cache_t *)malloc(sizeof(DNS_cache_t));
+    tbx_type_malloc(_cache, DNS_cache_t, 1);
     FATAL_UNLESS(_cache != NULL);
 
     _cache->size = size;

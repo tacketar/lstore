@@ -33,10 +33,11 @@
 
 void append_isl_data(tbx_isl_data_t **list, tbx_sl_data_t *data)
 {
-    tbx_isl_data_t *d = (tbx_isl_data_t *)malloc(sizeof(tbx_isl_data_t));
-   FATAL_UNLESS(d != NULL);
+    tbx_isl_data_t *d;
 
-//log_printf(15, "append_isl_data: list=%p data=%p\n", *list, data);
+    tbx_type_malloc(d, tbx_isl_data_t, 1);
+    FATAL_UNLESS(d != NULL);
+
     d->data = data;
     d->next = *list;
     *list = d;
@@ -172,8 +173,10 @@ int add_isl_node_level(tbx_isl_node_t *isln, int level)
 
 tbx_isl_node_t *create_isl_node()
 {
-    tbx_isl_node_t *isln = (tbx_isl_node_t *)malloc(sizeof(tbx_isl_node_t));
-   FATAL_UNLESS(isln != NULL);
+    tbx_isl_node_t *isln;
+
+    tbx_type_malloc(isln, tbx_isl_node_t, 1);
+    FATAL_UNLESS(isln != NULL);
 
     memset(isln, 0, sizeof(tbx_isl_node_t));
 
@@ -220,8 +223,10 @@ tbx_isl_t *tbx_isl_new_full(int maxlevels, double p,
         void (*key_free)(tbx_sl_key_t *a),
         void (*data_free)(tbx_sl_data_t *a))
 {
-    tbx_isl_t *isl = (tbx_isl_t *)malloc(sizeof(tbx_isl_t));
-   FATAL_UNLESS(isl != NULL);
+    tbx_isl_t *isl;
+
+    tbx_type_malloc(isl, tbx_isl_t, 1);
+    FATAL_UNLESS(isl != NULL);
 
     isl->n_intervals = 0;
     isl->data_free = (data_free == NULL) ? tbx_sl_free_no_data : data_free;

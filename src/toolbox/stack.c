@@ -22,6 +22,7 @@
 
 #include "stack.h"
 #include "tbx/tbx_decl.h"
+#include "tbx/type_malloc.h"
 
 #define MOVE_NOTHING 0
 #define MOVE_TOP     1
@@ -170,7 +171,7 @@ void tbx_stack_push(tbx_stack_t *stack, void *data)
 {
     tbx_stack_ele_t *ele;
 
-    ele = (tbx_stack_ele_t *)malloc(sizeof(tbx_stack_ele_t));
+    tbx_type_malloc(ele, tbx_stack_ele_t, 1);
     ele->data = data;
 
     tbx_stack_link_push(stack, ele);
@@ -407,7 +408,7 @@ int tbx_stack_insert_below(tbx_stack_t *stack, void *data)
 {
     tbx_stack_ele_t *ele;
 
-    ele =(tbx_stack_ele_t *) malloc(sizeof(tbx_stack_ele_t));
+    tbx_type_malloc(ele, tbx_stack_ele_t, 1);
     ele->data = data;
     int ret = tbx_stack_link_insert_below(stack, ele);
     if (!ret)
@@ -457,7 +458,7 @@ int tbx_stack_insert_above(tbx_stack_t *stack, void *data)
 {
     tbx_stack_ele_t *ele;
 
-    ele =(tbx_stack_ele_t *) malloc(sizeof(tbx_stack_ele_t));
+    tbx_type_malloc(ele, tbx_stack_ele_t, 1);
     ele->data = data;
     int ret = tbx_stack_link_insert_above(stack, ele);
     if (!ret)

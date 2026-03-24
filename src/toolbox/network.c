@@ -881,8 +881,8 @@ tbx_network_t *tbx_network_new()
     tbx_network_t *net;
 
     //**** Allocate space for the data structures ***
-    net = (tbx_network_t *)malloc(sizeof(tbx_network_t));FATAL_UNLESS(net != NULL);
-
+    tbx_type_malloc(net, tbx_network_t, 1);
+    FATAL_UNLESS(net != NULL);
 
     net->used_ports = 0;
     net->accept_pending = 0;
@@ -966,8 +966,9 @@ void tbx_ns_destroy(tbx_ns_t *ns)
 
 tbx_ns_t *tbx_ns_new()
 {
-    tbx_ns_t *ns = (tbx_ns_t *)malloc(sizeof(tbx_ns_t));
+    tbx_ns_t *ns;
 
+    tbx_type_malloc(ns, tbx_ns_t, 1);
     if (ns == NULL) {
         log_printf(0, "new_netstream: Failed malloc!!\n");
         abort();

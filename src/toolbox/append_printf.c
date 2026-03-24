@@ -21,6 +21,7 @@
 #include <stdlib.h>
 
 #include "tbx/append_printf.h"
+#include "tbx/type_malloc.h"
 
 //***************************************************************************
 // append_printf_valist - Appends data to the end of a string and also updates the
@@ -73,7 +74,7 @@ int tbx_alloc_append_printf(char **buffer, int *used, int *nbytes, const char *f
 
     if (*nbytes == 0) {
         *nbytes = 256;
-        *buffer = malloc(*nbytes);
+        tbx_type_malloc(*buffer, char, *nbytes);
     }
 
     va_start(args, fmt);
@@ -82,7 +83,7 @@ again:
     if (n < 0) {
         *used = len;
         *nbytes = 2 * (*nbytes) + n;
-        *buffer = realloc(*buffer, *nbytes);
+        tbx_type_realloc(*buffer, char, *nbytes);
         goto again;
     }
     va_end(args);

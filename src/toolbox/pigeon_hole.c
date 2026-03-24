@@ -26,6 +26,7 @@
 #include "pigeon_hole.h"
 #include "tbx/assert_result.h"
 #include "tbx/log.h"
+#include "tbx/type_malloc.h"
 
 //***************************************************************************
 // tbx_ph_iter_init - Initializes an iterator
@@ -190,14 +191,14 @@ void tbx_ph_destroy(tbx_ph_t *ph)
 
 tbx_ph_t *tbx_ph_new(const char *name, int size)
 {
-    tbx_ph_t *ph = (tbx_ph_t *)malloc(sizeof(tbx_ph_t));
-    memset((void *)ph, 0, sizeof(tbx_ph_t));
-   FATAL_UNLESS(ph != NULL);
+    tbx_ph_t *ph;
 
-    ph->hole = (char *)malloc(size);
-   FATAL_UNLESS(ph->hole != NULL);
+    tbx_type_malloc_clear(ph, tbx_ph_t, 1);
+    FATAL_UNLESS(ph != NULL);
 
-    memset(ph->hole, 0, size);
+    tbx_type_malloc_clear(ph->hole, char, size);
+    FATAL_UNLESS(ph->hole != NULL);
+
     ph->name = name;
     tbx_apr_pool_create(&(ph->pool), NULL);
     apr_thread_mutex_create(&(ph->lock), APR_THREAD_MUTEX_DEFAULT, ph->pool);

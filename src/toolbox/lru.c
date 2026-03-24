@@ -51,7 +51,7 @@ void *tbx_lru_clone_default(void *arg, void *ptr)
     int *n = (int *)arg;
     void *object;
 
-    object = malloc(*n);
+    tbx_type_malloc(object, char, *n);
     memcpy(object, ptr, *n);
     return(object);
 }

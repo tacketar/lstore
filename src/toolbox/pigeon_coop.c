@@ -288,7 +288,9 @@ tbx_pc_t *tbx_pc_new(const char *name, int size, int item_size,
 {
     int i;
     int default_shelves = 1;
-    tbx_pc_t *pc = (tbx_pc_t *)malloc(sizeof(tbx_pc_t));
+    tbx_pc_t *pc;
+
+    tbx_type_malloc(pc, tbx_pc_t, 1);
     FATAL_UNLESS(pc != NULL);
 
     pc->name = name;

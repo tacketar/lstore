@@ -23,6 +23,7 @@
 
 #include "chksum.h"
 #include "tbx/transfer_buffer.h"
+#include "tbx/type_malloc.h"
 
 /*! @brief Given a binary string, return the hexidecimal representation
  *
@@ -166,7 +167,8 @@ int cipher ## _add(void *state, int nbytes, tbx_tbuf_t *data, int boff)   \
   size_t nleft;                                    \
   tbx_iovec_t *iov;                                \
   tbx_tbuf_var_t *tbv;                             \
-  tbv = (tbx_tbuf_var_t*) malloc(tbx_tbuf_var_size()); \
+                                                   \
+  tbx_type_malloc(tbv, tbx_tbuf_var_t, 1); \
   if (!tbv) { \
       return -1; \
   } \
