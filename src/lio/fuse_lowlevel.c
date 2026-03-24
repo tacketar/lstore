@@ -22,6 +22,7 @@
 #include <tbx/varint.h>
 
 #include "lio_fuse.h"
+#include "misc_stats.h"
 
 typedef struct {
     char *dentry;
@@ -492,13 +493,17 @@ retry:
     buf = tmpbuf;
     if (size > sizeof(tmpbuf)) {
         tbx_type_malloc(buf, char, size);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_LISTXATTR].submitted);
     }
 
     err = lio_fs_listxattr(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, buf, size);
     _lfs_hint_release(lfs, &ug);
 
     if (err < 0) {  //** On error err is negative
-        if (buf != tmpbuf) free(buf);
+        if (buf != tmpbuf) {
+            free(buf);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_LISTXATTR].finished);
+        }
         if (force_os == 0) { force_os = 1; goto retry; }
         fuse_reply_err(req, -err);
         return;
@@ -1216,13 +1221,17 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
     buf = tmpbuf;
     if (size > sizeof(tmpbuf)) {
         tbx_type_malloc(buf, char, size);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_READ].submitted);
     }
 
     err = lio_fs_pread(lfs->fs, fd, buf, size, off);
 
     if (err < 0) {
         fuse_reply_err(req, -err);
-        if (buf != tmpbuf) free(buf);
+        if (buf != tmpbuf) {
+            free(buf);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_LISTXATTR].finished);
+        }
         return;
     }
 

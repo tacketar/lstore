@@ -28,6 +28,7 @@
 #include <tbx/log.h>
 #include <tbx/pigeon_coop.h>
 #include <tbx/stack.h>
+#include <tbx/stats.h>
 #include <tbx/type_malloc.h>
 
 #include "callback.h"
@@ -43,6 +44,23 @@ void gop_dummy_destroy();
 
 tbx_atomic_int_t _opque_counter = 0;
 tbx_pc_t *_gop_control = NULL;
+
+//** This is the tracking info for the "gop_control" pigeon_cpp
+#define GOP_STATS_SLOT_GOP_CONTROL 0
+#define GOP_STATS_SIZE 1
+char *_gop_stats_labels[] = { "gop_control_pc" };
+tbx_stats_t _gop_stats[GOP_STATS_SIZE];
+
+//*************************************************************
+// gop_print_stats - PRints the GOP stats
+//*************************************************************
+
+void gop_print_stats(FILE *fd)
+{
+    fprintf(fd, "GOP Stats ------------------------------\n");
+    tbx_stats_printf(fd, _gop_stats, _gop_stats_labels, GOP_STATS_SIZE);
+    fprintf(fd, "\n");
+}
 
 //*************************************************************
 //  _opque_print_stack - Prints the list stack
@@ -76,6 +94,7 @@ void *gop_control_new(void *arg, int size)
     apr_pool_t **pool_ptr;
     int i;
 
+    TBX_STATS_INC(_gop_stats[GOP_STATS_SLOT_GOP_CONTROL].submitted);
     i = sizeof(gop_control_t)*size + sizeof(apr_pool_t *);
     shelf = malloc(i);
     FATAL_UNLESS(shelf != NULL);
@@ -107,6 +126,7 @@ void gop_control_free(void *arg, int size, void *data)
     tbx_apr_pool_destroy(*pool_ptr);
 
     free(shelf);
+    TBX_STATS_INC(_gop_stats[GOP_STATS_SLOT_GOP_CONTROL].finished);
     return;
 }
 
@@ -121,6 +141,7 @@ void gop_init_opque_system()
         _gop_control = tbx_pc_new("gop_control", 50, sizeof(gop_control_t), NULL, gop_control_new, gop_control_free);
         gop_dummy_init();
         tbx_atomic_startup();
+        memset(_gop_stats, 0, sizeof(_gop_stats));
     }
 }
 

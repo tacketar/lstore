@@ -95,6 +95,7 @@
 #include "ex3/types.h"
 #include "ex3/system.h"
 #include "lio.h"
+#include "misc_stats.h"
 #include "os.h"
 #include "rs.h"
 
@@ -2010,6 +2011,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
         if (bufsize <= 0) bufsize = fs->copy_bufsize;
         tbx_fudge_align_size(bufsize, 2*getpagesize());
         tbx_malloc_align(buf2, getpagesize(), bufsize);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LOCAL].submitted);
     }
 
     //** Now do the actual copy
@@ -2034,7 +2036,10 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     }
 
     //** Clean up
-    if (buf2 != buffer) free(buf2);
+    if (buf2 != buffer) {
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LOCAL].finished);
+        free(buf2);
+    }
     lio_fs_close(fs, sfd);
     tbx_io_fclose(dfd);
 
@@ -2073,6 +2078,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
         if (bufsize <= 0) bufsize = fs->copy_bufsize;
         tbx_fudge_align_size(bufsize, 2*getpagesize());
         tbx_malloc_align(buf2, getpagesize(), bufsize);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LOCAL2LIO].submitted);
     }
 
     //** Now do the actual copy
@@ -2087,7 +2093,10 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     }
 
     //** Clean up
-    if (buf2 != buffer) free(buf2);
+    if (buf2 != buffer) {
+        free(buf2);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LOCAL2LIO].finished);
+    }
     tbx_io_fclose(sfd);
     lio_fs_close(fs, dfd);
 
@@ -2125,6 +2134,7 @@ int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_
         if (bufsize <= 0) bufsize = fs->copy_bufsize;
         tbx_fudge_align_size(bufsize, 2*getpagesize());
         tbx_malloc_align(buf2, getpagesize(), bufsize);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LIO].submitted);
     }
 
     //** Now do the actual copy
@@ -2139,7 +2149,10 @@ int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_
     }
 
     //** Clean up
-    if (buf2 != buffer) free(buf2);
+    if (buf2 != buffer) {
+        free(buf2);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LIO].finished);
+    }
     lio_fs_close(fs, sfd);
     lio_fs_close(fs, dfd);
 
@@ -2365,6 +2378,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     //** Cycle through the keys
     bufsize = 10*1024;
     tbx_type_malloc_clear(buf, char, bufsize);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LISTXATTR].submitted);
     val = NULL;
     bpos = 0;
 
@@ -2403,6 +2417,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
         log_printf(15, "ERANGE bpos=%d buf=%s\n", bpos, buf);
     }
     free(buf);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LISTXATTR].finished);
 
     tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].finished);
     FS_MON_OBJ_DESTROY();
@@ -2607,6 +2622,7 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
     //** Copy all the data into the buffer;
     n = n + used;
     tbx_type_malloc_clear(buffer, char, n);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_TAPEXATTR].submitted);
     n = used;
     memcpy(buffer, header, used);
     for (i=0; i<nkeys; i++) {

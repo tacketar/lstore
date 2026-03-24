@@ -70,6 +70,7 @@
 #include "rs/simple.h"
 #include "service_manager.h"
 #include "segment/lun.h"
+#include "misc_stats.h"
 
 typedef struct {
     int count;
@@ -141,6 +142,37 @@ typedef void *(tcfree_t)();
 tcfree_t *_tcfree = NULL;
 
 char **myargv = NULL;  // ** This is used to hold the new argv we return from lio_init so we can properly clean it up
+
+tbx_stats_t _misc_stats[LIO_MISC_STATS_SIZE];
+
+static char *_misc_stats_labels[] = {
+    "lio_fs_copy_lio2local", "lio_fs_copy_local2lio", "lio_fs_copy_lio2lio",
+    "lio_fs_listxattr", "lio_fs_get_tape_attr",
+    "fuse_lowlevel_listxattr", "fuse_lowlevel_getxattr", "fuse_lowlevel_read",
+    "lio_cp_local2local", "lio_cp_local2lio", "lio_cp_lio2local", "lio_cp_lio2lio", "lio_file_copy",
+    "fobj_pc", "fobj_task_pc", "cache_cond_pc", "jerase_read", "jerase_write"
+};
+
+//***************************************************************
+// init_misc_stats - Initializes the misc stats structure
+//***************************************************************
+
+void init_misc_stats()
+{
+    memset(_misc_stats, 0, sizeof(_misc_stats));
+}
+
+//***************************************************************
+// print_misc_stats - Prints the miscellaneous stats
+//***************************************************************
+
+void print_misc_stats(FILE *fd)
+{
+    fprintf(fd, "Miscellaneous Stats ------------------------------\n");
+    tbx_stats_printf(fd, _misc_stats, _misc_stats_labels, LIO_MISC_STATS_SIZE);
+    fprintf(fd, "\n");
+}
+
 
 //***************************************************************
 //  memory_usage_dump - Dumps the memory usage to the FD
@@ -227,6 +259,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
 
     rc_print_running_config(fd);
     cache_print_running_config(lio->cache, fd, 1);
+    gop_print_stats(fd);
     gop_mq_print_running_config(lio->mqc, fd, 1);
     os_print_running_config(lio->os, fd, 1);
     ds_print_running_config(lio->ds, fd, 1);
@@ -234,7 +267,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     authn_print_running_config(lio->authn, fd, 1);
     tbx_notify_print_running_config(lio->notify, fd, 1);
     lun_global_print_running_stats(NULL, fd, 1);
-
+    print_misc_stats(fd);
     memory_usage_dump(fd);
 }
 
@@ -1862,6 +1895,8 @@ int lio_init(int *argc, char ***argvp)
 
     //** This is a dummy routine to trigger loading the TBX constructor in case we are using a static library
     tbx_construct_fn_static();
+
+    init_misc_stats();  //** Initialize the misc stats structure
 
     //** Setup the info signal handler.  We'll reset the name after we've got a lio_gc
     tbx_siginfo_install(NULL, SIGUSR1);

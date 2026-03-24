@@ -37,6 +37,7 @@ extern "C" {
 // Functions
 GOP_API void gop_default_sort_ops(void *arg, gop_opque_t *que);
 GOP_API void gop_init_opque_system();
+GOP_API void gop_print_stats(FILE *fd);
 GOP_API int gop_opque_add(gop_opque_t *que, gop_op_generic_t *gop);
 GOP_API void gop_opque_free(gop_opque_t *que, int mode);
 GOP_API gop_opque_t *gop_opque_new();

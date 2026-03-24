@@ -65,6 +65,7 @@
 #include "authn/fake.h"
 #include "ex3/system.h"
 #include "ex3/types.h"
+#include "misc_stats.h"
 #include "os.h"
 #include "os/file.h"
 #include "osaz/fake.h"
@@ -1408,6 +1409,7 @@ void *fobj_lock_task_new(void *arg, int size)
     int i;
 
     tbx_type_malloc_clear(shelf, fobj_lock_task_t, size);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FOBJ_TASK_PC].submitted);
 
     for (i=0; i<size; i++) {
         apr_thread_cond_create(&(shelf[i].cond), mpool);
@@ -1430,6 +1432,7 @@ void fobj_lock_task_free(void *arg, int size, void *data)
     }
 
     free(shelf);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FOBJ_TASK_PC].finished);
     return;
 }
 
@@ -1443,7 +1446,7 @@ void *fobj_lock_new(void *arg, int size)
     int i;
 
     tbx_type_malloc_clear(shelf, fobj_lock_t, size);
-
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FOBJ_PC].submitted);
     for (i=0; i<size; i++) {
         shelf[i].active_stack = tbx_stack_new();
         shelf[i].pending_stack = tbx_stack_new();
@@ -1469,6 +1472,7 @@ void fobj_lock_free(void *arg, int size, void *data)
     }
 
     free(shelf);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FOBJ_PC].finished);
     return;
 }
 

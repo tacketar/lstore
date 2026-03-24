@@ -63,6 +63,7 @@
 #include "ex3.h"
 #include "ex3/header.h"
 #include "ex3/system.h"
+#include "misc_stats.h"
 #include "segment/jerasure.h"
 #include "segment/lun.h"
 #include "service_manager.h"
@@ -1347,6 +1348,7 @@ gop_op_status_t segjerase_read_func(void *arg, int id)
     if (parity_len > s->max_parity_on_stack) {
         log_printf(2, "seg=" XIDT " PARITY location: MALLOC... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         tbx_type_malloc(parity, char, parity_len);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_READ].submitted);
     } else {
         log_printf(2, "seg=" XIDT " PARITY location: STACK... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         parity = parity_ptr;
@@ -1649,7 +1651,10 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
     }
 
     //** Clean up
-    if (parity_len > s->max_parity_on_stack) free(parity);
+    if (parity_len > s->max_parity_on_stack) {
+        free(parity);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_READ].finished);
+    }
 
     if ((soft_error+hard_error) > 0) {
         segment_lock(sw->seg);
@@ -1723,6 +1728,7 @@ gop_op_status_t segjerase_write_func(void *arg, int id)
     if (parity_len > s->max_parity_on_stack) {
         log_printf(1, "seg=" XIDT " PARITY location: MALLOC... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         tbx_type_malloc(parity, char, parity_len);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_WRITE].submitted);
     } else {
         log_printf(1, "seg=" XIDT " PARITY location: STACK... parity_len=" XOT " s->max_parity_on_stack=" XOT "\n", segment_id(sw->seg), parity_len, s->max_parity_on_stack);
         parity = parity_ptr;
@@ -1929,7 +1935,10 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     }
 
     //** Clean up
-    if (parity_len > s->max_parity_on_stack) free(parity);
+    if (parity_len > s->max_parity_on_stack) {
+        free(parity);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_WRITE].finished);
+    }
 
     if ((soft_error+hard_error) > 0) {
         segment_lock(sw->seg);
