@@ -37,6 +37,7 @@
 #include <tbx/net_sock.h>
 #include <tbx/pigeon_coop.h>
 #include <tbx/stack.h>
+#include <tbx/type_malloc.h>
 #include "activity_log.h"
 #include "ibp_server.h"
 #include "subnet.h"
@@ -2817,7 +2818,7 @@ int alog_read_resource_list(activity_log_t *alog, int cmd, FILE *outfd)
         fprintf(outfd, "CMD:RESOURCE_LIST nres: %d -------------------------------\n", nres);
     }
 
-    alog->rl_map = (rl_map_t *) malloc(sizeof(rl_map_t) * (nres + 1));
+    tbx_type_malloc(alog->rl_map, rl_map_t, nres+1);
     assert_result_not_null(alog->rl_map);
     alog->nres = nres;
     strcpy(alog->rl_map[nres].name, "BAD");
@@ -3362,9 +3363,8 @@ int activity_log_open_rec(activity_log_t *alog)
     //** Create the space for the network maps
     if (alog->ns_map != NULL)
         free(alog->ns_map);
-    alog->ns_map = (ns_map_t *) malloc(sizeof(ns_map_t) * alog->max_id);
+    tbx_type_malloc_clear(alog->ns_map, ns_map_t, alog->max_id);
     assert_result_not_null(alog->ns_map);
-    memset(alog->ns_map, 0, sizeof(ns_map_t) * alog->max_id);
 
     return (0);
 }
@@ -3398,9 +3398,8 @@ int activity_log_read_open_rec(activity_log_t *alog, int cmd, FILE *outfd)
 
     if (alog->ns_map != NULL)
         free(alog->ns_map);
-    alog->ns_map = (ns_map_t *) malloc(sizeof(ns_map_t) * alog->max_id);
+    tbx_type_malloc_clear(alog->ns_map, ns_map_t, alog->max_id);
     assert_result_not_null(alog->ns_map);
-    memset(alog->ns_map, 0, sizeof(ns_map_t) * alog->max_id);
 
     if (outfd != NULL) {
         fprintf(outfd, "CMD:OPEN max_id=%d -------------------------------\n", alog->max_id);
@@ -3720,10 +3719,12 @@ void activity_log_add_commands(activity_log_t *alog)
 
 activity_log_t *activity_log_open(const char *logname, int max_id, int mode)
 {
-    activity_log_t *alog = (activity_log_t *) malloc(sizeof(activity_log_t));
+    activity_log_t *alog;
+
+    tbx_type_malloc_clear(alog, activity_log_t, 1);
     assert_result_not_null(alog);
 
-    alog->table = (alog_entry_t *) malloc(sizeof(alog_entry_t) * 256);
+    tbx_type_malloc_clear(alog->table, alog_entry_t, 256);
     assert_result_not_null(alog->table);
 
     alog_init();

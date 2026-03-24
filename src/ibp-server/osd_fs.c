@@ -538,9 +538,11 @@ void _insert_corrupt_hash(osd_fs_t *fs, osd_id_t id, const char *value)
 
 osd_iter_t *fs_new_corrupt_iterator(osd_t *d)
 {
-    osd_iter_t *oi = (osd_iter_t *) malloc(sizeof(osd_iter_t));
-    osd_fs_corrupt_iter_t *ci = (osd_fs_corrupt_iter_t *) malloc(sizeof(osd_fs_corrupt_iter_t));
+    osd_iter_t *oi;
+    osd_fs_corrupt_iter_t *ci;
 
+    tbx_type_malloc(oi, osd_iter_t, 1);
+    tbx_type_malloc(ci, osd_fs_corrupt_iter_t, 1);
     if (oi == NULL)
         return (NULL);
     if (ci == NULL)
@@ -2865,8 +2867,11 @@ int fs_opendir(osd_fs_iter_t *iter)
 
 osd_iter_t *fs_new_iterator(osd_t *d, int partition)
 {
-    osd_iter_t *oi = (osd_iter_t *) malloc(sizeof(osd_iter_t));
-    osd_fs_iter_t *iter = (osd_fs_iter_t *) malloc(sizeof(osd_fs_iter_t));
+    osd_iter_t *oi;
+    osd_fs_iter_t *iter;
+
+    tbx_type_malloc(oi, osd_iter_t, 1);
+    tbx_type_malloc(iter, osd_fs_iter_t, 1);
 
     if (oi == NULL) return (NULL);
     if (iter == NULL) return (NULL);
@@ -2951,10 +2956,12 @@ int fs_iterator_next(osd_iter_t *oi, osd_id_t *id)
 osd_iter_t *fs_new_trash_iterator(osd_t *d, int trash_type)
 {
     osd_fs_t *fs = (osd_fs_t *) (d->private);
-    osd_iter_t *oi = (osd_iter_t *) malloc(sizeof(osd_iter_t));
-    osd_fs_iter_t *iter = (osd_fs_iter_t *) malloc(sizeof(osd_fs_iter_t));
+    osd_iter_t *oi;
+    osd_fs_iter_t *iter;
     char dname[fs->pathlen];
 
+    tbx_type_malloc(oi, osd_iter_t, 1);
+    tbx_type_malloc(iter, osd_fs_iter_t, 1);
     if (oi == NULL)
         return (NULL);
     if (iter == NULL)
@@ -3063,10 +3070,10 @@ int fs_umount(osd_t *d)
 void *fs_shelf_fd_new(void *arg, int size)
 {
     osd_fs_t *fs = (osd_fs_t *) arg;
-    osd_fs_fd_t *shelf = (osd_fs_fd_t *) malloc(sizeof(osd_fs_fd_t) * size);
+    osd_fs_fd_t *shelf;
     int i;
 
-    memset(shelf, 0, sizeof(osd_fs_fd_t) * size);
+    tbx_type_malloc_clear(shelf, osd_fs_fd_t, size);
 
     log_printf(10, "fs_shelf_fd_new: called data=%p size=%d rid=%s\n", (void *) shelf, size,
                fs->devicename);
@@ -3107,9 +3114,8 @@ void fs_shelf_fd_free(void *arg, int size, void *data)
 
 void *fs_shelf_range_new(void *arg, int size)
 {
-//  log_printf(15, "fs_shelf_range_new: size=%d\n", size);
-    void *ptr = malloc(sizeof(osd_fs_range_t) * size);
-    memset(ptr, 0, sizeof(osd_fs_range_t) * size);
+    void *ptr;
+    tbx_type_malloc_clear(ptr, osd_fs_range_t, size);
     return (ptr);
 }
 

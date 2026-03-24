@@ -33,6 +33,7 @@
 #include "activity_log.h"
 #include <tbx/net_sock.h>
 #include <tbx/append_printf.h>
+#include <tbx/type_malloc.h>
 
 tbx_network_t *global_network;
 
@@ -697,15 +698,16 @@ int to_many_connections()
 
 void spawn_new_task(tbx_ns_t *ns, int reject_connection)
 {
-    Thread_task_t *t = (Thread_task_t *) malloc(sizeof(Thread_task_t));
+    Thread_task_t *t;
 
+    tbx_type_malloc(t, Thread_task_t, 1);
     t->ns = ns;
 
     apr_pool_create(&(t->pool), NULL);
 
     t->attr = NULL;
 
-//** if needed set the default stack size **
+    //** if needed set the default stack size **
     apr_size_t stacksize = 4 * 1024 * 1024;
     apr_threadattr_create(&(t->attr), t->pool);
     apr_threadattr_stacksize_set(t->attr, stacksize);

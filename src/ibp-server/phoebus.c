@@ -14,8 +14,8 @@
    limitations under the License.
 */
 
-//***************************************************************
-//***************************************************************
+// ***************************************************************
+// ***************************************************************
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +26,7 @@
 #include <tbx/string_token.h>
 #include <tbx/append_printf.h>
 #include <tbx/iniparse.h>
+#include <tbx/type_malloc.h>
 
 phoebus_t *global_phoebus = NULL;
 
@@ -117,7 +118,7 @@ void phoebus_path_set(phoebus_t *p, const char *path)
 
 
     //** Copy the path to the final location
-    p->path = (char **) malloc(sizeof(char *) * p->p_count);
+    tbx_type_malloc(p->path, char *, p->p_count);
 
     assert_result(p->path != NULL);
 
@@ -199,59 +200,38 @@ char *phoebus_get_key(phoebus_t *p)
 
 void phoebus_init(void)
 {
-
     if (global_phoebus != NULL)
         return;
 
-
-    global_phoebus = (phoebus_t *) malloc(sizeof(phoebus_t));
-
+    tbx_type_malloc(global_phoebus, phoebus_t, 1);
     if (global_phoebus == NULL) {
-
         log_printf(0, "phoebus_init:  Aborting programm!! Malloc failed!\n");
-
         abort();
-
     }
-
 
     phoebus_path_set(global_phoebus, NULL);
 
-
     if (liblsl_init() < 0) {
-
         perror("liblsl_init(): failed");
-
         exit(errno);
-
     }
 
 
     if (getenv("PHOEBUS_PATH") != NULL) {
-
         phoebus_path_set(global_phoebus, getenv("PHOEBUS_PATH"));
-
         if (!global_phoebus->path) {
-
-            log_printf(0,
-                       "phoebus_init: Parsing of variable PHOEBUS_PATH failed.  It needs to be a comma separated list of depot IDs\n");
-
+            log_printf(0, "phoebus_init: Parsing of variable PHOEBUS_PATH failed.  It needs to be a comma separated list of depot IDs\n");
             global_phoebus->p_count = 0;
-
         }
 
         log_printf(10,
                    "phoebus_init: Using the gateway specified in environmental variable PHOEBUS_PATH: \"%s\"\n",
                    getenv("PHOEBUS_PATH"));
-
     } else if (getenv("PHOEBUS_GW") != NULL) {
-
         phoebus_path_set(global_phoebus, getenv("PHOEBUS_GW"));
-
         log_printf(10,
                    "phoebus_init: Using the gateway specified in environmental variable PHOEBUS_GW: \"%s\"\n",
                    getenv("PHOEBUS_GW"));
-
     }
 }
 

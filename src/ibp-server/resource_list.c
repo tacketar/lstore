@@ -104,7 +104,8 @@ int _resource_list_insert(Resource_list_t *rl, Resource_t *r)
     n = 0;
     if (rl->n == rl->max_res) { //** See if we need to grow the array
         n = rl->max_res + 1;
-        assert_result_not_null(rl->res = (rl_ele_t *) realloc(rl->res, sizeof(rl_ele_t) * n));
+        tbx_type_realloc(rl->res, rl_ele_t, n);
+        assert_result_not_null(rl->res);
         for (i = rl->max_res; i < n; i++) {
             rl->res[i].used = 0;
         }
