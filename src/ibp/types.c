@@ -38,7 +38,10 @@
 
 ibp_depot_t *ibp_depot_new()
 {
-    return((ibp_depot_t *)malloc(sizeof(ibp_depot_t)));
+    ibp_depot_t *depot;
+
+    tbx_type_malloc_clear(depot, ibp_depot_t, 1);
+    return(depot);
 }
 
 
@@ -105,7 +108,10 @@ void ibp_cap2depot(const ibp_cap_t *cap, ibp_depot_t *d)
 
 ibp_attributes_t *new_ibp_attributes()
 {
-    return((ibp_attributes_t *)malloc(sizeof(ibp_attributes_t)));
+    ibp_attributes_t *a;
+
+    tbx_type_malloc_clear(a, ibp_attributes_t, 1);
+    return(a);
 }
 
 
@@ -149,7 +155,9 @@ void ibp_attributes_get(ibp_attributes_t *attr, time_t *duration, int *reliabili
 
 ibp_timer_t *new_ibp_timer()
 {
-    ibp_timer_t *t = (ibp_timer_t *)malloc(sizeof(ibp_timer_t));
+    ibp_timer_t *t;
+
+    tbx_type_malloc_clear(t, ibp_timer_t, 1);
     if (t == NULL) return(NULL);
 
     t->ClientTimeout = 0;
@@ -217,7 +225,9 @@ ibp_cap_t *dup_ibp_cap(ibp_cap_t *src)
 
 ibp_capset_t *ibp_capset_new()
 {
-    ibp_capset_t *c = (ibp_capset_t *)malloc(sizeof(ibp_capset_t));
+    ibp_capset_t *c;
+
+    tbx_type_malloc_clear(c, ibp_capset_t, 1);
     if (c == NULL) return(NULL);
 
     c->readCap = NULL;
@@ -312,7 +322,9 @@ int ibp_cap_set(ibp_capset_t *caps, int ctype, ibp_cap_t *c, int dofree)
 
 ibp_proxy_capstatus_t *new_ibp_proxy_capstatus()
 {
-    ibp_proxy_capstatus_t *cs = (ibp_proxy_capstatus_t *)malloc(sizeof(ibp_proxy_capstatus_t));
+    ibp_proxy_capstatus_t *cs;
+
+    tbx_type_malloc_clear(cs, ibp_proxy_capstatus_t, 1);
     if (cs == NULL) return(NULL);
 
 
@@ -366,7 +378,9 @@ void get_ibp_proxy_capstatus(ibp_proxy_capstatus_t *cs, int *readcount, int *wri
 
 ibp_capstatus_t *new_ibp_capstatus()
 {
-    ibp_capstatus_t *cs = (ibp_capstatus_t *)malloc(sizeof(ibp_capstatus_t));
+    ibp_capstatus_t *cs;
+
+    tbx_type_malloc_clear(cs, ibp_capstatus_t, 1);
     if (cs == NULL) return(NULL);
 
 
@@ -423,7 +437,7 @@ void ibp_cap_getstatus(ibp_capstatus_t *cs, int *readcount, int *writecount,
 
 void ridlist_init(ibp_ridlist_t *rlist, int size)
 {
-    rlist->rl = (ibp_rid_t *)malloc(sizeof(ibp_rid_t)*size);
+    tbx_type_malloc_clear(rlist->rl, ibp_rid_t, size);
     FATAL_UNLESS(rlist->rl != NULL);
 
     rlist->n = size;

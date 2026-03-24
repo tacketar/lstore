@@ -437,8 +437,8 @@ void *_ibp_dup_connect_context(void *connect_context)
 
     if (cc == NULL) return(NULL);
 
-    ccdup = (ibp_connect_context_t *)malloc(sizeof(ibp_connect_context_t));
-   FATAL_UNLESS(ccdup != NULL);
+    tbx_type_malloc(ccdup, ibp_connect_context_t, 1);
+    FATAL_UNLESS(ccdup != NULL);
 
     *ccdup = *cc;
 
@@ -788,9 +788,10 @@ void default_ibp_config(ibp_context_t *ic)
 
 ibp_context_t *ibp_context_create()
 {
-    ibp_context_t *ic = (ibp_context_t *)malloc(sizeof(ibp_context_t));
-   FATAL_UNLESS(ic != NULL);
-    memset(ic, 0, sizeof(ibp_context_t));
+    ibp_context_t *ic;
+
+    tbx_type_malloc_clear(ic, ibp_context_t, 1);
+    FATAL_UNLESS(ic != NULL);
 
     if (_ibp_context_count == 0) {
         tbx_dnsc_startup();

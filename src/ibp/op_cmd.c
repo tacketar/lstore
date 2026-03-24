@@ -33,6 +33,7 @@
 #include <tbx/stack.h>
 #include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
+#include <tbx/type_malloc.h>
 #include <time.h>
 
 #include "misc.h"
@@ -188,10 +189,10 @@ gop_op_status_t vec_read_command(gop_op_generic_t *gop, tbx_ns_t *ns)
             if (used >= (bufsize-100)) {
                 bufsize = bufsize * 1.5;
                 if (buffer == stackbuffer) {
-                    buffer = (char *)malloc(bufsize);
+                    tbx_type_malloc(buffer, char, bufsize);
                     memcpy(buffer, stackbuffer, used);
                 } else {
-                    buffer = (char *)realloc(buffer, bufsize);
+                    tbx_type_realloc(buffer, char, bufsize);
                 }
             }
             tbx_append_printf(buffer, &used, bufsize, " " I64T " " I64T, rwbuf->iovec[i].offset, rwbuf->iovec[i].len);
@@ -388,10 +389,10 @@ gop_op_status_t vec_write_command(gop_op_generic_t *gop, tbx_ns_t *ns)
             if (used >= (bufsize-100)) {
                 bufsize = bufsize * 1.5;
                 if (buffer == stackbuffer) {
-                    buffer = (char *)malloc(bufsize);
+                    tbx_type_malloc(buffer, char, bufsize);
                     memcpy(buffer, stackbuffer, used);
                 } else {
-                    buffer = (char *)realloc(buffer, bufsize);
+                    tbx_type_realloc(buffer, char, bufsize);
                 }
             }
             tbx_append_printf(buffer, &used, bufsize, " " I64T " " I64T, rwbuf->iovec[i].offset, rwbuf->iovec[i].len);
@@ -1534,10 +1535,10 @@ gop_op_status_t rid_bulk_warm_command(gop_op_generic_t *gop, tbx_ns_t *ns)
         if (used >= (bufsize-100)) {
             bufsize = bufsize * 1.5;
             if (buffer == stackbuffer) {
-                buffer = (char *)malloc(bufsize);
+                tbx_type_malloc(buffer, char, bufsize);
                 memcpy(buffer, stackbuffer, used);
             } else {
-                buffer = (char *)realloc(buffer, bufsize);
+                tbx_type_realloc(buffer, char, bufsize);
             }
         }
 

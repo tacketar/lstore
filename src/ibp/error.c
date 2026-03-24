@@ -24,6 +24,7 @@
 #define _log_module_index 130
 
 #include <tbx/apr_pool_wrapper.h>
+#include <tbx/type_malloc.h>
 #include <apr_thread_proc.h>
 #include <stdlib.h>
 
@@ -82,7 +83,7 @@ int *_IBP_errno()
     apr_thread_once(_err_once,_errno_once);
     apr_threadkey_private_get(&output, errno_key);
     if (output == NULL ) {
-        output = (void *)malloc(sizeof(int));
+        tbx_type_malloc(output, int, 1);
         apr_threadkey_private_set(output, errno_key);
     }
 
