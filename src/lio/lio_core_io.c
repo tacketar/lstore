@@ -52,6 +52,7 @@
 #include "ex3/compare.h"
 #include "ex3/types.h"
 #include "lio.h"
+#include "misc_stats.h"
 #include "os.h"
 
 #define CIO_DEBUG_NOTIFY(fmt, ...) if (os_notify_handle) _tbx_notify_printf(os_notify_handle, 1, NULL, __func__, __LINE__, fmt, ## __VA_ARGS__)
@@ -2298,13 +2299,16 @@ gop_op_status_t lio_cp_local2local_fn(void *arg, int id)
 
     if (buffer == NULL) { //** Need to make it ourself
         tbx_type_malloc(buffer, char, bufsize);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LOCAL2LOCAL].submitted);
     }
 
     status = local2local_real(op, buffer, bufsize);
 
     //** Clean up
-    if (op->buffer == NULL) free(buffer);
-
+    if (op->buffer == NULL) {
+        free(buffer);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LOCAL2LOCAL].finished);
+    }
     return(status);
 }
 
@@ -2360,6 +2364,7 @@ gop_op_status_t lio_cp_local2lio_fn(void *arg, int id)
     }
     if ((buffer == NULL) || localbuf) { //** Need to make it ourself
         tbx_type_malloc(buffer, char, bufsize+1);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LOCAL2LIO].submitted);
     }
 
     tbx_tbuf_single(&tbuf, bufsize, buffer);
@@ -2442,7 +2447,10 @@ cleanup:
     tbx_atomic_set(lfh->modified, 1); //** Flag it as modified so the new exnode gets stored
 
     //** Clean up
-    if (localbuf) free(buffer);
+    if (localbuf) {
+        free(buffer);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LOCAL2LOCAL].finished);
+    }
 
     notify_printf(op->dlfd->lc->notify, 1, op->dlfd->creds, "COPY_WRITE: fname=%s fd=" XIDT " STATUS=%s\n", op->dlfd->path, op->dlfd->id, ((status.op_status == OP_STATE_SUCCESS) ? "SUCCESS" : "FAIL"));
 
@@ -2511,12 +2519,16 @@ gop_op_status_t lio_cp_lio2local_fn(void *arg, int id)
         bufsize = (op->bufsize <= 0) ? LIO_COPY_BUFSIZE-1 : op->bufsize-1;
         if (buffer == NULL) { //** Need to make it ourself
             tbx_type_malloc(buffer, char, bufsize+1);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LIO2LOCAL].submitted);
         }
 
         status = gop_sync_exec_status(segment_get_gop(lfh->lc->tpc_unlimited, lfh->lc->da, op->rw_hints, lfh->seg, cp_write, ffd, op->offset, op->len, bufsize, buffer, 3600));
 
         //** Clean up
-        if (op->buffer == NULL) free(buffer);
+        if (op->buffer == NULL) {
+            free(buffer);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LIO2LOCAL].finished);
+        }
     } else {  //** Stored as metadata
         status = metadata_lio2local(op, cp_write);
     }
@@ -2702,11 +2714,15 @@ gop_op_status_t lio_cp_lio2lio_fn(void *arg, int id)
 
         if (buffer == NULL) { //** Need to make it ourself
             tbx_type_malloc(buffer, char, bufsize+1);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LIO2LIO].submitted);
         }
         status = gop_sync_exec_status(lio_segment_copy_gop(dfh->lc->tpc_unlimited, dfh->lc->da, op->rw_hints, sfh->seg, dfh->seg, op->offset, op->offset2, op->len, bufsize, buffer, 1, dfh->lc->timeout));
 
         //** Clean up
-        if (op->buffer == NULL) free(buffer);
+        if (op->buffer == NULL) {
+            free(buffer);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_LIO2LIO].finished);
+        }
     }
 
 finished:
@@ -2779,6 +2795,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                 status = gop_failure_status;
             } else {
                 tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
+                TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_FILE_COPY].submitted);
                 status = gop_sync_exec_status(lio_cp_local2lio_gop(sffd, dlfd, cp->bufsize, buffer, 0, -1, 1, cp->cp_hints, cp->rw_hints));
             }
             if (dlfd != NULL) {
@@ -2812,6 +2829,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
                 status = gop_failure_status;
             } else {
                 tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
+                TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_FILE_COPY].submitted);
                 status = gop_sync_exec_status(lio_cp_local2local_gop(sffd, dffd, cp->bufsize, buffer, 0, 0, -1, 1, cp->cp_hints, cp->rw_hints, 0));
             }
             if (dffd != NULL) { tbx_io_fclose(dffd); }
@@ -2838,6 +2856,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             status = gop_failure_status;
         } else {
             tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_FILE_COPY].submitted);
             status = gop_sync_exec_status(lio_cp_lio2local_gop(slfd, dffd, cp->bufsize, buffer, 0, -1, cp->cp_hints, cp->rw_hints));
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
@@ -2877,6 +2896,7 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
             status = gop_failure_status;
         } else {
             tbx_malloc_align(buffer, getpagesize(), cp->bufsize);
+            TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_FILE_COPY].submitted);
             status = gop_sync_exec_status(lio_cp_lio2lio_gop(slfd, dlfd, cp->bufsize, buffer, 0, 0, -1, cp->cp_hints, cp->rw_hints));
         }
         if (slfd != NULL) gop_sync_exec(lio_close_gop(slfd));
@@ -2892,7 +2912,10 @@ gop_op_status_t lio_file_copy_op(void *arg, int id)
         }
     }
 
-    if (buffer != NULL) free(buffer);
+    if (buffer != NULL) {
+        free(buffer);
+        TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LIO_FILE_COPY].finished);
+    }
 
     if ((status.op_status != OP_STATE_SUCCESS) && (already_exists == 0) && (cp->dest_tuple.is_lio != 0)) { //** Copy failed so remove the destination if needed
         log_printf(5, "Failed with copy. Removing destination: %s\n", cp->dest_tuple.path);
