@@ -29,6 +29,7 @@
 #define tbx_ptr_is_aligned(var, align) \
     (((uintptr_t)(const void *)(var)) % (align) == 0)
 
+#define tbx_malloc(var, size) var = malloc(size)
 #define tbx_malloc_align(var, align, size) var = aligned_alloc(align, size)
 #define tbx_type_malloc_clear(var, type, count) \
             tbx_type_malloc(var, type, count)
