@@ -55,6 +55,7 @@
 #include "ex3/compare.h"
 #include "ex3/header.h"
 #include "ex3/system.h"
+#include "misc_stats.h"
 #include "segment/cache.h"
 #include "service_manager.h"
 
@@ -615,9 +616,9 @@ gop_op_status_t recovery_read_func(void *arg, int id)
     gop_op_status_t status;
     ex_off_t dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].submitted, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].submitted, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].submitted, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].submitted, cop->nbytes);
     dt = apr_time_now();
 
     //** Make the new hint and set things up
@@ -628,12 +629,12 @@ gop_op_status_t recovery_read_func(void *arg, int id)
     //** Do the recovery read
     status = gop_sync_exec_status(segment_read(s->recovery_seg, cop->da, &h, cop->n_iov, cop->iov, cop->buf, cop->boff, cop->timeout));
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].finished, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].finished, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].finished, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].finished, cop->nbytes);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].submitted, dt);
-    if (status.op_status != OP_STATE_SUCCESS) { REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].errors); }
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].submitted, dt);
+    if (status.op_status != OP_STATE_SUCCESS) { TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].errors); }
 
     return(status);
 }
@@ -651,20 +652,20 @@ gop_op_status_t normal_read_func(void *arg, int id)
     gop_op_status_t status;
     ex_off_t dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].submitted, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].submitted, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].submitted, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].submitted, cop->nbytes);
     dt = apr_time_now();
 
     //** Try and write to the base, i.e. child segment
     status = gop_sync_exec_status(segment_read(s->child_seg, cop->da, cop->rw_hints, cop->n_iov, cop->iov, cop->buf, cop->boff, cop->timeout));
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].finished, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].finished, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_PAGES].finished, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].finished, cop->nbytes);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].submitted, dt);
-    if (status.op_status != OP_STATE_SUCCESS) { REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].errors); }
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].submitted, dt);
+    if (status.op_status != OP_STATE_SUCCESS) { TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_OP].errors); }
 
     return(status);
 }
@@ -741,9 +742,9 @@ gop_op_status_t recovery_write_func(void *arg, int id)
     direct_io = h->direct_io;
     h->direct_io = 1;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].submitted, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].submitted, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].submitted, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].submitted, cop->nbytes);
     dt = apr_time_now();
 
     //** Try and write to the base, i.e. child segment
@@ -760,12 +761,12 @@ gop_op_status_t recovery_write_func(void *arg, int id)
     h->direct_io = direct_io;  //** Restore the hints
     h->log_write_update = log_write_mode;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].finished, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].finished, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].finished, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].finished, cop->nbytes);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].finished, dt);
-    if (status.op_status != OP_STATE_SUCCESS) { REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].errors); }
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].finished, dt);
+    if (status.op_status != OP_STATE_SUCCESS) { TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].errors); }
 
     return(status);
 }
@@ -816,9 +817,9 @@ gop_op_status_t normal_write_func(void *arg, int id)
     gop_op_status_t status;
     ex_off_t dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].submitted, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].submitted, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].submitted, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].submitted, cop->nbytes);
     dt = apr_time_now();
 
     //** Try and write to the base, i.e. child segment
@@ -828,12 +829,12 @@ gop_op_status_t normal_write_func(void *arg, int id)
         if (status.op_status == OP_STATE_SUCCESS) status = recovery_write_func(arg, id);
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].finished, cop->n_iov);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].finished, cop->nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_PAGES].finished, cop->n_iov);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].finished, cop->nbytes);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].finished, dt);
-    if (status.op_status != OP_STATE_SUCCESS) { REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].errors); }
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].finished, dt);
+    if (status.op_status != OP_STATE_SUCCESS) { TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_OP].errors); }
 
     return(status);
 }
@@ -1017,16 +1018,16 @@ gop_op_status_t cache_direct_rw_func(void *arg, int id)
     int i, err, tb_err;
     dio_range_lock_t drng;
     ex_off_t dt, nbytes;
-    REALTIME_CACHE_STATS_CODE(int stat_index;)
-    REALTIME_CACHE_STATS_CODE(stat_index = (cop->rw_mode == CACHE_READ) ? CACHE_OP_SLOT_DIRECT_READ_OP : CACHE_OP_SLOT_DIRECT_WRITE_OP; )
+    TBX_STATS_CODE(int stat_index;)
+    TBX_STATS_CODE(stat_index = (cop->rw_mode == CACHE_READ) ? CACHE_OP_SLOT_DIRECT_READ_OP : CACHE_OP_SLOT_DIRECT_WRITE_OP; )
 
     nbytes = 0;
     for (i=0; i<cop->n_iov; i++) {
         nbytes += cop->iov[i].len;
     }
     dt = apr_time_now();
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].submitted, nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].submitted, nbytes);
 
     tb_err = err = 0;
     for (i=0; i<cop->n_iov; i++) {
@@ -1036,19 +1037,19 @@ gop_op_status_t cache_direct_rw_func(void *arg, int id)
         dio_range_unlock(seg, &drng);
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].finished, nbytes);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].finished, nbytes);
 
     dt = apr_time_now() - dt;
     if (cop->rw_mode == CACHE_READ) {
-        REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index].submitted, dt);
+        TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index].submitted, dt);
     } else {
-        REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index].finished, dt);
+        TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index].finished, dt);
     }
     if ((tb_err+err) == 0) {
         status = gop_success_status;
     } else {
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
         status = gop_failure_status;
     }
 
@@ -1065,6 +1066,7 @@ void *cache_cond_new(void *arg, int size)
     apr_pool_t **pool_ptr;
     int i;
 
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_CACHE_COND_PC].submitted);
     i = sizeof(lio_cache_cond_t)*size + sizeof(apr_pool_t *);
     shelf = malloc(i);
     FATAL_UNLESS(shelf != NULL);
@@ -1098,6 +1100,7 @@ void cache_cond_free(void *arg, int size, void *data)
     tbx_apr_pool_destroy(*pool_ptr);
 
     free(shelf);
+    TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_CACHE_COND_PC].finished);
     return;
 }
 
@@ -1546,7 +1549,7 @@ lio_cache_page_t  *cache_page_force_get(lio_segment_t *seg, lio_segment_rw_hints
     lio_page_handle_t ph;
     ex_off_t off_row, dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].submitted);
     dt = apr_time_now();
 
     off_row = poff / s->page_size;
@@ -1564,10 +1567,10 @@ lio_cache_page_t  *cache_page_force_get(lio_segment_t *seg, lio_segment_rw_hints
         if (!p) {
             log_printf(15, "seg=" XIDT " offset=" XOT ". FAILED creating page. count=%d\n", segment_id(seg), poff, tbx_sl_key_count(s->pages));
             cache_unlock(s->c);
-            REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].finished);
-            REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].errors);
+            TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].finished);
+            TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].errors);
             dt = apr_time_now() - dt;
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].submitted, dt);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].submitted, dt);
             return(NULL);
         }
         p->seg = seg;
@@ -1636,10 +1639,10 @@ lio_cache_page_t  *cache_page_force_get(lio_segment_t *seg, lio_segment_rw_hints
                    p->access_pending[CACHE_READ], p->access_pending[CACHE_WRITE], p->access_pending[CACHE_FLUSH], p->bit_fields, p->curr_data->usage_count, p->current_index);
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].finished);
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].errors);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET].errors);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].submitted, dt);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].submitted, dt);
 
     return(p);
 }
@@ -2344,7 +2347,7 @@ int cache_read_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, i
     int err, i, skip_mode, can_get, max_pages;
     ex_off_t dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].submitted);
     dt = apr_time_now();
 
     //** Map the rage to the page boundaries
@@ -2374,9 +2377,9 @@ int cache_read_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, i
                 *hi_got = *poff - 1;
                 *n_pages = 0;
                 cache_unlock(s->c);
-                REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].finished);
+                TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].finished);
                 dt = apr_time_now() - dt;
-                REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].submitted, dt);
+                TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].submitted, dt);
                 return(1);
             } else {
                 p = NULL;
@@ -2494,9 +2497,9 @@ int cache_read_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, i
     log_printf(15, "END seg=" XIDT " mode=%d lo=" XOT " hi=" XOT " hi_got=" XOT " skip_mode=%d n_pages=%d\n", segment_id(seg), mode, lo, hi, *hi_got, skip_mode, *n_pages);
     tbx_log_flush();
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_READ_PAGES_GET_CALL].finished);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].submitted, dt);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].submitted, dt);
 
     return(skip_mode);
 }
@@ -2517,7 +2520,7 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
     int flush_skip = 0;
     ex_off_t dt;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_WRITE_PAGES_GET_CALL].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_WRITE_PAGES_GET_CALL].submitted);
     dt = apr_time_now();
 
     max_pages = *n_pages;
@@ -2561,13 +2564,13 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
         if ((s->last_page_buffer_offset == s->child_last_page) && (s->last_page_buffer)) {
             np = s->c->fn.create_empty_page(s->c, seg, 0);  //** Get the next empty page  if possible
             if (np != NULL) { //** Make the empty page
-                REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_LAST_PAGE_TRAP].submitted);
+                TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_LAST_PAGE_TRAP].submitted);
                 coff = lo_row;
                 s_cache_page_init(seg, np, coff);
                 np->bit_fields ^= C_EMPTY;  //** Clear the empty flag since we already have the data
                 memcpy(np->curr_data->ptr, s->last_page_buffer, s->page_size);
                 err = 0;
-                REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_LAST_PAGE_TRAP].finished);
+                TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_LAST_PAGE_TRAP].finished);
 
                 //** Need to reset the iterator since we inserted a page
                 it = tbx_sl_iter_search(s->pages, &lo_row, 0);
@@ -2823,9 +2826,9 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
         tbx_log_flush();
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_WRITE_PAGES_GET_CALL].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_WRITE_PAGES_GET_CALL].finished);
     dt = apr_time_now() - dt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].finished, dt);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].finished, dt);
 
     return(skip_mode);
 }
@@ -2844,9 +2847,9 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
     lio_cache_cond_t *cache_cond;
     int count, i, cow_hit, full_flush;
     ex_off_t min_off, max_off, dirty_change;
-    REALTIME_CACHE_STATS_CODE(int stat_index;)
+    TBX_STATS_CODE(int stat_index;)
 
-    REALTIME_CACHE_STATS_CODE(
+    TBX_STATS_CODE(
         if (rw_mode == CACHE_READ) {
             stat_index = CACHE_OP_SLOT_RELEASE_READ_CALL;
         } else if (rw_mode == CACHE_WRITE) {
@@ -2855,8 +2858,8 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
             stat_index = CACHE_OP_SLOT_RELEASE_FLUSH_CALL;
         }
     )
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].submitted, n_pages);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].submitted, n_pages);
 
     cache_lock(s->c);
     segment_lock(seg);
@@ -2953,8 +2956,8 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
         gop_auto_destroy_exec(cache_flush_range_gop(seg, s->c->da, 0, -1, s->c->timeout, CACHE_OP_SLOT_FLUSH_SEGMENT_CALL));
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].finished, n_pages);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+1].finished, n_pages);
 
     return(0);
 }
@@ -3723,7 +3726,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
     if (cop->n_iov == 0) return(err);  //** Nothing to do so kick out
 
     stat_index = (cop->rw_mode == CACHE_READ) ? CACHE_OP_SLOT_READ_OP : CACHE_OP_SLOT_WRITE_OP;
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
     dt = apr_time_now();
 
     tbx_stack_init(&stack);
@@ -3788,13 +3791,13 @@ gop_op_status_t cache_rw_func(void *arg, int id)
             free(r);
         }
 
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
         dt = apr_time_now() - dt;
         if (stat_index == CACHE_OP_SLOT_READ_OP) {
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].submitted, dt);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].submitted, dt);
         } else {
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].finished, dt);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].finished, dt);
         }
         return(gop_failure_status);
     }
@@ -3973,16 +3976,16 @@ gop_op_status_t cache_rw_func(void *arg, int id)
     segment_unlock(seg);
 
     if (tb_err > 0) {  //** We got some tbuf erros which mean hte underlying cache pages were bad
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].errors);
         err.op_status = OP_STATE_FAILURE;
     }
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
     dt = apr_time_now() - dt;
     if (stat_index == CACHE_OP_SLOT_READ_OP) {
-        REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].submitted, dt);
+        TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].submitted, dt);
     } else {
-        REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].finished, dt);
+        TBX_STATS_ADD(s->c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].finished, dt);
     }
 
     return(err);
@@ -4106,10 +4109,10 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
     ex_off_t dtt, dtp;
     double dt;
     apr_time_t now;
-    REALTIME_CACHE_STATS_CODE(int stat_index;)
+    TBX_STATS_CODE(int stat_index;)
 
-    REALTIME_CACHE_STATS_CODE(stat_index = cop->flush_stat_index;)
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
+    TBX_STATS_CODE(stat_index = cop->flush_stat_index;)
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].submitted);
     err = rerr = OP_STATE_SUCCESS;
     dtt = apr_time_now();
 
@@ -4133,9 +4136,9 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
             segment_unlock(cop->seg);
             tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop full_flush_in_progress. Kicking out");
             if (wait_pending) cache_flush_pending_wait(cop->seg, 1);
-            REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+            TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
             dtt = apr_time_now() - dtt;
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+4].submitted, dtt);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+4].submitted, dtt);
             return(gop_success_status);
         }
         s->full_flush_in_progress++;
@@ -4182,12 +4185,12 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
         n_pages = max_pages;
         dio_range_lock_set(&drng, CACHE_READ, curr->lo, curr->hi, s->pio_execing, s->page_size);
         dio_range_lock(cop->seg, &drng);
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index+1].submitted);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index+1].submitted);
         dtp = apr_time_now();
         status = cache_dirty_pages_get(cop->seg, mode, curr->lo, curr->hi, &hi_got, page, &n_pages);
         dtp = apr_time_now() - dtp;
-        REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+5].submitted, dtp);
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index+1].finished);
+        TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+5].submitted, dtp);
+        TBX_STATS_INC(s->c->stats.op_stats.op[stat_index+1].finished);
 
         tbx_monitor_obj_message(&(cop->seg->header.mo), "cache_flush_range_gop: n_pages=%d lo=" XOT " hi=" XOT, n_pages, curr->lo, hi_got);
         dio_range_lock_contract(cop->seg, &drng, curr->lo, hi_got, s->page_size);
@@ -4196,16 +4199,16 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
         tbx_log_flush();
 
         if (status == 0) {  //** Got some data to process
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+2].submitted, n_pages);
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+3].submitted, n_pages*s->page_size);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+2].submitted, n_pages);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+3].submitted, n_pages*s->page_size);
             progress = 1;  //** Flag that progress was made
             total_pages += n_pages;
             err = 0;
             if (n_pages > 0) {
                 err = cache_rw_pages(cop->seg, cop->rw_hints, page, n_pages, CACHE_FLUSH, 1, &drng);
             }
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+2].finished, n_pages);
-            REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+3].finished, n_pages*s->page_size);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+2].finished, n_pages);
+            TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+3].finished, n_pages*s->page_size);
 
             err = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
             if (curr->hi > hi_got) tbx_stack_push(&stack, cache_new_range(hi_got+1, curr->hi, 0, 0));  //** and the rest of the range on the top
@@ -4284,10 +4287,10 @@ finished:
     //** See if we wait for background flushes to complete
     if (wait_pending) cache_flush_pending_wait(cop->seg, 1);
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
-    if (err != OP_STATE_SUCCESS) { REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[stat_index].errors); }
+    TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
+    if (err != OP_STATE_SUCCESS) { TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].errors); }
     dtt = apr_time_now() - dtt;
-    REALTIME_CACHE_STATS_ADD(s->c->stats.op_stats.op[stat_index+4].submitted, dtt);
+    TBX_STATS_ADD(s->c->stats.op_stats.op[stat_index+4].submitted, dtt);
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
@@ -4686,7 +4689,7 @@ gop_op_status_t segcache_truncate_func(void *arg, int id)
     int err1, err2, err3;
     gop_op_status_t status;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_TRUNCATE].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_TRUNCATE].submitted);
 
     //** Adjust the size
     cache_lock(s->c);
@@ -4745,7 +4748,7 @@ gop_op_status_t segcache_truncate_func(void *arg, int id)
     }
     cache_unlock(s->c);
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_TRUNCATE].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_TRUNCATE].finished);
 
     status = ((err1 == OP_STATE_SUCCESS) && (err2 == OP_STATE_SUCCESS)) ? gop_success_status : gop_failure_status;
     return(status);
@@ -4877,7 +4880,7 @@ ex_off_t segcache_size(lio_segment_t *seg)
     ex_off_t size;
 
     if (s->c) {
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_SIZE].submitted);
+        TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_SIZE].submitted);
         cache_lock(s->c);
     }
     segment_lock(seg);
@@ -4886,7 +4889,7 @@ ex_off_t segcache_size(lio_segment_t *seg)
     segment_unlock(seg);
     if (s->c) {
         cache_unlock(s->c);
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_SIZE].finished);
+        TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_SIZE].finished);
     }
 
     return(size);
@@ -4901,11 +4904,11 @@ ex_off_t segcache_block_size(lio_segment_t *seg, int btype)
     lio_cache_segment_t *s = (lio_cache_segment_t *)seg->priv;
     ex_off_t bsize;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_BLOCK_SIZE].submitted);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_BLOCK_SIZE].submitted);
 
     bsize = (btype == LIO_SEGMENT_BLOCK_NATURAL) ? segment_block_size(s->child_seg, btype) : 1;
 
-    REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_BLOCK_SIZE].finished);
+    TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_BLOCK_SIZE].finished);
 
     return(bsize);
 }
@@ -5198,7 +5201,7 @@ void segcache_destroy(tbx_ref_t *ref)
     //** Check if it's still in use
     log_printf(2, "segcache_destroy: seg->id=" XIDT " sptr=%p\n", segment_id(seg), seg);
 
-    REALTIME_CACHE_STATS_CODE( if (s->c) REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].submitted);)
+    TBX_STATS_CODE( if (s->c) TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].submitted);)
 
     CACHE_PRINT;
 
@@ -5296,7 +5299,7 @@ finished:
     apr_thread_cond_destroy(seg->cond);
     tbx_apr_pool_destroy(seg->mpool);
 
-    REALTIME_CACHE_STATS_CODE(if (s->c) REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].finished);)
+    TBX_STATS_CODE(if (s->c) TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].finished);)
 
     if (s->last_page_buffer) free(s->last_page_buffer);
 
@@ -5343,7 +5346,7 @@ lio_segment_t *segment_cache_create(void *arg)
     if (s->c != NULL) {
         s->c = cache_get_handle(s->c);
         if (strcmp(s->c->type, CACHE_TYPE_DIRECT) == 0) s->direct_io = 1;
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_CREATE].submitted);
+        TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_CREATE].submitted);
     }
 
     log_printf(2, "CACHE-PTR seg=" XIDT " s->c=%p\n", segment_id(seg), s->c);
@@ -5388,7 +5391,7 @@ lio_segment_t *segment_cache_create(void *arg)
         CACHE_PRINT;
         cache_unlock(s->c);
 
-        REALTIME_CACHE_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_CREATE].finished);
+        TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_CREATE].finished);
     }
 
     return(seg);

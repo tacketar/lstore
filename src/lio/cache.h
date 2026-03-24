@@ -21,9 +21,9 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/list.h>
 #include <tbx/pigeon_coop.h>
+#include <tbx/stats.h>
 
 #include "ex3.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,22 +32,6 @@ extern "C" {
 #define CACHE_PRINT_LOCK
 #define CACHE_LOAD_AVAILABLE "cache_load_available"
 #define CACHE_CREATE_AVAILABLE "cache_create_available"
-
-#define REALTIME_CACHE_STATS
-
-#ifdef REALTIME_CACHE_STATS
-    #define REALTIME_CACHE_STATS_GET(a) tbx_atomic_get(a)
-    #define REALTIME_CACHE_STATS_INC(a) tbx_atomic_inc(a)
-    #define REALTIME_CACHE_STATS_ADD(a, delta) tbx_atomic_add(a, delta)
-    #define REALTIME_CACHE_STATS_SUB(a, delta) tbx_atomic_sub(a, delta)
-    #define REALTIME_CACHE_STATS_CODE(...) __VA_ARGS__
-#else
-    #define REALTIME_CACHE_STATS_GET(a)
-    #define REALTIME_CACHE_STATS_INC(a)
-    #define REALTIME_CACHE_STATS_ADD(a, delta)
-    #define REALTIME_CACHE_STATS_SUB(a, delta)
-    #define REALTIME_CACHE_STATS_CODE(...)
-#endif
 
 void print_lio_cache_table(int dolock);
 typedef lio_cache_t *(cache_load_t)(void *arg, tbx_inip_file_t *ifd, char *section, data_attr_t *da, int timeout);
@@ -148,22 +132,12 @@ struct lio_cache_range_t {
 #define CACHE_OP_SLOT_SEGMENT_DESTROY                 49
 #define CACHE_OP_SLOT_SEGMENT_TRUNCATE                50
 
-#define CACHE_OP_SLOTS_MAX                            51
+#define CACHE_OP_SLOT_PAGE_CREATE_DESTROY             51
 
-#define CACHE_OP_TYPE_COUNT  0
-#define CACHE_OP_TYPE_BYTE   1
-#define CACHE_OP_TYPE_TIME_1 2
-#define CACHE_OP_TYPE_TIME_2 3
+#define CACHE_OP_SLOTS_MAX                            52
 
 typedef struct {
-    int type;
-    tbx_atomic_int_t submitted;
-    tbx_atomic_int_t finished;
-    tbx_atomic_int_t errors;
-} cache_op_stat_t;
-
-typedef struct {
-    cache_op_stat_t op[CACHE_OP_SLOTS_MAX];
+    tbx_stats_t op[CACHE_OP_SLOTS_MAX];
 } cache_op_stats_t;
 
 struct lio_cache_counters_t {
@@ -194,8 +168,6 @@ struct lio_cache_cond_t {
 #define CPP_BEGIN 1
 #define CPP_END   2
 #define CPP_FULL  4
-
-
 
 struct lio_cache_partial_page_t {
     ex_off_t page_start;

@@ -62,14 +62,14 @@ void cache_base_destroy(lio_cache_t *c)
 void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
 {
     tbx_apr_pool_create(&(c->mpool), NULL);
-    
+
     //** Create mutex with error checking
     if (apr_thread_mutex_create(&(c->lock), APR_THREAD_MUTEX_DEFAULT, c->mpool) != APR_SUCCESS) {
         log_printf(0, "ERROR: Failed to create cache lock mutex\n");
         tbx_apr_pool_destroy(c->mpool);
         return;
     }
-    
+
     //** Create segments list with error checking
     c->segments = tbx_list_create(0, &skiplist_compare_ex_id, NULL, NULL, NULL);
     if (c->segments == NULL) {
@@ -78,7 +78,7 @@ void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
         tbx_apr_pool_destroy(c->mpool);
         return;
     }
-    
+
     //** Create condition coop with error checking
     c->cond_coop = tbx_pc_new("cache_cond_coop", 50, sizeof(lio_cache_cond_t), c->mpool, cache_cond_new, cache_cond_free);
     if (c->cond_coop == NULL) {
@@ -88,30 +88,30 @@ void cache_base_create(lio_cache_t *c, data_attr_t *da, int timeout)
         tbx_apr_pool_destroy(c->mpool);
         return;
     }
-    
+
     c->da = da;
     c->timeout = timeout;
     c->default_page_size = 16*1024;
 
-    //** Set the stat types. CACHE_OP_TYPE_COUNT == 0 so just need to set the others
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT_PAGES_GET_CALL].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].type = CACHE_OP_TYPE_TIME_1;
-    c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].type = CACHE_OP_TYPE_TIME_2;
-    c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].type = CACHE_OP_TYPE_TIME_2;
-    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].type = CACHE_OP_TYPE_TIME_2;
-    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_READ_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_WRITE_BYTES].type = CACHE_OP_TYPE_BYTE;
-    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_IO_DT].type = CACHE_OP_TYPE_TIME_2;
+    //** Set the stat types. TBX_STATS_TYPE_COUNT == 0 so just need to set the others
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_DT_PAGES_GET_CALL].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_SEGMENT_DT_PAGES_GET_CALL].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_PARENT_DT_PAGES_GET_CALL].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_FORCE_GET_DT].type = TBX_STATS_TYPE_TIME_1;
+    c->stats.op_stats.op[CACHE_OP_SLOT_PAGES_GET_CALLS_DT].type = TBX_STATS_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_IO_DT].type = TBX_STATS_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_READ_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_WRITE_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_IO_DT].type = TBX_STATS_TYPE_TIME_2;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_READ_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_WRITE_BYTES].type = TBX_STATS_TYPE_BYTE;
+    c->stats.op_stats.op[CACHE_OP_SLOT_DIRECT_IO_DT].type = TBX_STATS_TYPE_TIME_2;
 }
 
 //*************************************************************

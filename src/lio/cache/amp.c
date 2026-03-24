@@ -38,6 +38,7 @@
 #include <tbx/skiplist.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
+#include <tbx/stats.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
@@ -49,7 +50,7 @@
 #include "ex3/types.h"
 #include "lio.h"
 
-#ifdef REALTIME_CACHE_STATS
+#ifdef TBX_STATS_ENABLED
 static char *_cache_op_stats_name[] = {
           "Flush DIRTY Wakup",
           "Flush DIRTY calls",    "Flush DIRTY get pages calls",   "Flush DIRTY pages",    "Flush DIRTY bytes",      "Flush DIRTY DT",          "Flush DIRTY get pages DT",
@@ -61,7 +62,8 @@ static char *_cache_op_stats_name[] = {
           "CHILD last page trap", "CHILD Read ops",       "CHILD Read pages count",        "CHILD Read bytes",
           "CHILD Write ops",      "CHILD Write pages count", "CHILD Write bytes",         "CHILD R/W time",
           "DIRECT Read ops", "DIRECT Read bytes", "DIRECT Write ops", "DIRECT Write bytes", "DIRECT R/W time",
-          "Segment size calls",   "Segment block_size calls",      "Segment create calls",  "Segment destroy calls", "Segment truncate calls" };
+          "Segment size calls",   "Segment block_size calls",      "Segment create calls",  "Segment destroy calls", "Segment truncate calls",
+          "Page create/destroy" };
 #endif
 
 //******************
@@ -128,31 +130,9 @@ void amp_cache_info_fn(void *arg, FILE *fd)
     fprintf(fd, "\n");
 
     //** Print the realtime stats
-#ifdef REALTIME_CACHE_STATS
-    ex_off_t submitted, finished, pending, errors;
-    char ppbuf2[100], ppbuf3[100];
-    int i, optype;
-
+#ifdef TBX_STATS_ENABLED
     fprintf(fd, "Cache Counter stats ------------------------\n");
-    for (i=0; i<CACHE_OP_SLOTS_MAX; i++) {
-        finished = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].finished);
-        submitted = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].submitted);
-        errors = REALTIME_CACHE_STATS_GET(c->stats.op_stats.op[i].errors);
-        pending = submitted - finished;
-        optype = c->stats.op_stats.op[i].type;
-        if (optype == CACHE_OP_TYPE_COUNT) {
-            fprintf(fd, "    %30s[%02d]:  submitted=" XOT " finished=" XOT " pending=" XOT " errors=" XOT "\n", _cache_op_stats_name[i], i, submitted, finished, pending, errors);
-        } else if (optype == CACHE_OP_TYPE_BYTE) {
-            fprintf(fd, "    %30s[%02d]:  submitted=%s finished=%s pending=%s\n", _cache_op_stats_name[i], i,
-                tbx_stk_pretty_print_double_with_scale(1024, submitted, ppbuf1),
-                tbx_stk_pretty_print_double_with_scale(1024, finished, ppbuf2),
-                tbx_stk_pretty_print_double_with_scale(1024, pending, ppbuf3));
-        } else if (optype == CACHE_OP_TYPE_TIME_1) {
-            fprintf(fd, "    %30s[%02d]:  TIME=%s\n", _cache_op_stats_name[i], i, tbx_stk_pretty_print_time(submitted, 1, ppbuf1));
-        } else if (optype == CACHE_OP_TYPE_TIME_2) {
-            fprintf(fd, "    %30s[%02d]:  READ=%s  WRITE=%s\n", _cache_op_stats_name[i], i, tbx_stk_pretty_print_time(submitted, 1, ppbuf1), tbx_stk_pretty_print_time(finished, 1, ppbuf2));
-        }
-    }
+    tbx_stats_printf(fd, c->stats.op_stats.op, _cache_op_stats_name, CACHE_OP_SLOTS_MAX);
     fprintf(fd, "\n");
 #else
     fprintf(fd, "Cache Counter stats DISABLED ------------------------\n");
@@ -251,6 +231,7 @@ void _amp_free_page_push(lio_cache_t *c, lio_cache_page_t *p)
         } else {  //** No data buffer anywhere so just drop the page and return
             lp = (lio_page_amp_t *)p->priv;
             free(lp);
+            tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             return;
         }
     }
@@ -273,6 +254,7 @@ void _amp_free_page_list_destroy(lio_cache_t *c)
         if (p->data[0].ptr) free(p->data[0].ptr);
         if (p->data[1].ptr) free(p->data[1].ptr);
         free(lp);
+        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
     }
 
     tbx_stack_free(cp->free_pages, 1);
@@ -510,6 +492,7 @@ lio_cache_page_t *_amp_free_page_fetch(lio_cache_t *c, ex_off_t page_size)
                 if (p->data[0].ptr) free(p->data[0].ptr);
                 if (p->data[1].ptr) free(p->data[1].ptr);
                 free(lp);
+                tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             }
         } else if (p->offset > page_size) {
             p->data[0].ptr = realloc(p->data[0].ptr, page_size);
@@ -540,6 +523,7 @@ lio_cache_page_t *_amp_new_page(lio_cache_t *c, lio_segment_t *seg)
         p = &(lp->page);
         p->curr_data = &(p->data[0]);
         p->current_index = 0;
+        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].submitted);
         tbx_type_malloc_clear(p->curr_data->ptr, char, s->page_size);
         if (c->coredump_pages == 0) madvise(p->curr_data->ptr, s->page_size, MADV_DONTDUMP);
     }
