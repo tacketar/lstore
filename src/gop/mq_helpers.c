@@ -190,7 +190,7 @@ char *mq_address_to_string(mq_msg_t *address)
     n = 0;
     size = 0;
 
-    string = malloc(msg_size + frames);
+    tbx_type_malloc(string, char, msg_size + frames);
 
     for (curr = gop_mq_msg_iter_first(address); curr != NULL; curr = gop_mq_msg_iter_next(curr)) {
         f = gop_mq_msg_iter_frame(curr);

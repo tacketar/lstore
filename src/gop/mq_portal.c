@@ -128,7 +128,7 @@ void gop_mq_long_running_set(gop_mq_portal_t *p, int n)
 
     apr_threadkey_private_get((void *)&ptr, _mq_long_running_key);
     if (ptr == NULL ) {
-        ptr = (int *)malloc(sizeof(int));
+        tbx_type_malloc(ptr, int, 1);
         *ptr = 0;
         apr_threadkey_private_set(ptr, _mq_long_running_key);
     }
