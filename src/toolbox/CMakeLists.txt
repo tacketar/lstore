@@ -52,6 +52,7 @@ set(TOOL_OBJS
     siginfo.c
     skiplist.c
     stack.c
+    stats.c
     stdinarray_iter.c
     string_token.c
     thread_pool.c
@@ -98,6 +99,7 @@ set(LSTORE_PROJECT_INCLUDES
     tbx/skiplist.h
     tbx/siginfo.h
     tbx/stack.h
+    tbx/stats.h
     tbx/stdinarray_iter.h
     tbx/string_token.h
     tbx/tbx_decl.h
