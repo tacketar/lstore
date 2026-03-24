@@ -230,7 +230,7 @@ finished:
         if (value) n += strlen(value);
         if (n > nmax) {
             nmax = 2*n;
-            dest = realloc(dest, nmax);
+            tbx_type_realloc(dest, char, nmax);
         }
         //** Copy the prefix
         n = start - last;

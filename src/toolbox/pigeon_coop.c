@@ -182,10 +182,10 @@ int tbx_pch_release(tbx_pc_t *pc, tbx_pch_t *pch)
 
             //** Adjust the array sizes
             pc->nshelves = n;
-            pc->ph_shelf = (tbx_ph_t **)realloc(pc->ph_shelf, pc->nshelves*sizeof(tbx_ph_t *));
-           FATAL_UNLESS(pc->ph_shelf != NULL);
-            pc->data_shelf = realloc(pc->data_shelf, pc->nshelves*sizeof(char *));
-           FATAL_UNLESS(pc->data_shelf != NULL);
+            tbx_type_realloc(pc->ph_shelf, tbx_ph_t *, pc->nshelves);
+            FATAL_UNLESS(pc->ph_shelf != NULL);
+            tbx_type_realloc(pc->data_shelf, char *, pc->nshelves);
+            FATAL_UNLESS(pc->data_shelf != NULL);
 
             log_printf(10, "release_pigeon_coop_hole: pc=%s after free shelves.  nshelves=%d nused=%d\n", pc->name, pc->nshelves, pc->nused);
             tbx_log_flush();
@@ -229,9 +229,9 @@ tbx_pch_t tbx_pch_reserve(tbx_pc_t *pc)
 
     //** No free slots so have to grow the coop by adding a shelf **
     pc->nshelves++;
-    pc->ph_shelf = (tbx_ph_t **)realloc(pc->ph_shelf, pc->nshelves*sizeof(tbx_ph_t *));
+    tbx_type_realloc(pc->ph_shelf, tbx_ph_t *, pc->nshelves);
     FATAL_UNLESS(pc->ph_shelf != NULL);
-    pc->data_shelf = realloc(pc->data_shelf, pc->nshelves*sizeof(char *));
+    tbx_type_realloc(pc->data_shelf, char *, pc->nshelves);
     FATAL_UNLESS(pc->data_shelf != NULL);
 
     i = pc->nshelves-1;
