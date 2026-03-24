@@ -1432,7 +1432,7 @@ int osrc_store_val(gop_mq_stream_t *mqs, int src_size, void **dest, int *v_size)
         }
     } else {
         if (dest && (src_size > 0)) {
-            *dest = malloc(src_size+1);
+            tbx_type_malloc(*dest, char, src_size+1);
             buf = *dest;
             buf[src_size] = 0;  //** IF have the space NULL terminate
         } else {

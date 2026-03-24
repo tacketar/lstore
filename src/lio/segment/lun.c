@@ -177,7 +177,7 @@ void lun_global_state_create(int n_max_retry)
     if (lun_global != NULL) return;  //** Kick out if already set up
 
     n = sizeof(lun_global_state_t) + n_max_retry*sizeof(lun_retry_t);
-    lg = malloc(n);
+    tbx_malloc(lg, n);
     memset(lg, 0, n);
 
     assert_result(tbx_apr_pool_create(&(lg->mpool), NULL), APR_SUCCESS);

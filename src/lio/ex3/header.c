@@ -22,6 +22,7 @@
 #include <string.h>
 #include <tbx/assert_result.h>
 #include <tbx/list.h>
+#include <tbx/type_malloc.h>
 
 #include "ex3/header.h"
 
@@ -52,8 +53,9 @@ void ex_header_release(lio_ex_header_t *h)
 
 lio_ex_header_t *ex_header_create()
 {
-    lio_ex_header_t *eh = (lio_ex_header_t *)malloc(sizeof(lio_ex_header_t));
+    lio_ex_header_t *eh;
 
+    tbx_type_malloc_clear(eh, lio_ex_header_t, 1);
     return(eh);
 }
 

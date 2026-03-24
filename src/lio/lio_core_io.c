@@ -1456,7 +1456,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             if (bsize < lc->stream_buffer_min_size) bsize = lc->stream_buffer_min_size;
         }
         n = sizeof(stream_buf_t) + bsize;
-        fh->stream = malloc(n);
+        tbx_malloc(fh->stream, n);
         memset(fh->stream, 0, n);
         fh->stream->offset = 0;
         fh->stream->offset_end = -1;

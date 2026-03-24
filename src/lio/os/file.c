@@ -1260,7 +1260,7 @@ int osf_store_val(void *src, int src_size, void **dest, int *v_size)
         *v_size = src_size;
         return(0);
     } else {
-        *dest = malloc(src_size+1);
+        tbx_type_malloc(*dest, char, src_size+1);
         buf = *dest;
         buf[src_size] = 0;  //** IF have the space NULL terminate
     }
@@ -3536,7 +3536,7 @@ int fast_get_attr(lio_object_service_fn_t *os, osfile_fd_t *ofd, char *attr, voi
             *v_size = (n > (-*v_size)) ? -*v_size : n;
             bsize = *v_size + 1;
             log_printf(15, " adjusting v_size=%d n=%d\n", *v_size, n);
-            *val = malloc(bsize);
+            tbx_type_malloc(*val, char, bsize);
          }
     } else {
         bsize = *v_size;
@@ -5716,7 +5716,7 @@ int osf_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
             *v_size = (n > (-*v_size)) ? -*v_size : n;
             bsize = *v_size + 1;
             log_printf(15, " adjusting v_size=%d n=%d\n", *v_size, n);
-            *val = malloc(bsize);
+            tbx_type_malloc(*val, char, bsize);
          }
     } else {
         bsize = *v_size;
@@ -8254,7 +8254,7 @@ void *rebalance_thread(apr_thread_t *th, void *data)
 
     //** Make the shard rebalance info
     i = sizeof(shard_rebalance_t) + (osf->n_shard_prefix+1)*sizeof(shard_stats_t);
-    rinfo = malloc(i);
+    tbx_malloc(rinfo, i);
     memset(rinfo, 0, i);
     shard_usage = rinfo->shard;
 

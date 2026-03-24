@@ -655,7 +655,7 @@ void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, cha
     n_mcap = strlen(mcap);
     n = sizeof(rid_prep_key_t) + n_rid + n_mcap + 2;
     if (n > nbuf) {
-        rkey = malloc(n);
+        tbx_malloc(rkey, n);
     } else {
         rkey = (rid_prep_key_t *)rbuf;
     }
@@ -727,7 +727,7 @@ void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int
     //** Form the strucure
     fname_len = strlen(fname);
     n_v = sizeof(inode_value_t) + fname_len+1 + n;
-    v = malloc(n_v);
+    tbx_malloc(v, n_v);
     v->n_allocs = n_allocs;
     v->n_rids = n_rids;
     v->fname_len = fname_len;

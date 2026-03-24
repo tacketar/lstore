@@ -645,8 +645,8 @@ retry:
                                 n_iov++;
                                 if (n_iov >= max_iov) {
                                     max_iov = 1.5 * max_iov + 1;
-                                    ex_iov = (ex_tbx_iovec_t *)realloc(ex_iov, sizeof(ex_tbx_iovec_t) * max_iov);
-                                    iov = (tbx_iovec_t *)realloc(iov, sizeof(tbx_iovec_t) * max_iov);
+                                    tbx_type_realloc(ex_iov, ex_tbx_iovec_t, max_iov);
+                                    tbx_type_realloc(iov, tbx_iovec_t, max_iov);
                                 }
                             }
                         }
@@ -1577,8 +1577,8 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                     straddle_used++;
                     if (straddle_used >= straddle_size) {
                         straddle_size = 2*straddle_size + 10;
-                        straddle_offset = realloc(straddle_offset, sizeof(ex_off_t) * straddle_size);
-                        straddle_buffer = realloc(straddle_buffer, sizeof(char *) * straddle_size);
+                        tbx_type_realloc(straddle_offset, ex_off_t, straddle_size);
+                        tbx_type_realloc(straddle_buffer, char *, straddle_size);
                     }
 
                     tbx_type_malloc(straddle_ptr, char, s->data_size);
@@ -1830,8 +1830,8 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                     straddle_used++;
                     if (straddle_used >= straddle_size) {
                         straddle_size = 2*straddle_size + 10;
-                        straddle_offset = realloc(straddle_offset, sizeof(ex_off_t) * straddle_size);
-                        straddle_buffer = realloc(straddle_buffer, sizeof(char *) * straddle_size);
+                        tbx_type_realloc(straddle_offset, ex_off_t, straddle_size);
+                        tbx_type_realloc(straddle_buffer, char *, straddle_size);
                     }
 
                     tbx_type_malloc(straddle_ptr, char, s->data_size);

@@ -346,7 +346,8 @@ void warm_rid_delete(warm_prep_db_t *wdb, char *rid, clog_obj_info_t *obj)
     it = rocksdb_create_iterator(p->rid->db, p->rid->ropt);
     nr = strlen(rid);
     n = sizeof(rid_prep_key_t) + nr + 1 + 1;
-    rkey_dummy = malloc(n); memset(rkey_dummy, 0, n);
+    tbx_malloc(rkey_dummy, n); memset(rkey_dummy, 0, n);
+
     rkey_dummy->id = obj->inode;
     rkey_dummy->rid_len = nr;
     memcpy(rkey_dummy->strings, rid, nr+1);

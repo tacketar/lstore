@@ -1614,7 +1614,7 @@ void lfs_add_account_mappings(path_acl_context_t *ctx, path_acl_t *acl)
 
     if (n_gid > n_old) { //** Added some entries so add them
         if (acl->gid_map) free(acl->gid_map);
-        acl->gid_map = malloc(sizeof(fs_acl_list_t) + n_gid*sizeof(fs_acl_t));
+        tbx_malloc(acl->gid_map, sizeof(fs_acl_list_t) + n_gid*sizeof(fs_acl_t));
         memcpy(acl->gid_map->id, gid_list, sizeof(fs_acl_t)*n_gid);
         acl->gid_map->n = n_gid;
     }
@@ -1766,13 +1766,13 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 
                 acl->lfs_uid = lfs_uid;
                 if (n_uid > 0) {
-                    acl->uid_map = malloc(sizeof(fs_acl_list_t) + n_uid * sizeof(fs_acl_t));
+                    tbx_malloc(acl->uid_map, sizeof(fs_acl_list_t) + n_uid * sizeof(fs_acl_t));
                     acl->uid_map->n = n_uid;
                     memcpy(acl->uid_map->id, uid_list, sizeof(fs_acl_t)*n_uid);
                 }
                 acl->lfs_gid = lfs_gid;
                 if (n_gid > 0) {
-                    acl->gid_map = malloc(sizeof(fs_acl_list_t) + n_gid * sizeof(fs_acl_t));
+                    tbx_malloc(acl->gid_map, sizeof(fs_acl_list_t) + n_gid * sizeof(fs_acl_t));
                     acl->gid_map->n = n_gid;
                     memcpy(acl->gid_map->id, gid_list, sizeof(fs_acl_t)*n_gid);
                 }

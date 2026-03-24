@@ -485,7 +485,7 @@ lio_cache_page_t *_amp_free_page_fetch(lio_cache_t *c, ex_off_t page_size)
         } else if (p->offset < page_size) {
             left -= p->offset;
             if (left < 0) {
-                p->data[0].ptr = realloc(p->data[0].ptr, page_size);
+                tbx_type_realloc(p->data[0].ptr, char, page_size);
                 return(p);
             } else {
                 lp = (lio_page_amp_t *)p->priv;
@@ -495,7 +495,7 @@ lio_cache_page_t *_amp_free_page_fetch(lio_cache_t *c, ex_off_t page_size)
                 TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             }
         } else if (p->offset > page_size) {
-            p->data[0].ptr = realloc(p->data[0].ptr, page_size);
+            tbx_type_realloc(p->data[0].ptr, char, page_size);
             return(p);
         }
     }

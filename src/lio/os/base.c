@@ -113,7 +113,7 @@ char *lio_os_glob2regex(const char *glob)
 
         if (j>= n_regex-2) {
             n_regex *= 2;
-            reg = realloc(reg, n_regex);
+            tbx_type_realloc(reg, char, n_regex);
         }
 
     }
@@ -122,7 +122,8 @@ char *lio_os_glob2regex(const char *glob)
     reg[j+1] = 0;
     j += 2;
 
-    return(realloc(reg, j));
+    tbx_type_realloc(reg, char, j);
+    return(reg);
 }
 
 //***********************************************************************
@@ -438,7 +439,7 @@ again:
         if (i == 0) {
             *dir = strdup("/");
         } else {
-            *dir = malloc(i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
+            tbx_type_malloc(*dir, char, i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
         }
     }
 

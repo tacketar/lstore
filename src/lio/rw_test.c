@@ -489,7 +489,7 @@ void generate_task_list()
     double d;
 
     max_size = inc_size;
-    base_tile = (tile_t *)malloc(sizeof(tile_t)*max_size);
+    tbx_type_malloc(base_tile, tile_t, max_size);
 
     dm2 = (rwc.delta_size > 1) ? rwc.delta_size / 2 : 1;
     last_offset = rwc.file_size % rwc.buffer_size;
@@ -500,7 +500,7 @@ void generate_task_list()
     do {
         if (i >= max_size) {
             max_size += inc_size;
-            base_tile = (tile_t *)realloc(base_tile, sizeof(tile_t)*max_size);
+            tbx_type_realloc(base_tile, tile_t, max_size);
         }
         base_tile[i].offset = offset;
         if (rwc.min_size == rwc.max_size) {
@@ -546,7 +546,7 @@ log_printf(1, "final len=" XOT "\n", len);
     }
 
     //** Adjust the size of the base_tile array to the correct size;
-    base_tile = (tile_t *)realloc(base_tile, sizeof(tile_t)*tile_size);
+    tbx_type_realloc(base_tile, tile_t, tile_size);
 
     //** Make the actual buffer and fill it with random data
     //** Make the buffer. This makes sure it's page aligned for both R and W buffers

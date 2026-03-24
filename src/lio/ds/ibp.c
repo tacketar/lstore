@@ -439,9 +439,9 @@ int ds_ibp_set_attr(lio_data_service_fn_t *arg, data_attr_t *dsa, int key, void 
 
 data_cap_set_t *ds_ibp_new_probe(lio_data_service_fn_t *arg)
 {
-    void *p = malloc(sizeof(ibp_capstatus_t));
+    void *p;
 
-    memset(p, 0, sizeof(ibp_capstatus_t));
+    tbx_type_malloc_clear(p, ibp_capstatus_t, 1);
 
     return(p);
 }

@@ -28,6 +28,7 @@
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
 #include <tbx/io.h>
+#include <tbx/type_malloc.h>
 
 #include "erasure_tools.h"
 #include "raid4.h"
@@ -369,22 +370,13 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
 
     //** Determine the buffersize
     buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-//    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-//    if (buffer_size == 0) {
-//        buffer_size = 10*1024*1024;
-//    }
-
-//    j = buffer_size / i;
-//    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
-//    buffer_size = j * i;
     block_size = buffer_size/(plan->data_strips + plan->parity_strips);
 
-printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
     //** allocate the buffer space
-    ptr = (char **)malloc(sizeof(char *)*(plan->data_strips + plan->parity_strips));
+    tbx_type_malloc(ptr, char *, plan->data_strips + plan->parity_strips);
     FATAL_UNLESS(ptr != NULL);
 
-    buffer = (char *)malloc(sizeof(char)*buffer_size);
+    tbx_type_malloc(buffer, char, buffer_size);
     FATAL_UNLESS(buffer != NULL);
 
     for (i=0; i < (plan->data_strips+plan->parity_strips); i++) {
@@ -398,15 +390,7 @@ printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, bl
     ppos = poffset;
     rpos = 0;
     log_printf(15, "et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
-//    while (rpos < plan->strip_size) {
-//int loop = 0;
     while (apos < file_size) {
-//printf("loop=%d fsize=%lld apos=%lld ppos=%lld\n", loop, file_size, apos, ppos);
-//loop++;
-
-        //** Adjust the block size if needed
-//--        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
-//        bsize = ((rpos+block_size) > file_size) ? file_size - rpos : block_size;
         bsize = block_size;
         log_printf(15, "et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
 
@@ -494,16 +478,15 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
 {
     FILE *fd_file, *fd_parity;
     char **ptr, **data, **parity, *buffer;
-    int i, block_size, bsize, msize, nbytes;
+    int i, block_size, bsize, nbytes;
+//FIXME  Place this on the stack????
 //    int missing[plan->data_strips+plan->parity_strips];
 //    int *missing_data, *missing_parity;
     char *missing, *missing_data, *missing_parity;
     long long int rpos, apos, bpos, ppos;
 
     //** Make the missing tables
-    msize = sizeof(char) * (plan->data_strips+plan->parity_strips);
-    missing = malloc(msize);
-    memset(missing, 0, msize);
+    tbx_type_malloc_clear(missing, char, plan->data_strips+plan->parity_strips);
     missing_data = missing;
     missing_parity = &(missing[plan->data_strips]);
     i = 0;
@@ -531,25 +514,13 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
 
     //** Determine the buffersize
     buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-
-//    i = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
-//    if (buffer_size == 0) {
-//        buffer_size = 10*1024*1024;
-//    }
-
-//    j = buffer_size / i;
-//    if (j == 0) j = 1;  //** Buffer specified is too small so force it to be bigger
-//    buffer_size = j * i;
-//    block_size = buffer_size/(plan->data_strips + plan->parity_strips);
     block_size = buffer_size/(plan->data_strips + plan->parity_strips);
 
-printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
-
     //** allocate the buffer space
-    ptr = (char **)malloc(sizeof(char *)*(plan->data_strips + plan->parity_strips));
+    tbx_type_malloc(ptr, char *, plan->data_strips + plan->parity_strips);
     FATAL_UNLESS(ptr != NULL);
 
-    buffer = (char *)malloc(sizeof(char)*buffer_size);
+    tbx_type_malloc(buffer, char, buffer_size);
     FATAL_UNLESS(buffer != NULL);
 
     for (i=0; i < (plan->data_strips+plan->parity_strips); i++) {
@@ -563,13 +534,7 @@ printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, bl
     ppos = poffset;
     rpos = 0;
     log_printf(1, "et_decode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
-//    while (rpos < plan->strip_size) {
-//int loop = 0;
     while (apos < fsize) {
-//printf("loop=%d fsize=%lld apos=%lld ppos=%lld\n", loop, fsize, apos, ppos);
-//loop++;
-        //** Adjust the block size if needed
-//        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
         bsize = block_size;
 
         log_printf(1, "et_decode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
@@ -633,14 +598,15 @@ printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, bl
 lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
                             int data_strips, int parity_strips, int w, int packet_size, int base_unit)
 {
+    lio_erasure_plan_t *plan;
 
     if (method >= N_JE_METHODS) {
         printf("et_new_plan: Invalid method!  method=%d\n", method);
         return(NULL);
     }
 
-    lio_erasure_plan_t *plan = (lio_erasure_plan_t *)malloc(sizeof(lio_erasure_plan_t));
-   FATAL_UNLESS(plan != NULL);
+    tbx_type_malloc(plan, lio_erasure_plan_t, 1);
+    FATAL_UNLESS(plan != NULL);
 
     plan->method = method;
     plan->strip_size = strip_size;

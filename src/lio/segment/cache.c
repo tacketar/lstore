@@ -1068,7 +1068,7 @@ void *cache_cond_new(void *arg, int size)
 
     TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_CACHE_COND_PC].submitted);
     i = sizeof(lio_cache_cond_t)*size + sizeof(apr_pool_t *);
-    shelf = malloc(i);
+    tbx_malloc(shelf, i);
     FATAL_UNLESS(shelf != NULL);
     memset(shelf, 0, i);
 

@@ -703,7 +703,7 @@ int lio_path_wildcard_auto_append(lio_path_tuple_t *tuple)
 
     n = strlen(tuple->path);
     if (tuple->path[n-1] == '/') {
-        tuple->path = realloc(tuple->path, n+1+1);
+        tbx_type_realloc(tuple->path, char, n+1+1);
         tuple->path[n] = '*';
         tuple->path[n+1] = 0;
 

@@ -410,7 +410,7 @@ os_inode_lut_rec_t *_inode_lut_rec_new(ex_id_t inode, ex_id_t parent_inode, int 
     int n;
 
     n = sizeof(os_inode_lut_rec_t) + len + 1;
-    r = (os_inode_lut_rec_t *)malloc(n);
+    tbx_malloc(r, n);
     r->epoch = 0;  ///** this needs to be filled in by the calling routine
     r->hardlink_list = NULL;
     r->r.inode = inode;
@@ -433,7 +433,7 @@ os_inode_dentry_t *_dentry_new(ex_id_t parent_inode, int len, const char *name)
     int n;
 
     n = sizeof(os_inode_dentry_t) + len + 1 + sizeof(os_inode_dentry_t *);
-    de = (os_inode_dentry_t *)malloc(n);
+    tbx_malloc(de, n);
     de->parent_inode = parent_inode;
     de->len = len;
     strncpy(de->dentry, name, len+1);

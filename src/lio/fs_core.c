@@ -2383,7 +2383,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
         n = strlen(key);
         if ((n+bpos) > bufsize) {
             bufsize = bufsize + n + 10*1024;
-            buf = realloc(buf, bufsize);
+            tbx_type_realloc(buf, char, bufsize);
         }
 
         log_printf(15, "adding key=%s bpos=%d\n", key, bpos);
