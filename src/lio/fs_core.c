@@ -245,15 +245,8 @@ static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READ
                                  "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
                                  "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
 
-
 typedef struct {
-    tbx_atomic_int_t submitted;
-    tbx_atomic_int_t finished;
-    tbx_atomic_int_t errors;
-} fs_op_stat_t;
-
-typedef struct {
-    fs_op_stat_t op[FS_SLOT_SIZE];
+    tbx_stats_t op[FS_SLOT_SIZE];
 } fs_stats_t;
 
 struct lio_fs_t {
@@ -690,11 +683,11 @@ int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     FS_MON_OBJ_CREATE("FS_STAT: fname=%s", fname);
 
     //** Incr the counter
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_STAT].submitted);
 
     //** If we can't access it flag it as complete w/o an error and return
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) == 0) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_STAT].finished);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES/ENOENT");
         if (lio_fs_exists(fs, fname) > 0) return(-EACCES);
         return(-ENOENT);
@@ -738,8 +731,8 @@ int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
             apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
         }
 
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_STAT].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_STAT].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
         return(-ENOENT);
     }
@@ -752,7 +745,7 @@ int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
         apr_thread_mutex_unlock(fs->lc->open_close_lock[ocl_slot]);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_STAT].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_STAT].finished);
 
     FS_MON_OBJ_DESTROY_MESSAGE("size=" XOT, stat->st_size);
 
@@ -855,12 +848,12 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
         free(fname);
 
-        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_BG_READDIR].submitted);
+        TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_BG_READDIR].submitted);
         if (tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK) != 0) { //** Got an error which means we're got an finished command
             if (de.dentry) free(de.dentry);
             if (de.symlink) free(de.symlink);
         }
-        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_BG_READDIR].finished);
+        TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_BG_READDIR].finished);
     }
 
     tbx_que_set_finished(dit->pipe);
@@ -879,7 +872,7 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 
     if (dit == NULL) return(-EBADF);
 
-    tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_CLOSEDIR].submitted);
+    TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_CLOSEDIR].submitted);
 
     if (dit->worker_thread) {  //** Tell the worker to stop and wait for it to complete
         tbx_que_set_finished(dit->pipe);  //** Make sure it's flaged as done
@@ -897,7 +890,7 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 
     tbx_monitor_obj_destroy(&(dit->mo));
 
-    tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_CLOSEDIR].finished);
+    TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_CLOSEDIR].finished);
 
     if (dit->dot_path) free(dit->dot_path);
     if (dit->dotdot_path) free(dit->dotdot_path);
@@ -922,7 +915,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     int i;
 
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) != 2) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].errors);
         return(NULL);
     }
 
@@ -945,19 +938,19 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     if (dit->it == NULL) {
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         lio_fs_closedir(dit);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].errors);
         return(NULL);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].submitted);
 
     dit->state = 0;
 
     //** Add "."
     dit->dot_path = strdup(fname);
     if (lio_fs_stat_full(fs, ug, fname, &(dit->dot_de.stat), &(dit->dot_de.ftype), NULL, 1, 0) != 0) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].finished);
         lio_fs_closedir(dit);
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         return(NULL);
@@ -977,8 +970,8 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     if (lio_fs_stat_full(fs, ug, dit->dotdot_path, &(dit->dotdot_de.stat), &(dit->dotdot_de.ftype), NULL, 1, 0) != 0) {
         lio_fs_closedir(dit);
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].errors);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].finished);
         return(NULL);
     }
 
@@ -987,7 +980,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     dit->pipe = tbx_que_create(fs->readdir_prefetch_size, sizeof(fs_dentry_stat_t));
     tbx_thread_create_assert(&(dit->worker_thread), NULL, fs_readdir_thread, (void *)dit, dit->mpool);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_OPENDIR].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].finished);
     tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
 
     return(dit);
@@ -1005,7 +998,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
         return(-EBADF);
     }
 
-    tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_READDIR].submitted);
+    TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_READDIR].submitted);
 
     //** See if we are dealing with "." or ".."
     if (dit->state == 0) {
@@ -1021,7 +1014,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
     tbx_monitor_obj_message(&(dit->mo), "FS_READDIR");
     dit->state++;
     if (dit->state <= 2) {  //** See if we have an early kickout
-        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_READDIR].finished);
+        TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_READDIR].finished);
         return(0);
     }
     //** If we made it here then grab the next file and look it up.
@@ -1034,12 +1027,12 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
             free(de.symlink);
         }
         *dentry = de.dentry;
-        tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_READDIR].finished);
+        TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_READDIR].finished);
 
         return(0);
     }
 
-    tbx_atomic_inc(dit->fs->stats.op[FS_SLOT_READDIR].finished);
+    TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_READDIR].finished);
 
     return(1);
 }
@@ -1127,13 +1120,13 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     n = lio_fs_exists(fs, fname);
     if (n != 0) {  //** File already exists
         log_printf(15, "File already exist! fname=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EEXIST");
         return(-EEXIST);
     }
 
     if (fs_osaz_object_create(fs, ug, fname) != 1) {
-        tbx_atomic_inc(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
         return(-EACCES);
     }
@@ -1152,7 +1145,7 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
         a_array[0] = (char *)attr;
         n_extra = 1;
     }
-    tbx_atomic_inc(fs->stats.op[slot].submitted);
+    TBX_STATS_INC(fs->stats.op[slot].submitted);
     if (mkpath == 0) {
         status = gop_sync_exec_status(lio_create_gop(fs->lc, fs->lc->creds, (char *)fname, os_mode, NULL, fs->id, (const char **)a_array, (const char **)v_array, v_size, n_extra));
     } else {
@@ -1160,8 +1153,8 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     }
     if (status.op_status != OP_STATE_SUCCESS) {
         log_printf(1, "Error creating object! fname=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[slot].finished);
-        tbx_atomic_inc(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].finished);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
         if (strlen(fname) > 3900) {  //** Probably a path length issue
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENAMETOOLONG");
             return(-ENAMETOOLONG);
@@ -1180,14 +1173,14 @@ int lio_fs_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     if (exec_mode) {
         status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
         if (status.op_status != OP_STATE_SUCCESS) {
-            tbx_atomic_inc(fs->stats.op[slot].finished);
-            tbx_atomic_inc(fs->stats.op[slot].errors);
+            TBX_STATS_INC(fs->stats.op[slot].finished);
+            TBX_STATS_INC(fs->stats.op[slot].errors);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES-EXEC");
             return(-EACCES);
         }
     }
 
-    tbx_atomic_inc(fs->stats.op[slot].finished);
+    TBX_STATS_INC(fs->stats.op[slot].finished);
     FS_MON_OBJ_DESTROY();
 
     return(err);
@@ -1330,18 +1323,18 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
     //** Make sure we can access it
     if (!fs_osaz_object_remove(fs, ug, fname)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
         return(-EACCES);
     }
 
     //** Check if it's open.  If so do a delayed removal
-    tbx_atomic_inc(fs->stats.op[slot].submitted);
+    TBX_STATS_INC(fs->stats.op[slot].submitted);
     fs_lock(fs);
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
     if (fop != NULL) {
-        tbx_atomic_inc(fs->stats.op[slot].errors);
-        tbx_atomic_inc(fs->stats.op[slot].finished);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].finished);
         fop->remove_on_close = 1;
         fs_unlock(fs);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("In use. Remove on close");
@@ -1352,13 +1345,13 @@ int lio_fs_object_remove(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fna
 
     err = fs_actual_remove(fs, ug, fname, ftype);
     if (err) {
-        tbx_atomic_inc(fs->stats.op[slot].errors);
+        TBX_STATS_INC(fs->stats.op[slot].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("error=%d", err);
     } else {
         FS_MON_OBJ_DESTROY();
     }
 
-    tbx_atomic_inc(fs->stats.op[slot].finished);
+    TBX_STATS_INC(fs->stats.op[slot].finished);
 
     return(err);
 }
@@ -1402,7 +1395,7 @@ int lio_fs_flock(lio_fs_t *fs, lio_fd_t *fd, int lock_type)
         rw_lock = OS_MODE_UNLOCK;
         i = 2;
     } else {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FLOCK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FLOCK].errors);
         FS_MON_OBJ_CREATE("FS_FLOCK: fname=%s Invalid type:%d", fd->path, lock_type);
         FS_MON_OBJ_DESTROY();
         log_printf(0, "ERROR: Invalid lock type:%d fname=%s\n", lock_type, fd->path);
@@ -1417,12 +1410,12 @@ int lio_fs_flock(lio_fs_t *fs, lio_fd_t *fd, int lock_type)
 
     FS_MON_OBJ_CREATE("FS_FLOCK: fname=%s type:%s", fd->path, type[i]);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FLOCK].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FLOCK].submitted);
     status = gop_sync_exec_status(lio_flock_gop(fd, rw_lock, fs->id, fs->user_locks_max_wait));
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FLOCK].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FLOCK].finished);
     err = 0;
     if (status.op_status == OP_STATE_FAILURE) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FLOCK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FLOCK].errors);
         if (lock_type & LOCK_NB) {
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EWOULDBLOCK");
             err = -EWOULDBLOCK;
@@ -1455,7 +1448,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     if (lflags & LIO_CREATE_MODE) {
         if (!fs_osaz_object_create(fs, ug, fname)) {
             log_printf(0, "Invalid access for create: path=%s\n", fname);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].errors);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCESS: CREATE");
             errno = EACCES;
             return(NULL);  //EACCESS
@@ -1464,7 +1457,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
         os_mode = (lflags & LIO_WRITE_MODE) ? OS_MODE_WRITE_IMMEDIATE : OS_MODE_READ_IMMEDIATE;
         if (!fs_osaz_object_access(fs, ug, fname, os_mode)) {
             log_printf(0, "Invalid access: path=%s\n", fname);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].errors);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCESS");
             errno = EACCES;
             return(NULL);  //EACCESS
@@ -1478,13 +1471,13 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     }
 
     //** Ok we can access the file if we made it here
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].submitted);
     gop_op_status_t status = gop_sync_exec_status(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, lflags, fs->id, &fd, fs->internal_locks_max_wait));
     log_printf(2, "fname=%s fd=%p\n", fname, fd);
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s errno=%d\n", fname, status.error_code);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].finished);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EREMOTEIO: open failed errno=%d", status.error_code);
         errno = EREMOTEIO;
         return(NULL);  //EREMOTEIO
@@ -1506,7 +1499,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     //** See if we have WQ enabled
     if (fs->n_merge > 0) lio_wq_enable(fd, fs->n_merge);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FOPEN].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FOPEN].finished);
     FS_MON_OBJ_DESTROY();
     errno = 0;
     return(fd);
@@ -1524,7 +1517,7 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
     remove_on_close = 0;
 
     FS_MON_OBJ_CREATE("FS_CLOSE: fname=%s", fd->path);
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FCLOSE].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FCLOSE].submitted);
 
     //** We lock overthe whole close process to make sure an immediate stat call
     //** doesn't get stale information.
@@ -1552,13 +1545,13 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
 
     if (err != OP_STATE_SUCCESS) {
         log_printf(0, "Failed closing file!\n");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FCLOSE].errors);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FCLOSE].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FCLOSE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FCLOSE].finished);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EREMOTEIO");
         return(-EREMOTEIO);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FCLOSE].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FCLOSE].finished);
     FS_MON_OBJ_DESTROY();
     return(0);
 }
@@ -1619,13 +1612,13 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     now = apr_time_now();
 
     //** Do the read op
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, size);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, size);
     nbytes = lio_read(fd, buf, size, off, fs->rw_hints);
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, size);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, size);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
     fd->tally_dt[0] += dti;
 
     dt = apr_time_now() - now;
@@ -1654,13 +1647,13 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     now = apr_time_now();
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, nbytes);
     n = lio_readv(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, nbytes);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
     fd->tally_dt[0] += dti;
 
     ret = (n == nbytes) ? nbytes : 0;
@@ -1696,13 +1689,13 @@ int lio_fs_read_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex_
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
     now = apr_time_now();
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, iov_nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].submitted, iov_nbytes);
     err = gop_sync_exec(lio_read_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, iov_nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FREAD_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, iov_nbytes);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
     fd->tally_dt[0] += dti;
 
     FS_MON_OBJ_DESTROY();
@@ -1740,13 +1733,13 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
     now = apr_time_now();
 
     //** Do the write op
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, size);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, size);
     nbytes = lio_write(fd, (char *)buf, size, off, fs->rw_hints);
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, size);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, size);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
     fd->tally_dt[1] += dti;
 
     dt = apr_time_now() - now;
@@ -1786,13 +1779,13 @@ ssize_t lio_fs_writev(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int i
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
     now = apr_time_now();
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, nbytes);
     n = lio_writev(fd, (struct iovec *)iov, iovcnt, nbytes, offset, NULL);
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, nbytes);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
     fd->tally_dt[1] += dti;
 
     FS_MON_OBJ_DESTROY();
@@ -1819,13 +1812,13 @@ int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex
     tbx_tbuf_vec(&tbuf, iov_nbytes, iovcnt, (struct iovec *)iov);
 
     now = apr_time_now();
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, iov_nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].submitted);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].submitted, iov_nbytes);
     err = gop_sync_exec(lio_write_ex_gop(fd, n_ex_iov, ex_iov, &tbuf, iov_off, NULL));
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
-    tbx_atomic_add(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, iov_nbytes);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FWRITE_OPS].finished);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, iov_nbytes);
     dti = apr_time_now() - now;
-    tbx_atomic_add(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
     fd->tally_dt[1] += dti;
 
     FS_MON_OBJ_DESTROY();
@@ -1854,15 +1847,15 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
     FS_MON_OBJ_CREATE("FS_FLUSH");
     tbx_monitor_obj_reference(&mo, &(fd->fh->mo));
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FLUSH].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FLUSH].submitted);
     err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_FLUSH].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_FLUSH].finished);
     fd->tally_dt[2] += (apr_time_now() - now);
     fd->tally_ops[2]++;
 
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EIO");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_FLUSH].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_FLUSH].errors);
         return(-EIO);
     }
 
@@ -1930,13 +1923,13 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
 
     //** Make sure we can access it
     if (!(fs_osaz_object_remove(fs, ug, oldname) && fs_osaz_object_create(fs, ug, newname))) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RENAME].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
         return(-EACCES);
     }
 
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_RENAME].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].submitted);
     fs_lock(fs);
     fop = apr_hash_get(fs->open_files, oldname, APR_HASH_KEY_STRING);
     if (fop) {  //** Got an open file so need to mve the entry there as well.
@@ -1968,12 +1961,12 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     //** Do the move
     status = gop_sync_exec_status(lio_move_object_gop(fs->lc, fs->lc->creds, (char *)oldname, (char *)newname));
     if (status.op_status != OP_STATE_SUCCESS) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RENAME].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ERROR");
         return((status.error_code != 0) ? -status.error_code : -EREMOTEIO);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_RENAME].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].finished);
     FS_MON_OBJ_DESTROY();
     return(0);
 }
@@ -2233,16 +2226,16 @@ int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, o
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
         return(-EACCES);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].submitted);
     gop_sync_exec(lio_open_gop(fs->lc, fs->lc->creds, (char *)fname, LIO_RW_MODE, fs->id, &fd, 60));
     if (fd == NULL) {
         log_printf(0, "Failed opening file!  path=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EIO: open");
         return(-EIO);
     }
@@ -2250,17 +2243,17 @@ int lio_fs_truncate(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, o
     result = 0;
     if (gop_sync_exec(lio_truncate_gop(fd, new_size)) != OP_STATE_SUCCESS) {
         log_printf(0, "Failed truncating file!  path=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
         result = -EIO;
     }
 
     if (gop_sync_exec(lio_close_gop(fd)) != OP_STATE_SUCCESS) {
         log_printf(0, "Failed closing file!  path=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
         result = -EIO;
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].finished);
     FS_MON_OBJ_DESTROY();
     return(result);
 }
@@ -2275,23 +2268,23 @@ int lio_fs_ftruncate(lio_fs_t *fs, lio_fd_t *fd, off_t new_size)
 
     if (fd == NULL) {
         log_printf(0, "ERROR: Got a null FS fd handle\n");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
         return(-EBADF);
     }
 
     FS_MON_OBJ_CREATE("FS_FTRUNCATE: fname=%s new_size=" OT, fd->fh->fname, new_size);
 
     if (fd->mode & LIO_WRITE_MODE) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].submitted);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].submitted);
         err = gop_sync_exec(lio_truncate_gop(fd, new_size));
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].finished);
         FS_MON_OBJ_DESTROY();
-        if (err != OP_STATE_SUCCESS) tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+        if (err != OP_STATE_SUCCESS) TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
 
         return((err == OP_STATE_SUCCESS) ? 0 : -EIO);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_TRUNCATE].errors);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_TRUNCATE].errors);
     FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
     return(-EACCES);
 }
@@ -2351,26 +2344,26 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE)) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].errors);
         return(-EACCES);
     }
 
     //** Make an iterator
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].submitted);
     attr_regex = lio_os_path_glob2regex("user.*");
     err = gop_sync_exec(os_open_object(fs->lc->os, fs->lc->creds, (char *)fname, OS_MODE_READ_IMMEDIATE, fs->id, &fd, fs->lc->timeout));
     if (err != OP_STATE_SUCCESS) {
         log_printf(15, "ERROR: opening file: %s err=%d\n", fname, err);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].finished);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
         return(-ENOENT);
     }
     it = os_create_attr_iter(fs->lc->os, fs->lc->creds, fd, attr_regex, 0);
     if (it == NULL) {
         log_printf(15, "ERROR creating iterator for fname=%s\n", fname);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].finished);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].errors);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
         return(-ENOENT);
     }
@@ -2419,7 +2412,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     free(buf);
     TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LISTXATTR].finished);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_LISTXATTR].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].finished);
     FS_MON_OBJ_DESTROY();
 
     return(bpos);
@@ -2662,7 +2655,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     v_size[0] = size;
     FS_MON_OBJ_CREATE("FS_GETXATTR: fname=%s aname=%s", fname, name);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].submitted);
 
     use_instead = NULL;
 
@@ -2671,13 +2664,13 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
             ftype = lio_fs_exists(fs, (char *)fname);
             if (ftype <= 0) {
                 log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                 return(-ENODATA);
             }
             err = osaz_get_acl(fs->osaz, fs->lc->creds, NULL, NULL, fname, ftype, buf, size, NULL, NULL, NULL, 0, &use_instead);
             if (use_instead) goto use_alternate;
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             FS_MON_OBJ_DESTROY();
             return(err);
         } else if (fs->enable_nfs4) {   //** We have NFS4 enabled otherwise return the value from the attr
@@ -2685,13 +2678,13 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
                 ftype = lio_fs_exists(fs, (char *)fname);
                 if (ftype <= 0) {
                     log_printf(15, "Failed retrieving inode info!  path=%s\n", fname);
-                    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                    TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                     FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
                     return(-ENODATA);
                 }
                 err = osaz_get_acl(fs->osaz, fs->lc->creds, NULL, NULL, fname, ftype, buf, size, NULL, NULL, NULL, 1, &use_instead);
                 if (use_instead) goto use_alternate;
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 FS_MON_OBJ_DESTROY();
                 return(err);
             }
@@ -2703,12 +2696,12 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         if (strncmp("system.posix_", name, 17) == 0) {
             if ((strcmp("access", name + 17) == 0) || (strcmp("default", name + 17) == 0)) {
                 FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 return(-ENODATA);
             }
        } else if (strcmp("security.selinux", name) == 0) {
           FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
-          tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+          TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
           return(-ENODATA);
        }
     }
@@ -2722,8 +2715,8 @@ use_alternate:
         //** Make sure we can access it
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             return(-EACCES);
         }
         lio_fs_get_tape_attr(fs, ug, fname, &val[0], &v_size[0]);
@@ -2732,15 +2725,15 @@ use_alternate:
         //** Short circuit the Linux Security ACLs we don't support
         if ((strcmp(name, "security.capability") == 0) || (strcmp(name, "security.selinux") == 0)) {
             FS_MON_OBJ_DESTROY_MESSAGE("ENODATA");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             return(-ENODATA);
         }
 
         //** Make sure we can access it
         if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_READ_IMMEDIATE, &filter)) {
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             return(-EACCES);
         }
 
@@ -2760,8 +2753,8 @@ use_alternate:
                     if (status.error_code > 0) { //** Got a hard error so kick out
                         lio_unlock(fs->lc);
                         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EHARD=%d", fs->xattr_error_for_hard_errors);
-                        tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-                        tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                        TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+                        TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                         return(-fs->xattr_error_for_hard_errors);
                     }
                 }
@@ -2788,8 +2781,8 @@ use_alternate:
             if (err != OP_STATE_SUCCESS) {
                 log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOLCK");
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
                 return(-ENOLCK);
             }
         }
@@ -2798,8 +2791,8 @@ already_have_a_lock:
         err = lio_get_multiple_attrs(fs->lc, fs->lc->creds, (char *)fname, fs->id, attrs, (void **)val, v_size, na, 0);
         if (err != OP_STATE_SUCCESS) {
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENODATA");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             return(-ENODATA);
         }
         if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
@@ -2808,8 +2801,8 @@ already_have_a_lock:
             free(val[1]);
             if (v_size[0] > 0) free(val[0]);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EHARD=%d", fs->xattr_error_for_hard_errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
             return(-fs->xattr_error_for_hard_errors);
         }
         fs_osaz_attr_filter_apply(fs, name, OS_MODE_READ_IMMEDIATE, &val[0], &v_size[0], filter);
@@ -2831,7 +2824,7 @@ already_have_a_lock:
     }
 
     FS_MON_OBJ_DESTROY();
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_GETXATTR].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
 
     if (val[0] != NULL) free(val[0]);
     return((v_size[0] == 0) ? err : v_size[0]);
@@ -2858,7 +2851,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     FS_MON_OBJ_CREATE("FS_SETXATTR: fname=%s aname=%s", fname, name);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].submitted);
 
     //** If needed get a read lock
     ofd = NULL;
@@ -2875,8 +2868,8 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOLCK");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
             return(-ENOLCK);
         }
     }
@@ -2890,16 +2883,16 @@ already_have_a_lock:
             if (err == OP_STATE_SUCCESS) {
                 if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EEXIST");
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
                 return(-EEXIST);
             }
         } else if (flags == XATTR_REPLACE) {
             if (err != OP_STATE_SUCCESS) {
                 if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
                 FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOATTR");
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-                tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+                TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
                 return(-ENOATTR);
             }
         }
@@ -2911,20 +2904,20 @@ already_have_a_lock:
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
             if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
             return(-EACCES);
         }
         lio_fs_set_tape_attr(fs, ug, fname, fval, v_size);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
         return(0);
     } else {
         //** Make sure we can access it
         if (!fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
             if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
             return(-EACCES);
         }
 
@@ -2932,15 +2925,15 @@ already_have_a_lock:
         if (err != OP_STATE_SUCCESS) {
             if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
             return(-ENOENT);
         }
     }
 
     if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_SETXATTR].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
     FS_MON_OBJ_DESTROY();
 
     return(0);
@@ -2963,25 +2956,25 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
         (strcmp("system.exnode", name) == 0) ||
         (strcmp("system.exnode.data", name) == 0)) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].errors);
         return(-EACCES);
     }
 
 
     if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {
         FS_MON_OBJ_DESTROY();
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].errors);
         return(0);
     }
 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].errors);
         return(-EACCES);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].submitted);
 
     //** If needed get a lock
     ofd = NULL;
@@ -2998,8 +2991,8 @@ int lio_fs_removexattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "ERROR opening os object fname=%s attr=%s\n", fname, name);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOLCK");
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].errors);
-            tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].finished);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].errors);
+            TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].finished);
             return(-ENOLCK);
         }
     }
@@ -3010,14 +3003,14 @@ already_have_a_lock:
     if (err != OP_STATE_SUCCESS) {
         if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ENOENT");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].errors);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].finished);
         return(-ENOENT);
     }
 
     if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_RMXATTR].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_RMXATTR].finished);
     FS_MON_OBJ_DESTROY();
 
     return(0);
@@ -3036,18 +3029,18 @@ int lio_fs_hardlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname,
     //** Make sure we can access it
     if (!(fs_osaz_object_remove(fs, ug, oldname) && fs_osaz_object_create(fs, ug, newname))) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_HARDLINK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_HARDLINK].errors);
         return(-EACCES);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_HARDLINK].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_HARDLINK].submitted);
 
     //** Now do the hard link
     err = gop_sync_exec(lio_link_gop(fs->lc, fs->lc->creds, 0, (char *)oldname, (char *)newname, fs->id));
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_HARDLINK].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_HARDLINK].finished);
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EIO");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_HARDLINK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_HARDLINK].errors);
         return(-EIO);
     }
 
@@ -3117,17 +3110,17 @@ int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, con
     //** Make sure we can access it
     if (!fs_osaz_object_create(fs, ug, newname)) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_SYMLINK].errors);
         return(-EACCES);
     }
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].submitted);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_SYMLINK].submitted);
 
     //** Now do the sym link
     err = gop_sync_exec(lio_link_gop(fs->lc, fs->lc->creds, 1, (char *)link, (char *)newname, fs->id));
     if (err != OP_STATE_SUCCESS) {
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].errors);
-        tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_SYMLINK].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_SYMLINK].finished);
         if (lio_fs_exists(fs, newname) != 0) {
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EEXIST");
             return(-EEXIST);
@@ -3140,7 +3133,7 @@ int lio_fs_symlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *link, con
     //**See if the OSAZ wants to mangle the UID/GID
     fs_modify_perms(fs, ug, newname, &(ug->uid), &(ug->gid[0]), NULL);
 
-    tbx_atomic_inc(fs->stats.op[FS_SLOT_SYMLINK].finished);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_SYMLINK].finished);
     FS_MON_OBJ_DESTROY();
 
     return(0);
@@ -3219,8 +3212,8 @@ void lio_fs_info_fn(void *arg, FILE *fd)
 {
     lio_fs_t *fs = arg;
     int i;
-    ex_off_t submitted, finished, pending, errors;
-    char ppbuf1[100], ppbuf2[100], ppbuf3[100];
+    ex_off_t submitted, finished;
+    char ppbuf1[100], ppbuf2[100];
 
     fprintf(fd, "---------------------------------- FS config start --------------------------------------------\n");
     fprintf(fd, "[%s]\n", fs->fs_section);
@@ -3247,26 +3240,13 @@ void lio_fs_info_fn(void *arg, FILE *fd)
 
     fprintf(fd, "\n");
     fprintf(fd, "# FS Op stats ------------------------\n");
-    for (i=0; i < FS_SLOT_PRINT; i++) {
-        finished = tbx_atomic_get(fs->stats.op[i].finished);   //** Get the finished 1st so the pending is positive
-        submitted = tbx_atomic_get(fs->stats.op[i].submitted);
-        errors = tbx_atomic_get(fs->stats.op[i].errors);
-        pending = submitted - finished;
-        if ((i == FS_SLOT_FREAD_BYTES) || (i == FS_SLOT_FWRITE_BYTES)) {
-            fprintf(fd, "#    %15s:  submitted=%s finished=%s pending=%s\n", _fs_stat_name[i],
-                tbx_stk_pretty_print_double_with_scale(1024, submitted, ppbuf1),
-                tbx_stk_pretty_print_double_with_scale(1024, finished, ppbuf2),
-                tbx_stk_pretty_print_double_with_scale(1024, pending, ppbuf3));
-        } else {
-            fprintf(fd, "#    %15s:  submitted=" XOT " finished=" XOT " pending=" XOT " errors=" XOT "\n", _fs_stat_name[i], submitted, finished, pending, errors);
-        }
-    }
+    tbx_stats_printf(fd, fs->stats.op, _fs_stat_name, FS_SLOT_PRINT);
 
     //** This is the times
     i = FS_SLOT_IO_DT;
-    submitted = tbx_atomic_get(fs->stats.op[i].submitted);
-    finished = tbx_atomic_get(fs->stats.op[i].finished);
-    fprintf(fd, "#    %15s:  READ=%s  WRITE=%s\n", _fs_stat_name[i], tbx_stk_pretty_print_time(submitted, 1, ppbuf1), tbx_stk_pretty_print_time(finished, 1, ppbuf2));
+    submitted = TBX_STATS_GET(fs->stats.op[i].submitted);
+    finished = TBX_STATS_GET(fs->stats.op[i].finished);
+    fprintf(fd, "    %34s:  READ=%s  WRITE=%s\n", _fs_stat_name[i], tbx_stk_pretty_print_time(submitted, 1, ppbuf1), tbx_stk_pretty_print_time(finished, 1, ppbuf2));
     fprintf(fd, "\n");
 
     //** Print the AuthZ configuration

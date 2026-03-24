@@ -231,7 +231,7 @@ void _amp_free_page_push(lio_cache_t *c, lio_cache_page_t *p)
         } else {  //** No data buffer anywhere so just drop the page and return
             lp = (lio_page_amp_t *)p->priv;
             free(lp);
-            tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
+            TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             return;
         }
     }
@@ -254,7 +254,7 @@ void _amp_free_page_list_destroy(lio_cache_t *c)
         if (p->data[0].ptr) free(p->data[0].ptr);
         if (p->data[1].ptr) free(p->data[1].ptr);
         free(lp);
-        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
+        TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
     }
 
     tbx_stack_free(cp->free_pages, 1);
@@ -398,7 +398,7 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
 
     while (c->shutdown_request == 0) {
         apr_thread_cond_timedwait(cp->dirty_trigger, c->lock, cp->dirty_max_wait);
-        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].submitted);
+        TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].submitted);
         df = cp->max_bytes;
         df = c->stats.dirty_bytes / df;
 
@@ -435,7 +435,7 @@ void *amp_dirty_thread(apr_thread_t *th, void *data)
 
         df = cp->max_bytes;
         df = c->stats.dirty_bytes / df;
-        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].finished);
+        TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_FLUSH_DIRTY_WAKEUP].finished);
 
     }
 
@@ -492,7 +492,7 @@ lio_cache_page_t *_amp_free_page_fetch(lio_cache_t *c, ex_off_t page_size)
                 if (p->data[0].ptr) free(p->data[0].ptr);
                 if (p->data[1].ptr) free(p->data[1].ptr);
                 free(lp);
-                tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
+                TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             }
         } else if (p->offset > page_size) {
             p->data[0].ptr = realloc(p->data[0].ptr, page_size);
@@ -523,7 +523,7 @@ lio_cache_page_t *_amp_new_page(lio_cache_t *c, lio_segment_t *seg)
         p = &(lp->page);
         p->curr_data = &(p->data[0]);
         p->current_index = 0;
-        tbx_atomic_inc(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].submitted);
+        TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].submitted);
         tbx_type_malloc_clear(p->curr_data->ptr, char, s->page_size);
         if (c->coredump_pages == 0) madvise(p->curr_data->ptr, s->page_size, MADV_DONTDUMP);
     }
