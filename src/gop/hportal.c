@@ -390,11 +390,11 @@ void hc_history_destroy(hc_history_t *h)
     int i;
 
     for (i=0; i<h->max_size; i++) {
-        if (h->hc[i].skey) free(h->hc[i].skey);
+        if (h->hc[i].skey) tbx_free(h->hc[i].skey);
     }
 
-    free(h->hc);
-    free(h);
+    tbx_free(h->hc);
+    tbx_free(h);
 }
 
 //************************************************************************
@@ -406,7 +406,7 @@ void hc_history_add(hc_history_t *h, hconn_t *hc)
     hc_history_ele_t *c;
 
     c = &(h->hc[h->slot % h->max_size]);
-    if (c->skey) free(c->skey);
+    if (c->skey) tbx_free(c->skey);
 
     c->skey = tbx_stk_strdup(hc->hp->skey);
     c->ns_id = tbx_ns_getid(hc->ns);
@@ -466,11 +466,11 @@ void retry_history_destroy(retry_history_t *h)
     int i;
 
     for (i=0; i<h->max_size; i++) {
-        if (h->rh[i].skey) free(h->rh[i].skey);
+        if (h->rh[i].skey) tbx_free(h->rh[i].skey);
     }
 
-    free(h->rh);
-    free(h);
+    tbx_free(h->rh);
+    tbx_free(h);
 }
 
 
@@ -483,7 +483,7 @@ void retry_history_add(retry_history_t *h, gop_op_generic_t *gop, hconn_t *hc)
     retry_history_ele_t *r;
 
     r = &(h->rh[h->slot % h->max_size]);
-    if (r->skey) free(r->skey);
+    if (r->skey) tbx_free(r->skey);
 
     r->skey = tbx_stk_strdup(hc->hp->skey);
     r->ns_id = tbx_ns_getid(hc->ns);
@@ -568,7 +568,7 @@ double determine_bandwidths(gop_portal_context_t *hpc, int *n_used, hportal_t **
     if (hp_max) *hp_max = (n>0) ? array[n-1] : NULL;
     if (n_used) *n_used = n;
 
-    free(array);  //** Clean up
+    tbx_free(array);  //** Clean up
     return(total_avg_bw);
 }
 
@@ -1523,7 +1523,7 @@ void hconn_destroy(hconn_t *hc)
     tbx_que_destroy(hc->internal);
     tbx_ns_destroy(hc->ns);
 
-    free(hc);
+    tbx_free(hc);
 }
 
 //************************************************************************
@@ -1543,7 +1543,7 @@ hportal_t *hp_create(gop_portal_context_t *hpc, char *hostport)
     if (h) hp->host = tbx_stk_strdup(h);
 
     hp->port = atoi(bstate);
-    free(hp2);
+    tbx_free(hp2);
     log_printf(15, "hostport: %s host=%s port=%d\n", hostport, hp->host, hp->port);
 
     hp->skey = tbx_stk_strdup(hostport);
@@ -1565,11 +1565,11 @@ void hp_destroy(hportal_t *hp)
 {
     log_printf(10, "CONN_LIST=%d\n", tbx_stack_count(hp->conn_list));
 
-    if (hp->skey) free(hp->skey);
-    if (hp->host) free(hp->host);
+    if (hp->skey) tbx_free(hp->skey);
+    if (hp->host) tbx_free(hp->host);
     tbx_stack_free(hp->conn_list, 0);
     tbx_stack_free(hp->pending, 0);
-    free(hp);
+    tbx_free(hp);
 }
 
 //************************************************************************
@@ -1779,8 +1779,8 @@ void gop_hp_context_destroy(gop_portal_context_t *hpc)
     tbx_apr_pool_destroy(hpc->pool);
 
 submit_only:
-    if (hpc->name) free(hpc->name);
-    free(hpc);
+    if (hpc->name) tbx_free(hpc->name);
+    tbx_free(hpc);
 
     return;
 }

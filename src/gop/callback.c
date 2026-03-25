@@ -18,6 +18,7 @@
 
 #include <stdlib.h>
 #include <tbx/log.h>
+#include <tbx/type_malloc.h>
 
 #include "callback.h"
 
@@ -59,14 +60,11 @@ void callback_destroy(gop_callback_t *root_cb)
 {
     gop_callback_t *cb;
 
-//log_printf(15, "callback_destroy:  START root_cb=%d\n", root_cb);
     while (root_cb != NULL) {
         cb = root_cb;
         root_cb = root_cb->next;
-//log_printf(15, "callback_destroy:  freeing cb=%p\n", cb);
-        free(cb);
+        tbx_free(cb);
     }
-//log_printf(15, "callback_destroy:  END\n");
 }
 
 //*************************************************************

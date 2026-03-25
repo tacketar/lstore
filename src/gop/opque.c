@@ -125,7 +125,7 @@ void gop_control_free(void *arg, int size, void *data)
     //** All the data is in the memory pool
     tbx_apr_pool_destroy(*pool_ptr);
 
-    free(shelf);
+    tbx_free(shelf);
     TBX_STATS_INC(_gop_stats[GOP_STATS_SLOT_GOP_CONTROL].finished);
     return;
 }
@@ -372,7 +372,7 @@ void gop_opque_free(gop_opque_t *opq, int mode)
     unlock_opque(&(opq->qd));  //** Has to be unlocked for gop_generic_free to work cause it also locks it
     gop_generic_free(opque_get_gop(opq), mode);
 
-    if (mode == OP_DESTROY) free(opq);
+    if (mode == OP_DESTROY) tbx_free(opq);
 }
 
 //*************************************************************
@@ -565,7 +565,7 @@ void gop_default_sort_ops(void *arg, gop_opque_t *que)
     }
 
     tbx_stack_free(q_list, 0);
-    free(array);
+    tbx_free(array);
 }
 
 

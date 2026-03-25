@@ -131,7 +131,7 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
             if (tbx_log_level() > 1) {
                 remote_host_string = mq_address_to_string(table->remote_host);
                 log_printf(5, "host=%s count=%d\n", remote_host_string, k);
-                free(remote_host_string);
+                tbx_free(remote_host_string);
             }
 
             for (hi = apr_hash_first(NULL, table->table); hi != NULL; hi = apr_hash_next(hi)) {
@@ -184,8 +184,8 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
             oh->in_progress--;
             if (oh->count <= 0) {  //** Need to delete it
                 apr_hash_set(table->table, id, id_len, NULL);
-                free(oh->id);
-                free(oh);
+                tbx_free(oh->id);
+                tbx_free(oh);
             }
 
             gop_free(gop, OP_DESTROY);
@@ -249,13 +249,13 @@ void *ongoing_heartbeat_thread(apr_thread_t *th, void *data)
         for (hi = apr_hash_first(NULL, table->table); hi != NULL; hi = apr_hash_next(hi)) {
             apr_hash_this(hi, (const void **)&id, &id_len, (void **)&oh);
             apr_hash_set(table->table, id, id_len, NULL);
-            free(oh->id);
-            free(oh);
+            tbx_free(oh->id);
+            tbx_free(oh);
         }
 
         apr_hash_set(on->table, &(table->remote_host_hash), sizeof(gop_mq_msg_hash_t), NULL);
         gop_mq_msg_destroy(table->remote_host);
-        free(table);
+        tbx_free(table);
     }
 
     log_printf(5, "EXITING\n");
@@ -285,7 +285,7 @@ void gop_mq_ongoing_host_inc(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
 
     char *str = mq_address_to_string(remote_host);
     log_printf(5, "remote_host=%s\n", str);
-    free(str);
+    tbx_free(str);
 
     hash = gop_mq_msg_hash(remote_host);
     table = apr_hash_get(on->table, &hash, sizeof(gop_mq_msg_hash_t));  //** Look up the remote host
@@ -293,7 +293,7 @@ void gop_mq_ongoing_host_inc(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
     if (tbx_log_level() > 5) {
         remote_host_string = mq_address_to_string(remote_host);
         log_printf(5, "remote_host=%s hb=%d table=%p\n", remote_host_string, heartbeat, table);
-        free(remote_host_string);
+        tbx_free(remote_host_string);
     }
     if (table == NULL) { //** New host so add it
         tbx_type_malloc_clear(table, gop_ongoing_table_t, 1);
@@ -318,7 +318,7 @@ void gop_mq_ongoing_host_inc(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
         if (tbx_log_level() > 5) {
             remote_host_string = mq_address_to_string(remote_host);
             log_printf(5, "remote_host=%s final hb=%d \n", remote_host_string, oh->heartbeat);
-            free(remote_host_string);
+            tbx_free(remote_host_string);
         }
         oh->next_check = apr_time_now() + apr_time_from_sec(oh->heartbeat);
         apr_hash_set(table->table, oh->id, id_len, oh);
@@ -352,8 +352,8 @@ void gop_mq_ongoing_host_dec(gop_mq_ongoing_t *on, mq_msg_t *remote_host, char *
         MQ_DEBUG_NOTIFY( "ONGOING_DEC -- host=%s count=%d\n", oh->id, oh->count);
         if ((oh->count <= 0) && (oh->in_progress == 0)) {  //** Can delete the entry
             apr_hash_set(table->table, id, id_len, NULL);
-            free(oh->id);
-            free(oh);
+            tbx_free(oh->id);
+            tbx_free(oh);
         }
     }
 
@@ -464,7 +464,7 @@ void gop_mq_ongoing_release(gop_mq_ongoing_t *mqon, gop_mq_ongoing_handle_t *oha
         if (ongoing->count <= 0) {    //** No references
             if (ongoing->remove == 1) { //** Flagged for removal
                 ohandle->oh->remove_pending--;  //** Remove the pending count
-                free(ongoing);
+                tbx_free(ongoing);
             } else {
                 apr_thread_cond_broadcast(mqon->object_cond); //** Let gop_mq_ongoing_remove() and ongoing_fail() know it's Ok to reap
             }
@@ -510,13 +510,13 @@ void *gop_mq_ongoing_remove(gop_mq_ongoing_t *mqon, char *id, int id_len, intptr
                     }
                 } else {  //** Clear it and destroy it
                     if (ongoing->remove) oh->remove_pending--;
-                    free(ongoing);
+                    tbx_free(ongoing);
                 }
             } else { //** Wait for the refs to clear before freeing it
                 while (ongoing->count > 0) {
                     apr_thread_cond_wait(mqon->object_cond, mqon->lock);
                 }
-                free(ongoing);
+                tbx_free(ongoing);
             }
         }
     }
@@ -590,9 +590,9 @@ gop_op_status_t ongoing_close_wait(void *task_arg, int tid)
         apr_thread_mutex_unlock(defer->mqon->lock);
     }
 
-    if (defer->ohandle) free(defer->ohandle);
-    if (auto_clean) free(defer->oo);  //** Free the oo if the caller didn't do it.
-    free(defer);
+    if (defer->ohandle) tbx_free(defer->ohandle);
+    if (auto_clean) tbx_free(defer->oo);  //** Free the oo if the caller didn't do it.
+    tbx_free(defer);
 
     MQ_DEBUG_NOTIFY( "ONGOING_CLOSE_WAIT: END\n");
 
@@ -828,9 +828,9 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                 MQ_DEBUG_NOTIFY( "ONGOING_SERVER: Host cleanup -- host=%s hb_count=%d\n", oh->id, oh->hb_count);
                 if ((apr_hash_count(oh->table) == 0) && (oh->remove_pending <= 0)) { //** Safe to clean up
                     apr_hash_set(mqon->id_table, key, klen, NULL);
-                    free(oh->id);
+                    tbx_free(oh->id);
                     tbx_apr_pool_destroy(oh->mpool);
-                    free(oh);
+                    tbx_free(oh);
                 }
             }
         }
@@ -848,9 +848,9 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                 } else if (ohandle->oo->remove) {   //** We're the last one so we can safely delete it
                     MQ_DEBUG_NOTIFY( "ONGOING_SERVER: oo->count=%d oo->remove=%d oh->remove_pending=%d\n", ohandle->oo->count, ohandle->oo->remove, ohandle->oh->remove_pending);
                     ohandle->oh->remove_pending--;
-                    free(ohandle->oo);
+                    tbx_free(ohandle->oo);
                 }
-                free(ohandle);
+                tbx_free(ohandle);
             }
             gop_free(gop, OP_DESTROY);
         }
@@ -889,9 +889,9 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
                 }
             } else if (ohandle->oo->remove) {   //** We're the last one so we can safely delete it
                 ohandle->oh->remove_pending--;
-                free(ohandle->oo);
+                tbx_free(ohandle->oo);
             }
-            free(ohandle);
+            tbx_free(ohandle);
         }
         gop_free(gop, OP_DESTROY);
     }
@@ -910,9 +910,9 @@ void *mq_ongoing_server_thread(apr_thread_t *th, void *data)
         }
 
         apr_hash_set(mqon->id_table, key, klen, NULL);
-        free(oh->id);
+        tbx_free(oh->id);
         tbx_apr_pool_destroy(oh->mpool);
-        free(oh);
+        tbx_free(oh);
     }
 
     log_printf(15, "FINISHED\n");
@@ -953,7 +953,7 @@ void gop_mq_ongoing_destroy(gop_mq_ongoing_t *mqon)
     if (mqon->ongoing_heartbeat_thread) apr_thread_join(&value, mqon->ongoing_heartbeat_thread);
 
     tbx_apr_pool_destroy(mqon->mpool);
-    free(mqon);
+    tbx_free(mqon);
 }
 
 //***********************************************************************

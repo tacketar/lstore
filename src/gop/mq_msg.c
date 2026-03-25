@@ -175,12 +175,12 @@ gop_mq_frame_t *gop_mq_frame_dup(gop_mq_frame_t *f)
 void gop_mq_frame_destroy(gop_mq_frame_t *f)
 {
     if ((f->auto_free == MQF_MSG_AUTO_FREE) && (f->data)) {
-        free(f->data);
+        tbx_free(f->data);
         f->data = NULL;
     } else if (f->auto_free == MQF_MSG_INTERNAL_FREE) {
         zmq_msg_close(&(f->zmsg));
     }
-    free(f);
+    tbx_free(f);
 }
 
 void gop_mq_msg_destroy(mq_msg_t *msg)

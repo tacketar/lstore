@@ -235,8 +235,8 @@ void gop_mq_command_set(gop_mq_command_table_t *table, void *cmd, int cmd_size, 
         mqc = apr_hash_get(table->table, cmd, cmd_size);
         if (mqc != NULL) {
             apr_hash_set(table->table, mqc->cmd, mqc->cmd_size, NULL);
-            free(mqc->cmd);
-            free(mqc);
+            tbx_free(mqc->cmd);
+            tbx_free(mqc);
         }
 
         mqc = gop_mq_command_new(cmd, cmd_size, arg, fn);
@@ -245,8 +245,8 @@ void gop_mq_command_set(gop_mq_command_table_t *table, void *cmd, int cmd_size, 
         mqc = apr_hash_get(table->table, cmd, cmd_size);
         if (mqc != NULL) {
             apr_hash_set(table->table, mqc->cmd, mqc->cmd_size, NULL);
-            free(mqc->cmd);
-            free(mqc);
+            tbx_free(mqc->cmd);
+            tbx_free(mqc);
         }
     }
     apr_thread_mutex_unlock(table->lock);
@@ -300,12 +300,12 @@ void gop_mq_command_table_destroy(gop_mq_command_table_t *t)
         apr_hash_this(hi, NULL, NULL, &val);
         cmd = (gop_mq_command_t *)val;
         apr_hash_set(t->table, cmd->cmd, cmd->cmd_size, NULL);
-        free(cmd->cmd);
-        free(cmd);
+        tbx_free(cmd->cmd);
+        tbx_free(cmd);
     }
 
     tbx_apr_pool_destroy(t->mpool);
-    free(t);
+    tbx_free(t);
 
     return;
 }
@@ -446,7 +446,7 @@ void mq_task_destroy(gop_mq_task_t *task)
     if (task->msg != NULL) gop_mq_msg_destroy(task->msg);
     if (task->response != NULL) gop_mq_msg_destroy(task->response);
     if (task->my_arg_free) task->my_arg_free(task->arg);
-    free(task);
+    tbx_free(task);
 }
 
 //**************************************************************
@@ -631,7 +631,7 @@ void mqc_response(gop_mq_conn_t *c, mq_msg_t *msg, int do_exec)
     }
 
     //** Free the tracking number container
-    free(tn);
+    tbx_free(tn);
 
     log_printf(5, "end\n");
     tbx_log_flush();
@@ -787,7 +787,7 @@ void mqc_trackaddress(gop_mq_conn_t *c, mq_msg_t *msg)
             apr_hash_set(c->heartbeat_lut, &(hb->lut_id), sizeof(uint64_t), hb);
             hb->hb_count++;
         } else {
-            free(address);  //** Alredy exists so just free the key
+            tbx_free(address);  //** Alredy exists so just free the key
         }
 
         //** Store the heartbeat tracking entry
@@ -909,9 +909,9 @@ int mqc_heartbeat_cleanup(gop_mq_conn_t *c)
 
         apr_hash_set(c->heartbeat_dest, key, klen, NULL);
         apr_hash_set(c->heartbeat_lut, &(entry->lut_id), sizeof(uint64_t), NULL);
-        free(entry->key);
+        tbx_free(entry->key);
         gop_mq_msg_destroy(entry->address);
-        free(entry);
+        tbx_free(entry);
     }
 
     //** Fail all the commands
@@ -932,7 +932,7 @@ int mqc_heartbeat_cleanup(gop_mq_conn_t *c)
         thread_pool_direct(c->pc->tp, mqtp_failure, tn->task);
 
         //** Free the container. The gop_mq_task_t is handled by the response
-        free(tn);
+        tbx_free(tn);
     }
 
     return(1);
@@ -951,9 +951,9 @@ void mqc_heartbeat_dec(gop_mq_conn_t *c, gop_mq_heartbeat_entry_t *hb)
         MQ_DEBUG_NOTIFY( "MQ_HEARTBEAT_DEC: DESTROYING hb->key=%s\n", hb->key);
         apr_hash_set(c->heartbeat_dest, hb->key, hb->key_size, NULL);
         apr_hash_set(c->heartbeat_lut, &(hb->lut_id), sizeof(uint64_t), NULL);
-        free(hb->key);
+        tbx_free(hb->key);
         gop_mq_msg_destroy(hb->address);
-        free(hb);
+        tbx_free(hb);
     }
 }
 
@@ -1038,7 +1038,7 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
                         thread_pool_direct(c->pc->tp, mqtp_failure, tn->task);
 
                         //** Free the container. The gop_mq_task_t is handled by the response
-                        free(tn);
+                        tbx_free(tn);
                     }
                 }
 
@@ -1047,9 +1047,9 @@ int mqc_heartbeat(gop_mq_conn_t *c, int npoll)
                 //** Remove the entry and clean up
                 apr_hash_set(c->heartbeat_dest, entry->key, entry->key_size, NULL);
                 apr_hash_set(c->heartbeat_lut, &(entry->lut_id), sizeof(uint64_t), NULL);
-                free(entry->key);
+                tbx_free(entry->key);
                 gop_mq_msg_destroy(entry->address);
-                free(entry);
+                tbx_free(entry);
                 entry = NULL;
             }
         }
@@ -1109,7 +1109,7 @@ next:
             thread_pool_direct(c->pc->tp, mqtp_failure, tn->task);
 
             //** Free the container. The gop_mq_task_t is handled by the response
-            free(tn);
+            tbx_free(tn);
         } else {
             pending_count++;  //** Keep track of pending responses
         }
@@ -1463,7 +1463,7 @@ int mqc_process_task(gop_mq_conn_t *c, int *npoll, int *nproc)
             log_printf(0, "Error sending msg! errno=%d\n", errno);
             if (tracking != 0) { //** We're treacking it so we have to clean that up
                 apr_hash_set(c->waiting,  tn->id, tn->id_size, NULL);
-                free(tn);
+                tbx_free(tn);
             }
 
             //** Now process the rest of the task
@@ -1934,7 +1934,7 @@ cleanup:
     if (c->inproc) {
         tbx_atomic_set(c->shutdown, 1);
         apr_thread_join(&dummy, c->monitoring_thread);
-        free(c->inproc);
+        tbx_free(c->inproc);
     }
 
     gop_mq_stats_print(2, c->mq_uuid, &(c->stats));
@@ -2081,7 +2081,7 @@ void _mq_reap_closed(gop_mq_portal_t *p)
 
     while ((c = tbx_stack_pop(p->closed_conn)) != NULL) {
         apr_thread_join(&dummy, c->thread);
-        free(c);
+        tbx_free(c);
     }
 }
 
@@ -2145,8 +2145,8 @@ void gop_mq_portal_destroy(gop_mq_portal_t *p)
     tbx_stack_free(p->closed_conn, 0);
     tbx_stack_free(p->tasks, 0);
 
-    free(p->host);
-    free(p);
+    tbx_free(p->host);
+    tbx_free(p);
 }
 
 //**************************************************************
@@ -2312,9 +2312,9 @@ void gop_mq_destroy_context(gop_mq_context_t *mqc)
     apr_thread_mutex_destroy(mqc->lock);
     tbx_apr_pool_destroy(mqc->mpool);
 
-    if (mqc->section) free(mqc->section);
-    if (mqc->fname_errors) free(mqc->fname_errors);
-    free(mqc);
+    if (mqc->section) tbx_free(mqc->section);
+    if (mqc->fname_errors) tbx_free(mqc->fname_errors);
+    tbx_free(mqc);
 
     log_printf(5, "AFTER SLEEP2\n");
     tbx_log_flush();

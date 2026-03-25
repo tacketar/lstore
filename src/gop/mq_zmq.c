@@ -53,7 +53,7 @@
 void zero_native_destroy(gop_mq_socket_context_t *ctx, gop_mq_socket_t *socket)
 {
     zmq_close(socket->arg);
-    free(socket);
+    tbx_free(socket);
 }
 
 //*************************************************************
@@ -139,7 +139,7 @@ again:
             fprintf(stderr, "ERROR with secret key for host: %s  section=%s\n", id, section); fflush(stderr);
             exit(1);
         }
-        free(etext); free(key);
+        tbx_free(etext); tbx_free(key);
 
         etext = tbx_inip_get_string(ifd, section, "public_key", NULL);
         if (!etext) {
@@ -153,7 +153,7 @@ again:
             fprintf(stderr, "ERROR with public key for host: %s  section=%s\n", id, section); fflush(stderr);
             exit(1);
         }
-        free(etext); free(key);
+        tbx_free(etext); tbx_free(key);
 
         k=1;
         zmq_setsockopt(socket->arg, ZMQ_CURVE_SERVER, &k, sizeof(k));
@@ -165,7 +165,7 @@ again:
             } else {
                 retry = 1;
             }
-            free(section);
+            tbx_free(section);
             tbx_inip_destroy(ifd);
             goto again;
         }
@@ -186,10 +186,10 @@ again:
             fprintf(stderr, "ERROR with server public key for host: %s  section=%s\n", id, section); fflush(stderr);
             exit(1);
         }
-        free(etext); free(key);
+        tbx_free(etext); tbx_free(key);
     }
 
-    free(section);
+    tbx_free(section);
     tbx_inip_destroy(ifd);
     return;
 
@@ -439,7 +439,7 @@ gop_mq_socket_t *zero_create_native_socket(gop_mq_socket_context_t *ctx, int sty
     s->type = stype;
     s->arg = zmq_socket(ctx->arg, stype);
     if (s->arg == NULL) {
-        free(s);
+        tbx_free(s);
         log_printf(0, "ERROR creating the socket!\n");
         return(NULL);
     }
@@ -576,7 +576,7 @@ gop_mq_socket_t *zero_create_socket(gop_mq_socket_context_t *ctx, int stype)
         break;
     default:
         log_printf(0, "Unknown socket type: %d\n", stype);
-        free(s);
+        tbx_free(s);
         s = NULL;
     }
 
@@ -592,7 +592,7 @@ void zero_socket_context_destroy(gop_mq_socket_context_t *ctx)
     //** Kludge to get around race issues in 0mq when closing sockets manually vs letting
     //** zctx_destroy() close them
     zmq_ctx_destroy(ctx->arg);
-    free(ctx);
+    tbx_free(ctx);
 }
 
 //*************************************************************

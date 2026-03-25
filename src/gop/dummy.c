@@ -147,7 +147,7 @@ static void gop_dummy_free(gop_op_generic_t *gop, int mode)
 {
     gop_generic_free(gop, mode);  //** I free the actual op
 
-    if (mode == OP_DESTROY) free(gop);
+    if (mode == OP_DESTROY) tbx_free(gop);
 }
 
 //***********************************************************************

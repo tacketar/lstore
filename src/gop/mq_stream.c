@@ -333,8 +333,8 @@ void gop_mq_stream_read_destroy(gop_mq_stream_t *mqs)
 
     if (mqs->mpool == NULL) {  //** Nothing to do
         tbx_pack_destroy(mqs->pack);
-        if (mqs->stream_id != NULL) free(mqs->stream_id);
-        free(mqs);
+        if (mqs->stream_id != NULL) tbx_free(mqs->stream_id);
+        tbx_free(mqs);
         return;
     }
 
@@ -356,7 +356,7 @@ void gop_mq_stream_read_destroy(gop_mq_stream_t *mqs)
     if (tbx_log_level() >= 15) {
         char *rhost = mq_address_to_string(mqs->remote_host);
         log_printf(15, "remote_host as string = %s\n", rhost);
-        if (rhost) free(rhost);
+        if (rhost) tbx_free(rhost);
     }
     if (mqs->remote_host != NULL) gop_mq_ongoing_host_dec(mqs->ongoing, mqs->remote_host, mqs->host_id, mqs->hid_len);
 
@@ -365,13 +365,13 @@ void gop_mq_stream_read_destroy(gop_mq_stream_t *mqs)
     log_printf(5, "msid=%d transfer_packets=%d\n", mqs->msid, mqs->transfer_packets);
 
     //** Clean up
-    if (mqs->stream_id != NULL) free(mqs->stream_id);
+    if (mqs->stream_id != NULL) tbx_free(mqs->stream_id);
     tbx_pack_destroy(mqs->pack);
     apr_thread_mutex_destroy(mqs->lock);
     apr_thread_cond_destroy(mqs->cond);
     tbx_apr_pool_destroy(mqs->mpool);
     if (mqs->remote_host != NULL) gop_mq_msg_destroy(mqs->remote_host);
-    free(mqs);
+    tbx_free(mqs);
 
     return;
 }
@@ -400,7 +400,7 @@ gop_mq_stream_t *gop_mq_stream_read_create(gop_mq_context_t *mqc, gop_mq_ongoing
     if (tbx_log_level() > 5) {
         char *str = mq_address_to_string(remote_host);
         log_printf(5, "remote_host=%s\n", str);
-        if (str) free(str);
+        if (str) tbx_free(str);
     }
 
     gop_mq_get_frame(fdata, (void **)&(mqs->data), &(mqs->len));
@@ -428,7 +428,7 @@ gop_mq_stream_t *gop_mq_stream_read_create(gop_mq_context_t *mqc, gop_mq_ongoing
         if (tbx_log_level() >=15) {
             char *rhost = mq_address_to_string(mqs->remote_host);
             log_printf(15, "remote_host as string = %s\n", rhost);
-            if (rhost) free(rhost);
+            if (rhost) tbx_free(rhost);
         }
 
         log_printf(5, "before ongoing_inc\n");
@@ -923,10 +923,10 @@ void gop_mq_stream_write_destroy(gop_mq_stream_t *mqs)
     if (mqs->hid != NULL) gop_mq_frame_destroy(mqs->hid);
 
     tbx_pack_destroy(mqs->pack);
-    if (mqs->unsent_data == 1) free(mqs->data);
+    if (mqs->unsent_data == 1) tbx_free(mqs->data);
 
     log_printf(5, "END msid=%d\n", mqs->msid);
-    free(mqs);
+    tbx_free(mqs);
 
     return;
 }
