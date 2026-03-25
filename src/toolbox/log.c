@@ -45,6 +45,7 @@
 #include "tbx/iniparse.h"
 #include "tbx/io.h"
 #include "tbx/visibility.h"
+#include "tbx/string_token.h"
 #include "tbx/type_malloc.h"
 
 TBX_API int tbx_stack_get_info_level(tbx_log_fd_t *fd) {
@@ -214,7 +215,7 @@ void tbx_mlog_load(tbx_inip_file_t *fd, char *output_override, int log_level_ove
     default_level = tbx_inip_get_integer(fd, group_level, "default", 0);
     _log_level = (log_level_override > -10) ? log_level_override : tbx_inip_get_integer(fd, group_level, "start_level", 0);
     for (n=0; n<_mlog_size; n++) _mlog_table[n] = default_level;
-    logname = (output_override == NULL) ? tbx_inip_get_string(fd, group_level, "output", "NULL") : strdup(output_override);
+    logname = (output_override == NULL) ? tbx_inip_get_string(fd, group_level, "output", "NULL") : tbx_stk_strdup(output_override);
     open_log(logname);
     free(logname);
     _log_maxsize = tbx_inip_get_integer(fd, group_level, "size", 100*1024*1024);
@@ -234,9 +235,8 @@ void tbx_mlog_load(tbx_inip_file_t *fd, char *output_override, int log_level_ove
         n = (value != NULL) ? atoi(value) : -1;
 
         if ((n>=0) && (n<_mlog_size)) {
-            _mlog_file_table[n] = strdup(name);
+            _mlog_file_table[n] = tbx_stk_strdup(name);
             _mlog_table[n] = tbx_inip_get_integer(fd, group_level, name, _mlog_table[n]);
-//printf("mlog_load: mi=%d key=%s val=%d\n", n, name, _mlog_table[n]);
         } else {
             log_printf(0, "Invalid index: %s=%d  should be between 0..%d!  Skipping option\n", name, n, _mlog_size);
         }

@@ -37,6 +37,7 @@
 #include "tbx/fmttypes.h"
 #include "tbx/log.h"
 #include "tbx/network.h"
+#include "tbx/string_token.h"
 #include "tbx/type_malloc.h"
 #include "transfer_buffer.h"
 
@@ -788,7 +789,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
     nm->shutdown_request = 0;
     nm->is_pending = 0;
     nm->ns = ns;
-    nm->address = strdup(address);
+    nm->address = tbx_stk_strdup(address);
     if (!nm->address) {
         err = errno;
         log_printf(0, "bind_server_port: couldn't strdup\n");

@@ -39,7 +39,7 @@ tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter, i
     int fin, good;
 
     if (string == NULL) return(NULL);
-    token = strdup(string);
+    token = tbx_stk_strdup(string);
     bstate = NULL;
 
     do {

@@ -213,7 +213,7 @@ char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_
                     vtmp = getenv(param);
                     if (vtmp) {
                         free(value);
-                        value = strdup(vtmp);
+                        value = tbx_stk_strdup(vtmp);
                     }
                 }
                 if (strcmp(value, "_^MISSING-PARAM^_") == 0) {
@@ -251,7 +251,7 @@ finished:
         last = end+1;
     } while (last[0] != 0);
 
-    newtext = (changed) ? strdup(dest) : NULL;
+    newtext = (changed) ? tbx_stk_strdup(dest) : NULL;
     if (dest != subtext) free(dest);
 
     return(newtext);
@@ -556,7 +556,7 @@ again:
         fname = tbx_stk_escape_string_token(&(bfd->curr->buffer[13]), " \n", '\\', 1, &last, &fin);
         log_printf(10, "_get_line: Adding include path %s\n", fname);
         tbx_stack_move_to_bottom(bfd->include_paths);
-        tbx_stack_insert_below(bfd->include_paths, strdup(fname));
+        tbx_stack_insert_below(bfd->include_paths, tbx_stk_strdup(fname));
         goto again;  //** Loop back and get another line
     }
 
@@ -606,7 +606,7 @@ tbx_inip_element_t *_parse_ele(bfile_t *bfd)
         if (fin == 0) {
             val = tbx_stk_escape_string_token_to_end(NULL, " =\r\n", '\\', 1, &last, &fin);
 
-            ele = new_ele(strdup(key), (val ? strdup(val) : NULL));
+            ele = new_ele(tbx_stk_strdup(key), (val ? tbx_stk_strdup(val) : NULL));
             log_printf(15, "_parse_ele: key=%s value=%s\n", ele->key, ele->value);
             return(ele);
         }
@@ -686,7 +686,7 @@ tbx_inip_group_t *_next_group(bfile_t *bfd)
             start++;  //** Move the starting point to the next character
 
             text = tbx_stk_string_trim(start); //** Trim the whitespace
-            g = new_group(strdup(text));
+            g = new_group(tbx_stk_strdup(text));
             log_printf(15, "_next_group: group=%s\n", g->group);
             _parse_group(bfd, g);
             return(g);
@@ -904,7 +904,7 @@ char *tbx_inip_get_string_full(tbx_inip_file_t *inip, const char *group, const c
     }
 
     if (value == NULL) return(NULL);
-    ret = strdup(value);
+    ret = tbx_stk_strdup(value);
     if (sub) free(sub);
 
     return(ret);
@@ -942,7 +942,7 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, const
     //** Load the hints
     if (hints_string) {
         hints = tbx_stack_new();
-        hstr = strdup(hints_string);
+        hstr = tbx_stk_strdup(hints_string);
         tbx_stk_string2args(hstr, &argc, &argv);
         tbx_inip_hint_options_parse(hints, argv, &argc);
         if (argv) free(argv);
@@ -958,8 +958,8 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, const
     bfd.n_jail_len = (jail_prefix) ? strlen(jail_prefix) : 0;
     bfd.stack = tbx_stack_new();
     bfd.include_paths = tbx_stack_new();
-    tbx_stack_push(bfd.include_paths, strdup("."));  //** By default always look in the CWD 1st
-    if (prefix) tbx_stack_push(bfd.include_paths, strdup(prefix));  //** By default always look in the CWD 1st
+    tbx_stack_push(bfd.include_paths, tbx_stk_strdup("."));  //** By default always look in the CWD 1st
+    if (prefix) tbx_stack_push(bfd.include_paths, tbx_stk_strdup(prefix));  //** By default always look in the CWD 1st
 
     tbx_type_malloc_clear(inip, tbx_inip_file_t, 1);
 
@@ -1112,8 +1112,8 @@ int inip_convert2string_jail(FILE *fd_in, const char *text_in, char **text_out, 
     bfd.stack = tbx_stack_new();
     bfd.error = 0;
     bfd.include_paths = tbx_stack_new();
-    tbx_stack_push(bfd.include_paths, strdup("."));  //** By default always look in the CWD 1st
-    if (prefix) tbx_stack_push(bfd.include_paths, strdup(prefix));  //** By default always look in the CWD 1st
+    tbx_stack_push(bfd.include_paths, tbx_stk_strdup("."));  //** By default always look in the CWD 1st
+    if (prefix) tbx_stack_push(bfd.include_paths, tbx_stk_strdup(prefix));  //** By default always look in the CWD 1st
 
 
     n_max = 10*1024;
@@ -1273,11 +1273,11 @@ tbx_inip_hint_t *tbx_inip_hint_new(int op, char *section, int section_rank, char
 
     tbx_type_malloc(h, tbx_inip_hint_t, 1);
     h->op = op;
-    h->section = (section) ? strdup(section) : NULL;
+    h->section = (section) ? tbx_stk_strdup(section) : NULL;
     h->section_rank = section_rank;
-    h->key = (key) ? strdup(key) : NULL;
+    h->key = (key) ? tbx_stk_strdup(key) : NULL;
     h->key_rank = key_rank;
-    h->value = (value) ? strdup(value) : NULL;
+    h->value = (value) ? tbx_stk_strdup(value) : NULL;
 
     return(h);
 }
@@ -1321,7 +1321,7 @@ tbx_inip_hint_t *tbx_inip_hint_parse(int op, char *text)
     char *base, *section, *key, *value, *bstate, *bs2, *tmp, *s;
     int srank, krank;
 
-    base = strdup(text);
+    base = tbx_stk_strdup(text);
 
     h = 0;
     bstate = bs2 = NULL;  //** Compiler thinks this may be used uninitialized
@@ -1486,21 +1486,21 @@ int hint_add(tbx_inip_file_t *fd, tbx_inip_hint_t *h)
     }
 
     if (!group) { //** No group so add it
-        group = new_group(strdup(h->section));
+        group = new_group(tbx_stk_strdup(h->section));
         if (gprev) {
             gprev->next = group;
         } else {
             fd->tree = group;
         }
     } else if (!h->key) {
-        g = new_group(strdup(h->section));
+        g = new_group(tbx_stk_strdup(h->section));
         gprev->next = g;
         g->next = group;
     }
 
     //** Make the new key
     if (h->key) {
-        k = new_ele(strdup(h->key), (h->value ? strdup(h->value) : NULL));
+        k = new_ele(tbx_stk_strdup(h->key), (h->value ? tbx_stk_strdup(h->value) : NULL));
         if (kprev) {
             kprev->next = k;
         } else {

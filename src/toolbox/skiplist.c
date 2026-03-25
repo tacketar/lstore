@@ -25,6 +25,7 @@
 #include "tbx/assert_result.h"
 #include "tbx/log.h"
 #include "tbx/tbx_decl.h"
+#include "tbx/string_token.h"
 #include "tbx/type_malloc.h"
 
 // Forward declarations
@@ -255,7 +256,7 @@ void tbx_sl_free_simple(tbx_sl_data_t *data)
 
 tbx_sl_key_t *tbx_sl_dup_string(tbx_sl_key_t *key)
 {
-    char *dup = strdup((char *)key);
+    char *dup = tbx_stk_strdup((char *)key);
     return((tbx_sl_key_t *)dup);
 }
 

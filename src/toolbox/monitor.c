@@ -156,7 +156,7 @@ int tbx_monitor_create(const char *fname)
 
     apr_thread_mutex_lock(ctx->lock);
     if (ctx->fname) free(ctx->fname);
-    ctx->fname = strdup(fname);
+    ctx->fname = tbx_stk_strdup(fname);
     if (monitor_state == 1) ctx->fd = tbx_io_fopen(ctx->fname, "a");
     apr_thread_mutex_unlock(ctx->lock);
 
@@ -749,7 +749,7 @@ int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_m
     case (MON_REC_OBJ_DESTROY_MSG):
         *a = r->rec.text.obj;
         *text_size = r->rec.text.nbytes;
-        *text = (*text_size) ? strdup(r->rec.text.text) : NULL;
+        *text = (*text_size) ? tbx_stk_strdup(r->rec.text.text) : NULL;
         break;
     case (MON_REC_OBJ_CREATE_IRATE):
     case (MON_REC_OBJ_LABEL_IRATE):
@@ -757,7 +757,7 @@ int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_m
         *a = r->rec.text_int.obj;
         *n = r->rec.text_int.n;
         *text_size = r->rec.text_int.nbytes;
-        *text = (*text_size) ? strdup(r->rec.text_int.text) : NULL;
+        *text = (*text_size) ? tbx_stk_strdup(r->rec.text_int.text) : NULL;
         break;
     case (MON_REC_OBJ_DESTROY):
         *a = r->rec.object;
@@ -793,7 +793,7 @@ int tbx_monitor_get_next(FILE *fd, int *cmd, int32_t *tid, apr_time_t *dt, tbx_m
     case (MON_REC_THREAD_MESSAGE):
         *b_tid = r->rec.thread_text.tid;
         *text_size = r->rec.thread_text.nbytes;
-        *text = (*text_size) ? strdup(r->rec.thread_text.text) : NULL;
+        *text = (*text_size) ? tbx_stk_strdup(r->rec.thread_text.text) : NULL;
         break;
     case (MON_REC_THREAD_DESTROY):
         *b_tid = r->rec.tid;
@@ -1158,7 +1158,7 @@ apr_time_t _convert_str2time(const char *str)
 
     memset(&texp, 0, sizeof(texp));
 
-    tmp = strdup(str);
+    tmp = tbx_stk_strdup(str);
     ptr = strchr(tmp, ':');
     next = ptr;
     if (strchr(tmp, ':') != NULL) { //** Got a full time including the year
@@ -1324,7 +1324,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
     for (i=0; i<256; i++) {
         if (obj_types[i] == NULL) {
             snprintf(s, sizeof(s), "type_%d", i);
-            type_label[i] = strdup(s);
+            type_label[i] = tbx_stk_strdup(s);
         } else {
             type_label[i] = (char *)obj_types[i];
         }

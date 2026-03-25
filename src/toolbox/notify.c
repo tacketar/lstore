@@ -284,7 +284,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
     char *header;
 
     tbx_type_malloc_clear(nlog, tbx_notify_t, 1);
-    nlog->section = strdup(section);
+    nlog->section = tbx_stk_strdup(section);
 
     if (ifd) {
         fd = ifd;
@@ -295,7 +295,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
     //** This acts as teh base location for the notification log
     nlog->fname_from_config = tbx_inip_get_string(ifd, section, "fname", "/lio/log/notify.log");
     if (strlen(nlog->fname_from_config) > 0) {
-        nlog->fname = strdup(nlog->fname_from_config);
+        nlog->fname = tbx_stk_strdup(nlog->fname_from_config);
 
         //** Check the header type
         header = tbx_inip_get_string(ifd, section, "header", NULL);
@@ -486,7 +486,7 @@ tbx_notify_iter_t *tbx_notify_iter_create(char *prefix, int year, int month, int
     tbx_notify_iter_t *ni;
 
     tbx_type_malloc_clear(ni, tbx_notify_iter_t, 1);
-    ni->prefix = strdup(prefix);
+    ni->prefix = tbx_stk_strdup(prefix);
     ni->year = year;
     ni->month = month;
     ni->day = day;

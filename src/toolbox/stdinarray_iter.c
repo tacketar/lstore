@@ -25,6 +25,7 @@
 #include <tbx/log.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
+#include <tbx/string_token.h>
 #include <tbx/stdinarray_iter.h>
 #include <unistd.h>
 
@@ -115,7 +116,7 @@ char *tbx_stdinarray_iter_last(tbx_stdinarray_iter_t *it)
         free(it->next);
         it->next = NULL;
     }
-    return((it->last) ? strdup(it->last) : NULL);
+    return((it->last) ? tbx_stk_strdup(it->last) : NULL);
 }
 
 //*************************************************************************
@@ -164,7 +165,7 @@ next_from_list:
         if (it->current >= it->argc) return(NULL);  //** Nothing left to do
 
         if (strcmp(it->argv[it->current], SARRAY_STDIN) != 0) { //** Normal line
-            p = strdup(it->argv[it->current]);
+            p = tbx_stk_strdup(it->argv[it->current]);
             it->current++;
             if (it->current >= it->argc) it->last_used_hit = 1;
             return(p);
@@ -178,7 +179,7 @@ next_from_list:
     p = fgets(stmp, sizeof(stmp), stdin);
     if (p) {
         p[strlen(p)-1] = 0;  //** Truncate the \n
-        return(strdup(p));  //** Return
+        return(tbx_stk_strdup(p));  //** Return
     } else {
       it->from_stdin = 0;
       goto next_from_list;
