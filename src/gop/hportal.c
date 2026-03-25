@@ -408,7 +408,7 @@ void hc_history_add(hc_history_t *h, hconn_t *hc)
     c = &(h->hc[h->slot % h->max_size]);
     if (c->skey) free(c->skey);
 
-    c->skey = strdup(hc->hp->skey);
+    c->skey = tbx_stk_strdup(hc->hp->skey);
     c->ns_id = tbx_ns_getid(hc->ns);
     c->n_commands = hc->cmds_processed;
     c->reason = hc->reason;
@@ -485,7 +485,7 @@ void retry_history_add(retry_history_t *h, gop_op_generic_t *gop, hconn_t *hc)
     r = &(h->rh[h->slot % h->max_size]);
     if (r->skey) free(r->skey);
 
-    r->skey = strdup(hc->hp->skey);
+    r->skey = tbx_stk_strdup(hc->hp->skey);
     r->ns_id = tbx_ns_getid(hc->ns);
     r->gid = gop_id(gop);
     r->status = gop_get_status(gop);
@@ -1533,20 +1533,20 @@ void hconn_destroy(hconn_t *hc)
 hportal_t *hp_create(gop_portal_context_t *hpc, char *hostport)
 {
     hportal_t *hp;
-    char *hp2 = strdup(hostport);
+    char *hp2 = tbx_stk_strdup(hostport);
     char *bstate, *h;
     int fin;
 
     tbx_type_malloc_clear(hp, hportal_t, 1);
 
     h = tbx_stk_string_token(hp2, HP_HOSTPORT_SEPARATOR, &bstate, &fin);
-    if (h) hp->host = strdup(h);
+    if (h) hp->host = tbx_stk_strdup(h);
 
     hp->port = atoi(bstate);
     free(hp2);
     log_printf(15, "hostport: %s host=%s port=%d\n", hostport, hp->host, hp->port);
 
-    hp->skey = strdup(hostport);
+    hp->skey = tbx_stk_strdup(hostport);
 
     hp->conn_list = tbx_stack_new();
     hp->pending = tbx_stack_new();
@@ -1698,7 +1698,7 @@ gop_portal_context_t *gop_hp_context_create(gop_portal_fn_t *imp, char *name)
     tbx_type_malloc_clear(hpc, gop_portal_context_t, 1);
 
     hpc->fn = imp;
-    hpc->name = (name) ? strdup(name) : strdup("MISSING");
+    hpc->name = (name) ? tbx_stk_strdup(name) : tbx_stk_strdup("MISSING");
 
     if (!imp->connect) return(hpc);
 

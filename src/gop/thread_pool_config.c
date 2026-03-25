@@ -31,6 +31,7 @@
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
 #include <tbx/thread_pool.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "gop/gop.h"
@@ -128,7 +129,7 @@ void tp_siginfo_handler(void *arg, FILE *fd)
 
 void _thread_pool_destructor(void *ptr)
 {
-    free(ptr);
+    tbx_free(ptr);
 }
 
 //**********************************************************
@@ -174,9 +175,9 @@ void _tp_op_free(gop_op_generic_t *gop, int mode)
 
     gop_generic_free(gop, OP_FINALIZE);  //** I free the actual op
 
-    if (top->dop.cmd.hostport) free(top->dop.cmd.hostport);
+    if (top->dop.cmd.hostport) tbx_free(top->dop.cmd.hostport);
 
-    if (mode == OP_DESTROY) free(gop->free_ptr);
+    if (mode == OP_DESTROY) tbx_free(gop->free_ptr);
     log_printf(15, "_tp_op_free: gid=%d END\n", id);
     tbx_log_flush();
 
@@ -309,7 +310,7 @@ gop_thread_pool_context_t *gop_tp_context_create(char *tp_name, int min_threads,
     tbx_thread_pool_idle_wait_set(tpc->tp, dt);
     tbx_thread_pool_threshold_set(tpc->tp, 0);
 
-    tpc->name = (tp_name == NULL) ? NULL : strdup(tp_name);
+    tpc->name = (tp_name == NULL) ? NULL : tbx_stk_strdup(tp_name);
     tbx_atomic_set(tpc->n_ops, 0);
     tbx_atomic_set(tpc->n_completed, 0);
     tbx_atomic_set(tpc->n_started, 0);
@@ -354,17 +355,17 @@ void gop_tp_context_destroy(gop_thread_pool_context_t *tpc)
         apr_pool_destroy(_tp_pool); _tp_pool = NULL;
     }
 
-    if (tpc->name != NULL) free(tpc->name);
+    if (tpc->name != NULL) tbx_free(tpc->name);
 
     for (i=0; i<tpc->recursion_depth; i++) {
         tbx_stack_free(tpc->reserve_stack[i], 0);
     }
-    free(tpc->reserve_stack);
-    free(tpc->overflow_running_depth);
-    free(tpc->depth_concurrent);
-    free(tpc->depth_concurrent_max);
-    free(tpc->depth_total);
-    free(tpc->reserve_max);
-    free(tpc);
+    tbx_free(tpc->reserve_stack);
+    tbx_free(tpc->overflow_running_depth);
+    tbx_free(tpc->depth_concurrent);
+    tbx_free(tpc->depth_concurrent_max);
+    tbx_free(tpc->depth_total);
+    tbx_free(tpc->reserve_max);
+    tbx_free(tpc);
 }
 

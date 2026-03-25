@@ -30,6 +30,7 @@
 #include <tbx/random.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
+#include <tbx/string_token.h>
 
 #include "callback.h"
 #include "gop.h"
@@ -91,7 +92,7 @@ char *gop_generate_host_id(char *my_name, char *exe_name, int heartbeat, int ran
     //** Form the identifier
     snprintf(buffer, sizeof(buffer), "%d:%s:%s-%d:%u", heartbeat, hostname, exe, getpid(), n);
 
-    return(strdup(buffer));
+    return(tbx_stk_strdup(buffer));
 }
 
 

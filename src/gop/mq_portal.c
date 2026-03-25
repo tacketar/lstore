@@ -1659,7 +1659,7 @@ int mq_conn_make(gop_mq_conn_t *c)
     if (c->pc->mqc->enable_monitoring) {  //** Note that the portal should be fresh with max_conn=1 so this is "locked"
         tbx_random_get_bytes(&n, sizeof(n));
         snprintf(inproc, sizeof(inproc), "inproc://monitor-%d", n);
-        c->inproc = strdup(inproc);
+        c->inproc = tbx_stk_strdup(inproc);
         c->sock->monitor(c->sock, c->inproc, MQ_EVENT_ALL);
         tbx_thread_create_assert(&(c->monitoring_thread), NULL, mq_monitoring_thread, (void *)c, c->mpool);
     }
@@ -1682,7 +1682,7 @@ int mq_conn_make(gop_mq_conn_t *c)
 
     //** Form the ping message and make the base hearbeat message
     tbx_type_malloc_clear(hb, gop_mq_heartbeat_entry_t, 1);
-    hb->key = strdup(c->pc->host);
+    hb->key = tbx_stk_strdup(c->pc->host);
     hb->key_size = strlen(c->pc->host);
     hb->lut_id = tbx_atomic_global_counter();
     hb->count = 1;
@@ -2234,7 +2234,7 @@ gop_mq_portal_t *gop_mq_portal_create(gop_mq_context_t *mqc, char *host, gop_mq_
     tbx_type_malloc_clear(p, gop_mq_portal_t, 1);
 
     p->mqc = mqc;
-    p->host = strdup(host);
+    p->host = tbx_stk_strdup(host);
     p->command_table = gop_mq_command_table_new(NULL, NULL);
 
     if (connect_mode == MQ_CMODE_CLIENT) {
@@ -2393,7 +2393,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
 
     tbx_type_malloc_clear(mqc, gop_mq_context_t, 1);
 
-    mqc->section = strdup(section);
+    mqc->section = tbx_stk_strdup(section);
     mqc->fname_errors = tbx_inip_get_string(ifd, section, "fname_errors", mqc_default_options.fname_errors);
     mqc->max_conn = tbx_inip_get_integer(ifd, section, "max_conn", mqc_default_options.max_conn);
     mqc->min_threads = tbx_inip_get_integer(ifd, section, "min_threads", mqc_default_options.min_threads);
