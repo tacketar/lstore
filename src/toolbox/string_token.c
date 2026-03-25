@@ -50,7 +50,7 @@ char *tbx_stk_strndup(const char *s, size_t n)
     if (len > n) len = n;
     tbx_type_malloc(str, char, len+1);
     strncpy(str, s, len);
-    str[len-1] = '\0';
+    str[len] = '\0';
 
     return(str);
 }
