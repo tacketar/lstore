@@ -35,6 +35,43 @@ int64_t split_token_into_number_and_scale(char *token);
 
 char NULL_TERMINATOR = '\0';
 
+//***************************************************************
+// tbx_stk_strndup - Internal version of strndup using the
+//      tbx_malloc calls.
+//***************************************************************
+
+char *tbx_stk_strndup(const char *s, size_t n)
+{
+    size_t len;
+    char *str;
+
+    len = strlen(s);
+
+    if (len > n) len = n;
+    tbx_type_malloc(str, char, len+1);
+    strncpy(str, s, len);
+    str[len-1] = '\0';
+
+    return(str);
+}
+
+//***************************************************************
+// tbx_stk_strdup - Internal version of strdup using the
+//      tbx_malloc calls.
+//***************************************************************
+
+char *tbx_stk_strdup(const char *s)
+{
+    size_t len;
+    char *str;
+
+    len = strlen(s);
+
+    tbx_type_malloc(str, char, len+1);
+    strcpy(str, s);
+
+    return(str);
+}
 
 //***************************************************************
 // tbx_stk_strncpy - Safe version of strncpy() routine
@@ -50,7 +87,7 @@ char *tbx_stk_strncpy(char *dest, const char *src, size_t size, size_t n_dest)
 }
 
 //***************************************************************
-// tbx_stk_strncpy - Safe version of strncpy() routine
+// tbx_stk_strncat - Safe version of strncat() routine
 //***************************************************************
 
 char *tbx_stk_strncat(char *dest, const char *src, size_t n_cat, size_t n_dest)
@@ -154,7 +191,7 @@ char *tbx_stk_argv2format(char *arg)
     int i, j, k, n, sub;
     char special[] = { 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\' };
     char replace[] = { '\a', '\b', '\f', '\n', '\r', '\t', '\v', '\\' };
-    char *str = strdup(arg);
+    char *str = tbx_stk_strdup(arg);
 
     n = strlen(arg);
     if (n < 2) return(str);
