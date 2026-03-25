@@ -99,7 +99,7 @@ int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *ke
 
     if (cap == NULL) return(1);
 
-    char *temp = strdup(cap);
+    char *temp = tbx_stk_strdup(cap);
     char *ptr;
     tbx_stk_string_token(temp, "/", &bstate, &finished); //** gets the ibp:/
     ptr = tbx_stk_string_token(NULL, ":", &bstate, &finished); //** This should be the hostname

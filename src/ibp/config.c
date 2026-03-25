@@ -714,7 +714,7 @@ int ibp_config_load(ibp_context_t *ic, tbx_inip_file_t *keyfile, char *section)
 {
     if (section == NULL) section = "ibp";
 
-    ic->section = strdup(section);
+    ic->section = tbx_stk_strdup(section);
     ic->tcpsize = tbx_inip_get_integer(keyfile, section, "tcpsize", ic->tcpsize);
     ic->rw_new_command = tbx_inip_get_integer(keyfile, section, "rw_command_weight", ic->rw_new_command);
     ic->other_new_command = tbx_inip_get_integer(keyfile, section, "other_command_weight", ic->other_new_command);

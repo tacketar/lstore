@@ -83,7 +83,7 @@ void ibp_cap2depot(const ibp_cap_t *cap, ibp_depot_t *d)
     host[0] = '\0';
     port = -1;
 
-    char *temp = strdup(cap);
+    char *temp = tbx_stk_strdup(cap);
     char *ptr;
     tbx_stk_string_token(temp, "/", &bstate, &finished); //** gets the ibp:/
     ptr = tbx_stk_string_token(NULL, ":", &bstate, &finished); //** This should be the hostname
@@ -214,7 +214,7 @@ void ibp_cap_destroy(ibp_cap_t *cap)
 
 ibp_cap_t *dup_ibp_cap(ibp_cap_t *src)
 {
-    return(strdup(src));
+    return(tbx_stk_strdup(src));
 }
 
 //===================================================================

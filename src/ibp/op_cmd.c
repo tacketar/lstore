@@ -867,9 +867,9 @@ gop_op_status_t allocate_recv(gop_op_generic_t *gop, tbx_ns_t *ns)
         }
     }
 
-    cmd->caps->readCap = strdup(rcap);
-    cmd->caps->writeCap = strdup(wcap);
-    cmd->caps->manageCap = strdup(mcap);
+    cmd->caps->readCap = tbx_stk_strdup(rcap);
+    cmd->caps->writeCap = tbx_stk_strdup(wcap);
+    cmd->caps->manageCap = tbx_stk_strdup(mcap);
 
     log_printf(15, "alloc_recv: ns=%d rcap=%s wcap=%s mcap=%s\n", tbx_ns_getid(ns),
                cmd->caps->readCap, cmd->caps->writeCap, cmd->caps->manageCap);
