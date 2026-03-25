@@ -86,7 +86,7 @@ void free_isl_data(tbx_isl_data_t *data)
     while (curr != NULL) {
         prev = curr;
         curr = curr->next;
-        free(prev);
+        tbx_free(prev);
     }
 
 }
@@ -103,8 +103,8 @@ void remove_isl_node(int level, tbx_isl_node_t *node)
     free_isl_data(node->point);
 
     for (i=0; i<=level; i++) free_isl_data(node->edge[i]);
-    free(node->edge);
-    free(node);
+    tbx_free(node->edge);
+    tbx_free(node);
 }
 
 //*********************************************************************************
@@ -131,7 +131,7 @@ int remove_isl_data(tbx_isl_t *isl, tbx_isl_data_t **list, tbx_sl_data_t *data)
         prev->next = curr->next;
     }
 
-    free(curr);
+    tbx_free(curr);
 
     return(0);
 }
@@ -189,8 +189,8 @@ tbx_isl_node_t *create_isl_node()
 
 void destroy_isl_node(tbx_isl_node_t *isln)
 {
-    if (isln->edge != NULL) free(isln->edge);
-    free(isln);
+    if (isln->edge != NULL) tbx_free(isln->edge);
+    tbx_free(isln);
 
     return;
 }
@@ -266,7 +266,7 @@ void tbx_isl_del(tbx_isl_t *isl)
     }
 
     tbx_sl_del(sl);
-    free(isl);
+    tbx_free(isl);
 
     return;
 }
@@ -522,7 +522,7 @@ tbx_isl_iter_t *tbx_isl_iter_new()
 
 void tbx_isl_iter_del(tbx_isl_iter_t *it)
 {
-    free(it);
+    tbx_free(it);
 }
 
 //*********************************************************************************

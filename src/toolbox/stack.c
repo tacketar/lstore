@@ -109,7 +109,7 @@ void tbx_stack_empty(tbx_stack_t *stack, int data_also)
 
     if (data_also == 1) {
         while ((ptr = tbx_stack_pop(stack)) != NULL) {
-            free(ptr);
+            tbx_free(ptr);
         }
     } else {
         while ((ptr = tbx_stack_pop(stack)) != NULL) { };
@@ -124,7 +124,7 @@ void tbx_stack_empty(tbx_stack_t *stack, int data_also)
 void tbx_stack_free(tbx_stack_t *stack, int data_also)
 {
     tbx_stack_empty(stack, data_also);
-    free(stack);
+    tbx_free(stack);
 }
 
 //***************************************************
@@ -201,7 +201,7 @@ void *tbx_stack_pop(tbx_stack_t *stack)
     if (ele == NULL) return(NULL);
 
     data = ele->data;
-    free(ele);
+    tbx_free(ele);
 
     return(data);
 
@@ -412,7 +412,7 @@ int tbx_stack_insert_below(tbx_stack_t *stack, void *data)
     ele->data = data;
     int ret = tbx_stack_link_insert_below(stack, ele);
     if (!ret)
-        free(ele);
+        tbx_free(ele);
     return ret;
 }
 
@@ -462,7 +462,7 @@ int tbx_stack_insert_above(tbx_stack_t *stack, void *data)
     ele->data = data;
     int ret = tbx_stack_link_insert_above(stack, ele);
     if (!ret)
-        free(ele);
+        tbx_free(ele);
     return ret;
 }
 
@@ -515,8 +515,8 @@ int tbx_stack_delete_current(tbx_stack_t *stack, int mv_up, int data_also)
     tbx_stack_ele_t *ele = tbx_stack_unlink_current(stack, mv_up);
 
     if (ele != NULL) {
-        if (data_also) free(ele->data);
-        free(ele);
+        if (data_also) tbx_free(ele->data);
+        tbx_free(ele);
         return(1);
     } else {
         return(0);

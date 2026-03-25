@@ -102,8 +102,8 @@ void tbx_que_destroy(tbx_que_t *q)
     apr_thread_cond_destroy(q->put_cond);
     tbx_apr_pool_destroy(q->mpool);
 
-    free(q->array);
-    free(q);
+    tbx_free(q->array);
+    tbx_free(q);
     return;
 }
 

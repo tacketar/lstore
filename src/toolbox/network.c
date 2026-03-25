@@ -80,7 +80,7 @@ void tbx_ns_chksum_read_enable(tbx_ns_t *ns) { (ns)->read_chksum.is_running = 1;
 void tbx_ns_chksum_write_clear(tbx_ns_t *ns) { (ns)->write_chksum.is_valid = 0; }
 void tbx_ns_chksum_write_enable(tbx_ns_t *ns) { (ns)->write_chksum.is_running = 1; }
 
-void tbx_ns_chksum_del(tbx_ns_chksum_t *nsc)  { free(nsc); }
+void tbx_ns_chksum_del(tbx_ns_chksum_t *nsc)  { tbx_free(nsc); }
 
 tbx_ns_chksum_t *tbx_ns_chksum_new()
 {
@@ -816,7 +816,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
 
     return(0);
 error7:
-    free(nm->address);
+    tbx_free(nm->address);
 error6:
     apr_thread_cond_destroy(nm->cond);
 error5:
@@ -862,7 +862,7 @@ void close_server_port(tbx_ns_monitor_t *nm)
     //** Destroy the actual connection
     tbx_ns_destroy(nm->ns);
     //** Free the actual struct
-    free(nm->address);
+    tbx_free(nm->address);
     apr_thread_mutex_destroy(nm->lock);
     apr_thread_cond_destroy(nm->cond);
 
@@ -941,7 +941,7 @@ void teardown_netstream(tbx_ns_t *ns)
 {
     tbx_ns_close(ns);
     if (ns->enc) {
-        free(ns->enc);
+        tbx_free(ns->enc);
         ns->enc = NULL;
     }
     if (ns->id > 0) _ns_monitor_destroy(ns);
@@ -958,7 +958,7 @@ void teardown_netstream(tbx_ns_t *ns)
 void tbx_ns_destroy(tbx_ns_t *ns)
 {
     teardown_netstream(ns);
-    free(ns);
+    tbx_free(ns);
 }
 
 //*********************************************************************
@@ -1015,7 +1015,7 @@ void tbx_network_destroy(tbx_network_t *net)
     apr_thread_cond_destroy(net->cond);
     tbx_apr_pool_destroy(net->mpool);
 
-    free(net);
+    tbx_free(net);
 }
 
 //*********************************************************************

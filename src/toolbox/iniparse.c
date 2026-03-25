@@ -121,7 +121,7 @@ int tbx_inip_group_count(tbx_inip_file_t *inip) {
     return inip->n_groups;
 }
 void tbx_inip_group_free(tbx_inip_group_t *g) {
-    free(g->group);
+    tbx_free(g->group);
 }
 void tbx_inip_group_set(tbx_inip_group_t *ig, char *value) {
     ig->group = value;
@@ -212,13 +212,13 @@ char *substitute_params(tbx_inip_file_t *fd, char *text, int *error, int report_
                 if (use_env) {  //** If using env variables let's see if it's defined there
                     vtmp = getenv(param);
                     if (vtmp) {
-                        free(value);
+                        tbx_free(value);
                         value = tbx_stk_strdup(vtmp);
                     }
                 }
                 if (strcmp(value, "_^MISSING-PARAM^_") == 0) {
                     if (report_error) fprintf(stderr, "iniparse:  ERROR undefined parameter! parm=%s\n", param);
-                    free(value);
+                    tbx_free(value);
                     value = NULL;
                     if (error) *error = 1;
                 }
@@ -244,7 +244,7 @@ finished:
             strncpy(dest+ndest, value, nmax-ndest);
             ndest += strlen(value);
             dest[ndest] = 0;
-            free(value);
+            tbx_free(value);
             changed = 1;
         }
 
@@ -252,7 +252,7 @@ finished:
     } while (last[0] != 0);
 
     newtext = (changed) ? tbx_stk_strdup(dest) : NULL;
-    if (dest != subtext) free(dest);
+    if (dest != subtext) tbx_free(dest);
 
     return(newtext);
 }
@@ -285,13 +285,13 @@ int resolve_params(tbx_inip_file_t  *fd, int use_env)
         for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
             if ((str = substitute_params(fd, ele->key, &error, 1, use_env)) != NULL) {
                 n++;
-                free(ele->key);
+                tbx_free(ele->key);
                 ele->key = str;
             }
             n_errors += error;
             if ((str = substitute_params(fd, ele->value, &error, 1, use_env)) != NULL) {
                 n++;
-               free(ele->value);
+               tbx_free(ele->value);
                ele->value = str;
             }
             n_errors += error;
@@ -322,7 +322,7 @@ int tbx_inip_apply_params(tbx_inip_file_t  *fd)
     for (g = tbx_inip_group_first(fd); g != NULL; g = tbx_inip_group_next(g)) {
         if (g->substitution_check) {
             if ((str = substitute_params(fd, g->group, &error, 1, fd->use_env)) != NULL) {
-                free(g->group);
+                tbx_free(g->group);
                 g->group = str;
             }
             n_errors += error;
@@ -332,12 +332,12 @@ int tbx_inip_apply_params(tbx_inip_file_t  *fd)
             for (ele = tbx_inip_ele_first(g); ele != NULL; ele = tbx_inip_ele_next(ele)) {
                 if (ele->substitution_check) {
                     if ((str = substitute_params(fd, ele->key, &error, 1, fd->use_env)) != NULL) {
-                        free(ele->key);
+                        tbx_free(ele->key);
                         ele->key = str;
                     }
                     n_errors += error;
                     if ((str = substitute_params(fd, ele->value, &error, 1, fd->use_env)) != NULL) {
-                        free(ele->value);
+                        tbx_free(ele->value);
                         ele->value = str;
                     }
                     n_errors += error;
@@ -432,7 +432,7 @@ void bfile_cleanup(tbx_stack_t *stack)
 
     while ((entry = (bfile_entry_t *)tbx_stack_pop(stack)) != NULL) {
         if (entry->fd) tbx_io_fclose(entry->fd);
-        free(entry);
+        tbx_free(entry);
     }
 }
 
@@ -519,7 +519,7 @@ again:
 
     if (comment == NULL) {  //** EOF or error
         if (bfd->curr->fd) tbx_io_fclose(bfd->curr->fd);
-        free(bfd->curr);
+        tbx_free(bfd->curr);
 
         bfd->curr = (bfile_entry_t *) tbx_stack_pop(bfd->stack);
         if (bfd->curr == NULL) {
@@ -542,7 +542,7 @@ again:
         if (entry->fd == NULL) {  //** Can't open the file
             log_printf(-1, "_get_line: Problem opening include file !%s!\n", fname);
             fprintf(stderr, "_get_line: Problem opening include file !%s!\n", fname);
-            free(entry);
+            tbx_free(entry);
             *err = -1;
             bfd->error = -1;
             return(NULL);
@@ -702,9 +702,9 @@ tbx_inip_group_t *_next_group(bfile_t *bfd)
 
 void _free_element(tbx_inip_element_t *ele)
 {
-    free(ele->key);
-    free(ele->value);
-    free(ele);
+    tbx_free(ele->key);
+    tbx_free(ele->value);
+    tbx_free(ele);
 }
 
 //***********************************************************************
@@ -733,8 +733,8 @@ void _free_group(tbx_inip_group_t *group)
 {
     log_printf(15, "_free_group: group=%s\n", group->group);
     _free_list(group->list);
-    free(group->group);
-    free(group);
+    tbx_free(group->group);
+    tbx_free(group);
 }
 
 //***********************************************************************
@@ -760,9 +760,9 @@ void tbx_inip_destroy(tbx_inip_file_t *inip)
         group = next;
     }
 
-    if ((inip->auto_free_string) && (inip->string)) free(inip->string);
+    if ((inip->auto_free_string) && (inip->string)) tbx_free(inip->string);
 
-    free(inip);
+    tbx_free(inip);
 
     return;
 }
@@ -905,7 +905,7 @@ char *tbx_inip_get_string_full(tbx_inip_file_t *inip, const char *group, const c
 
     if (value == NULL) return(NULL);
     ret = tbx_stk_strdup(value);
-    if (sub) free(sub);
+    if (sub) tbx_free(sub);
 
     return(ret);
 }
@@ -945,8 +945,8 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, const
         hstr = tbx_stk_strdup(hints_string);
         tbx_stk_string2args(hstr, &argc, &argv);
         tbx_inip_hint_options_parse(hints, argv, &argc);
-        if (argv) free(argv);
-        free(hstr);
+        if (argv) tbx_free(argv);
+        tbx_free(hstr);
     }
 
     if (fd) rewind(fd);
@@ -1045,7 +1045,7 @@ tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, 
 
     tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, NULL, resolve_params, jail_prefix);
 
-    if (prefix) free(prefix);
+    if (prefix) tbx_free(prefix);
     return ret;
 }
 
@@ -1148,7 +1148,7 @@ int inip_convert2string_jail(FILE *fd_in, const char *text_in, char **text_out, 
     tbx_type_realloc(text, char, n_total+1);
     text[n_total] = '\0';
     if (err != 0) {
-        free(text);
+        tbx_free(text);
         text = NULL;
         n_total = 0;
     }
@@ -1193,7 +1193,7 @@ int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, c
     }
 
     i = inip_convert2string_jail(fd, NULL, text_out, nbytes, prefix, jail_prefix);
-    if (prefix) free(prefix);
+    if (prefix) tbx_free(prefix);
 
     return(i);
 }
@@ -1288,10 +1288,10 @@ tbx_inip_hint_t *tbx_inip_hint_new(int op, char *section, int section_rank, char
 
 void tbx_inip_hint_destroy(tbx_inip_hint_t *h)
 {
-    if (h->section) free(h->section);
-    if (h->key) free(h->key);
-    if (h->value) free(h->value);
-    free(h);
+    if (h->section) tbx_free(h->section);
+    if (h->key) tbx_free(h->key);
+    if (h->value) tbx_free(h->value);
+    tbx_free(h);
 }
 
 //***********************************************************************
@@ -1365,7 +1365,7 @@ tbx_inip_hint_t *tbx_inip_hint_parse(int op, char *text)
 
     h = tbx_inip_hint_new(op, section, srank, key, krank, value);
 error:
-    free(base);
+    tbx_free(base);
     return(h);
 }
 

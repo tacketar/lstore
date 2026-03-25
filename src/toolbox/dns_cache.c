@@ -218,7 +218,7 @@ int tbx_dnsc_shutdown()
     if (_cache->mpool != NULL) tbx_apr_pool_destroy(_cache->mpool);
     if (_cache->lockpool != NULL) tbx_apr_pool_destroy(_cache->lockpool);
 
-    free(_cache);
+    tbx_free(_cache);
 
     _cache = NULL;
     return 0;

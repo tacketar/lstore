@@ -50,8 +50,8 @@ tbx_stack_t *tbx_range_stack_string2range(char *string, char *range_delimiter, i
         _range_stack_merge(&range_stack, overlap_only, rng);
     } while (fin == 0);
 
-    free(token);
-    if (!good) free(rng);
+    tbx_free(token);
+    if (!good) tbx_free(rng);
 
     return(range_stack);
 }
@@ -158,10 +158,10 @@ void _range_stack_merge_only(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
                 _range_collapse(range_stack);
             }
         }
-        free(new_rng);
+        tbx_free(new_rng);
     } else if (rng != NULL) {  //** Check if overlap on curr range
         if (rng[0] <= hi+1) {  //** Got an overlap
-            free(new_rng);
+            tbx_free(new_rng);
             rng[0] = lo;
             if (rng[1] < hi) {  //** Expanding on the hi side so need to check for collapse
                 rng[1] = hi;
@@ -206,7 +206,7 @@ void _range_stack_overlap_only(tbx_stack_t **range_stack_ptr, int64_t *new_rng)
     tbx_stack_move_to_top(range_stack);
     while ((rng = tbx_stack_get_current_data(range_stack)) != NULL) {
         if ((lo >= rng[0]) && (hi <= rng[1])) { //** Complete overlap so kick out
-            free(new_rng);
+            tbx_free(new_rng);
             return;
         }
         if (lo <= rng[0]) { //** Insert here

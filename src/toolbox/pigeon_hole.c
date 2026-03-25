@@ -181,8 +181,8 @@ void tbx_ph_destroy(tbx_ph_t *ph)
     apr_thread_mutex_destroy(ph->lock);
     tbx_apr_pool_destroy(ph->pool);
 
-    free(ph->hole);
-    free(ph);
+    tbx_free(ph->hole);
+    tbx_free(ph);
 }
 
 //***************************************************************************

@@ -109,11 +109,11 @@ char *tbx_stdinarray_iter_last(tbx_stdinarray_iter_t *it)
     }
 
     if (it->curr_last == 1) {
-        free(it->curr);
+        tbx_free(it->curr);
         it->curr = NULL;
     }
     if (it->next_last == 1) {
-        free(it->next);
+        tbx_free(it->next);
         it->next = NULL;
     }
     return((it->last) ? tbx_stk_strdup(it->last) : NULL);
@@ -143,9 +143,9 @@ char *tbx_stdinarray_iter_peek(tbx_stdinarray_iter_t *it, int ahead)
 
 void tbx_stdinarray_iter_destroy(tbx_stdinarray_iter_t *it)
 {
-   if (it->curr) free(it->curr);
-   if (it->next) free(it->next);
-   free(it);
+   if (it->curr) tbx_free(it->curr);
+   if (it->next) tbx_free(it->next);
+   tbx_free(it);
 }
 
 //*************************************************************************

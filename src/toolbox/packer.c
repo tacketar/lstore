@@ -440,7 +440,7 @@ void tbx_pack_destroy(tbx_pack_t *pack)
 {
     log_printf(15, "type=%d mode=%d\n", pack->type, pack->mode);
     tbx_pack_end(pack);
-    free(pack);
+    tbx_free(pack);
 }
 
 //***********************************************************************

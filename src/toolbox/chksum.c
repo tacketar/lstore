@@ -180,7 +180,7 @@ int cipher ## _add(void *state, int nbytes, tbx_tbuf_t *data, int boff)   \
      i = tbx_tbuf_next_block(data, boff, tbv);    \
      iov = tbx_tbuf_var_buffer_get(tbv);          \
      if (i != TBUFFER_OK) { \
-         free(tbv); \
+         tbx_free(tbv); \
          return(0); \
      } \
      int n_iov = tbx_tbuf_var_n_iov_get(tbv);      \
@@ -189,12 +189,12 @@ int cipher ## _add(void *state, int nbytes, tbx_tbuf_t *data, int boff)   \
         nleft = nleft - iov[i].iov_len;            \
         boff = boff + iov[i].iov_len;              \
         if (nleft <= 0) { \
-            free(tbv); \
+            tbx_free(tbv); \
             return(err);               \
         } \
     }                                              \
   }                                                \
-  free(tbv);                                       \
+  tbx_free(tbv);                                       \
   return(err);                                     \
 }                                                  \
                                                    \

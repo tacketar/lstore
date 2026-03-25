@@ -162,7 +162,7 @@ void tbx_siginfo_install(char *fname, int signal)
 
     //** See if we just want to trap the signal and not overwrite any existing fname
     if ((fname == NULL) || (strcmp(fname, TBX_SIGINFO_ENABLE) != 0)) {
-        if (_siginfo_name[signal]) free(_siginfo_name[signal]);
+        if (_siginfo_name[signal]) tbx_free(_siginfo_name[signal]);
         _siginfo_name[signal] = fname;
     }
     apr_signal_unblock(signal);
@@ -183,7 +183,7 @@ void tbx_siginfo_shutdown()
 
     for (i=1; i<MAX_SIG; i++) {
         if (_si_list[i] != NULL) apr_signal_block(i);
-        if(_siginfo_name[i] != NULL) free(_siginfo_name[i]);
+        if(_siginfo_name[i] != NULL) tbx_free(_siginfo_name[i]);
     }
 
     tbx_apr_pool_destroy(_si_pool);

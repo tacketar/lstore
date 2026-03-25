@@ -155,7 +155,7 @@ int tbx_monitor_create(const char *fname)
     }
 
     apr_thread_mutex_lock(ctx->lock);
-    if (ctx->fname) free(ctx->fname);
+    if (ctx->fname) tbx_free(ctx->fname);
     ctx->fname = tbx_stk_strdup(fname);
     if (monitor_state == 1) ctx->fd = tbx_io_fopen(ctx->fname, "a");
     apr_thread_mutex_unlock(ctx->lock);
@@ -174,7 +174,7 @@ void tbx_monitor_destroy()
         tbx_io_fclose(ctx->fd);
         ctx->fd = NULL;
     }
-    if (ctx->fname) free(ctx->fname);
+    if (ctx->fname) tbx_free(ctx->fname);
     monitor_state = 0;
     apr_thread_mutex_unlock(ctx->lock);
     apr_pool_destroy(ctx->mpool);
@@ -865,7 +865,7 @@ void _mon_obj_label_set(mon_process_t *mp, _parse_obj_t *obj, int64_t count, cha
 
     entry = apr_hash_get(hash, &(obj->id), sizeof(obj->id));
     if (entry) {  //** Already exists so just update the entry
-        if (entry->label) free(entry->label);
+        if (entry->label) tbx_free(entry->label);
         if (count >= 0) entry->count = count;
         entry->label = text;
         entry->label_size = text_size;
@@ -934,7 +934,7 @@ apr_time_t _mon_obj_label_destroy(mon_process_t *mp, _parse_obj_t *obj)
             te->count--;
             if (te->count <= 0) {
                 apr_hash_set(hash, &(obj->id), sizeof(obj->id), NULL);
-                free(te);
+                tbx_free(te);
             }
         }
     }
@@ -947,10 +947,10 @@ apr_time_t _mon_obj_label_destroy(mon_process_t *mp, _parse_obj_t *obj)
     if (entry) {  //** Got it
         apr_hash_set(hash, &(obj->id), sizeof(obj->id), NULL);
         stime = entry->start_time;
-        if (entry->label) free(entry->label);
-        if (entry->buffer) free(entry->buffer);
-        if (entry->n_ref > 1) free(entry->r_array);
-        free(entry);
+        if (entry->label) tbx_free(entry->label);
+        if (entry->buffer) tbx_free(entry->buffer);
+        if (entry->n_ref > 1) tbx_free(entry->r_array);
+        tbx_free(entry);
     }
 
     return(stime);
@@ -1083,7 +1083,7 @@ void _mon_obj_count_delta(mon_process_t *mp, _parse_obj_t *a, int delta)
         entry->count += delta;
         if ((entry->count <= 0) && (delta != 0)) {
             apr_hash_set(hash, &(a->id), sizeof(a->id), NULL);
-            free(entry);
+            tbx_free(entry);
         }
     } else if (delta >= 0) {  //** Got to make a new entry
         tbx_type_malloc_clear(entry, _track_entry_t, 1);
@@ -1398,7 +1398,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "MESSAGE: %s=" LU " label=%s message=%s\n", type_label[aop.type], aop.id, alabel, text);
             }
-            if (text) free(text);
+            if (text) tbx_free(text);
             break;
         case (MON_REC_OBJ_DESTROY):
             if ((alabel = _mon_obj_is_tracked(&mp, &aop, dump_everything)) != NULL) {
@@ -1523,7 +1523,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
             if ((alabel = _mon_obj_is_tracked(&mp, &btp, dump_everything)) != NULL) {
                 _mon_printf(fd_out, dt, tid, "MESSAGE: %s=" LU " label=%s message=%s\n", type_label[btp.type], btp.id, alabel, text);
             }
-            if (text) free(text);
+            if (text) tbx_free(text);
             break;
         case (MON_REC_THREAD_DESTROY):
             if ((alabel = _mon_obj_is_tracked(&mp, &btp, dump_everything)) != NULL) {
@@ -1564,7 +1564,7 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
 
     //** Cleanup the types as needed
     for (i=0; i<256; i++) {
-        if (obj_types[i] == NULL) free(type_label[i]);
+        if (obj_types[i] == NULL) tbx_free(type_label[i]);
     }
 
     //** And the hashes
@@ -1572,14 +1572,14 @@ int tbx_monitor_parse_log(const char *fname, const char **obj_types, const char 
         if (mp.tracking.obj_hash[i]) {
             for (hi=apr_hash_first(NULL, mp.tracking.obj_hash[i]); hi != NULL; hi = apr_hash_next(hi)) {
                 apr_hash_this(hi, NULL, &hlen, (void **)&te);
-                free(te);
+                tbx_free(te);
             }
         }
         if (mp.labels.obj_hash[i]) {
             for (hi=apr_hash_first(NULL, mp.labels.obj_hash[i]); hi != NULL; hi = apr_hash_next(hi)) {
                 apr_hash_this(hi, NULL, &hlen, (void **)&le);
-                if (le->label) free(le->label);
-                free(le);
+                if (le->label) tbx_free(le->label);
+                tbx_free(le);
             }
         }
     }

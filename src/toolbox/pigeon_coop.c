@@ -269,9 +269,9 @@ void tbx_pc_destroy(tbx_pc_t *pc)
         pc->free(pc->new_arg, pc->shelf_size, pc->data_shelf[i]);
     }
 
-    free(pc->ph_shelf);
-    free(pc->data_shelf);
-    free(pc);
+    tbx_free(pc->ph_shelf);
+    tbx_free(pc->data_shelf);
+    tbx_free(pc);
 }
 
 //***************************************************************************

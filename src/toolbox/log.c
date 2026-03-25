@@ -121,9 +121,9 @@ void tbx_log_open(char *fname, int dolock)
         _log_fd = NULL;
     } else if ((_log_fd = tbx_io_fopen(_log_fname, "w")) == NULL) {
         int err = errno;
-        char *cwd = get_current_dir_name();
+        char *cwd = get_current_dir_name();  //** This will use he stock malloc()
         fprintf(stderr, "OPEN_LOG failed! Failed opening log file: %s  CWD=%s errno=%d\n", _log_fname, cwd, err); fflush(stderr);
-        if (cwd) free(cwd);
+        if (cwd) free(cwd);  //** Use the stock free call
         perror("OPEN_LOG: ");
     }
 
@@ -217,7 +217,7 @@ void tbx_mlog_load(tbx_inip_file_t *fd, char *output_override, int log_level_ove
     for (n=0; n<_mlog_size; n++) _mlog_table[n] = default_level;
     logname = (output_override == NULL) ? tbx_inip_get_string(fd, group_level, "output", "NULL") : tbx_stk_strdup(output_override);
     open_log(logname);
-    free(logname);
+    tbx_free(logname);
     _log_maxsize = tbx_inip_get_integer(fd, group_level, "size", 100*1024*1024);
 
     //** Load the mappings
@@ -320,5 +320,5 @@ tbx_log_fd_t *tbx_info_create(FILE *fd, int header_type, int level)
 void tbx_info_destroy(tbx_log_fd_t *ifd)
 {
     apr_thread_mutex_destroy(ifd->lock);
-    free(ifd);
+    tbx_free(ifd);
 }

@@ -97,7 +97,7 @@ int sock_close(net_sock_t *nsock)
 
     if (sock->fd != -1) tbx_io_close(sock->fd);
 
-    free(sock);
+    tbx_free(sock);
 
     return(0);
 }
@@ -374,7 +374,7 @@ net_sock_t *sock_accept(net_sock_t *nsock)
 
     sock->fd = accept(psock->fd, NULL, NULL);
     if (sock->fd == -1) {
-        free(sock);
+        tbx_free(sock);
         sock = NULL;
         log_printf(0, "ERROR with apr_socket_accept err=%d\n", errno);
     } else {

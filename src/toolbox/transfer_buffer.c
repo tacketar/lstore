@@ -73,7 +73,7 @@ tbx_tbuf_var_t *tbx_tbuf_var_create()
 
 void tbx_tbuf_var_destroy(tbx_tbuf_var_t *tbv)
 {
-    free(tbv);
+    tbx_free(tbv);
 }
 
 //*************************************************************
@@ -95,7 +95,7 @@ tbx_tbuf_t *tbx_tbuf_create()
 
 void tbx_tbuf_destroy(tbx_tbuf_t *tb)
 {
-    free(tb);
+    tbx_free(tb);
 }
 
 //*************************************************************

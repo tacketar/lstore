@@ -68,7 +68,7 @@ void tbx_lru_copy_default(void *arg, void *src, void *dest)
 
 void tbx_lru_free_default(void *arg, void *ptr)
 {
-    free(ptr);
+    tbx_free(ptr);
 }
 
 //************************************************************************************
@@ -274,21 +274,21 @@ void tbx_lru_destroy(tbx_lru_t *lru)
     //** Free the used que objects
     while ((entry = tbx_stack_pop(lru->que)) != NULL) {
         lru->free(lru->global_arg, entry->object);
-        free(entry);
+        tbx_free(entry);
     }
     tbx_stack_free(lru->que, 0);
 
     //** Free the unused que objects
     while ((entry = tbx_stack_pop(lru->unused)) != NULL) {
         lru->free(lru->global_arg, entry->object);
-        free(entry);
+        tbx_free(entry);
     }
     tbx_stack_free(lru->unused, 0);
 
     apr_thread_mutex_destroy(lru->lock);
     tbx_apr_pool_destroy(lru->pool);  //** This also destroys the hash
 
-    free(lru);
+    tbx_free(lru);
     return;
 }
 

@@ -66,7 +66,7 @@ TBX_MALLOC tbx_sl_t *tbx_sl_malloc()
 error_3:
     tbx_apr_pool_destroy(sl->pool);
 error_2:
-    free(sl);
+    tbx_free(sl);
 error_1:
     return NULL;
 }
@@ -90,7 +90,7 @@ void tbx_sl_del(tbx_sl_t * self)
     tbx_sl_fini(self);
     apr_thread_mutex_destroy(self->lock);
     tbx_apr_pool_destroy(self->pool);
-    free(self);
+    tbx_free(self);
 }
 
 int tbx_sl_init(tbx_sl_t * self)
@@ -199,7 +199,7 @@ tbx_sl_node_t *create_skiplist_node(unsigned int level)
     return sn;
 
 error_2:
-    free(sn);
+    tbx_free(sn);
 error_1:
     return NULL;
 }
@@ -219,14 +219,14 @@ void destroy_skiplist_node(tbx_sl_t *sl, tbx_sl_node_t *sn)
             se2 = se;
             se = se->next;
             sl->data_free(se2->data);
-            free(se2);
+            tbx_free(se2);
         }
     }
 
     sl->key_free(sn->key);
 
-    free(sn->next);
-    free(sn);
+    tbx_free(sn->next);
+    tbx_free(sn);
     return;
 }
 
@@ -251,7 +251,7 @@ void tbx_sl_free_no_data(tbx_sl_data_t *data)
 void tbx_sl_free_simple(tbx_sl_data_t *data)
 {
     log_printf(15, "p=%p\n", data);
-    free(data);
+    tbx_free(data);
 }
 
 tbx_sl_key_t *tbx_sl_dup_string(tbx_sl_key_t *key)
@@ -571,7 +571,7 @@ int tbx_sl_remove(tbx_sl_t *sl, tbx_sl_key_t *key, tbx_sl_data_t *data)
             sl->data_free(se->data);
             se2 = se;
             se = se->next;
-            free(se2);
+            tbx_free(se2);
         }
 
         empty_node = 1;
@@ -587,7 +587,7 @@ int tbx_sl_remove(tbx_sl_t *sl, tbx_sl_key_t *key, tbx_sl_data_t *data)
                 se2 = se->next;
                 se->data = se2->data;
                 se->next = se2->next;
-                free(se2);
+                tbx_free(se2);
             } else {
                 empty_node = 1;
             }
@@ -601,7 +601,7 @@ int tbx_sl_remove(tbx_sl_t *sl, tbx_sl_key_t *key, tbx_sl_data_t *data)
                     if (se->data != NULL) sl->data_free(se->data);
                     se2 = se->next;
                     prev->next = se2;
-                    free(se);
+                    tbx_free(se);
                 } else {
                     prev = se;
                     se = se->next;
@@ -713,7 +713,7 @@ void tbx_sl_iter_search_init(tbx_sl_iter_t *it, tbx_sl_t *sl, tbx_sl_key_t *key,
 void tbx_sl_iter_del(tbx_sl_iter_t *it)
 {
     if (it) {
-        free(it);
+        tbx_free(it);
     }
 }
 
@@ -809,7 +809,7 @@ int tbx_sl_iter_remove(tbx_sl_iter_t *it)
             it->sn->ele.next = se->next;
             it->sl->n_ele--;
             it->sl->data_free(se->data);
-            free(se);
+            tbx_free(se);
 
             it->ele = &(it->sn->ele);
         } else {
@@ -819,7 +819,7 @@ int tbx_sl_iter_remove(tbx_sl_iter_t *it)
         it->prev->next = it->curr->next;
         it->sl->n_ele--;
         if (it->curr->data != NULL) it->sl->data_free(it->curr->data);
-        free(it->curr);
+        tbx_free(it->curr);
     }
 
 

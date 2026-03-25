@@ -304,7 +304,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
             if (strcmp(header, "full") == 0) {
                 nlog->header_type = 1;
             }
-            free(header);
+            tbx_free(header);
         }
 
         //** See if we add the executable to the name
@@ -314,7 +314,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
             tbx_type_malloc_clear(fname, char, n);
             pid = getpid();
             snprintf(fname, n-1, "%s.%s", nlog->fname, __progname);
-            free(nlog->fname);
+            tbx_free(nlog->fname);
             nlog->fname = fname;
         }
 
@@ -325,7 +325,7 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
             tbx_type_malloc_clear(fname, char, n);
             pid = getpid();
             snprintf(fname, n-1, "%s." LU, nlog->fname, pid);
-            free(nlog->fname);
+            tbx_free(nlog->fname);
             nlog->fname = fname;
         }
 
@@ -354,11 +354,11 @@ tbx_notify_t *tbx_notify_create(tbx_inip_file_t *ifd, const char *text, char *se
 
 void tbx_notify_destroy(tbx_notify_t *nlog)
 {
-    if (nlog->section) free(nlog->section);
-    if (nlog->fname_from_config) free(nlog->fname_from_config);
-    if (nlog->fname) free(nlog->fname);
+    if (nlog->section) tbx_free(nlog->section);
+    if (nlog->fname_from_config) tbx_free(nlog->fname_from_config);
+    if (nlog->fname) tbx_free(nlog->fname);
     tbx_apr_pool_destroy(nlog->mpool);
-    free(nlog);
+    tbx_free(nlog);
 }
 
 //***********************************************************************
@@ -503,7 +503,7 @@ tbx_notify_iter_t *tbx_notify_iter_create(char *prefix, int year, int month, int
 void tbx_notify_iter_destroy(tbx_notify_iter_t *ni)
 {
     if (ni->fd) tbx_io_fclose(ni->fd);
-    if (ni->prefix) free(ni->prefix);
-    free(ni);
+    if (ni->prefix) tbx_free(ni->prefix);
+    tbx_free(ni);
 }
 
