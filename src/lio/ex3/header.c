@@ -22,6 +22,7 @@
 #include <string.h>
 #include <tbx/assert_result.h>
 #include <tbx/list.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "ex3/header.h"
@@ -80,7 +81,7 @@ char *ex_header_get_name(lio_ex_header_t *h)
 void ex_header_set_name(lio_ex_header_t *h, char *name)
 {
     if (h->name != NULL) free(h->name);
-    h->name = strdup(name);
+    h->name = tbx_stk_strdup(name);
 }
 
 
@@ -107,7 +108,7 @@ char *ex_header_get_type(lio_ex_header_t *h)
 }
 void ex_header_set_type(lio_ex_header_t *h, char *type)
 {
-    h->type = strdup(type);
+    h->type = tbx_stk_strdup(type);
 }
 
 //*************************************************************************

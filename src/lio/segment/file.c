@@ -422,17 +422,17 @@ gop_op_generic_t *segfile_clone(lio_segment_t *seg, data_attr_t *da, lio_segment
     sd = (segfile_priv_t *)clone->priv;
 
     //** Copy the header
-    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
+    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = tbx_stk_strdup(seg->header.name);
 
     if (use_existing == 0) {
         if (attr == NULL) {    //** make a new file using the segment id as the name if none specified
-            fname = strdup(ss->fname);
+            fname = tbx_stk_strdup(ss->fname);
             root = dirname(fname);
             sprintf(fid, "%s/" XIDT ".dat", root, segment_id(clone));
-            sd->fname = strdup(fid);
+            sd->fname = tbx_stk_strdup(fid);
             free(fname);
         } else {  //** User specified the path so use it
-            sd->fname = strdup((char *)attr);
+            sd->fname = tbx_stk_strdup((char *)attr);
         }
     }
 
@@ -571,7 +571,7 @@ int segfile_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange
     seg->header.id = id;
     if (s->qname != NULL) free(s->qname);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
-    s->qname = strdup(qname);
+    s->qname = tbx_stk_strdup(qname);
 
     seg->header.type = SEGMENT_TYPE_FILE;
     seg->header.name = tbx_inip_get_string(fd, seggrp, "name", "");
@@ -645,7 +645,7 @@ gop_op_generic_t *segment_file_make_gop(lio_segment_t *seg, data_attr_t *da, cha
     segfile_priv_t *s = (segfile_priv_t *)seg->priv;
     FILE *fd;
 
-    s->fname = strdup(fname);
+    s->fname = tbx_stk_strdup(fname);
     fd = tbx_io_fopen(fname, "r+");
 
     if (fd ==  NULL) {
@@ -681,7 +681,7 @@ lio_segment_t *segment_file_create(void *arg)
 
     s->tpc = lio_lookup_service(es, ESS_RUNNING, ESS_TPC_UNLIMITED);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
-    s->qname = strdup(qname);
+    s->qname = tbx_stk_strdup(qname);
 
     seg->priv = s;
     seg->ess = es;

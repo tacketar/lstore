@@ -25,6 +25,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "cache.h"
@@ -128,8 +129,8 @@ lio_cache_t *round_robin_cache_create(void *arg, data_attr_t *da, int timeout)
     cache->fn.destroy = rr_cache_destroy;
     cache->fn.get_handle = rr_get_handle;
     cache->fn.print_running_config = rr_print_running_config;
-    c->section = strdup(rr_default_options.section);
-    c->child_section = strdup(rr_default_options.child_section);
+    c->section = tbx_stk_strdup(rr_default_options.section);
+    c->child_section = tbx_stk_strdup(rr_default_options.child_section);
     c->n_cache = rr_default_options.n_cache;
 
     return(cache);
@@ -154,7 +155,7 @@ lio_cache_t *round_robin_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, d
 
     if (grp != NULL) {
         free(cp->section);
-        cp->section = strdup(grp);
+        cp->section = tbx_stk_strdup(grp);
     }
 
     cache_lock(c);

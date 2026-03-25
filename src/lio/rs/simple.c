@@ -416,7 +416,7 @@ disable_too_full:
                 for (k=0; k<req_size; k++) {
                     if (req[k].rid_index == i) {
                         log_printf(15, "rs_simple_request: ADDING i=%d ds_key=%s, rid_key=%s size=" XOT "\n", i, rse->ds_key, rse->rid_key, req[k].size);
-                        req[k].rid_key = strdup(rse->rid_key);
+                        req[k].rid_key = tbx_stk_strdup(rse->rid_key);
                         req[k].gop = ds_allocate(rss->ds, rse->ds_key, da, req[k].size, caps[k], timeout);
                         gop_opque_add(que, req[k].gop);
                     }
@@ -509,7 +509,7 @@ char *rs_simple_get_rid_value(lio_resource_service_fn_t *arg, char *rid_key, cha
     rse = tbx_list_search(rss->rid_table, rid_key);
     if (rse != NULL) {
         value = tbx_list_search(rse->attr, key);
-        if (value != NULL)  value = strdup(value);
+        if (value != NULL)  value = tbx_stk_strdup(value);
     }
     apr_thread_mutex_unlock(rss->lock);
 
@@ -561,10 +561,10 @@ lio_rss_rid_entry_t *rss_load_entry(tbx_inip_group_t *grp, lio_blacklist_t *bl)
         key = tbx_inip_ele_get_key(ele);
         value = tbx_inip_ele_get_value(ele);
         if (strcmp(key, "rid_key") == 0) {  //** This is the RID so store it separate
-            rse->rid_key = strdup(value);
+            rse->rid_key = tbx_stk_strdup(value);
             tbx_list_insert(rse->attr, key, rse->rid_key);
         } else if (strcmp(key, "ds_key") == 0) {  //** This is what gets passed to the data service
-            rse->ds_key = strdup(value);
+            rse->ds_key = tbx_stk_strdup(value);
         } else if (strcmp(key, "status") == 0) {  //** Current status
             rse->status = atoi(value);
             if (bl) {
@@ -579,7 +579,7 @@ lio_rss_rid_entry_t *rss_load_entry(tbx_inip_group_t *grp, lio_blacklist_t *bl)
         } else if (strcmp(key, "space_total") == 0) {  //** Total bytes
             rse->space_total = tbx_stk_string_get_integer(value);
         } else if ((key != NULL) && (value != NULL)) {  //** Anything else is an attribute
-            tbx_list_insert(rse->attr, key, strdup(value));
+            tbx_list_insert(rse->attr, key, tbx_stk_strdup(value));
         }
 
         log_printf(15, "rss_load_entry: key=%s value=%s\n", key, value);
@@ -865,8 +865,8 @@ void _rss_make_check_table(lio_resource_service_fn_t *rs)
     for (i=0; i<rss->n_rids; i++) {
         re = rss->random_array[i];
         tbx_type_malloc(ce, lio_rss_check_entry_t, 1);
-        ce->ds_key = strdup(re->ds_key);
-        ce->rid_key = strdup(re->rid_key);
+        ce->ds_key = tbx_stk_strdup(re->ds_key);
+        ce->rid_key = tbx_stk_strdup(re->rid_key);
         ce->space = ds_inquire_create(rss->ds);
         ce->re = re;
 
@@ -1197,7 +1197,7 @@ lio_resource_service_fn_t *rs_simple_create(void *arg, tbx_inip_file_t *kf, char
     //** Create the new RS list
     tbx_type_malloc_clear(rss, lio_rs_simple_priv_t, 1);
 
-    rss->section = strdup(section);
+    rss->section = tbx_stk_strdup(section);
 
     assert_result(tbx_apr_pool_create(&(rss->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(rss->lock), APR_THREAD_MUTEX_DEFAULT, rss->mpool);

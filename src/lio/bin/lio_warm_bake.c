@@ -381,7 +381,7 @@ ex_off_t part_load_inodes(warm_partition_t *wp, int n_part)
         tbx_type_malloc_clear(info, warm_prep_info_t, 1);
         info->inode = *inode_ptr;
         info->n_allocs = ival->n_allocs;
-        info->fname = strdup(ival->strings);
+        info->fname = tbx_stk_strdup(ival->strings);
 
         //** Finally add it to the hash
         apr_hash_set(wp->inode, &(info->inode), sizeof(ex_id_t), info);
@@ -442,7 +442,7 @@ kick_out:
                 rcl->tally = apr_hash_get(wp->rid_tally, rid_key, APR_HASH_KEY_STRING);
                 if (!rcl->tally) {
                     tbx_type_malloc_clear(rcl->tally, rid_tally_t, 1);
-                    rcl->tally->rid_key = strdup(rid_key);
+                    rcl->tally->rid_key = tbx_stk_strdup(rid_key);
                     apr_hash_set(wp->rid_tally, rcl->tally->rid_key, strlen(rid_key), rcl->tally);
                 }
                 rcl->tally->total_size += total_cap_size;
@@ -450,7 +450,7 @@ kick_out:
 
             if (kick_out) break;
 
-            rid_key = strdup(rcap_ptr->strings);
+            rid_key = tbx_stk_strdup(rcap_ptr->strings);
             n_caps = 0;
             n_caps_size = 0;
             total_cap_size = 0;
@@ -676,7 +676,7 @@ int warm_dump_summary(warm_partition_t *wp, int summary_mode)
                 value = tbx_inip_ele_get_value(ele);
                 if (strcmp(rkey, "rid_key") == 0) {
                     tbx_inip_group_free(ig);
-                    tbx_inip_group_set(ig, strdup(value));
+                    tbx_inip_group_set(ig, tbx_stk_strdup(value));
                 }
 
                 ele = tbx_inip_ele_next(ele);

@@ -107,7 +107,7 @@ int rc_parse(char *remote_config, char **rc_host, char **rc_fname)
     int i;
     char *fname, *rc, *bstate;
 
-    rc = strdup(remote_config);
+    rc = tbx_stk_strdup(remote_config);
     *rc_fname = NULL;
     *rc_host = tbx_stk_string_token(rc, "@", &bstate, &i);
     fname = tbx_stk_string_token(NULL, "@", &bstate, &i);
@@ -117,7 +117,7 @@ int rc_parse(char *remote_config, char **rc_host, char **rc_fname)
         return(1);
     }
 
-    *rc_fname = (fname) ? strdup(fname) : "lio";
+    *rc_fname = (fname) ? tbx_stk_strdup(fname) : "lio";
     return(0);
 }
 
@@ -167,7 +167,7 @@ gop_op_status_t rcc_response_get_config(void *task_arg, int tid)
     }
 
     if (n_config > 0) {
-        *arg->config = strndup(config, n_config);
+        *arg->config = tbx_stk_strndup(config, n_config);
         log_printf(5, "rc_config_len=%d\n", n_config);
     }
 
@@ -467,10 +467,10 @@ int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_str
     tbx_inip_file_t *ifd;
 
     *config = NULL;
-    mq = (mq_default) ? strdup(mq_default) : strdup(LIO_MQ_NAME_DEFAULT);
+    mq = (mq_default) ? tbx_stk_strdup(mq_default) : tbx_stk_strdup(LIO_MQ_NAME_DEFAULT);
     port = 6711;
-    rc_file = strdup("lio");
-    rc_section = strdup("lio");
+    rc_file = tbx_stk_strdup("lio");
+    rc_section = tbx_stk_strdup("lio");
     rc_host = NULL;
     lio_parse_path(rc_string, rc_user, &mq, &rc_host, &port, &rc_file, &rc_section, hints_string, NULL, 0);
 
@@ -613,12 +613,12 @@ rc_configs_t  *_rc_configs_create(tbx_inip_file_t *fd)
 
             log_printf(10, "config=%s n_stack=%d\n", config, tbx_stack_count(stack));
             tbx_type_malloc_clear(obj, rc_object_t, 1);
-            obj->object = strdup(config);
+            obj->object = tbx_stk_strdup(config);
             obj->n_account = tbx_stack_count(stack);
             if (obj->n_account > 0) {
                 tbx_type_malloc(obj->account, char *, obj->n_account);
                 for (i=0; i<obj->n_account; i++) {
-                    obj->account[i] = strdup(tbx_stack_pop(stack));
+                    obj->account[i] = tbx_stk_strdup(tbx_stack_pop(stack));
                 }
             }
             apr_hash_set(cfgs->table, obj->object, APR_HASH_KEY_STRING, obj);
@@ -697,7 +697,7 @@ int rc_server_install(lio_config_t *lc, char *section)
     apr_thread_mutex_create(&(rc_server->lock), APR_THREAD_MUTEX_DEFAULT, rc_server->mpool);
     apr_thread_cond_create(&(rc_server->cond), rc_server->mpool);
 
-    rc_server->section = strdup(section);
+    rc_server->section = tbx_stk_strdup(section);
     rc_server->mqc = lc->mqc;
     rc_server->host = tbx_inip_get_string(lc->ifd, section, "host", rc_default_options.host);
     rc_server->prefix = tbx_inip_get_string(lc->ifd, section, "prefix", rc_default_options.prefix);

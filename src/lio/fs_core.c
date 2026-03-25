@@ -843,7 +843,7 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         tbx_monitor_thread_ungroup(&(dit->mo), MON_MY_THREAD);
         if (ftype <= 0) break; //** No more files
 
-        de.dentry = strdup(fname+prefix_len+1);
+        de.dentry = tbx_stk_strdup(fname+prefix_len+1);
         de.ftype = ftype;
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
         free(fname);
@@ -947,7 +947,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     dit->state = 0;
 
     //** Add "."
-    dit->dot_path = strdup(fname);
+    dit->dot_path = tbx_stk_strdup(fname);
     if (lio_fs_stat_full(fs, ug, fname, &(dit->dot_de.stat), &(dit->dot_de.ftype), NULL, 1, 0) != 0) {
         TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].errors);
         TBX_STATS_INC(fs->stats.op[FS_SLOT_OPENDIR].finished);
@@ -962,7 +962,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
         dit->dotdot_path = dir;
         free(file);
     } else {
-        dit->dotdot_path = strdup(fname);
+        dit->dotdot_path = tbx_stk_strdup(fname);
     }
 
     log_printf(2, "dot=%s dotdot=%s\n", dit->dot_path, dit->dotdot_path);
@@ -1002,11 +1002,11 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
 
     //** See if we are dealing with "." or ".."
     if (dit->state == 0) {
-        *dentry = strdup(".");
+        *dentry = tbx_stk_strdup(".");
         *stat = dit->dot_de.stat;
         if (ftype) *ftype = dit->dot_de.ftype;
     } else if (dit->state == 1) {
-        *dentry = strdup("..");
+        *dentry = tbx_stk_strdup("..");
         *stat = dit->dotdot_de.stat;
         if (ftype) *ftype = dit->dotdot_de.ftype;
     }
@@ -1487,7 +1487,7 @@ lio_fd_t *lio_fs_open(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,
     fop = apr_hash_get(fs->open_files, fname, APR_HASH_KEY_STRING);
     if (fop == NULL) {
         tbx_type_malloc_clear(fop, fs_open_file_t, 1);
-        fop->fname = strdup(fd->path);
+        fop->fname = tbx_stk_strdup(fd->path);
         fop->sid = segment_id(fd->fh->seg);
         fop->ftype = fd->ftype;
         if ((fd->ftype & OS_OBJECT_SYMLINK_FLAG) || (fd->sfd != -1)) fop->special = 1;
@@ -1935,7 +1935,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     if (fop) {  //** Got an open file so need to mve the entry there as well.
         apr_hash_set(fs->open_files, oldname, APR_HASH_KEY_STRING, NULL);
         free(fop->fname);
-        fop->fname = strdup(newname);
+        fop->fname = tbx_stk_strdup(newname);
         apr_hash_set(fs->open_files, fop->fname, APR_HASH_KEY_STRING, fop);
         if (fop->special) {
             fop = NULL;
@@ -1952,7 +1952,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
         if (fh) {
             apr_thread_mutex_lock(fh->lock);
             free(fh->fname);
-            fh->fname = strdup(newname);
+            fh->fname = tbx_stk_strdup(newname);
             apr_thread_mutex_unlock(fh->lock);
         }
         lio_unlock(fs->lc);
@@ -3273,7 +3273,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     tbx_type_malloc_clear(fs, lio_fs_t, 1);
 
     fs->lc = (lc) ? lc : lio_gc;
-    fs->fs_section = (fs_section) ? strdup(fs_section) : strdup("fs");
+    fs->fs_section = (fs_section) ? tbx_stk_strdup(fs_section) : tbx_stk_strdup("fs");
 
     fs->enable_tape = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_tape", 0);
     fs->enable_osaz_acl_mappings = tbx_inip_get_integer(fd, fs->fs_section, "enable_osaz_acl_mappings", 0);

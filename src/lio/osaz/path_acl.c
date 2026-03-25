@@ -27,6 +27,7 @@
 #include <tbx/append_printf.h>
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
 #include "authn.h"
@@ -639,7 +640,7 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
     tbx_type_malloc(osaz, lio_os_authz_t, 1);
     tbx_type_malloc(opa, osaz_pacl_t, 1);
     osaz->priv = opa;
-    opa->section = strdup(section);
+    opa->section = tbx_stk_strdup(section);
     assert_result(tbx_apr_pool_create(&(opa->mpool), NULL), APR_SUCCESS);
     apr_thread_mutex_create(&(opa->lock), APR_THREAD_MUTEX_DEFAULT, opa->mpool);
     apr_thread_cond_create(&(opa->cond), opa->mpool);
@@ -680,17 +681,17 @@ lio_os_authz_t *osaz_path_acl_create(lio_service_manager_t *ess, tbx_inip_file_t
         if (or->override_mode) { //** Got something so process the attr list
             if (or->override_mode & PACL_MODE_PERMS) {
                 snprintf(attr, sizeof(attr)-1, "%s.perms", opa->acl_ns);
-                or->attrs[or->n_override] = strdup(attr);
+                or->attrs[or->n_override] = tbx_stk_strdup(attr);
                 or->n_override++;
             }
             if (or->override_mode & PACL_MODE_POSIX) {
                 snprintf(attr, sizeof(attr)-1, "%s.posix_acl_access", opa->acl_ns);
-                or->attrs[or->n_override] = strdup(attr);
+                or->attrs[or->n_override] = tbx_stk_strdup(attr);
                 or->n_override++;
             }
             if (or->override_mode & PACL_MODE_NFS4) {
                 snprintf(attr, sizeof(attr)-1, "%s.nfs4_acl", opa->acl_ns);
-                or->attrs[or->n_override] = strdup(attr);
+                or->attrs[or->n_override] = tbx_stk_strdup(attr);
                 or->n_override++;
             }
         }

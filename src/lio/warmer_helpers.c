@@ -686,8 +686,8 @@ int prep_warm_rid_db_parse(warm_prep_db_t *wdb, char *buffer, int blen, ex_id_t 
     rid_prep_key_t *rkey = (rid_prep_key_t *)buffer;
 
     *inode = rkey->id;
-    *rid_key = strndup(rkey->strings, rkey->rid_len);
-    *mcap = strndup(rkey->strings + rkey->rid_len + 1, rkey->mcap_len);
+    *rid_key = tbx_stk_strndup(rkey->strings, rkey->rid_len);
+    *mcap = tbx_stk_strndup(rkey->strings + rkey->rid_len + 1, rkey->mcap_len);
     return(0);
 }
 
@@ -855,7 +855,7 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
             //** Get the RID key
             etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "rid_key", NULL);
             if (etext == NULL) {
-                etext = strdup("catchall");  //** Dummy placeholder
+                etext = tbx_stk_strdup("catchall");  //** Dummy placeholder
             }
             apr_hash_set(rids, etext, APR_HASH_KEY_STRING, "DUMMY");
 

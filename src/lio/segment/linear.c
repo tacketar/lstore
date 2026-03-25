@@ -1264,7 +1264,7 @@ gop_op_generic_t *seglin_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sd = (seglin_priv_t *)clone->priv;
 
     //** Copy the header
-    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
+    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = tbx_stk_strdup(seg->header.name);
 
     //** Copy the default rs queury
     if (use_existing == 0) {
@@ -1560,7 +1560,7 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
 
             //** Parse the segment line
             value = tbx_inip_ele_get_value(ele);
-            token = strdup(value);
+            token = tbx_stk_strdup(value);
             sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XIDT, &id);
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->seg_offset));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->cap_offset));

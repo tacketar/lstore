@@ -21,6 +21,7 @@
 #define _log_module_index 200
 
 #include <stdlib.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "blacklist.h"
@@ -66,7 +67,7 @@ void blacklist_add(lio_blacklist_t *bl, char *rid_key, int rs_added, int do_lock
         log_printf(2, "Blacklisting RID=%s\n", rid_key);
         if ((bl->notify) && (rs_added == 0))  tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_ADD: rid=%s rs_added=%d\n", rid_key, rs_added);
         tbx_type_malloc(bl_rid, lio_blacklist_ibp_rid_t, 1);
-        bl_rid->rid = strdup(rid_key);
+        bl_rid->rid = tbx_stk_strdup(rid_key);
         bl_rid->recheck_time = apr_time_now() + ((rs_added == 0) ? bl->timeout : apr_time_from_sec(7200));
         bl_rid->rs_added = rs_added;
         apr_hash_set(bl->table, bl_rid->rid, APR_HASH_KEY_STRING, bl_rid);

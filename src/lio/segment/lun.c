@@ -233,7 +233,7 @@ void lun_global_retry_add(ex_id_t sid, char *cap)
     if (lun_global->retry[n].cap) free(lun_global->retry[n].cap);
     lun_global->retry[n].t = apr_time_now();
     lun_global->retry[n].sid = sid;
-    lun_global->retry[n].cap = strdup(cap);
+    lun_global->retry[n].cap = tbx_stk_strdup(cap);
 
     n++;
     lun_global->used_retry++;
@@ -2561,7 +2561,7 @@ gop_op_generic_t *seglun_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     }
 
     //** Copy the header
-    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
+    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = tbx_stk_strdup(seg->header.name);
 
     //** Copy the default rs query
     if (use_existing == 0) {
@@ -2872,7 +2872,7 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
 
             //** Parse the segment line
             value = tbx_inip_ele_get_value(ele);
-            token = strdup(value);
+            token = tbx_stk_strdup(value);
             sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(b->seg_offset));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->seg_end));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->row_len));

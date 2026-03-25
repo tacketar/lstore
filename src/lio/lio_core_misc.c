@@ -325,7 +325,7 @@ try_again:
         if (is_special('/', startpath, k, '\\')) { //** Didn't find anything else to to parse
             if (path) {
                 if (*path) free(*path);
-                *path = strdup(startpath + k);
+                *path = tbx_stk_strdup(startpath + k);
             }
             goto kick_out;
         } else { //** Just have a host
@@ -455,7 +455,7 @@ handle_path:
     //** Anythng else is the path
     if ((k<n) && (path)) {
         if (*path) free(*path);
-        *path = (path_is_literal == 0) ? tbx_stk_unescape_strndup('\\', startpath + k, -1) : strdup(startpath + k);
+        *path = (path_is_literal == 0) ? tbx_stk_unescape_strndup('\\', startpath + k, -1) : tbx_stk_strdup(startpath + k);
     }
 
 kick_out:

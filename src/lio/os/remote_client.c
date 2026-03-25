@@ -2880,7 +2880,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
     tbx_type_malloc_clear(osrc, lio_osrc_priv_t, 1);
     os->priv = (void *)osrc;
 
-    osrc->section = strdup(section);
+    osrc->section = tbx_stk_strdup(section);
 
     str = tbx_inip_get_string(fd, section, "os_temp", osrc_default_options.temp_section);
     if (str != NULL) {  //** Running in test/temp

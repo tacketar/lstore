@@ -25,6 +25,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "cache.h"
@@ -98,7 +99,7 @@ lio_cache_t *direct_cache_create(void *arg, data_attr_t *da, int timeout)
     cache->fn.destroy = direct_cache_destroy;
     cache->fn.get_handle = cache_base_handle;
     cache->fn.print_running_config = direct_print_running_config;
-    c->section = strdup(direct_default_options.section);
+    c->section = tbx_stk_strdup(direct_default_options.section);
 
     return(cache);
 }
@@ -119,7 +120,7 @@ lio_cache_t *direct_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_a
 
     if (grp != NULL) {
         if (cp->section) free(cp->section);
-        cp->section = strdup(grp);
+        cp->section = tbx_stk_strdup(grp);
     }
 
     return(c);

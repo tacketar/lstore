@@ -1192,7 +1192,7 @@ gop_op_status_t seg_mirror_clone_fn(void *arg, int id)
     //** Make the base segment
     if (use_existing == 0) {
         *op->dseg = segment_mirror_create(op->sseg->ess);
-        if (op->sseg->header.name != NULL) (*op->dseg)->header.name = strdup(op->sseg->header.name);
+        if (op->sseg->header.name != NULL) (*op->dseg)->header.name = tbx_stk_strdup(op->sseg->header.name);
     }
 
     clone = *op->dseg;
@@ -1491,7 +1491,7 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
         key = tbx_inip_ele_get_key(ele);
         if (strcmp(key, "mirror") == 0) {
             value = tbx_inip_ele_get_value(ele);
-            token = strdup(value);
+            token = tbx_stk_strdup(value);
             sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->child_status[i]));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XIDT, &cid);
             free(token);

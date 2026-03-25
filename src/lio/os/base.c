@@ -210,7 +210,7 @@ lio_os_regex_table_t *lio_os_path_glob2regex_full(const char *path, int is_liter
         return(NULL);
     }
 
-    p2 = (is_literal == 0) ? strdup(path) : tbx_stk_escape_text("\\[].*", '\\', (char *)path);
+    p2 = (is_literal == 0) ? tbx_stk_strdup(path) : tbx_stk_escape_text("\\[].*", '\\', (char *)path);
 
     //** Determine the max number of path fragments
     j = 1;
@@ -315,7 +315,7 @@ lio_os_regex_table_t *lio_os_regex2table(char *regex)
 
     table = os_regex_table_create(1);
 
-    table->regex_entry[0].expression = strdup(regex);
+    table->regex_entry[0].expression = tbx_stk_strdup(regex);
     err = regcomp(&(table->regex_entry[0].compiled), table->regex_entry[0].expression, REG_NOSUB|REG_EXTENDED);
     if (err != 0) {
         lio_os_regex_table_destroy(table);
@@ -367,35 +367,35 @@ again:
     if (path[0] == '.') {
         if (path[1] == '.') {
             if (path[2] == '\0') {
-                *dir = strdup(".");
+                *dir = tbx_stk_strdup(".");
                 if (*file) free(*file);
-                *file = strdup("..");
+                *file = tbx_stk_strdup("..");
                 goto finished;
             }
         } else if (path[1] == '\0') {
-            *dir = strdup(".");
+            *dir = tbx_stk_strdup(".");
             if (*file) free(*file);
-            *file = strdup(".");
+            *file = tbx_stk_strdup(".");
             goto finished;
         }
     } else if ((path[0] == '/') && (path[1] == '\0')) {
-        *dir = strdup("/");
+        *dir = tbx_stk_strdup("/");
         if (*file) free(*file);
-        *file = strdup("/");
+        *file = tbx_stk_strdup("/");
         goto finished;
     }
 
     c = rindex(path, '/');
     if (c == NULL) {
-        *dir = strdup(".");
+        *dir = tbx_stk_strdup(".");
         if (*file) free(*file);
-        *file = strdup(path);
+        *file = tbx_stk_strdup(path);
         goto finished;
     }
 
     //** See if we terminate with a "/"
     if (*file) free(*file);
-    *file = strdup(c + 1);
+    *file = tbx_stk_strdup(c + 1);
     i = strlen(*file);
     if (i>0) {
         n = i;
@@ -404,7 +404,7 @@ again:
             free(*file);
             *file = NULL;
             i = c - path + n;
-            ptr = strndup(path, i);
+            ptr = tbx_stk_strndup(path, i);
             if (path != mypath) free(path);
             path = ptr;
             goto again;
@@ -414,30 +414,30 @@ again:
         n = i;
         while (path[n-1] == '/') n--;
         if (n != i) {
-            ptr = strndup(path, i);
+            ptr = tbx_stk_strndup(path, i);
             if (path != mypath) free(path);
             path = ptr;
             goto again;
         } else {
-            ptr = strndup(path, i);
+            ptr = tbx_stk_strndup(path, i);
             if (path != mypath) free(path);
             path = ptr;
             path[n] = '\0';
             c = rindex(path, '/');
             if (*file != NULL) free(*file);
-            *file = (c) ? strdup(c + 1) : NULL;
+            *file = (c) ? tbx_stk_strdup(c + 1) : NULL;
         }
     }
 
     if (c == NULL) {
-        *dir = strdup(".");
+        *dir = tbx_stk_strdup(".");
         if (*file != NULL) free(*file);
-        *file = (path != mypath) ? strdup(path) : strdup(mypath);
+        *file = (path != mypath) ? tbx_stk_strdup(path) : tbx_stk_strdup(mypath);
     } else {
         i = c - path;
         while ((i>0) && (path[i-1] == '/')) i--;
         if (i == 0) {
-            *dir = strdup("/");
+            *dir = tbx_stk_strdup("/");
         } else {
             tbx_type_malloc(*dir, char, i+1); memcpy(*dir, path, i); (*dir)[i] = '\0';
         }

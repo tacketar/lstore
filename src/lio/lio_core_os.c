@@ -34,6 +34,7 @@
 #include <tbx/log.h>
 #include <tbx/normalize_path.h>
 #include <tbx/skiplist.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/random.h>
 #include <unistd.h>
@@ -533,11 +534,11 @@ gop_op_generic_t *lio_create_inode_gop(lio_config_t *lc, lio_creds_t *creds, cha
 
     op->lc = lc;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = type;
     op->inode = inode;
-    op->id = (id != NULL) ? strdup(id) : NULL;
-    op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
+    op->ex = (ex != NULL) ? tbx_stk_strdup(ex) : NULL;
     op->attr_extra = attr_extra;
     op->val_extra = val_extra;
     op->v_size_extra = v_size_extra;
@@ -557,10 +558,10 @@ gop_op_generic_t *lio_create_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
 
     op->lc = lc;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = type;
-    op->id = (id != NULL) ? strdup(id) : NULL;
-    op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
+    op->ex = (ex != NULL) ? tbx_stk_strdup(ex) : NULL;
     op->attr_extra = attr_extra;
     op->val_extra = val_extra;
     op->v_size_extra = v_size_extra;
@@ -642,10 +643,10 @@ gop_op_generic_t *lio_mkpath_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
 
     op->lc = lc;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = type;
-    op->id = (id != NULL) ? strdup(id) : NULL;
-    op->ex = (ex != NULL) ? strdup(ex) : NULL;
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
+    op->ex = (ex != NULL) ? tbx_stk_strdup(ex) : NULL;
     op->attr_extra = attr_extra;
     op->val_extra = val_extra;
     op->v_size_extra = v_size_extra;
@@ -777,7 +778,7 @@ gop_op_generic_t *lio_remove_gop(lio_config_t *lc, lio_creds_t *creds, char *pat
 
     op->lc = lc;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->ex = ex_optional;
     op->type = ftype_optional;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_remove_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
@@ -1019,8 +1020,8 @@ gop_op_generic_t *lio_move_object_gop(lio_config_t *lc, lio_creds_t *creds, char
 
     op->lc = lc;
     op->creds = creds;
-    op->src_path = strdup(src_path);
-    op->dest_path = strdup(dest_path);
+    op->src_path = tbx_stk_strdup(src_path);
+    op->dest_path = tbx_stk_strdup(dest_path);
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_move_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
@@ -1133,9 +1134,9 @@ gop_op_generic_t *lio_link_gop(lio_config_t *lc, lio_creds_t *creds, int symlink
     op->lc = lc;
     op->creds = creds;
     op->type = symlink;
-    op->src_path = strdup(src_path);
-    op->dest_path = strdup(dest_path);
-    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->src_path = tbx_stk_strdup(src_path);
+    op->dest_path = tbx_stk_strdup(dest_path);
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
     return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_link_object_fn, (void *)op, lio_free_mk_mv_rm, 1));
 }
 
@@ -1951,7 +1952,7 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
         lio_os_path_split((char *)path, &dir, &file);
         free(file);
     } else {
-        dir = strdup(path);
+        dir = tbx_stk_strdup(path);
     }
 
     dit->dot.dentry = "..";
@@ -1980,10 +1981,10 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
         de = (dit->state == 0) ? &(dit->dot) : &(dit->dotdot);
         *stat = de->stat;
         if (dentry) {
-            if (de->dentry) *dentry = strdup(de->dentry);
+            if (de->dentry) *dentry = tbx_stk_strdup(de->dentry);
         }
         if (readlink) {
-            if (de->readlink) *readlink = strdup(de->readlink);
+            if (de->readlink) *readlink = tbx_stk_strdup(de->readlink);
         }
         dit->state++;
         return(0);
@@ -2001,7 +2002,7 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
 
     //** And parse it
     lio_parse_stat_vals(fname, stat, dit->val, dit->v_size, &flink, NULL);
-    if (dentry) *dentry = strdup(fname + prefix_len);
+    if (dentry) *dentry = tbx_stk_strdup(fname + prefix_len);
 
     //** Now update the fields based on the requested symlink behavior
     if (flink) {
@@ -2467,7 +2468,7 @@ lio_fsck_iter_t *lio_create_fsck_iter(lio_config_t *lc, lio_creds_t *creds, char
 
     it->lc = lc;
     it->creds = creds;
-    it->path = strdup(path);
+    it->path = tbx_stk_strdup(path);
     it->owner_mode = owner_mode;
     it->owner = owner;
     it->exnode_mode = exnode_mode;

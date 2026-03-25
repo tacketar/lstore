@@ -294,17 +294,17 @@ void lio_load_inip_flag_service(lio_service_manager_t *sm, char *service_section
 
         if (strncasecmp(s, "int", n) == 0) { //** Got an integer
             n = (s-1) - key;
-            flag = strndup(key, n);
+            flag = tbx_stk_strndup(key, n);
             lio_add_integer_flag_service(sm, service_section, flag, tbx_stk_string_get_integer(tbx_inip_ele_get_value(ele)));
             free(flag);
         } if (strncasecmp(s, "double", n) == 0) { //** Got a double
             n = (s-1) - key;
-            flag = strndup(key, n);
+            flag = tbx_stk_strndup(key, n);
             lio_add_double_flag_service(sm, service_section, flag, tbx_stk_string_get_double(tbx_inip_ele_get_value(ele)));
             free(flag);
         } if (strncasecmp(s, "string", n) == 0) { //** Got a string
             n = (s-1) - key;
-            flag = strndup(key, n);
+            flag = tbx_stk_strndup(key, n);
             lio_add_string_flag_service(sm, service_section, flag, apr_pstrdup(sm->pool, tbx_inip_ele_get_value(ele)));
             free(flag);
         }

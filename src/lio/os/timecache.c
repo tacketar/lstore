@@ -339,7 +339,7 @@ ostcdb_attr_t *new_ostcdb_attr(char *key, void *val, int v_size, apr_time_t expi
     log_printf(5, "adding key=%s size=%d\n", key, v_size);
     tbx_type_malloc_clear(attr, ostcdb_attr_t, 1);
 
-    attr->key = strdup(key);
+    attr->key = tbx_stk_strdup(key);
     if (v_size > 0) {
         tbx_type_malloc(attr->val, void, v_size+1);
         memcpy(attr->val, val, v_size);
@@ -563,7 +563,7 @@ void ostc_attr_cacheprep_setup(ostc_cacheprep_t *cp, int n_keys, char **key_src,
         vsd[i] = -OS_PATH_MAX;
         log_printf(5, "key[%d]=%s\n", i, kd[i]);
     }
-    kd[2*n_keys] = strdup(OS_LINK);
+    kd[2*n_keys] = tbx_stk_strdup(OS_LINK);
     vsd[2*n_keys] = -OS_PATH_MAX;
 
     cp->n_keys = n_keys;
@@ -589,19 +589,19 @@ void ostc_attr_cacheprep_setup(ostc_cacheprep_t *cp, int n_keys, char **key_src,
     if (cp->ftype_index == -1) {
         n++;
         cp->ftype_index = n;;
-        cp->key[cp->ftype_index] = strdup("os.type");
+        cp->key[cp->ftype_index] = tbx_stk_strdup("os.type");
         cp->v_size[cp->ftype_index] = -OS_PATH_MAX;
     }
     if (cp->link_count_index == -1) {
         n++;
         cp->link_count_index = n;;
-        cp->key[cp->link_count_index] = strdup("os.link_count");
+        cp->key[cp->link_count_index] = tbx_stk_strdup("os.link_count");
         cp->v_size[cp->link_count_index] = -OS_PATH_MAX;
     }
     if (cp->inode_index == -1) {
         n++;
         cp->inode_index = n;;
-        cp->key[cp->inode_index] = strdup("system.inode");
+        cp->key[cp->inode_index] = tbx_stk_strdup("system.inode");
         cp->v_size[cp->inode_index] = -OS_PATH_MAX;
     }
 
@@ -748,12 +748,12 @@ int _ostc_lio_cache_tree_walk(lio_object_service_fn_t *os, char *fname, tbx_stac
                             } else {
                                 next = replacement_obj;
                             }
-                            next->fname = strndup(&(fname[start]), n);
+                            next->fname = tbx_stk_strndup(&(fname[start]), n);
                             next->hard_obj = hard;
                             hard->n_refs++;
                         } else {
                             if (replacement_obj == NULL) {
-                                next = new_ostcdb_object(strndup(&(fname[start]), n), add_terminal_info, apr_time_now() + ostc->entry_timeout, ostc->mpool);
+                                next = new_ostcdb_object(tbx_stk_strndup(&(fname[start]), n), add_terminal_info, apr_time_now() + ostc->entry_timeout, ostc->mpool);
                                 ostc->n_objects_created++;
                             } else {
                                 next = replacement_obj;
@@ -898,7 +898,7 @@ int _ostcdb_resolve_attr_link(lio_object_service_fn_t *os, tbx_stack_t *tree, ch
     if (la != NULL) {
         log_printf(5, "alink=%s aname=%s lo=%s la->link=%s\n", alink, aname, lo->fname, la->link);
         if (la->link) {  //** Got to recurse
-            aname = strdup(la->link);
+            aname = tbx_stk_strdup(la->link);
             _ostcdb_resolve_attr_link(os, &rtree, aname, &lo, &la, max_recurse-1);
             free(aname);
         }
@@ -971,7 +971,7 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
         }
         if (dest_path[i] == '/') i++;
         free(obj->fname);
-        obj->fname = strdup(&(dest_path[i]));
+        obj->fname = tbx_stk_strdup(&(dest_path[i]));
         log_printf(0, "src=%s dest=%s dname=%s\n", src_path, dest_path, obj->fname);
 
         //** Purge the os.realpath variable for the object and any files underneath
@@ -1103,7 +1103,7 @@ void ostc_cache_move_attrs(lio_object_service_fn_t *os, char *fname, char **key_
             }
 
             if (attr->key) free(attr->key);
-            attr->key = strdup(key_new[i]);
+            attr->key = tbx_stk_strdup(key_new[i]);
             apr_hash_set(obj->attrs, attr->key, APR_HASH_KEY_STRING, attr);
         }
     }
@@ -1179,7 +1179,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
         if (strcmp(key, "os.realpath") == 0) {
             if (v_size[i] > 0) {
                 if (sobj->realpath) free(sobj->realpath);
-                sobj->realpath = strdup((char *)val[i]);
+                sobj->realpath = tbx_stk_strdup((char *)val[i]);
                 sobj->rp_len = v_size[i];
                 continue;
             }
@@ -1367,7 +1367,7 @@ void ostc_cache_update_attrs(lio_object_service_fn_t *os, char *fname, char **ke
         skey = (strncmp(key[i], "os.timestamp.", 13) == 0) ? key[i] + 13 : key[i];
         if (strcmp(skey, "os.realpath") == 0) {
             if (sobj->realpath) free(sobj->realpath);
-            sobj->realpath = strdup((char *)val[i]);
+            sobj->realpath = tbx_stk_strdup((char *)val[i]);
             sobj->rp_len = v_size[i];
             continue;
         }
@@ -1451,7 +1451,7 @@ void ostc_cache_update_exec(lio_object_service_fn_t *os, char *fname, int exec_m
         free(attr->val);
         attr->v_size = snprintf(buffer, sizeof(buffer)-1, "%d", ftype);
         buffer[attr->v_size] = 0;
-        attr->val = strdup(buffer);
+        attr->val = tbx_stk_strdup(buffer);
     }
 
 finished:
@@ -1494,7 +1494,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
         if (path[end] == 0) break;
     }
 
-    fname = strndup(path, end);
+    fname = tbx_stk_strndup(path, end);
 
     if (end <= prefix_len) {
         log_printf(0, "ERROR: Unable to make progress in recursion. end=%d prefix_len=%d fname=%s full_path=%s\n", end, prefix_len, fname, path);
@@ -1576,7 +1576,7 @@ void _ostc_update_link_count_object(lio_object_service_fn_t *os,  ostcdb_object_
                 i = snprintf(count, sizeof(count)-1, "%d", n);
                 count[sizeof(count)-1] = 0;
                 free(attr->val);
-                attr->val = strdup(count);
+                attr->val = tbx_stk_strdup(count);
                 attr->v_size = i;
             }
         }
@@ -2972,7 +2972,7 @@ gop_op_generic_t *ostc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     tbx_type_malloc(op, ostc_open_op_t, 1);
     op->os = os;
     op->creds = creds;
-    op->path = strdup(path);
+    op->path = tbx_stk_strdup(path);
     op->mode = mode;
     op->fd = pfd;
     op->id = id;
@@ -3184,7 +3184,7 @@ void parse_limit_cache_attrs(lio_object_service_fn_t *os, tbx_inip_file_t *ifd, 
 
         //** Add it to the stack
         if (stack == NULL) stack = tbx_stack_new();
-        tbx_stack_push(stack, strdup(s));
+        tbx_stack_push(stack, tbx_stk_strdup(s));
     }
 
     if (stack == NULL) return;  //Nothing found so kick out
@@ -3194,7 +3194,7 @@ void parse_limit_cache_attrs(lio_object_service_fn_t *os, tbx_inip_file_t *ifd, 
     tbx_type_malloc_clear(ostc->limit_cache, limit_cache_t, ostc->n_limit_cache);
     n = 0;
     while ((val = tbx_stack_pop(stack)) != NULL) {
-        ostc->limit_cache[n].string = strdup(val);  //** Store the string
+        ostc->limit_cache[n].string = tbx_stk_strdup(val);  //** Store the string
 
         //** Peel off the timeout and store it
         e = index(val, ':');
@@ -3286,7 +3286,7 @@ void ostc_make_root(lio_object_service_fn_t *os)
     memset(&base, 0, sizeof(base));
     base.ftype = OS_OBJECT_DIR_FLAG;
     base.link_count = 1;
-    ostc->cache_root = new_ostcdb_object(strdup("/"), &base, 0, ostc->mpool);
+    ostc->cache_root = new_ostcdb_object(tbx_stk_strdup("/"), &base, 0, ostc->mpool);
     ostc->n_objects_created++;
 
 }
@@ -3309,7 +3309,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
     tbx_type_malloc_clear(ostc, ostc_priv_t, 1);
     os->priv = (void *)ostc;
 
-    ostc->section = strdup(section);
+    ostc->section = tbx_stk_strdup(section);
     str = tbx_inip_get_string(fd, section, "os_child", ostc_default_options.os_child_section);
     if (str != NULL) {  //** Running in test/temp
         ctype = tbx_inip_get_string(fd, str, "type", OS_TYPE_REMOTE_CLIENT);

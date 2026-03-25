@@ -114,9 +114,9 @@ int rs_query_base_add(lio_resource_service_fn_t *rs, rs_query_t **rsq, int op, c
     tbx_type_malloc_clear(q, lio_rsq_base_ele_t, 1);
     q->op = op;
     q->key_op = key_op;
-    q->key = (key == NULL) ? NULL : strdup(key);
+    q->key = (key == NULL) ? NULL : tbx_stk_strdup(key);
     q->val_op = key_op;
-    q->val = (val == NULL) ? NULL : strdup(val);
+    q->val = (val == NULL) ? NULL : tbx_stk_strdup(val);
     q->next = NULL;
 
     //** and append it;
@@ -164,9 +164,9 @@ rs_query_t *rs_query_base_dup(lio_resource_service_fn_t *rs, rs_query_t *rsq)
         if (prev != NULL) prev->next = qn;
 
         qn->op = q->op;
-        qn->key = (q->key == NULL) ? NULL : strdup(q->key);
+        qn->key = (q->key == NULL) ? NULL : tbx_stk_strdup(q->key);
         qn->key_op = q->key_op;
-        qn->val = (q->val == NULL) ? NULL : strdup(q->val);
+        qn->val = (q->val == NULL) ? NULL : tbx_stk_strdup(q->val);
         qn->val_op = q->val_op;
         qn->next = NULL;
         prev = qn;
@@ -202,9 +202,9 @@ void rs_query_base_append(lio_resource_service_fn_t *rs, rs_query_t *rsq, rs_que
         if (prev != NULL) prev->next = qn;
 
         qn->op = q->op;
-        qn->key = (q->key == NULL) ? NULL : strdup(q->key);
+        qn->key = (q->key == NULL) ? NULL : tbx_stk_strdup(q->key);
         qn->key_op = q->key_op;
-        qn->val = (q->val == NULL) ? NULL : strdup(q->val);
+        qn->val = (q->val == NULL) ? NULL : tbx_stk_strdup(q->val);
         qn->val_op = q->val_op;
         qn->next = NULL;
         prev = qn;
@@ -256,7 +256,7 @@ char *rs_query_base_print(lio_resource_service_fn_t *rs, rs_query_t *rsq)
 
     log_printf(15, "rs_query_base_print: END rsq=%s\n", buffer);
 
-    return(strdup(buffer));
+    return(tbx_stk_strdup(buffer));
 }
 
 //***********************************************************************
@@ -271,7 +271,7 @@ rs_query_t *rs_query_base_parse(lio_resource_service_fn_t *rs, char *qstring)
     lio_rsq_base_ele_t *root, *tail, *q;
     lio_rsq_base_t *query = NULL;
 
-    buffer = strdup(qstring);
+    buffer = tbx_stk_strdup(qstring);
 
     log_printf(15, "rs_query_base_parse: Parsing=%s!\n", buffer);
 

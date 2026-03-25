@@ -190,7 +190,7 @@ void _psk_load(lio_authn_t *an)
                 if (!a) {
                     tbx_type_malloc_clear(a, psk_account_t, 1);
                     a->creds = tbx_stack_new();
-                    a->account = strdup(account);
+                    a->account = tbx_stk_strdup(account);
                     a->key = psk;
                     a->key_len = n;
                     apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, a);  //** Add it to the new one
@@ -303,11 +303,11 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
         pc->c.destroy = apsk_cred_destroy;
         if (pc->c.id) free(pc->c.id);
         sprintf(buf, "%s:INTERNAL", ca);
-        pc->c.id = strdup(ca); pc->c.id_len = strlen(ca);
+        pc->c.id = tbx_stk_strdup(ca); pc->c.id_len = strlen(ca);
         if (pc->c.account) free(pc->c.account);
-        pc->c.account = strdup(ca); pc->c.account_len = strlen(ca);
+        pc->c.account = tbx_stk_strdup(ca); pc->c.account_len = strlen(ca);
         if (pc->c.descriptive_id) free(pc->c.descriptive_id);
-        pc->c.descriptive_id = strdup(buf); pc->c.descriptive_id_len = strlen(buf);
+        pc->c.descriptive_id = tbx_stk_strdup(buf); pc->c.descriptive_id_len = strlen(buf);
         tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
         pc->c.handle = pc->handle;
         pc->c.handle_len = PSK_HANDLE_LEN;
@@ -415,11 +415,11 @@ lio_creds_t *apsk_login(lio_authn_t *an, char *id, int id_len, char *did, int di
     pc->c.priv = pc;
     pc->c.destroy = apsk_cred_destroy;
     if (pc->c.id) free(pc->c.id);
-    pc->c.id = strdup(id); pc->c.id_len = strlen(id);
+    pc->c.id = tbx_stk_strdup(id); pc->c.id_len = strlen(id);
     if (pc->c.account) free(pc->c.account);
-    pc->c.account = strdup(id); pc->c.account_len = strlen(id);
+    pc->c.account = tbx_stk_strdup(id); pc->c.account_len = strlen(id);
     if (pc->c.descriptive_id) free(pc->c.descriptive_id);
-    pc->c.descriptive_id = strdup(did); pc->c.descriptive_id_len = strlen(did);
+    pc->c.descriptive_id = tbx_stk_strdup(did); pc->c.descriptive_id_len = strlen(did);
     tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
     pc->c.handle = pc->handle;
     pc->c.handle_len = PSK_HANDLE_LEN;
@@ -550,7 +550,7 @@ void apsk_authn_cb(void *arg, gop_mq_task_t *task)
         fhb = mq_msg_pop(msg);  //** This has the heartbeat from for tracking
         gop_mq_get_frame(fhb, (void **)&hb, &hb_len);
         pc = c->priv;
-        pc->hb = strdup(hb);
+        pc->hb = tbx_stk_strdup(hb);
         pc->hb_len = hb_len;
         gop_mq_ongoing_add(ap->ongoing, 1, hb, hb_len, ONGOING_PTR2KEY(c), (void *)c, (gop_mq_ongoing_fail_fn_t)apsk_cred_logout_ongoing_gop, an, NULL, NULL);
         gop_mq_frame_destroy(fhb);
@@ -755,7 +755,7 @@ lio_authn_t *authn_psk_server_create(lio_service_manager_t *ess, tbx_inip_file_t
     tbx_type_malloc(ap, lio_authn_psk_server_priv_t, 1);
     an->priv = ap;
 
-    ap->section = strdup(section);
+    ap->section = tbx_stk_strdup(section);
     ap->fname = tbx_inip_get_string(ifd, section, "fname", "psk.cfg");  //** Get the file to monitor
     ap->check_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);
     ap->ongoing_interval = tbx_inip_get_integer(ifd, section, "check_interval", 60);

@@ -278,7 +278,7 @@ os_inode_db_t *os_inode_open_a_db(const char *db_path, rocksdb_comparator_t *cmp
         }
     }
 
-    idb->prefix = strdup(db_path);
+    idb->prefix = tbx_stk_strdup(db_path);
     return(idb);
 }
 
@@ -305,7 +305,7 @@ os_inode_ctx_t *os_inode_open_ctx(const char *prefix, int mode, int n_shards)
     }
 
     tbx_type_malloc_clear(ctx, os_inode_ctx_t, 1);
-    ctx->prefix = strdup(prefix);
+    ctx->prefix = tbx_stk_strdup(prefix);
     ctx->inode_cmp = rocksdb_comparator_create(ctx, default_compare_destroy, inode_compare_op, inode_compare_name);
 
     //** NOTE that if the DB open failes the program aborts
@@ -482,7 +482,7 @@ int os_inode_shard_get(os_inode_shard_t *s, ex_id_t inode, ex_id_t *parent_inode
     *ftype = r->ftype;
     *parent_inode = r->dentry.parent_inode;
     *len = r->dentry.len;
-    if (dentry) *dentry = strdup(r->dentry.dentry);
+    if (dentry) *dentry = tbx_stk_strdup(r->dentry.dentry);
 
     free(buf);
 

@@ -253,8 +253,8 @@ gop_op_generic_t *lio_exnode_clone_gop(gop_thread_pool_context_t *tpc, lio_exnod
     *ex = lio_exnode_create();
 
     //** Copy the header
-    if (src_ex->header.name != NULL) (*ex)->header.name = strdup(src_ex->header.name);
-    if (src_ex->header.type != NULL) (*ex)->header.type = strdup(src_ex->header.type);
+    if (src_ex->header.name != NULL) (*ex)->header.name = tbx_stk_strdup(src_ex->header.name);
+    if (src_ex->header.type != NULL) (*ex)->header.type = tbx_stk_strdup(src_ex->header.type);
     generate_ex_id(&((*ex)->header.id));
 
     tbx_type_malloc(exc, lio_exnode_clone_gop_t, 1);
@@ -454,7 +454,7 @@ int lio_exnode_deserialize_text(lio_exnode_t *ex, lio_exnode_exchange_t *exp, li
 
             //** Parse the segment line
             value = tbx_inip_ele_get_value(ele);
-            token = strdup(value);
+            token = tbx_stk_strdup(value);
             id = 0;
             sscanf(tbx_stk_string_token(token, ":", &bstate, &fin), XIDT, &id);
             free(token);

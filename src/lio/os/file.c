@@ -2250,7 +2250,7 @@ void _osf_update_open_fd_path_obj(lio_object_service_fn_t *os, const char *prefi
         if (cmp == 0) {  //** Got a match
             snprintf(fnew, OS_PATH_MAX, "%s%s", prefix_new, fname + n_old);  //** Make the new path
             if (fd->opath != fd->object_name) free(fd->object_name);   //** Only free it if it's not the original path that's immutable
-            fd->object_name = strdup(fnew);
+            fd->object_name = tbx_stk_strdup(fnew);
             osf_retrieve_lock(fd->os, fd->object_name, &ilock);  //** And also the ilock_obj index
             tbx_atomic_set(fd->ilock_obj, ilock);
             if (fd->attr_dir) free(fd->attr_dir);
@@ -2608,7 +2608,7 @@ int va_lock_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, lio
 
     apr_thread_mutex_unlock(osf->os_lock->fobj_lock);
 
-    if (*v_size < 0) *val = strdup(buf);
+    if (*v_size < 0) *val = tbx_stk_strdup(buf);
     *v_size = strlen(buf);
 
     return(0);
@@ -2657,7 +2657,7 @@ int va_lock_user_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os
 
     apr_thread_mutex_unlock(osf->os_lock_user->fobj_lock);
 
-    if (*v_size < 0) *val = strdup(buf);
+    if (*v_size < 0) *val = tbx_stk_strdup(buf);
     *v_size = strlen(buf);
 
     return(0);
@@ -3076,12 +3076,12 @@ char *object_attr_dir(lio_object_service_fn_t *os, const char *prefix, const cha
         n = strlen(dir);
         if (dir[n-1] == '/') dir[n-1] = 0; //** Peel off a trialing /
         snprintf(fname, OS_PATH_MAX, "%s%s/%s/%s%s", prefix, dir, FILE_ATTR_PREFIX, FILE_ATTR_PREFIX, base);
-        attr_dir = strdup(fname);
+        attr_dir = tbx_stk_strdup(fname);
         free(dir);
         free(base);
     } else if (ftype == OS_OBJECT_DIR_FLAG) {
         snprintf(fname, OS_PATH_MAX, "%s%s/%s", prefix, path, FILE_ATTR_PREFIX);
-        attr_dir = strdup(fname);
+        attr_dir = tbx_stk_strdup(fname);
     }
 
     return(attr_dir);
@@ -3332,7 +3332,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                 if ((i & it->object_types) > 0) {
                                     rmatch = (it->object_regex == NULL) ? 0 : ((obj_fixed != NULL) ? strcmp(itl->entry, obj_fixed) : regexec(it->object_preg, itl->entry, 0, NULL, 0));
                                     if (rmatch == 0) { //** IF a match return
-                                        *myfname=strdup(fname);
+                                        *myfname=tbx_stk_strdup(fname);
                                         tbx_stk_strncpy(it->rp, rp, OS_PATH_MAX, OS_PATH_MAX); it->realpath = it->rp;
                                         if (*prefix_len == 0) {
                                             *prefix_len = (it_top != NULL) ? strlen(it_top->path) : 0;
@@ -3376,7 +3376,7 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
                                                 *prefix_len = (it_top != NULL) ? strlen(it_top->path) : 0;
                                                 if (*prefix_len == 0) *prefix_len = tweak;
                                             }
-                                            *myfname=strdup(fname);
+                                            *myfname=tbx_stk_strdup(fname);
                                             tbx_stk_strncpy(it->rp, rp, OS_PATH_MAX, OS_PATH_MAX); it->realpath = it->rp;
                                             log_printf(15, "MATCH=%s prefix=%d\n", fname, *prefix_len);
                                             if ((strcmp(itl->path, it->prev_match) != 0)) *dir_change = 1;
@@ -3443,7 +3443,7 @@ void *piter_fname_thread(apr_thread_t *th, void *arg)
         pf[slot].ftype = ftype;
         pf[slot].prefix_len = prefix_len;
         pf[slot].fname = fname;
-        pf[slot].realpath = strdup(it->realpath);
+        pf[slot].realpath = tbx_stk_strdup(it->realpath);
         slot++;
     }
 
@@ -3647,7 +3647,7 @@ int pattr_append_general(osf_object_iter_t *it, piq_attr_t *pa, int *aslot, piq_
     //** Open the file and make the attr iterator
     op.os = it->os;
     op.creds = it->creds;
-    op.path = strdup(pf->fname);
+    op.path = tbx_stk_strdup(pf->fname);
     op.fd = &fd;
     op.mode = OS_MODE_READ_IMMEDIATE;
     op.id = NULL;
@@ -3970,7 +3970,7 @@ gop_op_generic_t *osfile_object_exec_modify(lio_object_service_fn_t *os, lio_cre
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = exec_mode;
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_object_exec_modify_fn, (void *)op, osfile_free_mk_mv_rm, 1));
@@ -4171,7 +4171,7 @@ gop_op_generic_t *osfile_remove_object(lio_object_service_fn_t *os, lio_creds_t 
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_remove_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -4327,7 +4327,7 @@ gop_op_status_t osfile_regex_object_set_multiple_attrs_fn(void *arg, int id)
             status.op_status = OP_STATE_FAILURE;
             status.error_code += op->n_keys;
         } else {
-            op_open.path = strdup(fname);
+            op_open.path = tbx_stk_strdup(fname);
             op_open.realpath = rp;
             op_status = osfile_open_object_fn(&op_open, 0);
             if (op_status.op_status != OP_STATE_SUCCESS) {
@@ -4457,7 +4457,7 @@ gop_op_generic_t *osfile_exists(lio_object_service_fn_t *os, lio_creds_t *creds,
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_exists_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -4501,7 +4501,7 @@ gop_op_generic_t *osfile_realpath(lio_object_service_fn_t *os, lio_creds_t *cred
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->dest_path = realpath;   //** Assumes realpath is OS_PATH_MAX and can safely store the RP
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_realpath_fn, (void *)op, osfile_free_realpath, 1));
@@ -4665,9 +4665,9 @@ gop_op_status_t osfile_create_object_fn(void *arg, int id)
     memset(&op_open, 0, sizeof(op_open));
     op_open.os = op->os;
     op_open.creds = op->creds;
-    op_open.path = strdup(op->src_path);
+    op_open.path = tbx_stk_strdup(op->src_path);
     op_open.realpath = rpath;
-    op_open.id = (op->id) ? strdup(op->id) : NULL;  //** The close will destroy the ID
+    op_open.id = (op->id) ? tbx_stk_strdup(op->id) : NULL;  //** The close will destroy the ID
     op_open.fd = &osfd;
     op_open.mode = OS_MODE_READ_IMMEDIATE;
     op_open.uuid = 0;
@@ -4757,9 +4757,9 @@ gop_op_generic_t *osfile_create_object(lio_object_service_fn_t *os, lio_creds_t 
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = type;
-    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_create_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -4777,9 +4777,9 @@ gop_op_generic_t *osfile_create_object_with_attrs(lio_object_service_fn_t *os, l
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(path);
+    op->src_path = tbx_stk_strdup(path);
     op->type = type;
-    op->id = (id != NULL) ? strdup(id) : NULL;
+    op->id = (id != NULL) ? tbx_stk_strdup(id) : NULL;
     op->key = key;
     op->val = val;
     op->v_size = v_size;
@@ -4884,9 +4884,9 @@ gop_op_generic_t *osfile_symlink_object(lio_object_service_fn_t *os, lio_creds_t
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(src_path);
-    op->dest_path = strdup(dest_path);
-    op->id = (id == NULL) ? NULL : strdup(id);
+    op->src_path = tbx_stk_strdup(src_path);
+    op->dest_path = tbx_stk_strdup(dest_path);
+    op->id = (id == NULL) ? NULL : tbx_stk_strdup(id);
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_symlink_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -5039,7 +5039,7 @@ char *resolve_hardlink(lio_object_service_fn_t *os, char *src_path, int add_pref
 
     log_printf(15, "fullname=%s link=%s\n", src_path, tmp);
 
-    return(strdup(hpath));
+    return(tbx_stk_strdup(hpath));
 }
 
 //***********************************************************************
@@ -5169,9 +5169,9 @@ gop_op_generic_t *osfile_hardlink_object(lio_object_service_fn_t *os, lio_creds_
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(src_path);
-    op->dest_path = strdup(dest_path);
-    op->id = (id == NULL) ? NULL : strdup(id);
+    op->src_path = tbx_stk_strdup(src_path);
+    op->dest_path = tbx_stk_strdup(dest_path);
+    op->id = (id == NULL) ? NULL : tbx_stk_strdup(id);
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_hardlink_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -5335,8 +5335,8 @@ gop_op_generic_t *osfile_move_object(lio_object_service_fn_t *os, lio_creds_t *c
 
     op->os = os;
     op->creds = creds;
-    op->src_path = strdup(src_path);
-    op->dest_path = strdup(dest_path);
+    op->src_path = tbx_stk_strdup(src_path);
+    op->dest_path = tbx_stk_strdup(dest_path);
 
     return(gop_tp_op_new(osf->tpc, NULL, osfile_move_object_fn, (void *)op, osfile_free_mk_mv_rm, 1));
 }
@@ -5897,10 +5897,10 @@ gop_op_status_t osf_get_multiple_attr_immediate_fn(void *arg, int id)
     memset(&op_open, 0, sizeof(op_open));
     op_open.os = op->os;
     op_open.creds = op->creds;
-    op_open.path = strdup(op->path);
+    op_open.path = tbx_stk_strdup(op->path);
     _osf_realpath(op->os, op->path, rpath, 0);
     op_open.realpath = rpath;
-    op_open.id = strdup(an_cred_get_descriptive_id(op->creds, NULL));
+    op_open.id = tbx_stk_strdup(an_cred_get_descriptive_id(op->creds, NULL));
     op_open.fd = &fd;
     op_open.mode = OS_MODE_READ_IMMEDIATE;
     op_open.uuid = 0;
@@ -6190,10 +6190,10 @@ gop_op_status_t osf_set_multiple_attr_immediate_fn(void *arg, int id)
     memset(&op_open, 0, sizeof(op_open));
     op_open.os = op->os;
     op_open.creds = op->creds;
-    op_open.path = strdup(op->path);
+    op_open.path = tbx_stk_strdup(op->path);
     _osf_realpath(op->os, op->path, rpath, 0);
     op_open.realpath = rpath;
-    op_open.id = strdup(an_cred_get_descriptive_id(op->creds, NULL));
+    op_open.id = tbx_stk_strdup(an_cred_get_descriptive_id(op->creds, NULL));
     op_open.fd = &fd;
     op_open.mode = OS_MODE_WRITE_IMMEDIATE;
     op_open.uuid = 0;
@@ -6290,7 +6290,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
                 if (osf_get_attr(it->fd->os, it->creds, it->fd, va->attribute, val, &n, &atype, NULL, rp, 1) == 0) {
                     osf_internal_fd_unlock(it->fd->os, it->fd);
                     *v_size = n;
-                    *key = strdup(va->attribute);
+                    *key = tbx_stk_strdup(va->attribute);
                     return(0);
                 }
                 osf_internal_fd_unlock(it->fd->os, it->fd);
@@ -6318,7 +6318,7 @@ int osfile_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
                 if (osf_get_attr(it->fd->os, it->creds, it->fd, entry->d_name, val, &n, &atype, NULL, rp, 1) == 0) {
                     osf_internal_fd_unlock(it->fd->os, it->fd);
                     *v_size = n;
-                    *key = strdup(entry->d_name);
+                    *key = tbx_stk_strdup(entry->d_name);
                     log_printf(15, "key=%s val=%s\n", *key, (char *)(*val));
                     return(0);
                 }
@@ -6404,7 +6404,7 @@ int osfile_next_object_serial(os_object_iter_t *oit, char **fname, int *prefix_l
                 log_printf(15, "making new iterator\n");
                 op.os = it->os;
                 op.creds = it->creds;
-                op.path = strdup(*fname);
+                op.path = tbx_stk_strdup(*fname);
                 op.fd = (osfile_fd_t **)&(it->fd);
                 op.mode = OS_MODE_READ_IMMEDIATE;
                 op.id = NULL;
@@ -6427,7 +6427,7 @@ int osfile_next_object_serial(os_object_iter_t *oit, char **fname, int *prefix_l
         } else if (it->n_list > 0) {  //** Fixed list mode
             op.os = it->os;
             op.creds = it->creds;
-            op.path = strdup(*fname);
+            op.path = tbx_stk_strdup(*fname);
             op.fd = (osfile_fd_t **)&(it->fd);
             op.mode = OS_MODE_READ_IMMEDIATE;
             op.id = NULL;
@@ -6847,11 +6847,11 @@ gop_op_generic_t *osfile_open_object(lio_object_service_fn_t *os, lio_creds_t *c
 
     op->os = os;
     op->creds = creds;
-    op->path = strdup(path);
+    op->path = tbx_stk_strdup(path);
     op->fd = (osfile_fd_t **)pfd;
     op->max_wait = max_wait;
     op->mode = mode;
-    op->id = (id == NULL) ? strdup(osf->host_id) : strdup(id);
+    op->id = (id == NULL) ? tbx_stk_strdup(osf->host_id) : tbx_stk_strdup(id);
     op->uuid = 0;
     tbx_random_get_bytes(&(op->uuid), sizeof(op->uuid));
 
@@ -7281,7 +7281,7 @@ int osf_next_fsck(os_fsck_iter_t *oit, char **fname)
             if (strncmp(entry->d_name, FILE_ATTR_PREFIX, FILE_ATTR_PREFIX_LEN) == 0) {  //** Got a match
                 snprintf(fullname, OS_PATH_MAX, "%s/%s", it->ad_path, &(entry->d_name[FILE_ATTR_PREFIX_LEN]));
                 log_printf(15, "ad_path=%s fname=%s d_name=%s\n", it->ad_path, fullname, entry->d_name);
-                *fname = strdup(fullname);
+                *fname = tbx_stk_strdup(fullname);
                 return(OS_OBJECT_FILE_FLAG);
             }
         }
@@ -7301,7 +7301,7 @@ int osf_next_fsck(os_fsck_iter_t *oit, char **fname)
         it->ad = opendir(faname);
         log_printf(15, "ad_path faname=%s ad=%p\n", faname, it->ad);
         free(faname);
-        if (it->ad != NULL) it->ad_path = strdup(*fname);
+        if (it->ad != NULL) it->ad_path = tbx_stk_strdup(*fname);
     }
 
     return(atype);
@@ -7409,7 +7409,7 @@ os_fsck_iter_t *osfile_create_fsck_iter(lio_object_service_fn_t *os, lio_creds_t
 
     it->os = os;
     it->creds = creds;
-    it->path = strdup(path);
+    it->path = tbx_stk_strdup(path);
     it->mode = mode;
 
     it->regex = lio_os_path_glob2regex(it->path);
@@ -7672,7 +7672,7 @@ ex_off_t du_dir(lio_object_service_fn_t *os, const char *base_path)
         total = -1;
         goto finished;
     } else {
-        tbx_stack_push(stack, strdup(base_path));
+        tbx_stack_push(stack, tbx_stk_strdup(base_path));
         tbx_stack_push(stack, dirfd);
     }
 
@@ -7704,7 +7704,7 @@ ex_off_t du_dir(lio_object_service_fn_t *os, const char *base_path)
                     tbx_stack_push(stack, dirfd);
 
                     //** And reset things to the child we are recuring into
-                    dir_prefix = strdup(path);
+                    dir_prefix = tbx_stk_strdup(path);
                     dirfd = dirfd2;
                 }
             }
@@ -7783,8 +7783,8 @@ ex_off_t copy_dir(lio_object_service_fn_t *os, const char *src_path, const char 
             goto finished;
         }
 
-        tbx_stack_push(stack, strdup(dest_path));
-        tbx_stack_push(stack, strdup(src_path));
+        tbx_stack_push(stack, tbx_stk_strdup(dest_path));
+        tbx_stack_push(stack, tbx_stk_strdup(src_path));
         tbx_stack_push(stack, dirfd);
     }
 
@@ -7829,8 +7829,8 @@ ex_off_t copy_dir(lio_object_service_fn_t *os, const char *src_path, const char 
                     tbx_stack_push(stack, dirfd);
 
                     //** And reset things to the child we are recuring into
-                    dest_prefix = strdup(dpath);
-                    dir_prefix = strdup(spath);
+                    dest_prefix = tbx_stk_strdup(dpath);
+                    dir_prefix = tbx_stk_strdup(spath);
                     dirfd = dirfd2;
                 }
             } else if (entry->d_type == DT_LNK) { //** Symlink
@@ -8300,7 +8300,7 @@ void *rebalance_thread(apr_thread_t *th, void *data)
         notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE: Unable to open base path: %s\n", osf->file_path);
         tbx_stack_free(stack, 0);
     } else {
-        tbx_stack_push(stack, strdup(osf->file_path));
+        tbx_stack_push(stack, tbx_stk_strdup(osf->file_path));
         tbx_stack_push(stack, dirfd);
     }
 
@@ -8337,7 +8337,7 @@ void *rebalance_thread(apr_thread_t *th, void *data)
                     tbx_stack_push(stack, dirfd);
 
                     //** And reset things to the child we are recuring into
-                    dir_prefix = strdup(path);
+                    dir_prefix = tbx_stk_strdup(path);
                     dirfd = dirfd2;
                 }
             }
@@ -8672,7 +8672,7 @@ void osf_load_shard_prefix(lio_object_service_fn_t *os, tbx_inip_file_t *fd, con
         if (strcmp(key, "shard_prefix") == 0) {
             value = tbx_inip_ele_get_value(ele);
             tbx_stack_move_to_bottom(stack);
-            tbx_stack_insert_below(stack, strdup(value));
+            tbx_stack_insert_below(stack, tbx_stk_strdup(value));
         }
         ele = tbx_inip_ele_next(ele);
     }
@@ -8710,21 +8710,21 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
     os->priv = (void *)osf;
     tbx_apr_pool_create(&osf->mpool, NULL);
 
-    osf->section = strdup(section);
+    osf->section = tbx_stk_strdup(section);
 
     osf->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);
     osf->olog = lio_lookup_service(ess, ESS_RUNNING, ESS_NOTIFY);
     osf->base_path = NULL;
     osf->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     if (fd == NULL) {
-        osf->base_path = strdup("./osfile");
+        osf->base_path = tbx_stk_strdup("./osfile");
 
         osaz_create = lio_lookup_service(ess, OSAZ_AVAILABLE, OSAZ_TYPE_FAKE);
         osf->osaz = (*osaz_create)(ess, NULL, NULL, os);
         osf->internal_lock_size = 200;
         osf->max_copy = 1024*1024;
         osf->hardlink_dir_size = 256;
-        osf->os_activity = strdup(osf_default_options.os_activity);
+        osf->os_activity = tbx_stk_strdup(osf_default_options.os_activity);
     } else {
         osf->base_path = tbx_inip_get_string(fd, section, "base_path", osf_default_options.base_path);
         osf->os_activity = tbx_inip_get_string(fd, section, "log_activity", osf_default_options.os_activity);
@@ -8733,7 +8733,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         osf->hardlink_dir_size = tbx_inip_get_integer(fd, section, "hardlink_dir_size", osf_default_options.hardlink_dir_size);
         asection = tbx_inip_get_string(fd, section, "authz", osf_default_options.authz_section);
         osf->authz_section = asection;
-        atype = (asection == NULL) ? strdup(OSAZ_TYPE_FAKE) : tbx_inip_get_string(fd, asection, "type", OSAZ_TYPE_FAKE);
+        atype = (asection == NULL) ? tbx_stk_strdup(OSAZ_TYPE_FAKE) : tbx_inip_get_string(fd, asection, "type", OSAZ_TYPE_FAKE);
         osaz_create = lio_lookup_service(ess, OSAZ_AVAILABLE, atype);
         osf->osaz = (*osaz_create)(ess, fd, asection, os);
         free(atype);
@@ -8766,7 +8766,7 @@ lio_object_service_fn_t *object_service_file_create(lio_service_manager_t *ess, 
         osf->relocate_namespace_attr_to_shard = osf_default_options.relocate_namespace_attr_to_shard;
         osf->relocate_min_size = osf_default_options.relocate_min_size;
         osf->delta_fraction = osf_default_options.delta_fraction;
-        osf->rebalance_notify_section = strdup(osf_default_options.rebalance_notify_section);
+        osf->rebalance_notify_section = tbx_stk_strdup(osf_default_options.rebalance_notify_section);
         osf->rebalance_config_fname = tbx_inip_get_string(fd, section, "rebalance_config_fname", osf_default_options.rebalance_config_fname);
         osf->rebalance_section = tbx_inip_get_string(fd, section, "rebalance_section", osf_default_options.rebalance_section);
         rebalance_load(os, fd, section);
@@ -8833,10 +8833,10 @@ next:
         abort();
     }
 
-    osf->file_path = strdup(pname);
+    osf->file_path = tbx_stk_strdup(pname);
     osf->file_path_len = strlen(osf->file_path);
     snprintf(pname, OS_PATH_MAX, "%s/%s", osf->base_path, "hardlink");
-    osf->hardlink_path = strdup(pname);
+    osf->hardlink_path = tbx_stk_strdup(pname);
     osf->hardlink_path_len = strlen(osf->hardlink_path);
 
     tbx_type_malloc_clear(osf->internal_lock, apr_thread_mutex_t *, osf->internal_lock_size);
@@ -8856,7 +8856,7 @@ next:
     //** Get the default host ID for opens
     char hostname[1024];
     apr_gethostname(hostname, sizeof(hostname), osf->mpool);
-    osf->host_id = strdup(hostname);
+    osf->host_id = tbx_stk_strdup(hostname);
 
     //** Make and install the virtual attributes
     osf->vattr_hash = apr_hash_make(osf->mpool);

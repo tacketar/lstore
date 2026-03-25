@@ -38,6 +38,7 @@
 #include <tbx/que.h>
 #include <tbx/stack.h>
 #include <tbx/transfer_buffer.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 #include "authn.h"
@@ -615,7 +616,7 @@ wq_context_t *wq_context_create(lio_fd_t *fd, int max_tasks)
     tbx_type_malloc(ctx->fd, lio_fd_t, 1);
     *ctx->fd = *fd;
     ctx->fd->id = 1;  //** This flags that the work is being done by a WQ vs normail I/O for reporting
-    ctx->fd->path = strdup(fd->path);
+    ctx->fd->path = tbx_stk_strdup(fd->path);
 
     ctx->max_tasks = (max_tasks <= 0) ? IN_FLIGHT_MAX : max_tasks;
     wq_ctx_init(ctx);

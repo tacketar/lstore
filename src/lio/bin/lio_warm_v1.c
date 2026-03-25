@@ -107,7 +107,7 @@ void parse_tag_file(char *fname)
         key = tbx_inip_ele_get_key(ele);
         if (strcmp(key, "rid_key") == 0) {
             v = tbx_inip_ele_get_value(ele);
-            value = strdup(v);
+            value = tbx_stk_strdup(v);
             info_printf(lio_ifd, 0, "Tagging RID %s\n", value);
             apr_hash_set(tagged_rids, value, APR_HASH_KEY_STRING, value);
             tbx_stack_push(tagged_keys, value);
@@ -407,7 +407,7 @@ int main(int argc, char **argv)
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
-        free(path);  //** No longer needed.  lio_path_resolve will strdup
+        free(path);  //** No longer needed.  lio_path_resolve will tbx_stk_strdup
 
         v_size[0] = v_size[1] = -tuple.lc->max_attr; v_size[2] = -tuple.lc->max_attr;
         it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG|OS_OBJECT_NO_SYMLINK_FLAG|OS_OBJECT_NO_BROKEN_LINK_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
@@ -562,7 +562,7 @@ int main(int argc, char **argv)
                 value = tbx_inip_ele_get_value(ele);
                 if (strcmp(rkey, "rid_key") == 0) {
                     tbx_inip_group_free(ig);
-                    tbx_inip_group_set(ig, strdup(value));
+                    tbx_inip_group_set(ig, tbx_stk_strdup(value));
                 }
 
                 ele = tbx_inip_ele_next(ele);

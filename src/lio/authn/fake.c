@@ -28,6 +28,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
 
@@ -108,7 +109,7 @@ lio_authn_t *authn_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *ifd,
     an->print_running_config = authn_fake_print_running_config;
     an->cred_init = authn_fake_cred_init;
     an->destroy = authn_fake_destroy;
-    an->priv = strdup(section);
+    an->priv = tbx_stk_strdup(section);
 
     return(an);
 }

@@ -50,6 +50,7 @@
 #include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <tbx/varint.h>
 #include <time.h>
@@ -488,7 +489,7 @@ void osrs_realpath_cb(void *arg, gop_mq_task_t *task)
     gop_mq_msg_append_frame(response, gop_mq_make_status_frame(status));
 
     if (status.op_status == OP_STATE_SUCCESS) {
-        gop_mq_msg_append_mem(response, strdup(realpath), strlen(realpath)+1, MQF_MSG_AUTO_FREE);
+        gop_mq_msg_append_mem(response, tbx_stk_strdup(realpath), strlen(realpath)+1, MQF_MSG_AUTO_FREE);
     }
 
     gop_mq_msg_append_mem(response, NULL, 0, MQF_MSG_KEEP_DATA);  //** Empty frame
@@ -3714,7 +3715,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     tbx_type_malloc_clear(osrs, lio_osrs_priv_t, 1);
     os->priv = (void *)osrs;
 
-    osrs->section = strdup(section);
+    osrs->section = tbx_stk_strdup(section);
     os->print_running_config = osrs_print_running_config;
 
     osrs->tpc = lio_lookup_service(ess, ESS_RUNNING, ESS_TPC_UNLIMITED);FATAL_UNLESS(osrs->tpc != NULL);

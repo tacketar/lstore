@@ -1559,7 +1559,7 @@ lio_cache_t *amp_cache_create(void *arg, data_attr_t *da, int timeout)
     cache->type = CACHE_TYPE_AMP;
     cache_base_create(cache, da, timeout);
 
-    c->section = strdup(amp_default_options.section);
+    c->section = tbx_stk_strdup(amp_default_options.section);
 
     cache->shutdown_request = 0;
     c->stack = tbx_stack_new();
@@ -1631,7 +1631,7 @@ lio_cache_t *amp_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_attr
 
     if (grp != NULL) {
         free(cp->section);
-        cp->section = strdup(grp);
+        cp->section = tbx_stk_strdup(grp);
     }
 
     global_cache = c;

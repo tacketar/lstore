@@ -866,13 +866,13 @@ char *_find_binary(char *exec, int force_root_uid)
             if (stat(fname, &sbuf) == 0) {
                 if (force_root_uid) {
                     if (sbuf.st_uid == 0) {   //** Make sure it's owned by root
-                        return(strdup(fname));
+                        return(tbx_stk_strdup(fname));
                     } else {
                         log_printf(0, "ERROR: %s should be owned by root! Ignoring...\n", fname);
                         fprintf(stderr, "ERROR: %s should be owned by root! Ignoring...\n", fname);
                     }
                 } else {
-                    return(strdup(fname));
+                    return(tbx_stk_strdup(fname));
                 }
 
             }
@@ -1260,9 +1260,9 @@ fuse_acl_t *pacl2lfs_acl(path_acl_context_t *pa, path_acl_t *acl, int fdf, int f
     log_printf(1, "    posix_exec_acl=%s mode=%o\n", exec_acl_text, facl->mode[ACL_POSIX_EXEC]);
     err += _make_posix_acl(fdf, exec_acl_text, &(facl->acl[ACL_POSIX_EXEC]), &(facl->size[ACL_POSIX_EXEC]), acl->prefix, "posix_exec_acl");
 
-    acl->acl_text[ACL_POSIX_DIR] = strdup(dir_acl_text);
-    acl->acl_text[ACL_POSIX_FILE] = strdup(file_acl_text);
-    acl->acl_text[ACL_POSIX_EXEC] = strdup(exec_acl_text);
+    acl->acl_text[ACL_POSIX_DIR] = tbx_stk_strdup(dir_acl_text);
+    acl->acl_text[ACL_POSIX_FILE] = tbx_stk_strdup(file_acl_text);
+    acl->acl_text[ACL_POSIX_EXEC] = tbx_stk_strdup(exec_acl_text);
 
     if (pa->nfs4_enable) {
         snprintf(fname, sizeof(fname), "%s/dir", nfs4_fname);
@@ -1303,9 +1303,9 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
     dir = NULL;
 
     //** Make the temp file for generating the ACLs on
-    fname = strdup(pa->fname_acl);
+    fname = tbx_stk_strdup(pa->fname_acl);
     fdf = mkstemp(fname);
-    dname = strdup(pa->fname_acl);
+    dname = tbx_stk_strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
         err = errno;
         log_printf(-1, "ERROR: failed maxing temp ACL directory: %s errno=%d\n", dname, err);
@@ -1318,7 +1318,7 @@ int pacl_lfs_acls_generate(path_acl_context_t *pa)
 
     nfs4_dname = NULL;
     if (pa->nfs4_enable) {
-        nfs4_dname = strdup(pa->fname_acl);
+        nfs4_dname = tbx_stk_strdup(pa->fname_acl);
         if (mkdtemp(nfs4_dname) == NULL) {
             err = errno;
             log_printf(0, "ERROR: pacl_lfs_acls_generate -- failed making NFS4 ACL directory: %s errno=%d\n", dname, err);
@@ -1465,7 +1465,7 @@ int uid_parse(char *uid_str, int mode, fs_acl_t *uid_list, int *n)
     pw = getpwuid(uid);
     if (_uid_found(*n, uid_list, uid) != -1) return(-1);
 
-    if (pw) return(uid_list_add(uid, mode, strdup(pw->pw_name), uid_list, n));
+    if (pw) return(uid_list_add(uid, mode, tbx_stk_strdup(pw->pw_name), uid_list, n));
 
     return(uid_list_add(uid, mode, NULL, uid_list, n));
 }
@@ -1484,7 +1484,7 @@ int user_parse(char *user, int mode, fs_acl_t *uid_list, int *n)
     k =_uid_found(*n, uid_list, uid);
     if (k != -1) return(k);   //** Already exists so kick out
 
-    return(uid_list_add(uid, mode, strdup(user), uid_list, n));
+    return(uid_list_add(uid, mode, tbx_stk_strdup(user), uid_list, n));
 }
 
 //**************************************************************************
@@ -1532,7 +1532,7 @@ int gid_parse(char *gid_str, int mode, fs_acl_t *gid_list, int *n)
     g = getgrgid(gid);
     k = _fsgid_found(*n, gid_list, gid);
     if (k != -1) return(k);
-    if (g) return(gid_list_add(gid, mode, strdup(g->gr_name), gid_list, n));
+    if (g) return(gid_list_add(gid, mode, tbx_stk_strdup(g->gr_name), gid_list, n));
     return(gid_list_add(gid, mode, NULL, gid_list, n));
 }
 
@@ -1548,7 +1548,7 @@ int group_parse(char *group, int mode, fs_acl_t *gid_list, int *n)
 
     if (_fsgid_found(*n, gid_list, gid) != -1) return(-1);   //** Already exists so kick out
 
-    return(gid_list_add(gid, mode, strdup(group), gid_list, n));
+    return(gid_list_add(gid, mode, tbx_stk_strdup(group), gid_list, n));
 }
 
 //**************************************************************************
@@ -1607,7 +1607,7 @@ void lfs_add_account_mappings(path_acl_context_t *ctx, path_acl_t *acl)
         for (k=0; k<a2g->n_gid; k++) {
             if (_fsgid_found(n_gid, gid_list, a2g->gid[k]) == -1) {
                 g = getgrgid(a2g->gid[k]);
-                gid_list_add(a2g->gid[k], acl->account[j].mode, ((g) ? strdup(g->gr_name) : NULL), gid_list, &n_gid);
+                gid_list_add(a2g->gid[k], acl->account[j].mode, ((g) ? tbx_stk_strdup(g->gr_name) : NULL), gid_list, &n_gid);
             }
         }
     }
@@ -1709,17 +1709,17 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     gid_parse(value, PACL_MODE_READ, gid_list, &n_gid);
                 } else if (strcmp(key, "nfs4_dir") == 0) {
                     if (pa->nfs4_enable) {
-                        nfs4_dir = strdup(value);
+                        nfs4_dir = tbx_stk_strdup(value);
                         tbx_stk_string_remove_space(nfs4_dir);
                     }
                 } else if (strcmp(key, "nfs4_file") == 0) {
                     if (pa->nfs4_enable) {
-                        nfs4_file = strdup(value);
+                        nfs4_file = tbx_stk_strdup(value);
                         tbx_stk_string_remove_space(nfs4_file);
                     }
                 } else if (strcmp(key, "nfs4_exec") == 0) {
                     if (pa->nfs4_enable) {
-                        nfs4_exec = strdup(value);
+                        nfs4_exec = tbx_stk_strdup(value);
                         tbx_stk_string_remove_space(nfs4_exec);
                     }
                 } else if (strcmp(key, "perms_override") == 0) {
@@ -1748,10 +1748,10 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                 acl->acl_text[ACL_NFS4_DIR] = nfs4_dir;
                 acl->acl_text[ACL_NFS4_FILE] = nfs4_file;
                 acl->acl_text[ACL_NFS4_EXEC] = nfs4_exec;
-                acl->prefix = strdup(prefix);
+                acl->prefix = tbx_stk_strdup(prefix);
                 acl->n_prefix = strlen(prefix);
                 for (i=0; i<acl->n_account; i++) {
-                    acl->account[i].account = strdup(tbx_stack_pop(stack));
+                    acl->account[i].account = tbx_stk_strdup(tbx_stack_pop(stack));
                     acl->account[i].mode = (strcmp(tbx_stack_pop(stack), "account(r)") == 0) ? PACL_MODE_READ : PACL_MODE_RW;
                 }
                 if (other_mode) acl->other_mode = (strcmp(other_mode, "rw") == 0) ? PACL_MODE_RW : PACL_MODE_READ;
@@ -1761,7 +1761,7 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
                     tbx_stack_push(acl_stack, acl);
                 }
                 if (lfs) {
-                    acl->lfs_account = strdup(lfs);
+                    acl->lfs_account = tbx_stk_strdup(lfs);
                 }
 
                 acl->lfs_uid = lfs_uid;
@@ -1797,9 +1797,9 @@ int prefix_account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 
         if (pa->nfs4_enable) {
             if (pa->path_acl[i]->acl_text[ACL_NFS4_DIR] == NULL) {  //** IF empty copy over the values from default
-                if (pa->pacl_default->acl_text[ACL_NFS4_DIR]) pa->path_acl[i]->acl_text[ACL_NFS4_DIR] = strdup(pa->pacl_default->acl_text[ACL_NFS4_DIR]);
-                if (pa->pacl_default->acl_text[ACL_NFS4_FILE]) pa->path_acl[i]->acl_text[ACL_NFS4_FILE] = strdup(pa->pacl_default->acl_text[ACL_NFS4_FILE]);
-                if (pa->pacl_default->acl_text[ACL_NFS4_EXEC]) pa->path_acl[i]->acl_text[ACL_NFS4_EXEC] = strdup(pa->pacl_default->acl_text[ACL_NFS4_EXEC]);
+                if (pa->pacl_default->acl_text[ACL_NFS4_DIR]) pa->path_acl[i]->acl_text[ACL_NFS4_DIR] = tbx_stk_strdup(pa->pacl_default->acl_text[ACL_NFS4_DIR]);
+                if (pa->pacl_default->acl_text[ACL_NFS4_FILE]) pa->path_acl[i]->acl_text[ACL_NFS4_FILE] = tbx_stk_strdup(pa->pacl_default->acl_text[ACL_NFS4_FILE]);
+                if (pa->pacl_default->acl_text[ACL_NFS4_EXEC]) pa->path_acl[i]->acl_text[ACL_NFS4_EXEC] = tbx_stk_strdup(pa->pacl_default->acl_text[ACL_NFS4_EXEC]);
             }
         }
     }
@@ -1946,7 +1946,7 @@ void gid2account_parse(path_acl_context_t *pa, tbx_inip_file_t *fd)
 
             if ((account) && (n>0)) {
                 tbx_type_malloc_clear(a2g, account2gid_t, 1);
-                a2g->account = strdup(account);
+                a2g->account = tbx_stk_strdup(account);
 
                 a2g->lfs_gid = (got_lfs_gid == 0) ? gid_list[0] : lfs_gid;
 
@@ -2076,7 +2076,7 @@ path_acl_context_t *pacl_create(tbx_inip_file_t *fd, char *fname_lfs_acls, int n
     fname[sizeof(fname)-1] = 0;
     if (fname_lfs_acls) {
         snprintf(fname, sizeof(fname)-1, "%s.XXXXXX", fname_lfs_acls);
-        pa->fname_acl = strdup(fname);
+        pa->fname_acl = tbx_stk_strdup(fname);
         if (pacl_lfs_acls_generate(pa) != 0) {
             fprintf(stderr, "ERROR: pacl_lfs_acls_genereate() failed! fname=%s\n", fname);  fflush(stderr);
             log_printf(0, "ERROR: pacl_lfs_acls_genereate() failed! fname=%s\n", fname);  tbx_log_flush();
@@ -2289,9 +2289,9 @@ int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd)
     dir = NULL;
 
     //** Make the temp file for generating the ACLs on
-    fname = strdup(pa->fname_acl);
+    fname = tbx_stk_strdup(pa->fname_acl);
     fdf = mkstemp(fname);
-    dname = strdup(pa->fname_acl);
+    dname = tbx_stk_strdup(pa->fname_acl);
     if (mkdtemp(dname) == NULL) {
         log_printf(0, "ERROR: failed making temp POSIX ACL directory: %s\n", dname);
         fprintf(stderr, "ERROR: failed making temp POSIX ACL directory: %s\n", dname);
@@ -2303,7 +2303,7 @@ int pacl_print_tree(path_acl_context_t *pa, const char *prefix, FILE *fd)
 
     nfs4_dname = NULL;
     if (pa->nfs4_enable) {
-        nfs4_dname = strdup(pa->fname_acl);
+        nfs4_dname = tbx_stk_strdup(pa->fname_acl);
         if (mkdtemp(nfs4_dname) == NULL) {
             err = errno;
             log_printf(0, "ERROR: failed making NFS4 ACL directory: %s, errno=%d\n", dname, err);

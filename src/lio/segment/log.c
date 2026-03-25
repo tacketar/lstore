@@ -886,7 +886,7 @@ gop_op_generic_t *seglog_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     log_printf(15, "use_existing=%d sseg=" XIDT " dseg=" XIDT "\n", use_existing, segment_id(seg), segment_id(clone));
 
     //** Copy the header
-    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
+    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = tbx_stk_strdup(seg->header.name);
 
     tbx_type_malloc(slc, seglog_clone_t, 1);
     slc->sseg = seg;

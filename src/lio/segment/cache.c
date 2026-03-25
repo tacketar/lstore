@@ -4846,7 +4846,7 @@ gop_op_generic_t *segcache_clone(lio_segment_t *seg, data_attr_t *da, lio_segmen
     sd = (lio_cache_segment_t *)clone->priv;
 
     //** Copy the header
-    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = strdup(seg->header.name);
+    if ((seg->header.name != NULL) && (use_existing == 0)) clone->header.name = tbx_stk_strdup(seg->header.name);
 
     //** Basic size info
     sd->total_size = (mode == CLONE_STRUCTURE) ? 0 : ss->total_size;
@@ -5100,7 +5100,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
 
     if (s->qname != NULL) free(s->qname);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
-    s->qname = strdup(qname);
+    s->qname = tbx_stk_strdup(qname);
 
     seg->header.type = SEGMENT_TYPE_CACHE;
     seg->header.name = tbx_inip_get_string(fd, seggrp, "name", "");
@@ -5337,7 +5337,7 @@ lio_segment_t *segment_cache_create(void *arg)
     tbx_monitor_obj_create(&(seg->header.mo), seg->header.type);
 
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
-    s->qname = strdup(qname);
+    s->qname = tbx_stk_strdup(qname);
 
     seg->ess = es;
     seg->priv = s;

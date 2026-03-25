@@ -1265,7 +1265,7 @@ gop_op_generic_t *segjerase_clone(lio_segment_t *seg, data_attr_t *da, lio_segme
         }
 
         //** Copy the header
-        if (seg->header.name != NULL) clone->header.name = strdup(seg->header.name);
+        if (seg->header.name != NULL) clone->header.name = tbx_stk_strdup(seg->header.name);
     }
 
     cop->sseg = seg;

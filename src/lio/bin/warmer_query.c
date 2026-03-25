@@ -131,7 +131,7 @@ void warmer_rid_summary_part(warm_db_t *rid_db, tbx_stack_t *rid_stack, rid_summ
     rid = NULL;
     while (rocksdb_iter_valid(it) > 0) {
         key = rocksdb_iter_key(it, &nbytes);
-        drid = strdup(key);
+        drid = tbx_stk_strdup(key);
         rec_rid = tbx_stk_string_token(drid, "|", &last, &n);
         sscanf(tbx_stk_string_token(NULL, "|", &last, &n), XIDT, &inode);
         if ((rid==NULL) || (strcmp(rec_rid, rid->rid) != 0)) { //** New RID
@@ -324,7 +324,7 @@ ex_off_t warmer_query_rid_part(char *rid_key, warm_db_t *inode_db, warm_db_t *ri
     bsize = 0;
     while (rocksdb_iter_valid(it) > 0) {
         rid = rocksdb_iter_key(it, &nbytes);
-        drid = strdup(rid);
+        drid = tbx_stk_strdup(rid);
         rec_rid = tbx_stk_string_token(drid, "|", &last, &n);
         sscanf(tbx_stk_string_token(NULL, "|", &last, &n), XIDT, &inode);
         if (strcmp(rec_rid, rid_key) != 0) { //** Kick out

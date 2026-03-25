@@ -96,11 +96,11 @@ int data_block_set_attr(lio_data_block_t *b, char *key, char *val)
 
     if (attr == NULL) {  //** See if we need to add the attribute
         tbx_type_malloc_clear(attr, lio_data_block_attr_t, 1);
-        attr->key = strdup(key);
+        attr->key = tbx_stk_strdup(key);
     }
 
     if (attr->value != NULL) free(attr->value);  //** Free the old value
-    attr->value = (val != NULL) ? strdup(val) : NULL;  //** Store the new one
+    attr->value = (val != NULL) ? tbx_stk_strdup(val) : NULL;  //** Store the new one
 
     if (b->attr_stack == NULL) b->attr_stack = tbx_stack_new();
     tbx_stack_push(b->attr_stack, attr);

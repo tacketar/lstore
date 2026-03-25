@@ -19,6 +19,7 @@
 #include <tbx/stack.h>
 #include <tbx/append_printf.h>
 #include <tbx/stdinarray_iter.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include "os.h"
 #include "inode_lut.h"
@@ -141,7 +142,7 @@ again:
                 *len = snprintf(path, OS_PATH_MAX-1, "%s/%s", w->curr->prefix, w->curr->de_fixed);
             }
 
-            *fname = strdup(path);
+            *fname = tbx_stk_strdup(path);
             *prefix_len = (w->curr->prefix_len > 1) ? w->curr->prefix_len + 1 : w->curr->prefix_len;
             *inode = w->curr->inode_fixed;
             *parent =  w->curr->dir_inode;
@@ -225,7 +226,7 @@ void walk_lio_add_fixed_prefix(walk_lio_t *w, char *path)
     ex_id_t ino;
 
     added_root = 0;
-    old = strdup(path);
+    old = tbx_stk_strdup(path);
     lio_os_path_split(old, &dir, &base);
     walk_info(walk_arg, old, &ino, &ftype2);
 //fprintf(stderr, "walk_lio_add_fixed_prefix: START old=%s prefix=%s base=%s inode=" XIDT " ftype=%d\n", old, dir, base, ino, ftype2);
@@ -233,7 +234,7 @@ void walk_lio_add_fixed_prefix(walk_lio_t *w, char *path)
         if (strcmp(base, "/") == 0) added_root++;
         tbx_type_malloc_clear(wdir, walk_lio_dir_t, 1);
         wdir->is_fixed = 1;
-        wdir->prefix = (added_root != 1) ? strdup(dir) : strdup("");
+        wdir->prefix = (added_root != 1) ? tbx_stk_strdup(dir) : tbx_stk_strdup("");
         wdir->prefix_len = strlen(wdir->prefix);
 
 //fprintf(stderr, "walk_lio_add_fixed_prefix: old=%s prefix=%s base=%s inode=" XIDT " ftype=%d prefix_len=%d\n", old, dir, base, ino, ftype2, wdir->prefix_len);
@@ -307,7 +308,7 @@ void *walk_lio_create(const char *prefix, int max_recurse_depth)
     tbx_type_malloc_clear(wdir, walk_lio_dir_t, 1);
     w->curr = wdir;
 
-    wdir->prefix = strdup(prefix);
+    wdir->prefix = tbx_stk_strdup(prefix);
     wdir->prefix_len = strlen(wdir->prefix);
     if (wdir->prefix_len < 1) wdir->prefix_len++;
     walk_info(walk_arg, wdir->prefix, &(wdir->dir_inode), &ftype);
@@ -447,7 +448,7 @@ again:
         *len = snprintf(path, OS_PATH_MAX-1, "%s/%s", w->curr->prefix, de->d_name);
     }
 //fprintf(stderr, "walk_local_next: path=%s curr->prefix=%s d_name=%s\n", path, w->curr->prefix, de->d_name);
-    *fname = strdup(path);
+    *fname = tbx_stk_strdup(path);
     *prefix_len = (w->curr->prefix_len > 1) ? w->curr->prefix_len + 1 : w->curr->prefix_len;
     *inode = de->d_ino;
     *parent =  w->curr->dir_inode;
@@ -465,7 +466,7 @@ again:
         }
 
         w->recurse_depth++;
-        wdir->prefix = strdup(*fname);
+        wdir->prefix = tbx_stk_strdup(*fname);
         wdir->prefix_len = strlen(wdir->prefix);
         wdir->dir_inode = *inode;
         tbx_stack_push(w->stack, w->curr);
@@ -487,14 +488,14 @@ void walk_local_add_fixed_prefix(walk_local_t *w, char *path)
     ex_id_t ino;
 
     added_root = 0;
-    old = strdup(path);
+    old = tbx_stk_strdup(path);
     lio_os_path_split(old, &dir, &base);
     walk_info(walk_arg, old, &ino, &ftype2);
     while (added_root != 1) {
         if (strcmp(base, "/") == 0) added_root++;
         tbx_type_malloc_clear(wdir, walk_local_dir_t, 1);
         wdir->is_fixed = 1;
-        wdir->prefix = (added_root != 1) ? strdup(dir) : strdup("");
+        wdir->prefix = (added_root != 1) ? tbx_stk_strdup(dir) : tbx_stk_strdup("");
         wdir->prefix_len = strlen(wdir->prefix);
 
 //fprintf(stderr, "walk_local_add_fixed_prefix: old=%s prefix=%s base=%s\n", old, dir, base);
@@ -559,12 +560,12 @@ void *walk_local_create(const char *prefix, int max_recurse_depth)
     //** Ok now the iterator should be good
     tbx_type_malloc_clear(w, walk_local_t, 1);
 
-    w->prefix = strdup(prefix);
+    w->prefix = tbx_stk_strdup(prefix);
     w->max_recurse_depth = max_recurse_depth;
     w->stack = tbx_stack_new();
 
     wdir->dir = dir;
-    wdir->prefix = strdup(w->prefix);
+    wdir->prefix = tbx_stk_strdup(w->prefix);
     wdir->prefix_len = strlen(wdir->prefix);
 
     os_local_filetype_stat(wdir->prefix, &link_stat, &obj_stat);

@@ -258,11 +258,11 @@ SHADOW_CODE(
         ldir->sdir = sdir;
         sdir->dir = d;
         sdir->stack = tbx_stack_new();
-        sdir->fname = strdup(fname);
+        sdir->fname = tbx_stk_strdup(fname);
 
         while ((de = readdir(d)) != NULL) {
             tbx_type_malloc_clear(dentry, shadow_dentry_t, 1);
-            dentry->dentry = strdup(de->d_name);
+            dentry->dentry = tbx_stk_strdup(de->d_name);
             snprintf(dename, OS_PATH_MAX, "%s/%s", sfname, de->d_name);
             stat(dename, &(dentry->sbuf));
             tbx_stack_push(sdir->stack, dentry);
@@ -445,7 +445,7 @@ char *lfs_pending_delete_mapping_get(lio_fuse_t *lfs, const char *path)
 
     map = apr_hash_get(lfs->pending_delete_table, path, APR_HASH_KEY_STRING);
     if (map) {
-        mpath = strdup(map->mapping);
+        mpath = tbx_stk_strdup(map->mapping);
     } else {
         mpath = (char *)path;
     }
@@ -501,8 +501,8 @@ int lfs_pending_delete_mapping_add(lio_fuse_t *lfs, const char *path, const char
     tbx_type_malloc(map, lfs_pending_delete_t, 1);
 
     //** We add both forward and reverse mappings because FUSE will give up ifthe parent director is removed
-    map->original = strdup(path);
-    map->mapping = strdup(mapping);
+    map->original = tbx_stk_strdup(path);
+    map->mapping = tbx_stk_strdup(mapping);
     apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, map);
     apr_hash_set(lfs->pending_delete_table, map->mapping, APR_HASH_KEY_STRING, map);
 
@@ -1624,8 +1624,8 @@ void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn, l
     lfs->fuse_cfg = fuse_cfg;  //** Can be NULL
     lfs->lc = init_args->lc;
     lfs->conn = conn;
-    lfs->lfs_section = strdup(section);
-    lfs->mount_point = strdup(init_args->mount_point);
+    lfs->lfs_section = tbx_stk_strdup(section);
+    lfs->mount_point = tbx_stk_strdup(init_args->mount_point);
     lfs->mount_point_len = strlen(init_args->mount_point);
 
     //** Most of the heavy lifting is done in the filesystem object
@@ -1696,7 +1696,7 @@ void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn, l
     //** Get the default host ID for opens
     char hostname[1024];
     apr_gethostname(hostname, sizeof(hostname), lfs->mpool);
-    lfs->id = strdup(hostname);
+    lfs->id = tbx_stk_strdup(hostname);
 
     // TODO: find a cleaner way to get fops here
     //lfs->fops = ctx->fuse->fuse_fs->op;

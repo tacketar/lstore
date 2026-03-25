@@ -1413,7 +1413,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
             goto cleanup;
         }
     } else {
-        fh->fname = strdup(fd->path);
+        fh->fname = tbx_stk_strdup(fd->path);
     }
     fh->data = data;
     fh->data_size = data_size;
@@ -1545,7 +1545,7 @@ gop_op_generic_t *lio_open_gop(lio_config_t *lc, lio_creds_t *creds, char *path,
     op->creds = creds;
     op->mode = mode;
     op->id = id;
-    op->path = strdup(path);
+    op->path = tbx_stk_strdup(path);
     op->fd = fd;
     op->max_wait = max_wait;
 
@@ -3047,7 +3047,7 @@ gop_op_status_t lio_path_copy_op(void *arg, int id)
         c->src_tuple = cp->src_tuple;
         c->src_tuple.path = fname;
         c->dest_tuple = cp->dest_tuple;
-        c->dest_tuple.path = strdup(dname);
+        c->dest_tuple.path = tbx_stk_strdup(dname);
         c->bufsize = cp->bufsize;
         c->cp_hints = cp->cp_hints;
         c->rw_hints = cp->rw_hints;

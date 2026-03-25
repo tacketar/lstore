@@ -42,6 +42,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
 #include <tbx/random.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
 
@@ -329,9 +330,9 @@ gop_op_generic_t *rsrc_update_config_op(lio_resource_service_fn_t *rs, int mode,
     } else {
         gop_mq_msg_append_mem(msg, RSR_GET_UPDATE_CONFIG_KEY, RSR_GET_UPDATE_CONFIG_SIZE, MQF_MSG_KEEP_DATA);
         snprintf(dt, sizeof(dt), "%d\n", timeout);
-        gop_mq_msg_append_mem(msg, strdup(dt), strlen(dt), MQF_MSG_AUTO_FREE);
+        gop_mq_msg_append_mem(msg, tbx_stk_strdup(dt), strlen(dt), MQF_MSG_AUTO_FREE);
         snprintf(dt, sizeof(dt), "%d %d\n", rsrc->version.map_version, rsrc->version.status_version);
-        gop_mq_msg_append_mem(msg, strdup(dt), strlen(dt), MQF_MSG_AUTO_FREE);
+        gop_mq_msg_append_mem(msg, tbx_stk_strdup(dt), strlen(dt), MQF_MSG_AUTO_FREE);
     }
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
@@ -542,7 +543,7 @@ lio_resource_service_fn_t *rs_remote_client_create(void *arg, tbx_inip_file_t *f
     tbx_type_malloc_clear(rsrc, lio_rs_remote_client_priv_t, 1);
     rs->priv = (void *)rsrc;
 
-    rsrc->section = strdup(section);
+    rsrc->section = tbx_stk_strdup(section);
 
     //** Make the locks and cond variables
     assert_result(tbx_apr_pool_create(&(rsrc->mpool), NULL), APR_SUCCESS);

@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <tbx/assert_result.h>
 #include <tbx/iniparse.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <lio/os.h>
 
@@ -174,7 +175,7 @@ lio_os_authz_t *osaz_fake_create(lio_service_manager_t *ess, tbx_inip_file_t *if
 
     tbx_type_malloc(osaz, lio_os_authz_t, 1);
 
-    osaz->priv = (section) ? strdup(section) : NULL;
+    osaz->priv = (section) ? tbx_stk_strdup(section) : NULL;
     osaz->print_running_config = osaz_fake_print_running_config;
     osaz->object_create = osaz_fake_object_create_remove;
     osaz->object_remove = osaz_fake_object_create_remove;

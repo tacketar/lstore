@@ -486,7 +486,7 @@ lio_segment_t *segment_disk_cache_create(void *arg)
 
     s->tpc = lio_lookup_service(es, ESS_RUNNING, ESS_TPC_UNLIMITED);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
-    s->qname = strdup(qname);
+    s->qname = tbx_stk_strdup(qname);
 
     seg->priv = s;
     seg->ess = es;
@@ -599,7 +599,7 @@ void sdc_open_db(sdc_db_t *dbc, char *db_path, rocksdb_comparator_t *cmp, int do
     rocksdb_options_t *opts, *opts2;
     char *errstr = NULL;
 
-    dbc->path = strdup(db_path);
+    dbc->path = tbx_stk_strdup(db_path);
 
     if (do_wipe != 0) { //** Wipe the DB if requested
         opts2 = rocksdb_options_create();
@@ -723,12 +723,12 @@ int sdc_dirty_cleanup(sdc_context_t *sdc)
     }
 
     //** Now purge the open files and dirty DB's
-    path = strdup(db_open->path);
+    path = tbx_stk_strdup(db_open->path);
     sdc_close_db(db_open);
     sdc_open_db(db_open, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_sid_compare_op, db_sid_compare_name), 0);
     free(path);
 
-    path = strdup(db_dirty->path);
+    path = tbx_stk_strdup(db_dirty->path);
     sdc_close_db(db_dirty);
     sdc_open_db(db_dirty, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_page_compare_op, db_page_compare_name), 0);
     free(path);
@@ -759,7 +759,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
     db_lru = &(sdc->db_lru);
 
     //** Destroy the LRU table and recreate it
-    path = strdup(db_lru->path);
+    path = tbx_stk_strdup(db_lru->path);
     sdc_close_db(db_lru);
     sdc_open_db(db_lru, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_lru_compare_op, db_lru_compare_name), 1);
     free(path);
@@ -947,7 +947,7 @@ void *segment_disk_cache_context_create(void *arg, tbx_inip_file_t *fd, char *gr
 
     tbx_type_malloc_clear(sdc, sdc_context_t, 1);
 
-    sdc->group = strdup(grp);
+    sdc->group = tbx_stk_strdup(grp);
     sdc->loc = tbx_inip_get_string(fd, grp, "loc", "/lio/cache");
 
     //** See if we can get the lock

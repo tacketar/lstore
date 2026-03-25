@@ -579,7 +579,7 @@ int os_inode_lut_get(os_inode_lut_t *ilut, int do_lock, ex_id_t inode, ex_id_t *
         *parent_inode = r->r.dentry.parent_inode;
         *ftype = r->r.ftype;
         *len = r->r.dentry.len;
-        if (dentry) *dentry = strdup(r->r.dentry.dentry);
+        if (dentry) *dentry = tbx_stk_strdup(r->r.dentry.dentry);
     }
     if (do_lock) apr_thread_mutex_unlock(ilut->lock);
 
@@ -611,7 +611,7 @@ int os_inode_lut_dentry_get(os_inode_lut_t *ilut, int do_lock, ex_id_t parent_ta
         *parent_inode = r->r.dentry.parent_inode;
         *ftype = r->r.ftype;
         *len = r->r.dentry.len;
-        if (dentry) *dentry = strdup(r->r.dentry.dentry);
+        if (dentry) *dentry = tbx_stk_strdup(r->r.dentry.dentry);
     }
     if (do_lock) apr_thread_mutex_unlock(ilut->lock);
 

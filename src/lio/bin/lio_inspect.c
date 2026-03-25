@@ -283,9 +283,9 @@ apr_hash_t *prep_rid_table(tbx_inip_file_t *fd, apr_pool_t *mpool)
                 key = tbx_inip_ele_get_key(ele);
                 value = tbx_inip_ele_get_value(ele);
                 if (strcmp(key, "rid_key") == 0) {  //** This is the RID so store it separate
-                    re->ri.rid->rid_key = strdup(value);
+                    re->ri.rid->rid_key = tbx_stk_strdup(value);
                 } else if (strcmp(key, "ds_key") == 0) {  //** This is the RID so store it separate
-                    re->ri.rid->ds_key = strdup(value);
+                    re->ri.rid->ds_key = tbx_stk_strdup(value);
                 } else if (strcmp(key, "status") == 0) {  //** Status
                     sscanf(value, "%d", &n);
                     re->status = ((n>=0) && (n<=3)) ? n : 4;
@@ -362,7 +362,7 @@ pool_entry_t *load_pool(tbx_stack_t *pools, char *name, tbx_inip_file_t *pfd, tb
 
     tbx_type_malloc_clear(p, pool_entry_t, 1);
 
-    p->name = strdup(name);
+    p->name = tbx_stk_strdup(name);
     p->groups = tbx_stack_new();
     p->rids = tbx_stack_new();
     log_printf(5, "START POOL=%s\n", p->name);

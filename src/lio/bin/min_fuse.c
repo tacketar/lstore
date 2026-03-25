@@ -35,6 +35,7 @@
 #include <apr_hash.h>
 #include <apr_thread_mutex.h>
 #include <tbx/apr_pool_wrapper.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 // *************************************************************************
@@ -236,7 +237,7 @@ xattr_t *xattr_create(const char *name, const char *val, int v_size)
 
     tbx_type_malloc_clear(attr, xattr_t, 1);
 
-    attr->key = strdup(name);
+    attr->key = tbx_stk_strdup(name);
     attr->v_size = v_size;
     if (v_size > 0) {
         tbx_type_malloc_clear(attr->val, char, v_size);

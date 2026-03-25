@@ -133,9 +133,9 @@ void *ds_ibp_cap_auto_warm(lio_data_service_fn_t *arg, data_cap_set_t *dcs)
 
     //** Make the new cap
     w = ibp_capset_new();FATAL_UNLESS(w != NULL);
-    if (cs->readCap) w->readCap = strdup(cs->readCap);
-    if (cs->writeCap) w->writeCap = strdup(cs->writeCap);
-    if (cs->manageCap) w->manageCap = strdup(cs->manageCap);
+    if (cs->readCap) w->readCap = tbx_stk_strdup(cs->readCap);
+    if (cs->writeCap) w->writeCap = tbx_stk_strdup(cs->writeCap);
+    if (cs->manageCap) w->manageCap = tbx_stk_strdup(cs->manageCap);
 
     //** Add it to the warming list
     apr_thread_mutex_lock(ds->lock);
@@ -278,20 +278,20 @@ void ds_ibp_translate_cap_set(lio_data_service_fn_t *ds, char *rid_key, char *ds
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->readCap[end]));
         log_printf(20, "rcap_old=%s new=%s\n", cs->readCap, new_cap);
         free(cs->readCap);
-        cs->readCap = strdup(new_cap);
+        cs->readCap = tbx_stk_strdup(new_cap);
 
     }
 
     if (cs->writeCap != NULL) {
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->writeCap[end]));
         free(cs->writeCap);
-        cs->writeCap = strdup(new_cap);
+        cs->writeCap = tbx_stk_strdup(new_cap);
     }
 
     if (cs->manageCap != NULL) {
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->manageCap[end]));
         free(cs->manageCap);
-        cs->manageCap = strdup(new_cap);
+        cs->manageCap = tbx_stk_strdup(new_cap);
     }
 }
 
@@ -488,7 +488,7 @@ int ds_ibp_get_probe(lio_data_service_fn_t *arg, data_attr_t *dsa, int key, void
 
 int res2ibp(char *res, ibp_depot_t *depot)
 {
-    char *str = strdup(res);
+    char *str = tbx_stk_strdup(res);
     char *bstate, *tmp;
     int fin;
 
@@ -515,7 +515,7 @@ char *ds_ibp_res2rid(lio_data_service_fn_t *dsf, char *res)
 
     res2ibp(res, &depot);
 
-    return(strdup(depot.rid.name));
+    return(tbx_stk_strdup(depot.rid.name));
 }
 
 //***********************************************************************
@@ -1032,7 +1032,7 @@ lio_data_service_fn_t *ds_ibp_create(void *arg, tbx_inip_file_t *ifd, char *sect
     tbx_type_malloc_clear(dsf, lio_data_service_fn_t, 1);
     tbx_type_malloc_clear(ds, lio_ds_ibp_priv_t , 1);
 
-    ds->section = strdup(section);
+    ds->section = tbx_stk_strdup(section);
 
     //** Set the default attributes
     memset(&(ds->attr_default), 0, sizeof(lio_ds_ibp_attr_t));

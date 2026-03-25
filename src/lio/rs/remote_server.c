@@ -43,6 +43,7 @@
 #include <tbx/iniparse.h>
 #include <tbx/log.h>
 #include <tbx/stack.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <unistd.h>
 
@@ -143,7 +144,7 @@ void rsrs_config_send(lio_resource_service_fn_t *rs, gop_mq_frame_t *fid, mq_msg
     apr_thread_mutex_lock(rsrs->lock);
     snprintf(data, sizeof(data), "%d %d\n", rsrs->my_map_version.map_version, rsrs->my_map_version.status_version);
     apr_thread_mutex_unlock(rsrs->lock);
-    gop_mq_msg_append_mem(msg, strdup(data), strlen(data), MQF_MSG_AUTO_FREE);
+    gop_mq_msg_append_mem(msg, tbx_stk_strdup(data), strlen(data), MQF_MSG_AUTO_FREE);
 
     log_printf(5, "version=%s", data);
 
@@ -404,8 +405,8 @@ void rsrs_client_notify(lio_resource_service_fn_t *rs, int everyone)
     while ((h = tbx_stack_get_current_data(rsrs->pending)) != NULL) {
         if ((h->reply_time < now) || (everyone == 1)) {
             log_printf(5, "sending update to a client everyone=%d\n", everyone);
-            gop_mq_frame_set(h->version_frame, strdup(version), vlen, MQF_MSG_AUTO_FREE);
-            gop_mq_frame_set(h->config_frame, strdup(config), clen, MQF_MSG_AUTO_FREE);
+            gop_mq_frame_set(h->version_frame, tbx_stk_strdup(version), vlen, MQF_MSG_AUTO_FREE);
+            gop_mq_frame_set(h->config_frame, tbx_stk_strdup(config), clen, MQF_MSG_AUTO_FREE);
             gop_mq_submit(rsrs->server_portal, gop_mq_task_new(rsrs->mqc, h->msg, NULL, NULL, 30));
             tbx_stack_delete_current(rsrs->pending, 0, 0);
             free(h);  //** The msg is auto destroyed after being sent
@@ -556,7 +557,7 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
     tbx_type_malloc_clear(rsrs, lio_rs_remote_server_priv_t, 1);
     rs->priv = (void *)rsrs;
 
-    rsrs->section = strdup(section);
+    rsrs->section = tbx_stk_strdup(section);
 
     //** Make the locks and cond variables
     assert_result(tbx_apr_pool_create(&(rsrs->mpool), NULL), APR_SUCCESS);

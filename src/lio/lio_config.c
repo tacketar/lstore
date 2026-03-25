@@ -418,7 +418,7 @@ void _lc_object_put(char *key, void *obj)
 
     lcc->count = 1;
     lcc->object = obj;
-    lcc->key = strdup(key);
+    lcc->key = tbx_stk_strdup(key);
     tbx_list_insert(_lc_object_list, lcc->key, lcc);
 
     return;
@@ -476,7 +476,7 @@ void _lio_load_plugins(lio_config_t *lio, tbx_inip_file_t *fd)
 
             if (lio->plugin_stack == NULL) lio->plugin_stack = tbx_stack_new();
             log_printf(5, "library=%s\n", buffer);
-            tbx_stack_push(lio->plugin_stack, strdup(buffer));
+            tbx_stack_push(lio->plugin_stack, tbx_stk_strdup(buffer));
             add_service(lio->ess, section, name, sym);
 
             error = 0;  //** Skip cleanup
@@ -542,9 +542,9 @@ void lio_find_lfs_mounts()
                 if (prefix != NULL) { //** Add it
                     tbx_type_malloc_clear(entry, lfs_mount_t, 1);
                     if (shortcut) {
-                        entry->shortcut = strdup(shortcut + 4);
+                        entry->shortcut = tbx_stk_strdup(shortcut + 4);
                     }
-                    entry->prefix = strdup(prefix);
+                    entry->prefix = tbx_stk_strdup(prefix);
                     entry->len = strlen(entry->prefix);
                     tbx_stack_push(stack, entry);
                     log_printf(5, "mount prefix=%s len=%d shortcut=%s\n", entry->prefix, entry->len, entry->shortcut);
@@ -665,7 +665,7 @@ wildcard:
             path[i] = '/';  //** Need to add the trailing / to the path
             path[i+1] = 0;
         }
-        rp = strdup(path);
+        rp = tbx_stk_strdup(path);
     } else {
         if (last_slash == -1) last_slash = n;
         c = p[last_slash];
@@ -682,7 +682,7 @@ wildcard:
             tuple->path = rp;
         } else {
             snprintf(path, sizeof(path), "%s%s", rp, &(p[last_slash]));
-            tuple->path = strdup(path);
+            tuple->path = tbx_stk_strdup(path);
             free(rp);
         }
         free(p);
@@ -751,7 +751,7 @@ char *tuple_fname_helper(lio_config_t *lc, char *fname)
 
     if (lc->root_prefix && fname) {
         snprintf(buf, sizeof(buf), "%s%s", lc->root_prefix, fname);
-        new_fname = strdup(buf);
+        new_fname = tbx_stk_strdup(buf);
         free(fname);
         return(new_fname);
     }
@@ -803,15 +803,15 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
         strncpy(uri, lio_gc->obj_name, sizeof(uri)-1);
         uri[sizeof(uri)-1] = '\0';
     } else {
-        if (!pp_mq) pp_mq = strdup(LIO_MQ_NAME_DEFAULT);
+        if (!pp_mq) pp_mq = tbx_stk_strdup(LIO_MQ_NAME_DEFAULT);
         if (pp_port == 0) pp_port = 6711;
-        if (!pp_section) pp_section = strdup("lio");
+        if (!pp_section) pp_section = tbx_stk_strdup("lio");
 
         //** Based on the host we may need to adjust the config file
         if (pp_host) {
-            if (!pp_cfg) pp_cfg = strdup("lio");
+            if (!pp_cfg) pp_cfg = tbx_stk_strdup("lio");
         } else if (!pp_cfg) {
-            pp_cfg = strdup("LOCAL");
+            pp_cfg = tbx_stk_strdup("LOCAL");
         }
 
         snprintf(uri, sizeof(uri), "lstore://%s|%s:%d:%s:%s", pp_mq, pp_host, pp_port, pp_cfg, pp_section);
@@ -872,7 +872,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
             //** Still no user so see if there is a default user for the shortcut in the accounts file
             if (userid == NULL) { userid = lio_get_shortcut_user("account"); }
 
-            tuple.lc = lio_create_nl(ifd, pp_section, strdup(userid), uri, _lio_exe_name, 0, &tuple2);  //** Use the non-locking routine
+            tuple.lc = lio_create_nl(ifd, pp_section, tbx_stk_strdup(userid), uri, _lio_exe_name, 0, &tuple2);  //** Use the non-locking routine
             if (tuple.lc == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
                 tbx_inip_destroy(ifd);
@@ -1363,15 +1363,15 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     tbx_type_malloc_clear(lio, lio_config_t, 1);
     lio->ess = lio_exnode_service_set_create();
     lio->auto_translate = 1;
-    if (section) lio->section_name = strdup(section);
-    if (exe_name) lio->exe_name = strdup(exe_name);
+    if (section) lio->section_name = tbx_stk_strdup(section);
+    if (exe_name) lio->exe_name = tbx_stk_strdup(exe_name);
 
     if (lc_tuple) *lc_tuple = NULL;
 
     //** Add it to the table for ref counting
     _lc_object_put(obj_name, lio);
 
-    lio->obj_name = strdup(obj_name);
+    lio->obj_name = tbx_stk_strdup(obj_name);
 
     lio->ifd = ifd;
     if (lio->ifd == NULL) {
@@ -1411,7 +1411,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
 
     //** Set up the monitoring
     if (make_monitor == 1) {
-        lio->monitor_fname = (_monitoring_fname) ? strdup(_monitoring_fname) : tbx_inip_get_string(lio->ifd, section, "monitor_fname", lio_default_options.monitor_fname);
+        lio->monitor_fname = (_monitoring_fname) ? tbx_stk_strdup(_monitoring_fname) : tbx_inip_get_string(lio->ifd, section, "monitor_fname", lio_default_options.monitor_fname);
         lio->monitor_enable = (_monitoring_state == 1) ? 1 : tbx_inip_get_integer(lio->ifd, section, "monitor_enable", lio_default_options.monitor_enable);
         tbx_monitor_create(lio->monitor_fname);
         if (lio->monitor_enable) tbx_monitor_set_state(1);
@@ -1424,7 +1424,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->tpc_max_recursion = max_recursion;
     sprintf(buffer, "tpc:%d", cores);
     stype = buffer;
-    lio->tpc_unlimited_section = strdup(stype);
+    lio->tpc_unlimited_section = tbx_stk_strdup(stype);
     lio->tpc_unlimited = _lc_object_get(stype);
     if (lio->tpc_unlimited == NULL) {  //** Need to load it
         n = 0.1 * cores;
@@ -1447,7 +1447,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->tpc_cache_count = cores;
     sprintf(buffer, "tpc-cache:%d", cores);
     stype = buffer;
-    lio->tpc_cache_section = strdup(stype);
+    lio->tpc_cache_section = tbx_stk_strdup(stype);
     lio->tpc_cache = _lc_object_get(stype);
     if (lio->tpc_cache == NULL) {  //** Need to load it
         n = 0.1 * cores;
@@ -1471,7 +1471,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     lio->tpc_ongoing_count = cores;
     sprintf(buffer, "tpc-ongoing:%d", cores);
     stype = buffer;
-    lio->tpc_ongoing_section = strdup(stype);
+    lio->tpc_ongoing_section = tbx_stk_strdup(stype);
     lio->tpc_ongoing = _lc_object_get(stype);
     if (lio->tpc_ongoing == NULL) {  //** Need to load it
         lio->tpc_ongoing = gop_tp_context_create("ONGOING", 0, cores, max_recursion);  //** No need for any standby threads
@@ -1513,7 +1513,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT, on);
     char *host_id = gop_generate_host_id(NULL, NULL, 60, -1);
     add_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID, host_id);
-    lio->host_id = strdup(host_id);
+    lio->host_id = tbx_stk_strdup(host_id);
     lio->host_id_len = strlen(host_id);
 
     //** check if we're running as a server
@@ -1676,21 +1676,21 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         } else if (tuple->creds) {
             snprintf(buffer, sizeof(buffer), "tuple:%s@%s", an_cred_get_account(tuple->creds, NULL), lio->obj_name);
         }
-        lio->creds_name = strdup(buffer);
+        lio->creds_name = tbx_stk_strdup(buffer);
         if (lc_tuple) *lc_tuple = tuple;
         _lc_object_put(lio->creds_name, tuple);  //** Add it to the table
     } else {
         lio->creds = tuple->creds;
-        lio->creds_name = strdup(buffer);
+        lio->creds_name = tbx_stk_strdup(buffer);
     }
     if (cred_args[0] != NULL) free(cred_args[0]);
 
-    lio->creds_user = (lio->creds) ? strdup(an_cred_get_account(lio->creds, NULL)) : strdup("NONE");
+    lio->creds_user = (lio->creds) ? tbx_stk_strdup(an_cred_get_account(lio->creds, NULL)) : tbx_stk_strdup("NONE");
 
     if (_lio_cache == NULL) {
         stype = tbx_inip_get_string(lio->ifd, section, "cache", lio_default_options.cache_section);
         if (strcmp(stype,lio_default_options.cache_section) != 0) check_for_section(lio->ifd, stype, "No Cache section found in LIO config!\n");
-        lio->cache_section = strdup(stype);
+        lio->cache_section = tbx_stk_strdup(stype);
         ctype = tbx_inip_get_string(lio->ifd, stype, "type", CACHE_TYPE_AMP);
         cache_create = lio_lookup_service(lio->ess, CACHE_LOAD_AVAILABLE, ctype);
         _lio_cache = (*cache_create)(lio->ess, lio->ifd, stype, lio->da, lio->timeout);
@@ -1930,7 +1930,7 @@ int lio_init(int *argc, char ***argvp)
     env = getenv(var); //** Get the exe based options if available
     if (env == NULL) env = getenv("LIO_OPTIONS");  //** If not get the global default
     if (env != NULL) {  //** Got args so prepend them to the front of the list
-        env = strdup(env);  //** Don't want to mess up the actual env variable
+        env = tbx_stk_strdup(env);  //** Don't want to mess up the actual env variable
         eargv = NULL;
         tbx_stk_string2args(env, &neargs, &eargv);
 
@@ -1976,7 +1976,7 @@ int lio_init(int *argc, char ***argvp)
             i++;
         } else if (strcmp(argv[i], "-u") == 0) { //** Default UserID/Account
             i++;
-            userid = strdup(argv[i]);
+            userid = tbx_stk_strdup(argv[i]);
             i++;
         } else if (strcmp(argv[i], "-log") == 0) { //** Override log file output
             i++;
