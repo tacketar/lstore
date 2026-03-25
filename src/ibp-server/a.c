@@ -31,6 +31,8 @@
 #include "ibp-server_version.h"
 #include "ibp_time.h"
 #include <tbx/network.h>
+#include <tbx/type_malloc.h>
+#include <tbx/string_token.h>
 #include <tbx/chksum.h>
 
 //*****************************************************************
@@ -356,7 +358,7 @@ int read_status(ibp_task_t *task, char **bstate)
 
     //*** Only way to distinguish between commands is based on the number of args.
     int nargs;
-    char *dupstr = strdup(*bstate);
+    char *dupstr = tbx_stk_strdup(*bstate);
     char *dstate;
     tbx_stk_string_token(dupstr, " ", &dstate, &finished);
     nargs = 2;

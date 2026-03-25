@@ -35,6 +35,7 @@
 #include <tbx/network.h>
 #include <tbx/io.h>
 #include <tbx/net_sock.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #ifdef _ENABLE_PHOEBUS
 #include "net_phoebus.h"
@@ -2731,7 +2732,7 @@ int handle_copy(ibp_task_t *task)
     int fin, rport;
     char *bstate;
     char *rhost;
-    char *temp = strdup(r->remote_cap);
+    char *temp = tbx_stk_strdup(r->remote_cap);
     rhost = tbx_stk_string_token(temp, "/", &bstate, &fin);     //** gets the ibp:/
     rhost = tbx_stk_string_token(NULL, ":", &bstate, &fin);     //** This should be the host name
     rhost = &(rhost[1]);        //** Skip the extra "/"
@@ -3506,7 +3507,7 @@ int handle_internal_mount(ibp_task_t *task)
     for (igrp = tbx_inip_group_first(keyfile); igrp != NULL; igrp = tbx_inip_group_next(igrp)) {
         sgrp = tbx_inip_group_get(igrp);
         if (strncmp("resource", sgrp, 8) == 0) {
-            str = strdup(sgrp);
+            str = tbx_stk_strdup(sgrp);
             tbx_stk_string_token(str, " ", &bstate, &fin);      //** This retreives the "resource"
             srid = tbx_stk_string_token(NULL, " ", &bstate, &fin);      //** This should be the RID
             tbx_stk_string_token(NULL, " ", &bstate, &fin);

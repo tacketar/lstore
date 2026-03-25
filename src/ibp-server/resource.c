@@ -95,7 +95,7 @@ char *snap_prefix(char *prefix, int add_time)
         snprintf(my_prefix, sizeof(my_prefix)-1, "%s", p); my_prefix[sizeof(my_prefix)-1] = 0;
     }
 
-    return(strdup(my_prefix));
+    return(tbx_stk_strdup(my_prefix));
 }
 
 //***************************************************************************
@@ -165,12 +165,12 @@ char *fname2dev(char *fname)
                 if ((apath[len] == '/') || (minfo.mnt_dir[len - 1] == '/')) {
                     if (dev)
                         free(dev);
-                    dev = strdup(minfo.mnt_fsname);
+                    dev = tbx_stk_strdup(minfo.mnt_fsname);
                 }
             } else {
                 if (dev)
                     free(dev);
-                dev = strdup(minfo.mnt_fsname);
+                dev = tbx_stk_strdup(minfo.mnt_fsname);
             }
         }
     }
@@ -240,7 +240,7 @@ int mkfs_resource(rid_t rid, char *dev_type, char *device_name, char *db_locatio
     //*** Fill in defaults for everything ***
     snprintf(kgroup, sizeof(kgroup), "resource %s", ibp_rid2str(rid, rname));
     res.keygroup = kgroup;
-//    res.keygroup = strdup(kgroup);
+//    res.keygroup = tbx_stk_strdup(kgroup);
 //WORKS
     res.name = ibp_rid2str(rid, name);
 //return(0);
@@ -700,7 +700,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     char *str, *str2, *bstate;
     int i, fin;
 
-    res->keygroup = strdup(group);
+    res->keygroup = tbx_stk_strdup(group);
     res->name = tbx_inip_get_string(keyfile, group, "rid", NULL);
     if (res->name == NULL) {
         printf("parse_resource: (%s) Missing resource ID\n", group);
@@ -904,7 +904,7 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
     snap_resource(res, start_snap_prefix, stderr);
 
     //** Now figure out which snap to use for the merge
-    db_snap_merge = (merge_snap) ? strdup(merge_snap) : snap_merge_pick(&res->db);
+    db_snap_merge = (merge_snap) ? tbx_stk_strdup(merge_snap) : snap_merge_pick(&res->db);
 
     //** Mount the snap if needed
     err = (db_snap_merge) ? mount_db_generic(keyfile, db_group, &(res->db_merge), 0, res->n_partitions, db_snap_merge) : 1;

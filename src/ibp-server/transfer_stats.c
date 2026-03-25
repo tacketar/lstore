@@ -24,6 +24,7 @@
 #include "ibp_time.h"
 #include <tbx/network.h>
 #include <tbx/log.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
 typedef struct {
@@ -51,7 +52,7 @@ void init_stats(int n)
     apr_pool_create(&(stats.pool), NULL);
     apr_thread_mutex_create(&(stats.lock), APR_THREAD_MUTEX_DEFAULT, stats.pool);
 
-    stats.host = strdup(global_config->server.iface[0].hostname);
+    stats.host = tbx_stk_strdup(global_config->server.iface[0].hostname);
     stats.pos = 0;
     stats.size = n;
     stats.read_bytes = 0;

@@ -44,7 +44,7 @@ int ipdecstr2address(char *src, char *dest)
     char *number, *bstate;
     memset(dest, 0, 16);
 
-    char *srcdup = strdup(src);
+    char *srcdup = tbx_stk_strdup(src);
 
     j = 0;                      //** Parse the address and determine the address type
     number = tbx_stk_string_token(srcdup, ".", &bstate, &fin);
@@ -119,7 +119,7 @@ subnet_list_t *new_subnet_list(char *list_string)
     subnet_list_t *sn;
     char acl_text[128];
     char *mask, *mstate;
-    char *list_str = strdup(list_string);
+    char *list_str = tbx_stk_strdup(list_string);
 
     tbx_type_malloc_clear(sn, subnet_list_t, 1);
 
@@ -220,7 +220,7 @@ int subnet_list_validate(subnet_list_t *sl, char *address)
         break;
     case SUBNET_LIST:
     case SUBNET_LOCAL:
-        add = strdup(address);
+        add = tbx_stk_strdup(address);
         ipdecstr2address(add, sadd.mask);
         free(add);
 

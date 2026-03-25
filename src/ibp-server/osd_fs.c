@@ -30,6 +30,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
 #include <tbx/io.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #ifdef _HAS_XFS
 #include <xfs/xfs.h>
@@ -3212,7 +3213,7 @@ osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_
     memset(fs, 0, sizeof(osd_fs_t));
 
     d->private = (void *) fs;
-    fs->devicename = strdup(device);
+    fs->devicename = tbx_stk_strdup(device);
     fs->pathlen = strlen(fs->devicename) + 100;
     fs->n_partitions = n_partitions;
 

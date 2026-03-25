@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include "resource_list.h"
 #include "resource.h"
@@ -120,7 +121,7 @@ int _resource_list_insert(Resource_list_t *rl, Resource_t *r)
 
     //** Finally add it
     ibp_rid2str(r->rid, str);
-    assert_result_not_null(crid = strdup(str));
+    assert_result_not_null(crid = tbx_stk_strdup(str));
     rl->res[n].crid = crid;
     rl->res[n].r = r;
     rl->res[n].used = 1;

@@ -112,7 +112,7 @@ tbx_ns_t *cmd_send(char *host, int port, char *cmd, char **res_buffer, int timeo
         }
     } while (failed == 1);
 
-    *res_buffer = strdup(bstate);
+    *res_buffer = tbx_stk_strdup(bstate);
 
     return (ns);
 }

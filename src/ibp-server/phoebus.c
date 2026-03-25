@@ -98,10 +98,10 @@ void phoebus_path_set(phoebus_t *p, const char *path)
     //** Parse the path **
     p->p_count = 0;
 
-    p->path_string = strdup(path);
+    p->path_string = tbx_stk_strdup(path);
 
 
-    p->key = strdup(path);
+    p->key = tbx_stk_strdup(path);
 
 
     hop = tbx_stk_string_token(p->path_string, ",", &bstate, &finished);

@@ -24,6 +24,7 @@
 #include <tbx/log.h>
 #include "debug.h"
 #include <tbx/append_printf.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include "ibp_time.h"
 #include <apr_time.h>
@@ -271,7 +272,7 @@ char *snap_merge_pick(DB_resource_t *dbr)
     //** Make the selection.  We pick the 2nd newest.
     //** The newest is the snap we just made at startup
     //** so we need something slightly older
-    if (n > 1) merge_prefix = strdup(list[n-2]->d_name);
+    if (n > 1) merge_prefix = tbx_stk_strdup(list[n-2]->d_name);
 
     //** Clean up
     for (i=0; i<n; i++) {
@@ -418,8 +419,8 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     dbres->ropts = rocksdb_readoptions_create();
 
     //*** Lastly add the group to the Key file ***
-    dbres->loc = strdup(loc);
-    dbres->kgroup = strdup(kgroup);
+    dbres->loc = tbx_stk_strdup(loc);
+    dbres->kgroup = tbx_stk_strdup(kgroup);
 
     //** and make the mutex
     apr_pool_create(&(dbres->pool), NULL);
@@ -446,7 +447,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     int n;
 
     //** Get the directory containing everything **
-    dbres->kgroup = strdup(kgroup);
+    dbres->kgroup = tbx_stk_strdup(kgroup);
     log_printf(10, "mount_db_generic: kgroup=%s\n", kgroup);
     tbx_log_flush();
     assert_result_not_null(str = tbx_inip_get_string(kf, kgroup, "loc", NULL));

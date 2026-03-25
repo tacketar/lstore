@@ -27,6 +27,7 @@
 #include "allocation.h"
 #include "resource.h"
 #include <tbx/network.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include "ibp_task.h"
 #include "ibp-server_version.h"
@@ -410,7 +411,7 @@ int read_status(ibp_task_t *task, char **bstate)
 
     //*** Only way to distinguish between commands is based on the number of args.
     int nargs;
-    char *dupstr = strdup(*bstate);
+    char *dupstr = tbx_stk_strdup(*bstate);
     char *dstate;
     tbx_stk_string_token(dupstr, " ", &dstate, &finished);
     nargs = 2;
@@ -1862,7 +1863,7 @@ int read_internal_mount(ibp_task_t *task, char **bstate)
     if (strcmp(snap, "-") == 0) {
         arg->merge_snap = NULL;
     } else {
-        arg->merge_snap = strdup(snap);
+        arg->merge_snap = tbx_stk_strdup(snap);
     }
 
     get_command_timeout(task, bstate);

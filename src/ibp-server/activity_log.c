@@ -38,6 +38,7 @@
 #include <tbx/pigeon_coop.h>
 #include <tbx/stack.h>
 #include <tbx/type_malloc.h>
+#include <tbx/string_token.h>
 #include "activity_log.h"
 #include "ibp_server.h"
 #include "subnet.h"
@@ -3247,7 +3248,7 @@ void _alog_send_data()
             log_printf(15,
                        "_alog_send_data: new transfer.  tbx_stack_pushing %s onto send stack\n",
                        file);
-            tbx_stack_push(_alog_pending_stack, strdup(file));
+            tbx_stack_push(_alog_pending_stack, tbx_stk_strdup(file));
 
             len = strlen(file);
             sscanf(&(file[len - 6]), "%d", &n);
@@ -3279,7 +3280,7 @@ void _alog_send_data()
         snprintf(fname, 1023, "%s." TT ".%06d", _alog_name, apr_time_now(), _alog_count);
         rename(_alog_name, fname);
 
-        tbx_stack_push(_alog_pending_stack, strdup(fname));
+        tbx_stack_push(_alog_pending_stack, tbx_stk_strdup(fname));
 
         //*** Spawn the thread to perform the send if needed ***
         if (new_transfer == 1) {
@@ -3737,7 +3738,7 @@ activity_log_t *activity_log_open(const char *logname, int max_id, int mode)
     alog->rl_map = NULL;
     alog->ns_map = NULL;
     alog->mode = mode;
-    alog->name = strdup(logname);
+    alog->name = tbx_stk_strdup(logname);
     alog->max_id = max_id;
     if (max_id < 256) {
         alog->append_header = activity_log_append_header_1byte_id;
