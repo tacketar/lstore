@@ -83,21 +83,21 @@ void _psk_destroy(lio_authn_t *an)
     for (hi=apr_hash_first(NULL, ctx->accounts); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&pa);
         while ((pc = tbx_stack_pop(pa->creds)) != NULL) {
-            if (pc->c.id != NULL) free(pc->c.id);
-            if (pc->c.descriptive_id) free(pc->c.descriptive_id);
-            if (pc->c.account) free(pc->c.account);
-            free(pc);
+            if (pc->c.id != NULL) tbx_free(pc->c.id);
+            if (pc->c.descriptive_id) tbx_free(pc->c.descriptive_id);
+            if (pc->c.account) tbx_free(pc->c.account);
+            tbx_free(pc);
         }
 
         tbx_stack_free(pa->creds, 0);
-        free(pa->account);
-        free(pa->key);
-        free(pa);
+        tbx_free(pa->account);
+        tbx_free(pa->key);
+        tbx_free(pa);
     }
 
     //** This destroys both hashes.  Everything in the creds hash was handled in the account purge
     tbx_apr_pool_destroy(ctx->mpool);
-    free(ctx);
+    tbx_free(ctx);
 }
 
 //***********************************************************************
@@ -156,13 +156,13 @@ void _psk_load(lio_authn_t *an)
                 tbx_type_malloc_clear(psk, char, n);  //** The actual size needed is 0.8*strlen(text)+1
                 zmq_z85_decode((unsigned char *)psk, text);
                 n = 0.8*n;
-                free(text);
+                tbx_free(text);
 
                 //** See if it exists in the old context
                 a = (ap->ctx) ? apr_hash_get(ap->ctx->accounts, account, APR_HASH_KEY_STRING) : NULL;
                 if (a) {  //** It's in the old table
                     if ((n == a->key_len) && (memcmp(a->key, psk, n) == 0)) {  //** And the PSK's are the same so just move everything over
-                        free(psk);
+                        tbx_free(psk);
                         apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, a);  //** Add it to the new one
                         apr_hash_set(ap->ctx->accounts, a->account, APR_HASH_KEY_STRING, NULL);  //** Add remove it from the old one
 
@@ -178,9 +178,9 @@ void _psk_load(lio_authn_t *an)
                         if (tbx_stack_count(a->creds) == 0) { //** No creds so can safely remove
                             apr_hash_set(ap->ctx->accounts, a->account, APR_HASH_KEY_STRING, NULL);  //** Add remove it from the old one
                             tbx_stack_free(a->creds, 0);
-                            free(a->account);
-                            free(a->key);
-                            free(a);
+                            tbx_free(a->account);
+                            tbx_free(a->key);
+                            tbx_free(a);
                         }
                         a = NULL;
                     }
@@ -212,7 +212,7 @@ void _psk_load(lio_authn_t *an)
             }
         } else { //** We can go ahead and clean up
             tbx_apr_pool_destroy(ap->ctx->mpool);
-            free(ap->ctx);
+            tbx_free(ap->ctx);
         }
     }
     ap->ctx = ctx;  //** Swing the context
@@ -301,12 +301,12 @@ lio_creds_t *apsk_cred_init(lio_authn_t *an, int type, void **args)
         pc->count = 1;
         pc->c.priv = pc;
         pc->c.destroy = apsk_cred_destroy;
-        if (pc->c.id) free(pc->c.id);
+        if (pc->c.id) tbx_free(pc->c.id);
         sprintf(buf, "%s:INTERNAL", ca);
         pc->c.id = tbx_stk_strdup(ca); pc->c.id_len = strlen(ca);
-        if (pc->c.account) free(pc->c.account);
+        if (pc->c.account) tbx_free(pc->c.account);
         pc->c.account = tbx_stk_strdup(ca); pc->c.account_len = strlen(ca);
-        if (pc->c.descriptive_id) free(pc->c.descriptive_id);
+        if (pc->c.descriptive_id) tbx_free(pc->c.descriptive_id);
         pc->c.descriptive_id = tbx_stk_strdup(buf); pc->c.descriptive_id_len = strlen(buf);
         tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
         pc->c.handle = pc->handle;
@@ -339,35 +339,35 @@ void apsk_cred_destroy(lio_creds_t *c)
         if (pc->hb) {
             key = *(intptr_t *)c;
             gop_mq_ongoing_remove(ap->ongoing, pc->hb, pc->hb_len, key, 1);
-            free(pc->hb);
+            tbx_free(pc->hb);
             pc->hb = NULL;
             pc->hb_len = 0;
         }
 
         notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", pc->c.descriptive_id);
-        if (pc->c.id != NULL) free(pc->c.id);
-        if (pc->c.account != NULL) free(pc->c.account);
-        if (pc->c.descriptive_id) free(pc->c.descriptive_id);
+        if (pc->c.id != NULL) tbx_free(pc->c.id);
+        if (pc->c.account != NULL) tbx_free(pc->c.account);
+        if (pc->c.descriptive_id) tbx_free(pc->c.descriptive_id);
         tbx_stack_move_to_ptr(pc->a->creds, pc->ele);
         tbx_stack_delete_current(pc->a->creds, 0, 0);
 
         apr_hash_set(ap->ctx->creds, pc->c.handle, pc->c.handle_len, NULL);
 
         a = pc->a; //** Get the account before freeing the creds
-        free(pc);
+        tbx_free(pc);
 
         if (a->old_ctx) { //** check if we do garbage collection
             ctx = a->old_ctx;
             if (tbx_stack_count(a->creds) == 0) {
                 apr_hash_set(ctx->accounts, a->account, APR_HASH_KEY_STRING, NULL);
-                free(a->account);
-                free(a->key);
+                tbx_free(a->account);
+                tbx_free(a->key);
                 tbx_stack_free(a->creds, 0);
-                free(a);
+                tbx_free(a);
 
                 if (apr_hash_count(ctx->accounts) == 0) { //** Nothing left
                     tbx_apr_pool_destroy(ctx->mpool);
-                    free(ctx);
+                    tbx_free(ctx);
                 }
             }
         }
@@ -414,11 +414,11 @@ lio_creds_t *apsk_login(lio_authn_t *an, char *id, int id_len, char *did, int di
     pc->count = 1;
     pc->c.priv = pc;
     pc->c.destroy = apsk_cred_destroy;
-    if (pc->c.id) free(pc->c.id);
+    if (pc->c.id) tbx_free(pc->c.id);
     pc->c.id = tbx_stk_strdup(id); pc->c.id_len = strlen(id);
-    if (pc->c.account) free(pc->c.account);
+    if (pc->c.account) tbx_free(pc->c.account);
     pc->c.account = tbx_stk_strdup(id); pc->c.account_len = strlen(id);
-    if (pc->c.descriptive_id) free(pc->c.descriptive_id);
+    if (pc->c.descriptive_id) tbx_free(pc->c.descriptive_id);
     pc->c.descriptive_id = tbx_stk_strdup(did); pc->c.descriptive_id_len = strlen(did);
     tbx_random_get_bytes(pc->handle, PSK_HANDLE_LEN);
     pc->c.handle = pc->handle;
@@ -484,7 +484,7 @@ gop_op_status_t apsk_cred_logout_ongoing_fn(void *arg, int id)
 
     //** Destroy the HB since we're only called on an ongoing failure
     if (pc->hb) {
-       free(pc->hb);
+       tbx_free(pc->hb);
        pc->hb = NULL;
        pc->hb_len = 0;
     }
@@ -666,7 +666,7 @@ void apsk_server_accounts_print_running_config(lio_authn_t *an, FILE *fd)
             key_escaped[8] = '\0';
             fprintf(fd, "key=%s...%s\n", key_escaped, key_escaped + n - 8);
         }
-        free(key_escaped);
+        tbx_free(key_escaped);
         tbx_stack_move_to_top(pa->creds);
         while ((pc = tbx_stack_get_current_data(pa->creds)) != NULL) {
             fprintf(fd, "creds=%s\n", an_cred_get_descriptive_id(&(pc->c), NULL));
@@ -726,19 +726,19 @@ void authn_psk_server_destroy(lio_authn_t *an)
         gop_mq_portal_remove(ap->mqc, ap->server_portal);
         gop_mq_ongoing_destroy(ap->ongoing);  //** Shutdown the ongoing thread and task
         gop_mq_portal_destroy(ap->server_portal);
-        free(ap->hostname);
+        tbx_free(ap->hostname);
     }
 
     _psk_destroy(an);
 
-    if (ap->section) free(ap->section);
-    if (ap->fname) free(ap->fname);
+    if (ap->section) tbx_free(ap->section);
+    if (ap->fname) tbx_free(ap->fname);
 
     apr_thread_mutex_destroy(ap->lock);
     apr_thread_cond_destroy(ap->cond);
     tbx_apr_pool_destroy(ap->mpool);
-    free(ap);
-    free(an);
+    tbx_free(ap);
+    tbx_free(an);
 }
 
 //***********************************************************************

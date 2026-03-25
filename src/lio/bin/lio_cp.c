@@ -45,7 +45,7 @@ void mangle_copy_path(lio_cp_path_t *cp)
     } else {
         snprintf(path, i+2+1, "%s/*", cp->src_tuple.path);
     }
-    free(cp->src_tuple.path);
+    tbx_free(cp->src_tuple.path);
     cp->src_tuple.path = path;
     lio_os_regex_table_destroy(cp->path_regex);
     cp->path_regex = lio_os_path_glob2regex(cp->src_tuple.path);
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Unable to parse destination path: %s\n", argv[argc-1]);
         return(EINVAL);
     }
-    free(path);
+    tbx_free(path);
 
     if (i>=argc) {
         info_printf(lio_ifd, 0, "Missing directory!\n");
@@ -199,11 +199,11 @@ int main(int argc, char **argv)
         } else if (cp->src_tuple.is_lio < 0) {   //** Can't parse path so skip
             fprintf(stderr, "Unable to parse source path: %s\n", path);
             lio_path_release(&cp->src_tuple);
-            free(path);
-            free(cp);
+            tbx_free(path);
+            tbx_free(cp);
             goto finished;
         }
-        free(path);
+        tbx_free(path);
 
         //** In case I/O is being done on the local file system lets align the bufsize to whole pages
         tbx_fudge_align_size(bufsize, 2*getpagesize());
@@ -273,7 +273,7 @@ int main(int argc, char **argv)
         }
         lio_path_release(&cp->src_tuple);
         lio_os_regex_table_destroy(cp->path_regex);
-        free(cp);
+        tbx_free(cp);
         if (status.op_status != OP_STATE_SUCCESS) {
             return_code = EIO;
             goto finished;
@@ -289,11 +289,11 @@ int main(int argc, char **argv)
                 lio_path_local_make_absolute(&cp->src_tuple);
             } else if (cp->src_tuple.is_lio < 0) {   //** Can't parse path so skip
                 fprintf(stderr, "Unable to parse source path: %s\n", path);
-                free(path);
-                free(cp);
+                tbx_free(path);
+                tbx_free(cp);
                 goto finished;
             }
-            free(path);
+            tbx_free(path);
             cp->dest_tuple = dtuple;
             cp->dest_type = dtype;
             cp->path_regex = lio_os_path_glob2regex(cp->src_tuple.path);
@@ -321,7 +321,7 @@ int main(int argc, char **argv)
             }
             lio_path_release(&cp->src_tuple);
             lio_os_regex_table_destroy(cp->path_regex);
-            free(cp);
+            tbx_free(cp);
             gop_free(gop, OP_DESTROY);
         }
     }

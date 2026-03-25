@@ -23,6 +23,7 @@
 
 #include <lio/lio.h>
 #include <lio/lio_fuse.h>
+#include <tbx/type_malloc.h>
 
 // *************************************************************************
 
@@ -64,7 +65,7 @@ err_out3:
 err_out2:
     fuse_session_destroy(se);
 err_out1:
-    free(opts.mountpoint);
+    tbx_free(opts.mountpoint);
     fuse_opt_free_args(&args);
 
 	return(err);

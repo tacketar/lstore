@@ -64,7 +64,7 @@ char *make_fname(char *fname, int ftype)
         memcpy(fn, fname, n);
         fn[n] = '/';
         fn[n+1] = 0;
-        free(fname);
+        tbx_free(fname);
         return(fn);
     }
 
@@ -217,12 +217,12 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) { //** Malformed path
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
             }
-            free(path);
+            tbx_free(path);
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
@@ -248,7 +248,7 @@ int main(int argc, char **argv)
 
             while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
                 if (((ftype & OS_OBJECT_SYMLINK_FLAG) > 0) && (ignoreln == 1)) {
-                    free(fname);
+                    tbx_free(fname);
                     goto next_top;  //** Ignoring links
                 }
 
@@ -263,7 +263,7 @@ int main(int argc, char **argv)
 
 next_top:
                 v_size = -1024;
-                free(val);
+                tbx_free(val);
                 val = NULL;
             }
 
@@ -291,7 +291,7 @@ next_top:
 
         while ((ftype = lio_next_object(tuple.lc, it, &fname, &prefix_len)) > 0) {
             if (((ftype & OS_OBJECT_SYMLINK_FLAG) > 0) && (ignoreln == 1)) {
-                free(fname);
+                tbx_free(fname);
                 goto next;  //** Ignoring links
             }
 
@@ -320,7 +320,7 @@ next_top:
                         }
                     } while ((tbx_list_next(&lit, (tbx_list_key_t **)&file, (tbx_list_data_t **)&de)) == 0);
                 }
-                free(fname);
+                tbx_free(fname);
             } else {
                 tbx_type_malloc_clear(de, du_entry_t, 1);
                 de->fname = make_fname(fname, ftype);
@@ -331,8 +331,8 @@ next_top:
 
                 if (nosort == 1) {
                     du_format_entry(lio_ifd, de, sumonly);
-                    free(de->fname);
-                    free(de);
+                    tbx_free(de->fname);
+                    tbx_free(de);
                 } else {
                     tbx_list_insert(table, de->fname, de);
                 }
@@ -340,7 +340,7 @@ next_top:
 
 next:
             v_size = -1024;
-            free(val);
+            tbx_free(val);
             val = NULL;
         }
 
@@ -372,8 +372,8 @@ next:
         total_bytes += de->bytes;
         total_files += (de->ftype & OS_OBJECT_FILE_FLAG) ? 1 : de->count;
         du_format_entry(lio_ifd, de, sumonly);
-        free(de->fname);
-        free(de);
+        tbx_free(de->fname);
+        tbx_free(de);
     }
 
     if (sumonly == 1) {

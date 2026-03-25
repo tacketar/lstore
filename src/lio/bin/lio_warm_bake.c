@@ -142,7 +142,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
         while ((gop = opque_get_next_finished(q)) != NULL) {
             running--;
             fn = gop_get_private(gop);
-            free(fn);
+            tbx_free(fn);
             gop_free(gop, OP_DESTROY);
         }
 
@@ -155,7 +155,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
                 gop = opque_waitany(q);
                 running--;
                 fn = gop_get_private(gop);
-                free(fn);
+                tbx_free(fn);
                 gop_free(gop, OP_DESTROY);
             }
 
@@ -170,7 +170,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
     opque_finished_submission(q);
     while ((gop = opque_waitany(q)) != NULL) {
         fn = gop_get_private(gop);
-        free(fn);
+        tbx_free(fn);
         gop_free(gop, OP_DESTROY);
     }
 
@@ -344,7 +344,7 @@ ex_off_t part_warm_caps(warm_partition_t *wp, int n_parallel, int n_bulk)
     }
 
     gop_opque_free(q, OP_DESTROY);
-    free(failed);
+    tbx_free(failed);
 
     return(count);
 }
@@ -532,25 +532,25 @@ void part_cleanup_and_tally_results(warm_partition_t *wp)
             info_printf(lio_ifd, 0, "ERROR: Missing warming op! fname=%s n_good=%d n_bad=%d n_allocs=%d\n", info->fname, info->n_good, info->n_bad, info->n_allocs);
             log_printf(0, "ERROR: Missing warming op! fname=%s n_good=%d n_bad=%d n_allocs=%d\n", info->fname, info->n_good, info->n_bad, info->n_allocs);
             fprintf(stderr, "ERROR: Missing warming op! fname=%s n_good=%d n_bad=%d n_allocs=%d\n", info->fname, info->n_good, info->n_bad, info->n_allocs);
-            free(info->fname);
+            tbx_free(info->fname);
         }
 
         if (info->write_error > 0) wp->n_write_err++;  //** Update the write error count
-        if (info->fname != NULL) free(info->fname);  //** This should only occur with an empty file
+        if (info->fname != NULL) tbx_free(info->fname);  //** This should only occur with an empty file
 
-        free(info);  //** The fname is destroyed after the warmer attribute is updated in a different thread
+        tbx_free(info);  //** The fname is destroyed after the warmer attribute is updated in a different thread
     }
 
     //** and all the caps
     for (hi=apr_hash_first(NULL, wp->rid_caps); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&rcl);
         apr_hash_set(wp->rid_caps, rcl->rid_key, APR_HASH_KEY_STRING, NULL);
-        free(rcl->cap);
-        free(rcl->inode);
-        free(rcl->nbytes);
-        free(rcl->cap_buffer);
-        free(rcl->rid_key);
-        free(rcl);
+        tbx_free(rcl->cap);
+        tbx_free(rcl->inode);
+        tbx_free(rcl->nbytes);
+        tbx_free(rcl->cap_buffer);
+        tbx_free(rcl->rid_key);
+        tbx_free(rcl);
     }
 }
 
@@ -717,10 +717,10 @@ int warm_dump_summary(warm_partition_t *wp, int summary_mode)
         info_printf(lio_ifd, 0, "%-40s  %s  %s   %10" PXOT "  %10" PXOT "  %10" PXOT "%s", dskey,
                     tbx_stk_pretty_print_double_with_scale_full(1024, (double)rtally->total_size, ppbuf, 1),  tbx_stk_pretty_print_double_with_scale_full(1024, dtime, ppbuf2, 1),
                     total, rtally->n_good, rtally->n_bad, line_end);
-        free(dskey);
+        tbx_free(dskey);
 
          //** Go ahead and free the rtally structure and clean up ti wp->rid_tally hash
-         free(rtally->rid_key);  //** The rest is free'ed when the list is destroyed.
+         tbx_free(rtally->rid_key);  //** The rest is free'ed when the list is destroyed.
     }
     if (summary_mode != 0) info_printf(lio_ifd, 0, "----------------------------------------  ---------  ---------   ----------  ----------  ----------\n");
 
@@ -734,7 +734,7 @@ int warm_dump_summary(warm_partition_t *wp, int summary_mode)
 
     //** Cleanup the RIDs
     tbx_inip_destroy(ifd);
-    free(config);
+    tbx_free(config);
 
     return(return_code);
 }
@@ -866,7 +866,7 @@ int main(int argc, char **argv)
     close_prep_db(wp->wdb);
     tbx_apr_pool_destroy(wp->mpool);
     tbx_que_destroy(que_setattr);
-    free(wp);
+    tbx_free(wp);
     lio_shutdown();
 
     return(return_code);

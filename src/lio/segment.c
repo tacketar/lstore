@@ -167,11 +167,11 @@ lio_segment_t *load_segment(lio_service_manager_t *ess, ex_id_t id, lio_exnode_e
     sload = lio_lookup_service(ess, SEG_SM_LOAD, type);
     if (sload == NULL) {
         log_printf(0, "load_segment:  No matching driver for type=%s  id=" XIDT "\n", type, id);
-        if (type) free(type);
+        if (type) tbx_free(type);
         return(NULL);
     }
 
-    if (type) free(type);
+    if (type) tbx_free(type);
     return((*sload)(ess, id, ex));
 }
 
@@ -735,7 +735,7 @@ char *crypt_etext2bin(char *etext, int len)
     text = tbx_stk_unescape_text('\\', etext);  //** Unescape it
     tbx_type_malloc_clear(bin, char, len);
     zmq_z85_decode((unsigned char *)bin, text);
-    free(text);
+    tbx_free(text);
 
     return(bin);
 }
@@ -766,14 +766,14 @@ int crypt_loadkeys(crypt_info_t *cinfo, tbx_inip_file_t *fd, const char *grp, in
     if (cinfo->crypt_key) {   //** Got a key so convert it
         etext = cinfo->crypt_key;
         cinfo->crypt_key = crypt_etext2bin(etext, strlen(etext));
-        free(etext);
+        tbx_free(etext);
     } else {  //** Got to generate a new one
         crypt_newkeys(&(cinfo->crypt_key), NULL);
     }
     if (cinfo->crypt_nonce) {   //** Got a nonce so convert it
         etext = cinfo->crypt_nonce;
         cinfo->crypt_nonce = crypt_etext2bin(etext, strlen(etext));
-        free(etext);
+        tbx_free(etext);
     } else {  //** Got to generate a new one
         crypt_newkeys(NULL, &(cinfo->crypt_nonce));
     }
@@ -787,8 +787,8 @@ int crypt_loadkeys(crypt_info_t *cinfo, tbx_inip_file_t *fd, const char *grp, in
 
 void crypt_destroykeys(crypt_info_t *cinfo)
 {
-    if (cinfo->crypt_key) { free(cinfo->crypt_key); cinfo->crypt_key = NULL; }
-    if (cinfo->crypt_nonce) { free(cinfo->crypt_nonce); cinfo->crypt_nonce = NULL; }
+    if (cinfo->crypt_key) { tbx_free(cinfo->crypt_key); cinfo->crypt_key = NULL; }
+    if (cinfo->crypt_nonce) { tbx_free(cinfo->crypt_nonce); cinfo->crypt_nonce = NULL; }
 }
 
 //*******************************************************************************
@@ -797,8 +797,8 @@ void crypt_destroykeys(crypt_info_t *cinfo)
 
 void crypt_regenkeys(crypt_info_t *cinfo)
 {
-    if (cinfo->crypt_key) free(cinfo->crypt_key);
-    if (cinfo->crypt_nonce) free(cinfo->crypt_nonce);
+    if (cinfo->crypt_key) tbx_free(cinfo->crypt_key);
+    if (cinfo->crypt_nonce) tbx_free(cinfo->crypt_nonce);
     crypt_newkeys(&(cinfo->crypt_key), &(cinfo->crypt_nonce));
 }
 
@@ -1267,7 +1267,7 @@ int segment_placement_fix(lio_resource_service_fn_t *rs, data_attr_t *da, segmen
         loop++;
     } while ((loop < 5) && (todo > 0));
 
-    for (i=0; i<cleanup_index; i++) free(cleanup_key[i]);
+    for (i=0; i<cleanup_index; i++) tbx_free(cleanup_key[i]);
 
     for (i=0; i<n_blocks; i++) {
         if (hints_list[i].local_rsq != NULL) {

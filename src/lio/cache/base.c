@@ -149,7 +149,7 @@ void free_page_tables_free(void *arg, int size, void *data)
         tbx_stack_free(shelf[i].stack, 0);
     }
 
-    free(shelf);
+    tbx_free(shelf);
     return;
 }
 
@@ -190,7 +190,7 @@ void free_pending_table_free(void *arg, int size, void *data)
         tbx_list_destroy(shelf[i]);
     }
 
-    free(shelf);
+    tbx_free(shelf);
     return;
 }
 

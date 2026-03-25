@@ -320,13 +320,13 @@ int main(int argc, char **argv)
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 err = EINVAL;
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
-            free(path);
+            tbx_free(path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", tuple.path);
                 lio_path_release(&tuple);
@@ -378,7 +378,7 @@ int main(int argc, char **argv)
                     }
                 }
 
-                if (w[slot].fname) { free(w[slot].fname); w[slot].fname = NULL; }
+                if (w[slot].fname) { tbx_free(w[slot].fname); w[slot].fname = NULL; }
                 gop_free(gop, OP_DESTROY);
             } else {
                 slot++;
@@ -425,7 +425,7 @@ int main(int argc, char **argv)
             }
         }
 
-        if (w[slot].fname) { free(w[slot].fname); w[slot].fname = NULL; }
+        if (w[slot].fname) { tbx_free(w[slot].fname); w[slot].fname = NULL; }
         gop_free(gop, OP_DESTROY);
     }
 
@@ -447,7 +447,7 @@ int main(int argc, char **argv)
         err = EIO;
     }
 
-    free(w);
+    tbx_free(w);
 
     tbx_stdinarray_iter_destroy(piter);
 

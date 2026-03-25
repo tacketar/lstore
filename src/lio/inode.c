@@ -167,8 +167,8 @@ os_inode_shard_t *os_inode_open_a_shard(const char *db_path, rocksdb_comparator_
         db->db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists
             rocksdb_options_destroy(opts2);
-            free(db);
-            free(errstr);
+            tbx_free(db);
+            tbx_free(errstr);
             errstr = NULL;
 
             fprintf(stderr, "ERROR: Already exists and OS_INODE_OPEN_CREATE_ONLY is set!  DB:%s\n", db_path); fflush(stderr);
@@ -197,9 +197,9 @@ os_inode_shard_t *os_inode_open_a_shard(const char *db_path, rocksdb_comparator_
 
     if ((errstr != NULL) || (db->db == NULL)) {  //** An Error occured
         fprintf(stderr, "ERROR: Failed Opening/Creating %s. DB error:%s mode=%d\n", db_path, errstr, mode);
-        free(errstr);
+        tbx_free(errstr);
         rocksdb_options_destroy(opts);
-        free(db);
+        tbx_free(db);
         return(NULL);
     }
 
@@ -344,7 +344,7 @@ void os_inode_close_a_shard(os_inode_shard_t *db)
     if (db->wopt) rocksdb_writeoptions_destroy(db->wopt);
     if (db->ropt) rocksdb_readoptions_destroy(db->ropt);
 
-    free(db);
+    tbx_free(db);
 }
 
 //****************************************************************************
@@ -360,9 +360,9 @@ void os_inode_close_a_db(os_inode_db_t *idb)
         os_inode_close_a_shard(idb->shard[i]);
     }
 
-    if (idb->shard) free(idb->shard);
-    if (idb->prefix) free(idb->prefix);
-    free(idb);
+    if (idb->shard) tbx_free(idb->shard);
+    if (idb->prefix) tbx_free(idb->prefix);
+    tbx_free(idb);
 }
 
 //****************************************************************************
@@ -378,8 +378,8 @@ void os_inode_close_ctx(os_inode_ctx_t *ctx)
 
     rocksdb_comparator_destroy(ctx->inode_cmp);
 
-    if (ctx->prefix) free(ctx->prefix);
-    free(ctx);
+    if (ctx->prefix) tbx_free(ctx->prefix);
+    tbx_free(ctx);
 }
 
 //****************************************************************************
@@ -431,7 +431,7 @@ int os_inode_put(os_inode_ctx_t *ctx, ex_id_t inode, ex_id_t parent_inode, int f
     rocksdb_put(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), buf, nbytes, &errstr);
     if (errstr != NULL) {
         log_printf(0, "ERROR: inode prefix=%s shard=%d err=%s\n", ctx->prefix, n, errstr);
-        free(errstr);
+        tbx_free(errstr);
         err = 1;
     }
 
@@ -441,7 +441,7 @@ int os_inode_put(os_inode_ctx_t *ctx, ex_id_t inode, ex_id_t parent_inode, int f
         rocksdb_put(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), buf, nbytes, &errstr);
         if (errstr != NULL) {
             log_printf(0, "ERROR: dir prefix=%s shard=%d err=%s\n", ctx->prefix, n, errstr);
-            free(errstr);
+            tbx_free(errstr);
             err = 1;
         }
     }
@@ -484,7 +484,7 @@ int os_inode_shard_get(os_inode_shard_t *s, ex_id_t inode, ex_id_t *parent_inode
     *len = r->dentry.len;
     if (dentry) *dentry = tbx_stk_strdup(r->dentry.dentry);
 
-    free(buf);
+    tbx_free(buf);
 
     return(0);
 }
@@ -580,7 +580,7 @@ int os_inode_db_del(os_inode_db_t *db, ex_id_t inode)
     n = inode % db->n_shards;
     s = db->shard[n];
     rocksdb_delete(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
-    if (errstr) free(errstr);
+    if (errstr) tbx_free(errstr);
 
     return(0);
 }
@@ -639,7 +639,7 @@ void os_inode_lookup2path(char *path, int n, ex_id_t *inode, char **dentry)
         } else {
             etext = tbx_stk_escape_text("/", '\\', dentry[i]);
             tbx_append_printf(path, &pos, nbytes, "/%s", etext);
-            if (etext) free(etext);
+            if (etext) tbx_free(etext);
         }
     }
 }
@@ -685,7 +685,7 @@ int os_inode_lookup_path_db(os_inode_db_t *db, ex_id_t inode_target, ex_id_t *in
     if (err) {  //** Didn't make it to root so clean up
         for (i=0; i<*n_dirs; i++) {
             if (dentry[i]) {
-                free(dentry[i]);
+                tbx_free(dentry[i]);
                 dentry[i] = NULL;
             }
         }
@@ -730,7 +730,7 @@ int os_inode_lookup_path_db_with_lut(os_inode_db_t *db, os_inode_lut_t *ilut, ex
     if (err) {  //** Didn't make it to root so clean up
         for (i=0; i<*n_dirs; i++) {
             if (dentry[i]) {
-                free(dentry[i]);
+                tbx_free(dentry[i]);
                 dentry[i] = NULL;
             }
         }
@@ -770,7 +770,7 @@ int os_inode_lookup_path(os_inode_ctx_t *ctx, ex_id_t inode_target, ex_id_t *ino
             return(0);
         }
         if (os_inode_lookup_path_db(ctx->dir, parent, inode + 1, ftype + 1, dentry + 1, n_dirs) != 0) {
-            if (de) free(de);
+            if (de) tbx_free(de);
             *n_dirs = 0;
             return(1);
         }
@@ -807,7 +807,7 @@ int os_inode_lookup_path_with_lut(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, ex_
             return(0);
         }
         if (os_inode_lookup_path_db_with_lut(ctx->dir, ilut, parent, inode + 1, ftype + 1, dentry + 1, n_dirs) != 0) {
-            if (de) free(de);
+            if (de) tbx_free(de);
             return(1);
         }
         (*n_dirs)++;

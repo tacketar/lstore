@@ -69,13 +69,13 @@ void rs_query_base_destroy(lio_resource_service_fn_t *rs, rs_query_t *rsq)
     q = query->head;
     while (q != NULL) {
         prev = q;
-        if (q->key != NULL) free(q->key);
-        if (q->val != NULL) free(q->val);
+        if (q->key != NULL) tbx_free(q->key);
+        if (q->val != NULL) tbx_free(q->val);
         q = q->next;
-        free(prev);
+        tbx_free(prev);
     }
 
-    free(query);
+    tbx_free(query);
 }
 
 //***********************************************************************
@@ -247,8 +247,8 @@ char *rs_query_base_print(lio_resource_service_fn_t *rs, rs_query_t *rsq)
 
         log_printf(15, "rs_query_base_print: Adding element\n");
 
-        free(ekey);
-        free(eval);
+        tbx_free(ekey);
+        tbx_free(eval);
 
         q = q->next;
         if (q != NULL) tbx_append_printf(buffer, &used, bufsize, ";");
@@ -281,7 +281,7 @@ rs_query_t *rs_query_base_parse(lio_resource_service_fn_t *rs, char *qstring)
     log_printf(15, "rs_query_base_parse: rs_type=%s\n", t2);
     ekey = tbx_stk_unescape_text('\\', t2);
     log_printf(15, "rs_query_base_parse: ekey=%s\n", ekey);
-    free(ekey);
+    tbx_free(ekey);
 
     tbx_type_malloc(query, lio_rsq_base_t, 1);
     query->rs = rs;
@@ -315,7 +315,7 @@ rs_query_t *rs_query_base_parse(lio_resource_service_fn_t *rs, char *qstring)
         tstate = token;
     } while (strlen(token) > 0);
 
-    free(buffer);
+    tbx_free(buffer);
 
     query->head = root;
     query->tail = tail;

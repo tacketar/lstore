@@ -95,7 +95,7 @@ gop_op_status_t mv_fn(void *arg, int id)
                 nerr++;
                 info_printf(lio_ifd, 0, "Failed with path %s\n", src_fname[slot]);
             }
-            free(src_fname[slot]);
+            tbx_free(src_fname[slot]);
             gop_free(gop, OP_DESTROY);
         } else {
             slot = count;
@@ -116,13 +116,13 @@ gop_op_status_t mv_fn(void *arg, int id)
             nerr++;
             info_printf(lio_ifd, 0, "Failed with path %s\n", src_fname[slot]);
         }
-        free(src_fname[slot]);
+        tbx_free(src_fname[slot]);
         gop_free(gop, OP_DESTROY);
     }
 
     gop_opque_free(q, OP_DESTROY);
 
-    free(src_fname);
+    tbx_free(src_fname);
 
     status = gop_success_status;
     if (nerr > 0) {
@@ -184,7 +184,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Unable to parse path: %s\n", path);
         return(EINVAL);
     }
-    free(path);
+    tbx_free(path);
 
     if (i>=argc) {
         info_printf(lio_ifd, 0, "Missing directory!\n");
@@ -217,11 +217,11 @@ int main(int argc, char **argv)
             fprintf(stderr, "Unable to parse path: %s\n", path);
             return_code = EINVAL;
             lio_path_release(&mv->src_tuple);
-            free(path);
-            free(mv);
+            tbx_free(path);
+            tbx_free(mv);
             goto finished;
         }
-        free(path);
+        tbx_free(path);
         mv->regex = lio_os_path_glob2regex(mv->src_tuple.path);
         mv->dest_tuple = dtuple;
         mv->dest_type = dtype;
@@ -244,7 +244,7 @@ int main(int argc, char **argv)
             //** Cleanup
             lio_path_release(&mv->src_tuple);
             lio_os_regex_table_destroy(mv->regex);
-            free(mv);
+            tbx_free(mv);
 
             //** Kick out if needed
             if (err != OP_STATE_SUCCESS)    goto finished;
@@ -263,11 +263,11 @@ int main(int argc, char **argv)
             if (mv->src_tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 return_code = EINVAL;
-                free(path);
-                free(mv);
+                tbx_free(path);
+                tbx_free(mv);
                 continue;
             }
-            free(path);
+            tbx_free(path);
             mv->regex = lio_os_path_glob2regex(mv->src_tuple.path);
             mv->dest_tuple = dtuple;
             mv->dest_type = dtype;
@@ -288,7 +288,7 @@ int main(int argc, char **argv)
             }
             lio_path_release(&mv->src_tuple);
             lio_os_regex_table_destroy(mv->regex);
-            free(mv);
+            tbx_free(mv);
             gop_free(gop, OP_DESTROY);
         }
     }

@@ -155,7 +155,7 @@ int lio_os_globregex_parse(regex_t *regex, const char *text)
         log_printf(0, "ERROR: regcomp error=%d regex=%s\n", err,  rx);
     }
 
-    if (g) free(g);
+    if (g) tbx_free(g);
 
     return(err);
 }
@@ -239,8 +239,8 @@ lio_os_regex_table_t *lio_os_path_glob2regex_full(const char *path, int is_liter
                 n = n + strlen(frag) + 2;
                 tbx_type_malloc(f2, char, n);
                 snprintf(f2, n, "%s/%s", table->regex_entry[i].expression, ufrag);
-                free(ufrag);
-                free(table->regex_entry[i].expression);
+                tbx_free(ufrag);
+                tbx_free(table->regex_entry[i].expression);
                 table->regex_entry[i].expression = f2;
             } else {
                 table->regex_entry[i].fixed_prefix = 0;
@@ -259,7 +259,7 @@ lio_os_regex_table_t *lio_os_path_glob2regex_full(const char *path, int is_liter
                 rerr = regerror(err, &(table->regex_entry[i].compiled), regex_error, sizeof(regex_error));
                 log_printf(0, "lio_os_path_glob2regex: Error with fragment %s err=%d rerr=%d regerror=%s\n", table->regex_entry[i].expression, err, rerr, regex_error);
                 lio_os_regex_table_destroy(table);
-                free(p2);
+                tbx_free(p2);
                 return(NULL);
             }
 
@@ -276,7 +276,7 @@ lio_os_regex_table_t *lio_os_path_glob2regex_full(const char *path, int is_liter
             log_printf(15, "i=%d fixed=%d frag=%s fixed_prefix=%d\n", i, table->regex_entry[i].fixed, table->regex_entry[i].expression, table->regex_entry[i].fixed_prefix);
         }
     }
-    free(p2);
+    tbx_free(p2);
     return(table);
 }
 
@@ -338,16 +338,16 @@ void lio_os_regex_table_destroy(lio_os_regex_table_t *table)
     if (table->regex_entry != NULL) {
         for (i=0; i<table->n; i++) {
             re = &(table->regex_entry[i]);
-            free(re->expression);
+            tbx_free(re->expression);
             if (re->fixed == 0) {
                 regfree(&(re->compiled));
             }
         }
 
-        free(table->regex_entry);
+        tbx_free(table->regex_entry);
     }
 
-    free(table);
+    tbx_free(table);
 }
 
 //***********************************************************************
@@ -368,19 +368,19 @@ again:
         if (path[1] == '.') {
             if (path[2] == '\0') {
                 *dir = tbx_stk_strdup(".");
-                if (*file) free(*file);
+                if (*file) tbx_free(*file);
                 *file = tbx_stk_strdup("..");
                 goto finished;
             }
         } else if (path[1] == '\0') {
             *dir = tbx_stk_strdup(".");
-            if (*file) free(*file);
+            if (*file) tbx_free(*file);
             *file = tbx_stk_strdup(".");
             goto finished;
         }
     } else if ((path[0] == '/') && (path[1] == '\0')) {
         *dir = tbx_stk_strdup("/");
-        if (*file) free(*file);
+        if (*file) tbx_free(*file);
         *file = tbx_stk_strdup("/");
         goto finished;
     }
@@ -388,24 +388,24 @@ again:
     c = rindex(path, '/');
     if (c == NULL) {
         *dir = tbx_stk_strdup(".");
-        if (*file) free(*file);
+        if (*file) tbx_free(*file);
         *file = tbx_stk_strdup(path);
         goto finished;
     }
 
     //** See if we terminate with a "/"
-    if (*file) free(*file);
+    if (*file) tbx_free(*file);
     *file = tbx_stk_strdup(c + 1);
     i = strlen(*file);
     if (i>0) {
         n = i;
         while ((*file)[n-1] == '/') n--;
         if (n != i) {
-            free(*file);
+            tbx_free(*file);
             *file = NULL;
             i = c - path + n;
             ptr = tbx_stk_strndup(path, i);
-            if (path != mypath) free(path);
+            if (path != mypath) tbx_free(path);
             path = ptr;
             goto again;
         }
@@ -415,23 +415,23 @@ again:
         while (path[n-1] == '/') n--;
         if (n != i) {
             ptr = tbx_stk_strndup(path, i);
-            if (path != mypath) free(path);
+            if (path != mypath) tbx_free(path);
             path = ptr;
             goto again;
         } else {
             ptr = tbx_stk_strndup(path, i);
-            if (path != mypath) free(path);
+            if (path != mypath) tbx_free(path);
             path = ptr;
             path[n] = '\0';
             c = rindex(path, '/');
-            if (*file != NULL) free(*file);
+            if (*file != NULL) tbx_free(*file);
             *file = (c) ? tbx_stk_strdup(c + 1) : NULL;
         }
     }
 
     if (c == NULL) {
         *dir = tbx_stk_strdup(".");
-        if (*file != NULL) free(*file);
+        if (*file != NULL) tbx_free(*file);
         *file = (path != mypath) ? tbx_stk_strdup(path) : tbx_stk_strdup(mypath);
     } else {
         i = c - path;
@@ -444,7 +444,7 @@ again:
     }
 
 finished:
-    if (mypath != path) free(path);
+    if (mypath != path) tbx_free(path);
     return;
 }
 
@@ -656,11 +656,11 @@ void os_log_warm_if_needed(tbx_notify_t *olog, lio_creds_t *creds, char *fname, 
             if (strcmp("exnode.data", key[i]+7) == 0) {
                 etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
                 notify_printf(olog, 1, creds, "ATTR_WRITE(system.exnode.data, %d, %s)\n", ftype, etext);
-                if (etext) free(etext);
+                if (etext) tbx_free(etext);
             } else if (strcmp("exnode", key[i]+7) == 0) {
                 etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
                 notify_printf(olog, 1, creds, "ATTR_WRITE(system.exnode, %d, %s)\n", ftype, etext);
-                if (etext) free(etext);
+                if (etext) tbx_free(etext);
             } else if (strcmp("write_errors", key[i]+7) == 0) {
                 etext = tbx_stk_escape_text(OS_FNAME_ESCAPE, '\\', fname);
                 if (v_size[i] < 0) {
@@ -668,7 +668,7 @@ void os_log_warm_if_needed(tbx_notify_t *olog, lio_creds_t *creds, char *fname, 
                 } else {
                     notify_printf(olog, 1, creds, "ATTR_WRITE(system.write_errors, %d, %s)\n", ftype, fname);
                 }
-                if (etext) free(etext);
+                if (etext) tbx_free(etext);
             }
         }
     }

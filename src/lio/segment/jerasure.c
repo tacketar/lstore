@@ -728,9 +728,9 @@ next:  //** Jump to here if an empty stripe
         }
     }
 
-    free(buffer);
-    free(ex_iov);
-    free(iov);
+    tbx_free(buffer);
+    tbx_free(ex_iov);
+    tbx_free(iov);
     gop_opque_free(q, OP_DESTROY);
 
     sf->bad_stripes = bad_count;
@@ -915,9 +915,9 @@ gop_op_status_t segjerase_inspect_scan(segjerase_inspect_t *si)
         }
     }
 
-    free(magic);
-    free(iov);
-    free(ex_iov);
+    tbx_free(magic);
+    tbx_free(iov);
+    tbx_free(ex_iov);
 
     gop_opque_free(q, OP_DESTROY);
 
@@ -1041,7 +1041,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
         if (rng) {
             lo = rng[0];
             hi = rng[1];
-            free(rng);
+            tbx_free(rng);
         } else {
             lo = 0;
             hi = segment_size(si->seg);
@@ -1052,7 +1052,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
             if (tbx_stack_count(ranges) > 0) {
                 rng_str = tbx_range_stack_range2string(ranges, ";");
                 info_printf(si->fd, 1, XIDT ": Pending ranges: %s\n", segment_id(si->seg), rng_str);
-                free(rng_str);
+                tbx_free(rng_str);
             }
             gop =  segjerase_inspect_full(si, 1, lo, hi);
             gop_waitall(gop);
@@ -1111,7 +1111,7 @@ gop_op_status_t segjerase_inspect_func(void *arg, int id)
                 if (rng) {
                     lo = rng[0];
                     hi = rng[1];
-                    free(rng);
+                    tbx_free(rng);
                 } else {
                     loop = 10000;  //** Kick out
                 }
@@ -1636,9 +1636,9 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
     }
 
     if (straddle_size > 0) {
-        for (i=0; i<(straddle_used+1); i++) free(straddle_buffer[i]);
-        free(straddle_buffer);
-        free(straddle_offset);
+        for (i=0; i<(straddle_used+1); i++) tbx_free(straddle_buffer[i]);
+        tbx_free(straddle_buffer);
+        tbx_free(straddle_offset);
     }
 
     gop_opque_free(q, OP_DESTROY);
@@ -1652,7 +1652,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
 
     //** Clean up
     if (parity_len > s->max_parity_on_stack) {
-        free(parity);
+        tbx_free(parity);
         TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_READ].finished);
     }
 
@@ -1920,9 +1920,9 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     }
 
     if (straddle_size > 0) {
-        for (i=0; i<(straddle_used+1); i++) free(straddle_buffer[i]);
-        free(straddle_buffer);
-        free(straddle_offset);
+        for (i=0; i<(straddle_used+1); i++) tbx_free(straddle_buffer[i]);
+        tbx_free(straddle_buffer);
+        tbx_free(straddle_offset);
     }
 
     gop_opque_free(q, OP_DESTROY);
@@ -1936,7 +1936,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
 
     //** Clean up
     if (parity_len > s->max_parity_on_stack) {
-        free(parity);
+        tbx_free(parity);
         TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_JERASE_WRITE].finished);
     }
 
@@ -2180,7 +2180,7 @@ int segjerase_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_JERASURE);
 
@@ -2300,7 +2300,7 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     s->stripe_size_with_magic = s->chunk_size_with_magic * s->n_devs;
     text = tbx_inip_get_string(fd, seggrp, "method", (char *)JE_method[CAUCHY_GOOD]);
     s->method = et_method_type(text);
-    free(text);
+    tbx_free(text);
     if (s->method < 0) return(-3);
 
     //** From the seg we can determine the other params (and sanity check input)
@@ -2391,8 +2391,8 @@ void segjerase_destroy(tbx_ref_t *ref)
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
     //** Do final cleanup
-    free(s);
-    free(seg);
+    tbx_free(s);
+    tbx_free(seg);
 
     return;
 }

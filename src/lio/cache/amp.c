@@ -230,7 +230,7 @@ void _amp_free_page_push(lio_cache_t *c, lio_cache_page_t *p)
             p->data[1].ptr = NULL;
         } else {  //** No data buffer anywhere so just drop the page and return
             lp = (lio_page_amp_t *)p->priv;
-            free(lp);
+            tbx_free(lp);
             TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             return;
         }
@@ -251,9 +251,9 @@ void _amp_free_page_list_destroy(lio_cache_t *c)
 
     while ((p = tbx_stack_pop(cp->free_pages)) != NULL) {
         lp = (lio_page_amp_t *)p->priv;
-        if (p->data[0].ptr) free(p->data[0].ptr);
-        if (p->data[1].ptr) free(p->data[1].ptr);
-        free(lp);
+        if (p->data[0].ptr) tbx_free(p->data[0].ptr);
+        if (p->data[1].ptr) tbx_free(p->data[1].ptr);
+        tbx_free(lp);
         TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
     }
 
@@ -489,9 +489,9 @@ lio_cache_page_t *_amp_free_page_fetch(lio_cache_t *c, ex_off_t page_size)
                 return(p);
             } else {
                 lp = (lio_page_amp_t *)p->priv;
-                if (p->data[0].ptr) free(p->data[0].ptr);
-                if (p->data[1].ptr) free(p->data[1].ptr);
-                free(lp);
+                if (p->data[0].ptr) tbx_free(p->data[0].ptr);
+                if (p->data[1].ptr) tbx_free(p->data[1].ptr);
+                tbx_free(lp);
                 TBX_STATS_INC(c->stats.op_stats.op[CACHE_OP_SLOT_PAGE_CREATE_DESTROY].finished);
             }
         } else if (p->offset > page_size) {
@@ -1088,7 +1088,7 @@ ex_off_t _amp_attempt_free_mem(lio_cache_t *c, lio_segment_t *page_seg, ex_off_t
 
                     pending_bytes += s->page_size;
                     tbx_stack_unlink_current(cp->stack, 1);  //** Unlink it.  This is ele
-                    free(lp->ele);
+                    tbx_free(lp->ele);
                     lp->ele = NULL;  //** Mark it as removed from the list so a page_release doesn't free also
                     cp->limbo_pages++;
                     log_printf(15, "UNLINKING seg=" XIDT " p->offset=" XOT " bits=%d limbo=%d\n", segment_id(p->seg), p->offset, p->bit_fields, cp->limbo_pages);
@@ -1310,7 +1310,7 @@ void amp_update(lio_cache_t *c, lio_segment_t *seg, int rw_mode, ex_off_t lo, ex
     nbytes = npages * s->page_size;
 
     //** Get the missed offset and free the pointer
-    free(miss_info);
+    tbx_free(miss_info);
 
     //** Adjust the read range prefetch params
     cache_lock(s->c);
@@ -1444,9 +1444,9 @@ void amp_removing_segment(lio_cache_t *c, lio_segment_t *seg)
     c->stats.unused_bytes += s->stats.unused_bytes;
 
     tbx_list_destroy(stable->streams);
-    free(stable->stream_table);
+    tbx_free(stable->stream_table);
 
-    free(stable);
+    tbx_free(stable);
 
     stable = NULL;  //** Make sure we clear it and gen a core dump if accidentally used
 
@@ -1536,9 +1536,9 @@ int amp_cache_destroy(lio_cache_t *c)
     tbx_pc_destroy(cp->free_pending_tables);
     tbx_pc_destroy(cp->free_page_tables);
 
-    free(cp->section);
-    free(cp);
-    free(c);
+    tbx_free(cp->section);
+    tbx_free(cp);
+    tbx_free(c);
 
     return(0);
 }
@@ -1630,7 +1630,7 @@ lio_cache_t *amp_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_attr
     cp = (lio_cache_amp_t *)c->fn.priv;
 
     if (grp != NULL) {
-        free(cp->section);
+        tbx_free(cp->section);
         cp->section = tbx_stk_strdup(grp);
     }
 

@@ -395,7 +395,7 @@ gop_op_status_t segfile_clone_func(void *arg, int id)
     tbx_io_fclose(sfd);
     tbx_io_fclose(dfd);
 
-    free(buffer);
+    tbx_free(buffer);
 
     return(gop_success_status);
 }
@@ -430,7 +430,7 @@ gop_op_generic_t *segfile_clone(lio_segment_t *seg, data_attr_t *da, lio_segment
             root = dirname(fname);
             sprintf(fid, "%s/" XIDT ".dat", root, segment_id(clone));
             sd->fname = tbx_stk_strdup(fid);
-            free(fname);
+            tbx_free(fname);
         } else {  //** User specified the path so use it
             sd->fname = tbx_stk_strdup((char *)attr);
         }
@@ -506,7 +506,7 @@ int segfile_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", seg->header.type);
     tbx_append_printf(segbuf, &sused, bufsize, "file=%s\n\n", s->fname);
@@ -569,7 +569,7 @@ int segfile_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange
 
     //** Get the segment header info
     seg->header.id = id;
-    if (s->qname != NULL) free(s->qname);
+    if (s->qname != NULL) tbx_free(s->qname);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
     s->qname = tbx_stk_strdup(qname);
 
@@ -624,15 +624,15 @@ void segfile_destroy(tbx_ref_t *ref)
 
     segfile_priv_t *s = (segfile_priv_t *)seg->priv;
 
-    if (s->fname != NULL) free(s->fname);
-    if (s->qname != NULL) free(s->qname);
+    if (s->fname != NULL) tbx_free(s->fname);
+    if (s->qname != NULL) tbx_free(s->qname);
 
-    free(s);
+    tbx_free(s);
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
     ex_header_release(&(seg->header));
 
-    free(seg);
+    tbx_free(seg);
 }
 
 

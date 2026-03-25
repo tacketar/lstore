@@ -100,8 +100,8 @@ int walk_lio_info(void *arg, char *fname, ex_id_t *inode, int *ftype)
 
 //fprintf(stderr, "walk_lio_info: fname=%s inode=" XIDT " ftype=%d err=%d\n", fname, *inode, *ftype, err);
 
-    if (val[0]) free(val[0]);
-    if (val[1]) free(val[1]);
+    if (val[0]) tbx_free(val[0]);
+    if (val[1]) tbx_free(val[1]);
 
     return(err);
 }
@@ -125,9 +125,9 @@ again:
     if ((w->curr) && w->curr->is_fixed) {
 //fprintf(stderr, "walk_lio_next: is_fixed=%d processed=%d\n", w->curr->is_fixed, w->curr->processed);
         if (w->curr->processed) {
-            free(w->curr->de_fixed);
-            free(w->curr->prefix);
-            free(w->curr);
+            tbx_free(w->curr->de_fixed);
+            tbx_free(w->curr->prefix);
+            tbx_free(w->curr);
             w->curr = tbx_stack_pop(w->stack);
             if (w->curr == NULL) {
                 return(1);
@@ -160,9 +160,9 @@ again:
 
     if (*ftype <= 0) {
         if (w->curr->it) lio_destroy_object_iter(lio_gc, w->curr->it);
-        if (w->curr->de_fixed) free(w->curr->de_fixed);
-        if (w->curr->prefix) free(w->curr->prefix);
-        free(w->curr);
+        if (w->curr->de_fixed) tbx_free(w->curr->de_fixed);
+        if (w->curr->prefix) tbx_free(w->curr->prefix);
+        tbx_free(w->curr);
         w->curr = NULL;
         return(1);  //** finished;
     }
@@ -176,13 +176,13 @@ again:
     if (wdir->val[0] != NULL) {
         if (sscanf(wdir->val[0], XIDT, inode) != 1) *inode = OS_INODE_MISSING;
 //fprintf(stderr, "walk_lio_next: fname=%s inode=" XIDT "\n", *fname, *inode);
-        free(wdir->val[0]);
+        tbx_free(wdir->val[0]);
         wdir->v_size[0] = -lio_gc->max_attr;
         wdir->val[0] = NULL;
     } else {
         wdir->v_size[0] = -lio_gc->max_attr;
         wdir->val[0] = NULL;
-        if (*fname) free(*fname);
+        if (*fname) tbx_free(*fname);
         return(1);
     }
 
@@ -194,20 +194,20 @@ again:
         //** It's the same directory
         *parent = wdir->dir_inode;
         *prefix_len = wdir->prefix_len;
-        free(dir);
-        free(base);
+        tbx_free(dir);
+        tbx_free(base);
         return(0);
     }
 
     //** It's a different directory so we have to fetch the parent manually
-    if (wdir->prefix) free(wdir->prefix);
+    if (wdir->prefix) tbx_free(wdir->prefix);
     wdir->prefix = dir;
     wdir->prefix_len = (strcmp("/", dir)!=0) ? strlen(dir) + 1 : 1;
     *prefix_len = wdir->prefix_len;
-    if (base) free(base);
+    if (base) tbx_free(base);
     if (walk_lio_info(walk_arg, wdir->prefix, parent, &ftype2) != 0) {
 //fprintf(stderr, "walk_lio_next: ERROR getting parent. fname=%s dir=%s\n", *fname, wdir->prefix);
-        if (*fname) free(*fname);
+        if (*fname) tbx_free(*fname);
         return(1);
     }
 //fprintf(stderr, "walk_lio_next: fname=%s parent=" XIDT "\n", *fname, *parent);
@@ -256,16 +256,16 @@ void walk_lio_add_fixed_prefix(walk_lio_t *w, char *path)
         tbx_stack_push(w->stack, wdir);
 //fprintf(stderr, "walk_lio_add_fixed_prefix: adding prefix=%s dir_inode=" XIDT " de_fixed=%s fixed_ino=" XIDT "\n", wdir->prefix, wdir->dir_inode, wdir->de_fixed, wdir->inode_fixed);
 
-        if (old) free(old);
+        if (old) tbx_free(old);
         old = dir;
         lio_os_path_split(old, &dir, &base);
         walk_info(walk_arg, old, &ino, &ftype2);
 //fprintf(stderr, "walk_lio_add_fixed_prefix: LOOP old=%s prefix=%s base=%s inode=" XIDT " ftype=%d\n", old, dir, base, ino, ftype2);
     }
 
-    if (old) free(old);
-    if (dir) free(dir);
-    if (base) free(base);
+    if (old) tbx_free(old);
+    if (dir) tbx_free(dir);
+    if (base) tbx_free(base);
 
     //** Swap out w->curr
     tbx_stack_move_to_bottom(w->stack);
@@ -292,7 +292,7 @@ void *walk_lio_create(const char *prefix, int max_recurse_depth)
     if (w->tuple.is_lio < 0) {
         fprintf(stderr, "Unable to parse path: %s\n", prefix);
         lio_path_release(&(w->tuple));
-        free(w);
+        tbx_free(w);
         return(NULL);
     }
     lio_path_wildcard_auto_append(&(w->tuple));
@@ -300,7 +300,7 @@ void *walk_lio_create(const char *prefix, int max_recurse_depth)
     if (!w->rp_single) {  //** Got a bad path
         fprintf(stderr,  "ERROR: processing path=%s\n", w->tuple.path);
         lio_path_release(&(w->tuple));
-        free(w);
+        tbx_free(w);
         return(NULL);
     }
 
@@ -319,8 +319,8 @@ void *walk_lio_create(const char *prefix, int max_recurse_depth)
     if (wdir->it == NULL) { //**Bad iterator
         fprintf(stderr,  "ERROR: creating iterator! path=%s\n", w->tuple.path);
         lio_path_release(&(w->tuple));
-        free(wdir);
-        free(w);
+        tbx_free(wdir);
+        tbx_free(w);
         return(NULL);
     }
 
@@ -341,9 +341,9 @@ void walk_lio_destroy(void *arg)
     if (w->stack) {
         while ((wdir = tbx_stack_pop(w->stack)) != NULL) {
             if (wdir->it) lio_destroy_object_iter(lio_gc, wdir->it);
-            if (wdir->de_fixed) free(wdir->de_fixed);
-            if (wdir->prefix) free(wdir->prefix);
-            free(wdir);
+            if (wdir->de_fixed) tbx_free(wdir->de_fixed);
+            if (wdir->prefix) tbx_free(wdir->prefix);
+            tbx_free(wdir);
         }
         tbx_stack_free(w->stack, 1);
     }
@@ -351,16 +351,16 @@ void walk_lio_destroy(void *arg)
     if (w->curr) {
         wdir = w->curr;
         if (wdir->it) lio_destroy_object_iter(lio_gc, wdir->it);
-        if (wdir->de_fixed) free(wdir->de_fixed);
-        if (wdir->prefix) free(wdir->prefix);
-        free(wdir);
+        if (wdir->de_fixed) tbx_free(wdir->de_fixed);
+        if (wdir->prefix) tbx_free(wdir->prefix);
+        tbx_free(wdir);
     }
 
     lio_path_release(&(w->tuple));
 
     if (w->rp_single) lio_os_regex_table_destroy(w->rp_single);
 
-    free(w);
+    tbx_free(w);
 }
 
 //*************************************************************************
@@ -406,8 +406,8 @@ again:
     if ((w->curr) && w->curr->is_fixed) {
 //fprintf(stderr, "walk_local_next: is_fixed=%d processed=%d\n", w->curr->is_fixed, w->curr->processed);
         if (w->curr->processed) {
-            free(w->curr->prefix);
-            free(w->curr);
+            tbx_free(w->curr->prefix);
+            tbx_free(w->curr);
             w->curr = tbx_stack_pop(w->stack);
             if (w->curr == NULL) {
                 return(1);
@@ -421,8 +421,8 @@ again:
         while ((de = readdir(w->curr->dir)) == NULL) {
             w->recurse_depth--;
             closedir(w->curr->dir);
-            free(w->curr->prefix);
-            free(w->curr);
+            tbx_free(w->curr->prefix);
+            tbx_free(w->curr);
             w->curr = tbx_stack_pop(w->stack);
 //if (w->curr) {
 //    fprintf(stderr, "walk_local_next: prefix=%s is_fixed=%d processed=%d\n", w->curr->prefix, w->curr->is_fixed, w->curr->processed);
@@ -461,7 +461,7 @@ again:
         wdir->dir = opendir(*fname);
         if (wdir->dir == NULL) {
             fprintf(stderr, "ERROR: Unable to opendir! path=%s errno=%d\n", *fname, errno);
-            free(wdir);
+            tbx_free(wdir);
             return(1);
         }
 
@@ -506,7 +506,7 @@ void walk_local_add_fixed_prefix(walk_local_t *w, char *path)
         wdir->de_fixed.d_reclen = strlen(base);
         strncpy(wdir->de_fixed.d_name, base, sizeof(wdir->de_fixed.d_name)-1);
         wdir->de_fixed.d_name[sizeof(wdir->de_fixed.d_name)-1] = '\0';
-        free(base);
+        tbx_free(base);
 
         //** Need to get and store the parent dir inode
         if (added_root != 1) {
@@ -519,15 +519,15 @@ void walk_local_add_fixed_prefix(walk_local_t *w, char *path)
         tbx_stack_push(w->stack, wdir);
 //fprintf(stderr, "walk_local_add_fixed_prefix: adding prefix=%s dir_inode=" XIDT " de_fixed=%s fixed_ino=" XIDT "\n", wdir->prefix, wdir->dir_inode, wdir->de_fixed.d_name, wdir->de_fixed.d_ino);
 
-        if (old) free(old);
+        if (old) tbx_free(old);
         old = dir;
         lio_os_path_split(old, &dir, &base);
         walk_info(walk_arg, old, &ino, &ftype2);
     }
 
-    if (old) free(old);
-    if (dir) free(dir);
-    if (base) free(base);
+    if (old) tbx_free(old);
+    if (dir) tbx_free(dir);
+    if (base) tbx_free(base);
 
     //** Swap out w->curr
     tbx_stack_move_to_bottom(w->stack);
@@ -553,7 +553,7 @@ void *walk_local_create(const char *prefix, int max_recurse_depth)
     dir = opendir(prefix);
     if (dir == NULL) {
         fprintf(stderr, "ERROR: Unable to opendir! path=%s errno=%d\n", prefix, errno);
-        free(wdir);
+        tbx_free(wdir);
         return(NULL);
     }
 
@@ -588,19 +588,19 @@ void walk_local_destroy(void *arg)
 
     if (w->curr) {
         wdir = w->curr;
-        if (wdir->prefix) free(wdir->prefix);
+        if (wdir->prefix) tbx_free(wdir->prefix);
         if (wdir->dir) closedir(wdir->dir);
-        free(wdir);
+        tbx_free(wdir);
     }
     while ((wdir = tbx_stack_pop(w->stack)) != NULL) {
-        if (wdir->prefix) free(wdir->prefix);
+        if (wdir->prefix) tbx_free(wdir->prefix);
         if (wdir->dir) closedir(wdir->dir);
-        free(wdir);
+        tbx_free(wdir);
     }
     tbx_stack_free(w->stack, 1);
 
-    free(w->prefix);
-    free(w);
+    tbx_free(w->prefix);
+    tbx_free(w);
 }
 
 //*************************************************************************
@@ -724,7 +724,7 @@ void repair_path2inode(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path, in
         de[i] = base;
         inode[i] = ino;
         ft[i] = ftype2;
-        if (old) free(old);
+        if (old) tbx_free(old);
         old = dir;
         i++;
         lio_os_path_split(old, &dir, &base);
@@ -732,8 +732,8 @@ void repair_path2inode(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path, in
 //fprintf(stderr, "repair_path2inode: i=%d inode=" XIDT " de=%s  old=%s dir=%s base=%s\n", i, ino, base, old, dir, base);
     }
 
-    if (dir) free(dir);
-    if (old) free(old);
+    if (dir) tbx_free(dir);
+    if (old) tbx_free(old);
 
     //** Add the root entry
     de[i] = base;
@@ -750,14 +750,14 @@ void repair_path2inode(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path, in
         fprintf(fdout, "repair_path2inode: ADDING ROOT path=%s inode=" XIDT " parent=0 de=%s\n", path, inode[0], de[0]);
         os_inode_put(ctx, inode[0], 0, ft[0], strlen(de[0]), de[0]);
         if (ilut) os_inode_lut_put(ilut, 1, inode[0], 0, ft[0], strlen(de[0]), de[0]);
-        if (de[0]) free(de[0]);
+        if (de[0]) tbx_free(de[0]);
     } else {
         for (i=n_dir-1; i>=0; i--) {
             parent = (i==(n_dir-1)) ? 0 : inode[i+1];
             fprintf(fdout, "repair_path2inode: ADDING path=%s inode=" XIDT " parent=" XIDT " de=%s\n", path, inode[i], parent, de[i]);
             os_inode_put(ctx, inode[i], parent, ft[i], strlen(de[i]), de[i]);
             if (ilut) os_inode_lut_put(ilut, 1, inode[i], parent, ft[i], strlen(de[i]), de[i]);
-            if (de[i]) free(de[i]);
+            if (de[i]) tbx_free(de[i]);
         }
     }
 
@@ -827,7 +827,7 @@ static int inode_fsck_path(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path
     } else {
         start = 1;
         if (os_inode_get(ctx, *path_inode, &parent_inode, &ftype2, &len, &dentry) != 0) {
-            if (dentry) free(dentry);
+            if (dentry) tbx_free(dentry);
             goto finished;
         }
     }
@@ -838,9 +838,9 @@ static int inode_fsck_path(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path
 //fflush(stderr);
 
     //** Clean up the old dentry strings
-    if (dentry) free(dentry);
+    if (dentry) tbx_free(dentry);
     for (i=start; i<n; i++) {
-        if (de[i]) { free(de[i]); de[i] = NULL; }
+        if (de[i]) { tbx_free(de[i]); de[i] = NULL; }
     }
 
     n = 0;
@@ -859,7 +859,7 @@ static int inode_fsck_path(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, char *path
 
 finished:
     for (i=0; i<n; i++) {
-        if (de[i]) free(de[i]);
+        if (de[i]) tbx_free(de[i]);
     }
 
 //fprintf(stderr, "inode_fsck_path: END path=%s inode=" XIDT "\n", path, *path_inode);
@@ -901,11 +901,11 @@ static int inode_fsck_inode(os_inode_ctx_t *ctx, os_inode_lut_t *ilut, ex_id_t c
 
     //** Clean up the old dentry strings
     for (i=0; i<n; i++) {
-        if (de[i]) free(de[i]);
+        if (de[i]) tbx_free(de[i]);
     }
 
 check_dir:
-    if (dentry) free(dentry);
+    if (dentry) tbx_free(dentry);
 
     //** Check the dir DB
     //** The dir DB only has directories so kick out if not a directory
@@ -930,7 +930,7 @@ check_dir:
 
     //** Clean up the old dentry strings
     for (i=0; i<n; i++) {
-        if (de[i]) free(de[i]);
+        if (de[i]) tbx_free(de[i]);
     }
 
     return(0);

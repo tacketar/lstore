@@ -74,7 +74,7 @@ void warmer_inode_summary_part(warm_db_t *inode_db, ex_off_t *nfiles, ex_off_t *
         if (state & WFE_WRITE_ERR) { (*nwrite)++; }
 
         (*nbad_caps) += nfailed;
-        free(name);
+        tbx_free(name);
 next:
         rocksdb_iter_next(it);
 
@@ -144,7 +144,7 @@ void warmer_rid_summary_part(warm_db_t *rid_db, tbx_stack_t *rid_stack, rid_summ
             tbx_type_malloc_clear(rid, rid_summary_t, 1);
             rid->rid = rec_rid;
         } else {
-            free(drid);
+            tbx_free(drid);
         }
 
         buf = (char *)rocksdb_iter_value(it, &nbytes);
@@ -222,8 +222,8 @@ void warmer_summary(FILE *fd, warm_results_db_t *r)
         fprintf(fd, "%-40s  %s  %10" PXOT "  %10" PXOT "  %10" PXOT "\n", rid->rid,
             tbx_stk_pretty_print_double_with_scale_full(1024, (double)rid->nbytes, ppbuf, 1),
             total, rid->ngood, rid->nbad);
-        free(rid->rid);
-        free(rid);
+        tbx_free(rid->rid);
+        tbx_free(rid);
     }
     tbx_stack_free(rids, 0);
 
@@ -268,7 +268,7 @@ void warmer_query_inode_part(warm_db_t *inode_db, int mode, int fonly)
             }
         }
 
-        free(name);
+        tbx_free(name);
 next:
         rocksdb_iter_next(it);
 
@@ -328,7 +328,7 @@ ex_off_t warmer_query_rid_part(char *rid_key, warm_db_t *inode_db, warm_db_t *ri
         rec_rid = tbx_stk_string_token(drid, "|", &last, &n);
         sscanf(tbx_stk_string_token(NULL, "|", &last, &n), XIDT, &inode);
         if (strcmp(rec_rid, rid_key) != 0) { //** Kick out
-            free(drid);
+            tbx_free(drid);
             break;
         }
 
@@ -338,10 +338,10 @@ ex_off_t warmer_query_rid_part(char *rid_key, warm_db_t *inode_db, warm_db_t *ri
         if (nbytes == 0) { goto next; }
 
         if (warm_parse_inode(buf, nbytes, &state, &nfailed, &name) != 0) {
-            free(buf);
+            tbx_free(buf);
             goto next;
         }
-        free(buf);
+        tbx_free(buf);
 
         if ((state & mode) > 0) {
             if (fonly == 1) {
@@ -352,9 +352,9 @@ ex_off_t warmer_query_rid_part(char *rid_key, warm_db_t *inode_db, warm_db_t *ri
             }
         }
 
-        free(name);
+        tbx_free(name);
 next:
-        free(drid);
+        tbx_free(drid);
         rocksdb_iter_next(it);
 
         errstr = NULL;
@@ -371,7 +371,7 @@ next:
 
     //** Cleanup
     rocksdb_iter_destroy(it);
-    free(match);
+    tbx_free(match);
 
     return(bytes_found);
 }

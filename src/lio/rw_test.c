@@ -624,12 +624,12 @@ void cleanup_test_indices(target_t *t)
     int i;
 
     for (i=0; i<rwc.n_parallel; i++) {
-        free(t->task_list[i].buffer);
+        tbx_free(t->task_list[i].buffer);
     }
-    free(t->task_list);
-    free(t->wc_span);
-    free(t->read_index.span);
-    free(t->write_index.span);
+    tbx_free(t->task_list);
+    tbx_free(t->wc_span);
+    tbx_free(t->read_index.span);
+    tbx_free(t->write_index.span);
 }
 
 //*************************************************************************
@@ -787,7 +787,7 @@ printf("[ti=%d]  total_bytes=" XOT "\n", t->index, t->total_bytes);
 
     tbx_log_flush();
 
-    free(buffer);
+    tbx_free(buffer);
 
     return(fail);
 }
@@ -1351,8 +1351,8 @@ int lio_rw_test_exec(int rw_mode, char *section)
     printf("----------------------------------------------------------\n");
 
     tbx_apr_pool_destroy(mpool);
-    free(workers);
-    free(target);
+    tbx_free(workers);
+    tbx_free(target);
 
     printf("tpc_unlimited=" AIT "\n", tbx_atomic_get(lio_gc->tpc_unlimited->n_ops));
 

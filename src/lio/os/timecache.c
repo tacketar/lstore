@@ -1,4 +1,4 @@
-/*
+ /*
    Copyright 2016 Vanderbilt University
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -322,10 +322,10 @@ void ostc_info_fn(void *arg, FILE *fd)
 void free_ostcdb_attr(ostcdb_attr_t *attr)
 {
     log_printf(5, "removing\n");
-    if (attr->key) free(attr->key);
-    if (attr->val) free(attr->val);
-    if (attr->link) free(attr->link);
-    free(attr);
+    if (attr->key) tbx_free(attr->key);
+    if (attr->val) tbx_free(attr->val);
+    if (attr->link) tbx_free(attr->link);
+    tbx_free(attr);
 }
 
 //***********************************************************************
@@ -392,11 +392,11 @@ void free_ostcdb_object(lio_object_service_fn_t *os, ostcdb_object_t *obj, ex_of
         }
     }
 
-    if (obj->realpath != NULL) free(obj->realpath);
-    if (obj->fname != NULL) free(obj->fname);
-    if (obj->link != NULL) free(obj->link);
+    if (obj->realpath != NULL) tbx_free(obj->realpath);
+    if (obj->fname != NULL) tbx_free(obj->fname);
+    if (obj->link != NULL) tbx_free(obj->link);
     if (obj->mpool) tbx_apr_pool_destroy(obj->mpool);
-    free(obj);
+    tbx_free(obj);
     (*n_objs)++;
 }
 
@@ -618,16 +618,16 @@ void ostc_attr_cacheprep_destroy(ostc_cacheprep_t *cp)
 
     for (i=cp->n_keys; i<cp->n_keys_total; i++) {
         if (cp->key != NULL) {
-            if (cp->key[i] != NULL) free(cp->key[i]);
+            if (cp->key[i] != NULL) tbx_free(cp->key[i]);
         }
         if (cp->val != NULL) {
-            if (cp->val[i] != NULL) free(cp->val[i]);
+            if (cp->val[i] != NULL) tbx_free(cp->val[i]);
         }
     }
 
-    if (cp->key != NULL) free(cp->key);
-    if (cp->val != NULL) free(cp->val);
-    if (cp->v_size != NULL) free(cp->v_size);
+    if (cp->key != NULL) tbx_free(cp->key);
+    if (cp->val != NULL) tbx_free(cp->val);
+    if (cp->v_size != NULL) tbx_free(cp->v_size);
 }
 
 //***********************************************************************
@@ -900,7 +900,7 @@ int _ostcdb_resolve_attr_link(lio_object_service_fn_t *os, tbx_stack_t *tree, ch
         if (la->link) {  //** Got to recurse
             aname = tbx_stk_strdup(la->link);
             _ostcdb_resolve_attr_link(os, &rtree, aname, &lo, &la, max_recurse-1);
-            free(aname);
+            tbx_free(aname);
         }
     }
 
@@ -928,13 +928,13 @@ void _ostc_cache_purge_realpath(lio_object_service_fn_t *os, ostcdb_object_t *pa
         if (obj->ftype & OS_OBJECT_DIR_FLAG) {
             _ostc_cache_purge_realpath(os, obj);
         } else if (obj->realpath) {
-            free(obj->realpath);
+            tbx_free(obj->realpath);
             obj->realpath = NULL;
         }
      }
 
     if (parent->realpath) {
-        free(parent->realpath);
+        tbx_free(parent->realpath);
         parent->realpath = NULL;
     }
 }
@@ -970,7 +970,7 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
             if (dest_path[i] == '/') break;
         }
         if (dest_path[i] == '/') i++;
-        free(obj->fname);
+        tbx_free(obj->fname);
         obj->fname = tbx_stk_strdup(&(dest_path[i]));
         log_printf(0, "src=%s dest=%s dname=%s\n", src_path, dest_path, obj->fname);
 
@@ -978,7 +978,7 @@ void ostc_cache_move_object(lio_object_service_fn_t *os, lio_creds_t *creds, cha
         if (obj->ftype & OS_OBJECT_DIR_FLAG) {
             _ostc_cache_purge_realpath(os, obj);
         } else if (obj->realpath) {
-            free(obj->realpath);
+            tbx_free(obj->realpath);
             obj->realpath = NULL;
         }
 
@@ -1102,7 +1102,7 @@ void ostc_cache_move_attrs(lio_object_service_fn_t *os, char *fname, char **key_
                 ostc->n_attrs_removed++;
             }
 
-            if (attr->key) free(attr->key);
+            if (attr->key) tbx_free(attr->key);
             attr->key = tbx_stk_strdup(key_new[i]);
             apr_hash_set(obj->attrs, attr->key, APR_HASH_KEY_STRING, attr);
         }
@@ -1158,7 +1158,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
     if (obj->hard_obj) obj = obj->hard_obj;
 
     if (obj->link) {
-        free(obj->link);
+        tbx_free(obj->link);
         obj->link = NULL;
     }
     if (val[2*n]) { //** got a symlink
@@ -1178,7 +1178,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
         }
         if (strcmp(key, "os.realpath") == 0) {
             if (v_size[i] > 0) {
-                if (sobj->realpath) free(sobj->realpath);
+                if (sobj->realpath) tbx_free(sobj->realpath);
                 sobj->realpath = tbx_stk_strdup((char *)val[i]);
                 sobj->rp_len = v_size[i];
                 continue;
@@ -1193,7 +1193,7 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
             log_printf(5, "TARGET obj=%s key=%s\n", aobj->fname, attr->key);
 
             //** Make the attr on the target link
-            if (attr->val) { free(attr->val); attr->val = NULL; }
+            if (attr->val) { tbx_free(attr->val); attr->val = NULL; }
             if (v_size[i] > 0) {
                 tbx_type_malloc(attr->val, void, v_size[i]+1);
                 memcpy(attr->val, val[i], v_size[i]);
@@ -1210,8 +1210,8 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
                 ostc->n_attrs_created++;
             } else {
                 log_printf(5, "OLD obj=%s key=%s link=%s\n", obj->fname, key, lkey);
-                if (attr->link) free(attr->link);
-                if (attr->val) free(attr->val);
+                if (attr->link) tbx_free(attr->link);
+                if (attr->val) tbx_free(attr->val);
                 attr->v_size = -1234;
                 attr->val = NULL;
             }
@@ -1226,10 +1226,10 @@ void ostc_cache_process_attrs(lio_object_service_fn_t *os, char *fname, ostc_bas
                 ostc->n_attrs_created++;
             } else {
                 if (attr->link) {
-                    free(attr->link);
+                    tbx_free(attr->link);
                     attr->link = NULL;
                 }
-                if (attr->val) free(attr->val);
+                if (attr->val) tbx_free(attr->val);
                 if (v_size[i] > 0) {
                     tbx_type_malloc(attr->val, void, v_size[i]+1);
                     memcpy(attr->val, val[i], v_size[i]);
@@ -1322,7 +1322,7 @@ finished:
         oops = i;
         for (i=0; i<oops; i++) {
             if (vs[i] < 0) {
-                if (val[i] != NULL) free(val[i]);
+                if (val[i] != NULL) tbx_free(val[i]);
             }
             v_size[i] = vs[i];
             val[i] = va[i];
@@ -1366,7 +1366,7 @@ void ostc_cache_update_attrs(lio_object_service_fn_t *os, char *fname, char **ke
     for (i=0; i<n; i++) {
         skey = (strncmp(key[i], "os.timestamp.", 13) == 0) ? key[i] + 13 : key[i];
         if (strcmp(skey, "os.realpath") == 0) {
-            if (sobj->realpath) free(sobj->realpath);
+            if (sobj->realpath) tbx_free(sobj->realpath);
             sobj->realpath = tbx_stk_strdup((char *)val[i]);
             sobj->rp_len = v_size[i];
             continue;
@@ -1389,7 +1389,7 @@ void ostc_cache_update_attrs(lio_object_service_fn_t *os, char *fname, char **ke
 
         attr->v_size = v_size[i];
         if (attr->val) {
-            free(attr->val);
+            tbx_free(attr->val);
             attr->val = NULL;
         }
         if (val) {
@@ -1448,7 +1448,7 @@ void ostc_cache_update_exec(lio_object_service_fn_t *os, char *fname, int exec_m
     }
 
     if (attr->val) {
-        free(attr->val);
+        tbx_free(attr->val);
         attr->v_size = snprintf(buffer, sizeof(buffer)-1, "%d", ftype);
         buffer[attr->v_size] = 0;
         attr->val = tbx_stk_strdup(buffer);
@@ -1498,7 +1498,7 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
 
     if (end <= prefix_len) {
         log_printf(0, "ERROR: Unable to make progress in recursion. end=%d prefix_len=%d fname=%s full_path=%s\n", end, prefix_len, fname, path);
-        free(fname);
+        tbx_free(fname);
         return(-1234);
     }
 
@@ -1542,8 +1542,8 @@ int ostc_cache_populate_prefix(lio_object_service_fn_t *os, lio_creds_t *creds, 
 
 OOPS:
     ostc_attr_cacheprep_destroy(&cp);
-    free(fname);
-    if (v_size[0] > 0) free(val_array[0]);
+    tbx_free(fname);
+    if (v_size[0] > 0) tbx_free(val_array[0]);
 
     return(err);
 }
@@ -1575,7 +1575,7 @@ void _ostc_update_link_count_object(lio_object_service_fn_t *os,  ostcdb_object_
                 n = n + delta;
                 i = snprintf(count, sizeof(count)-1, "%d", n);
                 count[sizeof(count)-1] = 0;
-                free(attr->val);
+                tbx_free(attr->val);
                 attr->val = tbx_stk_strdup(count);
                 attr->v_size = i;
             }
@@ -1654,7 +1654,7 @@ void free_remove_regex(void *arg)
     ostc_remove_regex_t *op = (ostc_remove_regex_t *)arg;
 
     if (op->gop) gop_free(op->gop, OP_DESTROY);
-    free(op);
+    tbx_free(op);
 }
 
 //***********************************************************************
@@ -2344,7 +2344,7 @@ int get_attrs_sanity_check(ostc_mult_attr_t *ma)
                         err++;
                         log_printf(0, "MISMATCH-VAL: fname=%s inode=%s key=%s vsize=%d child=%s tc=%s\n", ma->fd->fname, (char *)cp.val[n-1], ma->key[i], ma->v_size[i], (char *)cp.val[i], (char *)ma->val[i]);
                         if (do_fix) {
-                            if (ma->val[i]) free(ma->val[i]);
+                            if (ma->val[i]) tbx_free(ma->val[i]);
                             ma->v_size[i] = cp.v_size[i];
                             ma->val[i] = cp.val[i];
                             cp.v_size[i] = 0;
@@ -2355,14 +2355,14 @@ int get_attrs_sanity_check(ostc_mult_attr_t *ma)
                 err++;
                 log_printf(0, "MISMATCH-SIZE: fname=%s key=%s vsize: child=%d tc=%d ---- val: child=%s tc=%s\n", ma->fd->fname, ma->key[i], ma->v_size[i], cp.v_size[i], (char *)cp.val[i], (char *)ma->val[i]);
                 if (do_fix) {
-                    if (ma->val[i]) free(ma->val[i]);
+                    if (ma->val[i]) tbx_free(ma->val[i]);
                     ma->v_size[i] = cp.v_size[i];
                     ma->val[i] = cp.val[i];
                     cp.v_size[i] = 0;
                 }
             }
 
-            if (cp.v_size[i] > 0) free(cp.val[i]);
+            if (cp.v_size[i] > 0) tbx_free(cp.val[i]);
         }
 
         if (err != ma->n) {
@@ -2375,9 +2375,9 @@ int get_attrs_sanity_check(ostc_mult_attr_t *ma)
     gop_sync_exec(os_close_object(ostc->os_child, cfd));
 
 finished:
-    free(cp.key);
-    free(cp.val);
-    free(cp.v_size);
+    tbx_free(cp.key);
+    tbx_free(cp.val);
+    tbx_free(cp.v_size);
 
     return(err);
 }
@@ -2678,7 +2678,7 @@ os_attr_iter_t *ostc_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *
 
     it->it = os_create_attr_iter(ostc->os_child, creds, fd->fd_child, attr, v_max);
     if (it == NULL) {
-        free(it);
+        tbx_free(it);
         return(NULL);
     }
 
@@ -2701,7 +2701,7 @@ void ostc_destroy_attr_iter(os_attr_iter_t *oit)
     ostc_priv_t *ostc = (ostc_priv_t *)it->os->priv;
 
     os_destroy_attr_iter(ostc->os_child, it->it);
-    free(it);
+    tbx_free(it);
 }
 
 //***********************************************************************
@@ -2740,14 +2740,14 @@ int ostc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
             ostc_cache_process_attrs(it->os, *fname, &base, it->cp.key, it->cp.val, it->cp.v_size, it->n_keys);
         } else {
             ftype = -1;
-            if (*fname) free(*fname);
+            if (*fname) tbx_free(*fname);
             *fname = NULL;
             start_index = 0;  //** Also free the user requested attributes if they exist
         }
         //** We have to do a manual cleanup and can't call the CP destroy method
         for (i=start_index; i<it->cp.n_keys_total; i++) {
             if (it->cp.val[i] != NULL) {
-                free(it->cp.val[i]);
+                tbx_free(it->cp.val[i]);
                 it->cp.val[i] = NULL;
             }
         }
@@ -2775,9 +2775,9 @@ void ostc_destroy_object_iter(os_object_iter_t *oit)
     if (it->it_child != NULL) os_destroy_object_iter(ostc->os_child, it->it_child);
     if (it->iter_type == OSTC_ITER_ALIST) ostc_attr_cacheprep_destroy(&(it->cp));
 
-    if (it->v_size_initial != NULL) free(it->v_size_initial);
+    if (it->v_size_initial != NULL) tbx_free(it->v_size_initial);
 
-    free(it);
+    tbx_free(it);
 }
 
 //***********************************************************************
@@ -2956,7 +2956,7 @@ void ostc_open_free(void *arg)
 
     if (op->path != NULL) free (op->path);
     if (op->gop != NULL) gop_free(op->gop, OP_DESTROY);
-    free(op);
+    tbx_free(op);
 }
 
 //***********************************************************************
@@ -3011,8 +3011,8 @@ gop_op_status_t ostc_close_object_fn(void *arg, int tid)
 
     status = (fd->fd_child != NULL) ? gop_sync_exec_status(os_close_object(ostc->os_child, fd->fd_child)) : gop_success_status;
 
-    if (fd->fname != NULL) free(fd->fname);
-    free(fd);
+    if (fd->fname != NULL) tbx_free(fd->fname);
+    tbx_free(fd);
 
     return(status);
 }
@@ -3215,7 +3215,7 @@ void parse_limit_cache_attrs(lio_object_service_fn_t *os, tbx_inip_file_t *ifd, 
             abort();
         }
 
-        free(val);
+        tbx_free(val);
         n++;
     }
 
@@ -3261,17 +3261,17 @@ void ostc_destroy(lio_object_service_fn_t *os)
     if (ostc->n_limit_cache > 0) {
         for (i=0; i<ostc->n_limit_cache; i++) {
             lca = &(ostc->limit_cache[i]);
-            free(lca->string);
+            tbx_free(lca->string);
             regfree(&(lca->regex));
         }
 
-        free(ostc->limit_cache);
+        tbx_free(ostc->limit_cache);
     }
 
-    free(ostc->section);
-    free(ostc->os_child_section);
-    free(ostc);
-    free(os);
+    tbx_free(ostc->section);
+    tbx_free(ostc->os_child_section);
+    tbx_free(ostc);
+    tbx_free(os);
 }
 
 //***********************************************************************
@@ -3321,7 +3321,7 @@ lio_object_service_fn_t *object_service_timecache_create(lio_service_manager_t *
             fflush(stderr);
             abort();
         }
-        free(ctype);
+        tbx_free(ctype);
     } else {
         log_printf(0, "ERROR:  Missing child OS!\n");
         abort();

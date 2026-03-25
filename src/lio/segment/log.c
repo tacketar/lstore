@@ -156,7 +156,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
     log_printf(15, "seg=" XIDT " truncating new_size=" XOT " initial_intervals=%d\n", segment_id(seg), lo, tbx_isl_count(s->mapping));
     if (ir == NULL) {
         s->file_size = r->hi + 1;
-        free(r);
+        tbx_free(r);
         return(0);
     }
 
@@ -184,7 +184,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
         if (n == bufmax) {
             for (i=0; i<n; i++) {
                 tbx_isl_remove(s->mapping, (tbx_sl_key_t *)&(r_table[i]->lo), (tbx_sl_key_t *)&(r_table[i]->hi), (tbx_sl_data_t *)r_table[i]);
-                free(r_table[i]);
+                tbx_free(r_table[i]);
             }
             it = tbx_isl_iter_search(s->mapping, (tbx_sl_key_t *)&lo, (tbx_sl_key_t *)&hi);
             n = 0;
@@ -194,7 +194,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
     if (n>0) {
         for (i=0; i<n; i++) {
             tbx_isl_remove(s->mapping, (tbx_sl_key_t *)&(r_table[i]->lo), (tbx_sl_key_t *)&(r_table[i]->hi), (tbx_sl_data_t *)r_table[i]);
-            free(r_table[i]);
+            tbx_free(r_table[i]);
         }
     }
 
@@ -202,7 +202,7 @@ int _slog_truncate_range(lio_segment_t *seg, lio_slog_range_t *r)
     s->file_size = r->hi + 1;
 
     //** and free the range ptr
-    free(r);
+    tbx_free(r);
 
     log_printf(15, "new_log_intervals=%d\n", tbx_isl_count(s->mapping));
 
@@ -243,7 +243,7 @@ int _slog_insert_range(lio_segment_t *seg, lio_slog_range_t *r)
                 tbx_isl_insert(s->mapping, (tbx_sl_key_t *)&(ir->lo), (tbx_sl_key_t *)&(ir->hi), (tbx_sl_data_t *)ir);
             }
         } else if (ir->hi <= r->hi) {  //** Completely contained in r so drop
-            free(ir);
+            tbx_free(ir);
         } else {  //** Drop the 1st half keeping the end
             irlo = ir->lo;
             ir->lo = r->hi+1;
@@ -264,7 +264,7 @@ int _slog_insert_range(lio_segment_t *seg, lio_slog_range_t *r)
             r->lo = ir->lo;
             r->data_offset = ir->data_offset;
             tbx_isl_remove(s->mapping, (tbx_sl_key_t *)&(ir->lo), (tbx_sl_key_t *)&(ir->hi), (tbx_sl_data_t *)ir);
-            free(ir);
+            tbx_free(ir);
         }
     }
 
@@ -457,7 +457,7 @@ gop_op_status_t seglog_write_update_func(void *arg, int id)
     }
 
     gop_opque_free(q, OP_DESTROY);
-    free(ex_iov);
+    tbx_free(ex_iov);
 
     return(status);
 }
@@ -614,7 +614,7 @@ gop_op_status_t seglog_read_func(void *arg, int id)
     }
 
     gop_opque_free(q, OP_DESTROY);
-    free(ex_iov);
+    tbx_free(ex_iov);
 
     return(status);
 }
@@ -681,7 +681,7 @@ int _slog_load(lio_segment_t *seg)
                 log_printf(0, "seg=" XIDT " Blank/bad range!  offset=" XOT "\n", segment_id(seg), i);
                 last_bad = 1;
                 err_count++;
-                free(r);
+                tbx_free(r);
             } else {
                 log_printf(15, "r->lo=" XOT " r->len(hi)=" XOT " r->data_offset=" XOT "\n", r->lo, r->hi, r->data_offset);
 
@@ -693,7 +693,7 @@ int _slog_load(lio_segment_t *seg)
             log_printf(0, "seg=" XIDT " Error loading range!  offset=" XOT "\n", segment_id(seg), i);
             last_bad = 1;
             err_count++;
-            free(r);
+            tbx_free(r);
         }
 
         gop_free(gop, OP_DESTROY);
@@ -844,7 +844,7 @@ gop_op_status_t seglog_clone_func(void *arg, int id)
     if (slc->mode == CLONE_STRUCT_AND_DATA) {
         tbx_type_malloc(buffer, char, bufsize);
         err = gop_sync_exec(lio_segment_copy_gop(ss->tpc, slc->da, NULL, slc->sseg, slc->dseg, 0, 0, ss->file_size, bufsize, buffer, 0, slc->timeout));
-        free(buffer);
+        tbx_free(buffer);
         if (err != OP_STATE_SUCCESS) {
             log_printf(1, "Error copying data during cloning:  src=" XIDT "\n", segment_id(slc->sseg));
             goto data_fail;
@@ -1183,7 +1183,7 @@ int seglog_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_LOG);
 
@@ -1343,10 +1343,10 @@ void seglog_destroy(tbx_ref_t *ref)
     }
     tbx_isl_del(s->mapping);
 
-    for (i=0; i<n; i++) free(r_list[i]);
-    free(r_list);
+    for (i=0; i<n; i++) tbx_free(r_list[i]);
+    tbx_free(r_list);
 
-    free(s);
+    tbx_free(s);
 
     ex_header_release(&(seg->header));
 
@@ -1354,7 +1354,7 @@ void seglog_destroy(tbx_ref_t *ref)
     apr_thread_cond_destroy(seg->cond);
     tbx_apr_pool_destroy(seg->mpool);
 
-    free(seg);
+    tbx_free(seg);
 }
 
 //***********************************************************************
@@ -1569,8 +1569,8 @@ gop_op_status_t seglog_merge_with_base_func(void *arg, int id)
     gop_opque_free(qin, OP_DESTROY);
     gop_opque_free(qout, OP_DESTROY);
 
-    free(ex_in);
-    free(ex_out);
+    tbx_free(ex_in);
+    tbx_free(ex_out);
 
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "seg=" XIDT " Error truncating table/data logs!\n", segment_id(sm->seg));

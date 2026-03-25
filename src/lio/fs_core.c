@@ -302,7 +302,7 @@ void fs_osaz_attr_filter_apply(lio_fs_t *fs, const char *key, int mode, char **v
     if (filter == NULL) return;
 
     filter(fs->osaz, (char *)key, mode, *value, *len, &v_out, &len_out);
-    free(*value);
+    tbx_free(*value);
     *value = v_out;
     *len = len_out;
     return;
@@ -372,7 +372,7 @@ lio_os_authz_local_t *lio_fs_new_os_authz_local(lio_fs_t *fs, uid_t uid, gid_t g
 
 void lio_fs_destroy_os_authz_local(lio_fs_t *fs, lio_os_authz_local_t *ug)
 {
-    if (ug) free(ug);
+    if (ug) tbx_free(ug);
 }
 
 //***********************************************************************
@@ -459,13 +459,13 @@ int fs_osaz_object_create(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *pa
 
     //** The object shouldn't exist so make sure we can access the parent
     lio_os_path_split(path, &parent_dir, &file);
-    if (file) free(file);
+    if (file) tbx_free(file);
 
     if (lio_fs_realpath(fs, parent_dir, realpath) != 0) {
-        if (parent_dir) free(parent_dir);
+        if (parent_dir) tbx_free(parent_dir);
         return(0);
     }
-    if (parent_dir) free(parent_dir);
+    if (parent_dir) tbx_free(parent_dir);
 
     ug_used = _fs_get_ug(fs, ug, &dug);
     err = osaz_object_create(fs->osaz, fs->lc->creds, ug_used, realpath);
@@ -605,13 +605,13 @@ int _fs_parse_stat_vals(lio_fs_t *fs, char *fname, struct stat *stat, char **val
     if (symlink) {
         *symlink = slink;
     } else if (slink) {
-        free(slink);
+        tbx_free(slink);
     }
 
     //** Free up the extra attributes used to seed the OS cache
     for (i=7; i<fs->_inode_key_size; i++) {
         if (val[i]) {
-            free(val[i]);
+            tbx_free(val[i]);
             val[i] = NULL;
         }
     }
@@ -704,7 +704,7 @@ int lio_fs_stat_full(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
         hit = 1;
         if (val[0] != NULL) {
             sscanf(val[0], XIDT, &inode);
-            free(val[0]);
+            tbx_free(val[0]);
         }
         ocl_slot = inode % fs->lc->open_close_lock_size;
         apr_thread_mutex_lock(fs->lc->open_close_lock[ocl_slot]);
@@ -816,7 +816,7 @@ int lio_fs_dir_is_empty(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *path
     fname = NULL;
     is_empty = 0;
     if (lio_next_object(fs->lc, it, &fname, &prefix_len) == 0) is_empty = 1;
-    if (fname) free(fname);
+    if (fname) tbx_free(fname);
 
     lio_destroy_object_iter(fs->lc, it);
     lio_os_regex_table_destroy(rp);
@@ -846,12 +846,12 @@ void *fs_readdir_thread(apr_thread_t *th, void *data)
         de.dentry = tbx_stk_strdup(fname+prefix_len+1);
         de.ftype = ftype;
         _fs_parse_stat_vals(dit->fs, fname, &(de.stat), dit->val, dit->v_size, &(de.symlink), dit->stat_symlink, 1);
-        free(fname);
+        tbx_free(fname);
 
         TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_BG_READDIR].submitted);
         if (tbx_que_put(dit->pipe, &de, TBX_QUE_BLOCK) != 0) { //** Got an error which means we're got an finished command
-            if (de.dentry) free(de.dentry);
-            if (de.symlink) free(de.symlink);
+            if (de.dentry) tbx_free(de.dentry);
+            if (de.symlink) tbx_free(de.symlink);
         }
         TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_BG_READDIR].finished);
     }
@@ -878,8 +878,8 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
         tbx_que_set_finished(dit->pipe);  //** Make sure it's flaged as done
         //** Fetch everything available
         while (tbx_que_get(dit->pipe, &de, TBX_QUE_BLOCK) == 0) {
-            if (de.dentry) free(de.dentry);
-            if (de.symlink) free(de.symlink);
+            if (de.dentry) tbx_free(de.dentry);
+            if (de.symlink) tbx_free(de.symlink);
         }
 
         apr_thread_join(&value, dit->worker_thread);  //** Wait for it to complete
@@ -892,13 +892,13 @@ int lio_fs_closedir(lio_fs_dir_iter_t *dit)
 
     TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_CLOSEDIR].finished);
 
-    if (dit->dot_path) free(dit->dot_path);
-    if (dit->dotdot_path) free(dit->dotdot_path);
+    if (dit->dot_path) tbx_free(dit->dot_path);
+    if (dit->dotdot_path) tbx_free(dit->dotdot_path);
 
     if (dit->it) lio_destroy_object_iter(dit->fs->lc, dit->it);
     lio_os_regex_table_destroy(dit->path_regex);
 
-    free(dit);
+    tbx_free(dit);
 
     return(0);
 }
@@ -960,7 +960,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
     if (strcmp(fname, "/") != 0) {
         lio_os_path_split((char *)fname, &dir, &file);
         dit->dotdot_path = dir;
-        free(file);
+        tbx_free(file);
     } else {
         dit->dotdot_path = tbx_stk_strdup(fname);
     }
@@ -1024,7 +1024,7 @@ int lio_fs_readdir(lio_fs_dir_iter_t *dit, char **dentry, struct stat *stat, cha
         if (symlink) {
             *symlink = de.symlink;
         } else if (de.symlink) {
-            free(de.symlink);
+            tbx_free(de.symlink);
         }
         *dentry = de.dentry;
         TBX_STATS_INC(dit->fs->stats.op[FS_SLOT_READDIR].finished);
@@ -1069,7 +1069,7 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
     ftype = 0;
     if (v_size[1] > 0) {
         sscanf(val[1], "%d", &ftype);
-        free(val[1]);
+        tbx_free(val[1]);
     }
 
     _mode = ftype_lio2posix(ftype);  //** Initialize the file type bits in the mode
@@ -1081,7 +1081,7 @@ int fs_modify_perms(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, u
         if (mode) _mode = *mode;
     }
 
-    if (val[0]) free(val[0]);
+    if (val[0]) tbx_free(val[0]);
 
     //** Store it back
     n = osaz_perms_encode(fs->osaz, fname, ftype, perms, sizeof(perms), _uid, _gid, _mode);
@@ -1528,8 +1528,8 @@ int lio_fs_close(lio_fs_t *fs, lio_fd_t *fd)
         fop->ref_count--;
         if (fop->ref_count <= 0) {  //** Last one so remove it.
             apr_hash_set(fs->open_files, fd->fh->fname, APR_HASH_KEY_STRING, NULL);
-            free(fop->fname);
-            free(fop);
+            tbx_free(fop->fname);
+            tbx_free(fop);
         }
     }
     fs_unlock(fs);
@@ -1934,7 +1934,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     fop = apr_hash_get(fs->open_files, oldname, APR_HASH_KEY_STRING);
     if (fop) {  //** Got an open file so need to mve the entry there as well.
         apr_hash_set(fs->open_files, oldname, APR_HASH_KEY_STRING, NULL);
-        free(fop->fname);
+        tbx_free(fop->fname);
         fop->fname = tbx_stk_strdup(newname);
         apr_hash_set(fs->open_files, fop->fname, APR_HASH_KEY_STRING, fop);
         if (fop->special) {
@@ -1951,7 +1951,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
         fh = _lio_get_file_handle(fs->lc, sid);
         if (fh) {
             apr_thread_mutex_lock(fh->lock);
-            free(fh->fname);
+            tbx_free(fh->fname);
             fh->fname = tbx_stk_strdup(newname);
             apr_thread_mutex_unlock(fh->lock);
         }
@@ -2031,7 +2031,7 @@ int lio_fs_copy_lio2local(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
     //** Clean up
     if (buf2 != buffer) {
         TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LOCAL].finished);
-        free(buf2);
+        tbx_free(buf2);
     }
     lio_fs_close(fs, sfd);
     tbx_io_fclose(dfd);
@@ -2087,7 +2087,7 @@ int lio_fs_copy_local2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *sr
 
     //** Clean up
     if (buf2 != buffer) {
-        free(buf2);
+        tbx_free(buf2);
         TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LOCAL2LIO].finished);
     }
     tbx_io_fclose(sfd);
@@ -2143,7 +2143,7 @@ int lio_fs_copy_lio2lio(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *src_
 
     //** Clean up
     if (buf2 != buffer) {
-        free(buf2);
+        tbx_free(buf2);
         TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FS_LIO2LIO].finished);
     }
     lio_fs_close(fs, sfd);
@@ -2392,7 +2392,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
             bpos++;
             if (key[i] == 0) break;
         }
-        free(key);
+        tbx_free(key);
 
         v_size = 0;
     }
@@ -2409,7 +2409,7 @@ int lio_fs_listxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, 
     } else {
         log_printf(15, "ERANGE bpos=%d buf=%s\n", bpos, buf);
     }
-    free(buf);
+    tbx_free(buf);
     TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_LISTXATTR].finished);
 
     TBX_STATS_INC(fs->stats.op[FS_SLOT_LISTXATTR].finished);
@@ -2456,7 +2456,7 @@ void lio_fs_set_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
     if (strcmp(tmp, "n_keys") != 0) { //*
         log_printf(0, "ERROR parsing tape attribute! Missing n_keys! fname=%s\n", fname);
         log_printf(0, "Tape attribute follows:\n%s\n", mytape_val);
-        free(tape_val);
+        tbx_free(tape_val);
         return;
     }
 
@@ -2466,7 +2466,7 @@ void lio_fs_set_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
     if (n != nkeys) {
         log_printf(0, "ERROR parsing n_keys size fname=%s\n", fname);
         log_printf(0, "Tape attribute follows:\n%s\n", mytape_val);
-        free(tape_val);
+        tbx_free(tape_val);
         return;
     }
 
@@ -2485,13 +2485,13 @@ void lio_fs_set_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
             if (v_size[i] < 0) {
                 log_printf(0, "ERROR parsing key=%s size=%d fname=%s\n", tmp, v_size[i], fname);
                 log_printf(0, "Tape attribute follows:\n%s\n", mytape_val);
-                free(tape_val);
+                tbx_free(tape_val);
                 return;
             }
         } else {
             log_printf(0, "ERROR Missing key=%s\n", _tape_keys[i]);
             log_printf(0, "Tape attribute follows:\n%s\n", mytape_val);
-            free(tape_val);
+            tbx_free(tape_val);
             return;
         }
     }
@@ -2551,9 +2551,9 @@ void lio_fs_set_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
     }
 
     //** Clean up
-    free(tape_val);
+    tbx_free(tape_val);
     for (i=0; i<nkeys; i++) {
-        if (val[i] != NULL) free(val[i]);
+        if (val[i] != NULL) tbx_free(val[i]);
     }
 
     return;
@@ -2622,7 +2622,7 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
         if (v_size[i] > 0) {
             memcpy(&(buffer[n]), val[i], v_size[i]);
             n = n + v_size[i];
-            free(val[i]);
+            tbx_free(val[i]);
         }
     }
 
@@ -2798,8 +2798,8 @@ already_have_a_lock:
         if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
 
         if ((na>1) && (v_size[1] > 0)) { //** We have hard errors so throw an error
-            free(val[1]);
-            if (v_size[0] > 0) free(val[0]);
+            tbx_free(val[1]);
+            if (v_size[0] > 0) tbx_free(val[0]);
             FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EHARD=%d", fs->xattr_error_for_hard_errors);
             TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].errors);
             TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
@@ -2826,7 +2826,7 @@ already_have_a_lock:
     FS_MON_OBJ_DESTROY();
     TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
 
-    if (val[0] != NULL) free(val[0]);
+    if (val[0] != NULL) tbx_free(val[0]);
     return((v_size[0] == 0) ? err : v_size[0]);
 }
 
@@ -3083,7 +3083,7 @@ int lio_fs_readlink(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
 
     if (val) {
         snprintf(buf, bsize, "%s", (char *)val);
-        free(val);
+        tbx_free(val);
     } else {
         buf[0] = 0;
     }
@@ -3157,7 +3157,7 @@ int lio_fs_statvfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, st
 
     //** And parse it
     space = rs_space(config);
-    free(config);
+    tbx_free(config);
 
     sfs->f_bsize = 4096;
     sfs->f_blocks = space.total_up / sfs->f_bsize;;
@@ -3189,7 +3189,7 @@ int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, str
 
     //** And parse it
     space = rs_space(config);
-    free(config);
+    tbx_free(config);
 
     sfs->f_bsize = 4096;
     sfs->f_blocks = space.total_up / sfs->f_bsize;;
@@ -3292,7 +3292,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     } else if (strcmp(atype, _ug_mode_string[UG_FSUID]) == 0) {
         fs->ug_mode = UG_FSUID;
     }
-    free(atype);
+    tbx_free(atype);
 
     fs->enable_fuse_hacks = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_fuse_hacks", 0);
     fs->enable_internal_lock_mode = tbx_inip_get_integer(fs->lc->ifd, fs->fs_section, "enable_internal_lock_mode", 0);
@@ -3327,7 +3327,7 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     atype = tbx_inip_get_string(fs->lc->ifd, fs->authz_section, "type", OSAZ_TYPE_FAKE);
     osaz_create = lio_lookup_service(fs->lc->ess, OSAZ_AVAILABLE, atype);
     fs->osaz = (*osaz_create)(fs->lc->ess, fd, fs->authz_section, NULL);
-    free(atype);
+    tbx_free(atype);
 
     //** See if the OSAZ needs some help with ATTRs
     n = 0;  //** Initialize to 0 since we are seeing if we need to add extra space
@@ -3386,8 +3386,8 @@ void lio_fs_destroy(lio_fs_t *fs)
         apr_hash_this(hi, NULL, NULL, (void **)&fop);
         log_printf(0, "ERROR: LFS_OPEN_FILE: fname=%s sid= " XIDT " ref=%d remove=%d\n", fop->fname, fop->sid, fop->ref_count, fop->remove_on_close);
 //        lio_fs_close(fs, fop->fd);
-        free(fop->fname);
-        free(fop);
+        tbx_free(fop->fname);
+        tbx_free(fop);
     }
 
     //** Release our global hint if used
@@ -3397,18 +3397,18 @@ void lio_fs_destroy(lio_fs_t *fs)
     osaz_destroy(fs->osaz);
 
     //** Clean up everything else
-    if (fs->pending_delete_prefix) free(fs->pending_delete_prefix);
-    if (fs->authz_section) free(fs->authz_section);
-    if (fs->fs_section) free(fs->fs_section);
+    if (fs->pending_delete_prefix) tbx_free(fs->pending_delete_prefix);
+    if (fs->authz_section) tbx_free(fs->authz_section);
+    if (fs->fs_section) tbx_free(fs->fs_section);
     if (fs->rw_lock_attr_string) {
         regfree(&(fs->rw_lock_attr_regex));
-        free(fs->rw_lock_attr_string);
+        tbx_free(fs->rw_lock_attr_string);
     }
-    free(fs->stat_keys);  //** All the attrs are static strings
+    tbx_free(fs->stat_keys);  //** All the attrs are static strings
 
     apr_thread_mutex_destroy(fs->lock);
     tbx_apr_pool_destroy(fs->mpool);
 
-    if (fs->rw_hints) free(fs->rw_hints);
-    free(fs);
+    if (fs->rw_hints) tbx_free(fs->rw_hints);
+    tbx_free(fs);
 }

@@ -99,17 +99,17 @@ void cred_default_set_ids(lio_creds_t *c, const char *id, const char *account)
     pid = getpid();
     gethostname(buf3, sizeof(buf3));
     snprintf(buffer, sizeof(buffer), "%s:" LU ":%s:%s:%s", id, pid, login, buf3, _lio_exe_name);
-    if (c->descriptive_id) free(c->descriptive_id);
+    if (c->descriptive_id) tbx_free(c->descriptive_id);
     c->descriptive_id = tbx_stk_strdup(buffer); c->descriptive_id_len = strlen(c->descriptive_id);
 
-    if (c->id) free(c->id);
+    if (c->id) tbx_free(c->id);
     if (id) {
         c->id = tbx_stk_strdup(id); c->id_len = strlen(c->id);
     } else {
         c->id = NULL; c->id_len = 0;
     }
 
-    if (c->account) free(c->account);
+    if (c->account) tbx_free(c->account);
     if (account) {
         c->account = tbx_stk_strdup(account); c->account_len = strlen(c->account);
     } else {
@@ -123,10 +123,10 @@ void cred_default_set_ids(lio_creds_t *c, const char *id, const char *account)
 
 void cdef_destroy(lio_creds_t *c)
 {
-    if (c->id != NULL) free(c->id);
-    if (c->account) free(c->account);
-    if (c->descriptive_id) free(c->descriptive_id);
-    free(c);
+    if (c->id != NULL) tbx_free(c->id);
+    if (c->account) tbx_free(c->account);
+    if (c->descriptive_id) tbx_free(c->descriptive_id);
+    tbx_free(c);
 }
 
 //***********************************************************************

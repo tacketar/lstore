@@ -380,7 +380,7 @@ gop_op_status_t osrc_remove_regex_object_func(void *arg, int id)
 
         if (again == 1) {
             bufsize = bpos + 10;
-            free(buffer);
+            tbx_free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
     } while (again == 1);
@@ -605,7 +605,7 @@ gop_op_status_t osrc_regex_object_set_multiple_attrs_func(void *arg, int id)
 
         if (again == 1) {
             bufsize = bpos + 10;
-            free(buffer);
+            tbx_free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
 
@@ -1823,7 +1823,7 @@ int osrc_next_attr(os_attr_iter_t *oit, char **key, void **val, int *v_size)
     if (err != 0) {
         log_printf(5, "ERROR reading key!");
         if (key != NULL) {
-            free(*key);
+            tbx_free(*key);
             *key = NULL;
         }
         *v_size = -1;
@@ -1939,7 +1939,7 @@ os_attr_iter_t *osrc_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *
 
         if (again == 1) {
             bufsize = bpos + 10;
-            free(buffer);
+            tbx_free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
     } while (again == 1);
@@ -1958,7 +1958,7 @@ os_attr_iter_t *osrc_create_attr_iter(lio_object_service_fn_t *os, lio_creds_t *
     err = gop_waitall(gop);
     if (err != OP_STATE_SUCCESS) {
         log_printf(5, "ERROR status=%d\n", err);
-        free(it);
+        tbx_free(it);
         return(NULL);
     }
     gop_free(gop, OP_DESTROY);
@@ -1980,7 +1980,7 @@ void osrc_destroy_attr_iter(os_attr_iter_t *oit)
     if (it->mqs != NULL) gop_mq_stream_destroy(it->mqs);
     if ((it->response != NULL) && (it->is_sub_iter == 0)) gop_mq_msg_destroy(it->response);
 
-    free(it);
+    tbx_free(it);
 }
 
 
@@ -2053,7 +2053,7 @@ int osrc_next_object(os_object_iter_t *oit, char **fname, int *prefix_len)
     err = gop_mq_stream_read(it->mqs, *fname, n);
     if (err != 0) {
         log_printf(5, "ERROR reading fname!");
-        free(*fname);
+        tbx_free(*fname);
         *fname = NULL;
         return(-1);
     }
@@ -2192,7 +2192,7 @@ os_object_iter_t *osrc_create_object_iter(lio_object_service_fn_t *os, lio_creds
 
         if (again == 1) {
             bufsize = 2*bpos + 10;
-            free(buffer);
+            tbx_free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
     } while (again == 1);
@@ -2214,7 +2214,7 @@ os_object_iter_t *osrc_create_object_iter(lio_object_service_fn_t *os, lio_creds
     gop_free(gop, OP_DESTROY);
     if (err != OP_STATE_SUCCESS) {
         log_printf(5, "ERROR status=%d\n", err);
-        free(it);
+        tbx_free(it);
         return(NULL);
     }
 
@@ -2250,10 +2250,10 @@ void osrc_destroy_object_iter(os_object_iter_t *oit)
 
     if (it->mqs != NULL) gop_mq_stream_destroy(it->mqs);
     if (it->response != NULL) gop_mq_msg_destroy(it->response);
-    if (it->v_size_initial != NULL) free(it->v_size_initial);
-    if (it->ait != NULL) free(*(it->ait));
+    if (it->v_size_initial != NULL) tbx_free(it->v_size_initial);
+    if (it->ait != NULL) tbx_free(*(it->ait));
 
-    free(it);
+    tbx_free(it);
 }
 
 //***********************************************************************
@@ -2323,7 +2323,7 @@ os_object_iter_t *osrc_create_object_iter_alist(lio_object_service_fn_t *os, lio
 
         if (again == 1) {
             bufsize = 2*bpos + 10;
-            free(buffer);
+            tbx_free(buffer);
             tbx_type_malloc(buffer, unsigned char, bufsize);
         }
     } while (again == 1);
@@ -2511,8 +2511,8 @@ gop_op_status_t osrc_response_close_object(void *task_arg, int tid)
 
     log_printf(5, "END status=%d %d\n", status.op_status, status.error_code);
 
-    free(fd->data);
-    free(fd);
+    tbx_free(fd->data);
+    tbx_free(fd);
 
     return(status);
 }
@@ -2682,7 +2682,7 @@ int osrc_next_fsck(lio_object_service_fn_t *os, os_fsck_iter_t *oit, char **bad_
     err = gop_mq_stream_read(it->mqs, *bad_fname, n);
     if (err != 0) {
         log_printf(5, "ERROR reading key!");
-        free(*bad_fname);
+        tbx_free(*bad_fname);
         *bad_fname = NULL;
         it->finished = 1;
         return(OS_FSCK_ERROR);
@@ -2790,7 +2790,7 @@ os_fsck_iter_t *osrc_create_fsck_iter(lio_object_service_fn_t *os, lio_creds_t *
     err = gop_waitall(gop);
     if (err != OP_STATE_SUCCESS) {
         log_printf(5, "ERROR status=%d\n", err);
-        free(it);
+        tbx_free(it);
         return(NULL);
     }
     gop_free(gop, OP_DESTROY);
@@ -2810,7 +2810,7 @@ void osrc_destroy_fsck_iter(lio_object_service_fn_t *os, os_fsck_iter_t *oit)
     if (it->mqs != NULL) gop_mq_stream_destroy(it->mqs);
     if (it->response != NULL) gop_mq_msg_destroy(it->response);
 
-    free(it);
+    tbx_free(it);
 }
 
 
@@ -2854,11 +2854,11 @@ void osrc_destroy(lio_object_service_fn_t *os)
 
     tbx_apr_pool_destroy(osrc->mpool);
 
-    free(osrc->section);
-    if (osrc->temp_section) free(osrc->temp_section);
-    free(osrc->remote_host_string);
-    free(osrc);
-    free(os);
+    tbx_free(osrc->section);
+    if (osrc->temp_section) tbx_free(osrc->temp_section);
+    tbx_free(osrc->remote_host_string);
+    tbx_free(osrc);
+    tbx_free(os);
 }
 
 
@@ -2888,7 +2888,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
         osrc->os_remote = object_service_remote_server_create(ess, fd, str);
         FATAL_UNLESS(osrc->os_remote != NULL);
         osrc->os_temp = ((lio_osrs_priv_t *)(osrc->os_remote->priv))->os_child;
-        free(str);
+        tbx_free(str);
     } else {
         osrc->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     }

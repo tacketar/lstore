@@ -86,12 +86,12 @@ ibp_context_t *hack_ds_ibp_context_get(lio_data_service_fn_t *arg)
 
 void ds_ibp_destroy_probe(lio_data_service_fn_t *arg, data_probe_t *probe)
 {
-    free(probe);
+    tbx_free(probe);
 }
 
 void ds_ibp_destroy_attr(lio_data_service_fn_t *arg, data_attr_t *attr)
 {
-    free(attr);
+    tbx_free(attr);
 }
 
 
@@ -115,7 +115,7 @@ void ds_ibp_destroy_cap_set(lio_data_service_fn_t *arg, data_cap_set_t *dcs, int
     if (free_caps > 0) {
         ibp_capset_destroy(cs);
     } else {
-        free(cs);
+        tbx_free(cs);
     }
 }
 
@@ -277,20 +277,20 @@ void ds_ibp_translate_cap_set(lio_data_service_fn_t *ds, char *rid_key, char *ds
     if (cs->readCap != NULL) {
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->readCap[end]));
         log_printf(20, "rcap_old=%s new=%s\n", cs->readCap, new_cap);
-        free(cs->readCap);
+        tbx_free(cs->readCap);
         cs->readCap = tbx_stk_strdup(new_cap);
 
     }
 
     if (cs->writeCap != NULL) {
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->writeCap[end]));
-        free(cs->writeCap);
+        tbx_free(cs->writeCap);
         cs->writeCap = tbx_stk_strdup(new_cap);
     }
 
     if (cs->manageCap != NULL) {
         snprintf(new_cap, sizeof(new_cap), "ibp://%s%s", ds_key, &(cs->manageCap[end]));
-        free(cs->manageCap);
+        tbx_free(cs->manageCap);
         cs->manageCap = tbx_stk_strdup(new_cap);
     }
 }
@@ -500,7 +500,7 @@ int res2ibp(char *res, ibp_depot_t *depot)
     depot->rid.name[sizeof(depot->rid.name)-1] = '\0';
 
     log_printf(15, "ds_key=%s host=%s port=%d rid=%s\n", res, depot->host, depot->port, depot->rid.name);
-    free(str);
+    tbx_free(str);
 
     return(0);
 }
@@ -537,7 +537,7 @@ data_inquire_t *ds_ibp_new_inquire(lio_data_service_fn_t *arg)
 
 void ds_ibp_destroy_inquire(lio_data_service_fn_t *arg, data_inquire_t *di)
 {
-    free(di);
+    tbx_free(di);
 }
 
 
@@ -596,7 +596,7 @@ void _ds_ibp_op_free(gop_op_generic_t *gop, int mode)
     gop->free_ptr = iop->free_ptr;
     iop->free(gop, mode);
 
-    if (mode == OP_DESTROY) free(iop);
+    if (mode == OP_DESTROY) tbx_free(iop);
 }
 
 //***********************************************************************
@@ -991,10 +991,10 @@ void ds_ibp_destroy(lio_data_service_fn_t *dsf)
     apr_thread_cond_destroy(ds->cond);
     tbx_apr_pool_destroy(ds->pool);
 
-    if (ds->section) free(ds->section);
+    if (ds->section) tbx_free(ds->section);
 
-    free(ds);
-    free(dsf);
+    tbx_free(ds);
+    tbx_free(dsf);
 }
 
 //***********************************************************************

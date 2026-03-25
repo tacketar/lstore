@@ -226,10 +226,10 @@ void process_clog_move(warm_prep_db_t *wdb, clog_entry_t *ce, apr_hash_t *obj_ha
         if (dir == 0) {  //** It's a normal file
             if (strcmp(obj->fname, ce->fname) == 0) {
                 apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, NULL);
-                free(obj->fname);
+                tbx_free(obj->fname);
                 obj->fname = ce->fname2;
                 ce->fname2 = NULL;
-                free(ce->fname);
+                tbx_free(ce->fname);
                 apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, obj);
                 return;   //** We can kick out
             }
@@ -249,15 +249,15 @@ void process_clog_move(warm_prep_db_t *wdb, clog_entry_t *ce, apr_hash_t *obj_ha
     //** Swing the fname entries as needed
     while ((obj = tbx_stack_pop(&stack)) != NULL) {
         apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, NULL);
-        free(obj->fname);
+        tbx_free(obj->fname);
         obj->fname = obj->fname2;
         obj->fname2 = NULL;
         apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, obj);
     }
 
     //** Free it up if not used
-    if (ce->fname) free(ce->fname);
-    if (ce->fname2) free(ce->fname2);
+    if (ce->fname) tbx_free(ce->fname);
+    if (ce->fname2) tbx_free(ce->fname2);
     return;
 }
 //*************************************************************************
@@ -282,15 +282,15 @@ void process_clog_entry(warm_prep_db_t *wdb, clog_entry_t *ce, apr_hash_t *obj_h
     if  (ce->clog_type == 2) { //** Remove op
         if (obj) {  //** Clear it from the hash
             apr_hash_set(obj_hash, ce->fname, APR_HASH_KEY_STRING, NULL);
-            free(obj->fname);
-            free(obj);
+            tbx_free(obj->fname);
+            tbx_free(obj);
         }
         //** Also check the DBs
         dobj.fname = ce->fname;
         dobj.inode = ce->inode;
         warm_object_delete(wdb, &dobj);
 
-        free(ce->fname);   //** Free the entry fname
+        tbx_free(ce->fname);   //** Free the entry fname
         return;    //** We can kick out also
     }
 
@@ -301,7 +301,7 @@ void process_clog_entry(warm_prep_db_t *wdb, clog_entry_t *ce, apr_hash_t *obj_h
         //** finally add it
         apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, obj);
     } else {
-        free(ce->fname);  //** Already have the object so free up the fname
+        tbx_free(ce->fname);  //** Already have the object so free up the fname
     }
 
     //** Process the record
@@ -364,13 +364,13 @@ void warm_rid_delete(warm_prep_db_t *wdb, char *rid, clog_obj_info_t *obj)
         rocksdb_delete(p->rid->db, p->rid->wopt, (const char *)rkey, nbytes, &errstr);
         if (errstr) {
             info_printf(lio_ifd, 0, "ERROR: RocksDB error removing RID entry! fname=%s RID=%s errstr=%s\n", obj->fname, rid, errstr);
-            free(errstr);
+            tbx_free(errstr);
         }
 
         rocksdb_iter_next(it);
     }
     rocksdb_iter_destroy(it); //** Destroy the iterator
-    free(rkey_dummy);
+    tbx_free(rkey_dummy);
 }
 
 //*************************************************************************
@@ -391,7 +391,7 @@ void warm_object_delete(warm_prep_db_t *wdb, clog_obj_info_t *obj)
     //** Get the inode DB entry which has the list of RIDs
     errstr = NULL;
     v = (inode_value_t *)rocksdb_get(p->inode->db, p->inode->ropt, (const char *)&(obj->inode), sizeof(ex_id_t), &nbytes, &errstr);
-    if (errstr) free(errstr);
+    if (errstr) tbx_free(errstr);
     if (v == NULL) { //** Skip it if we can't find the inode entry
         log_printf(0, "ERROR: Can't locate inode entry for inode=" LU " fname=%s\n", obj->inode, obj->fname);
         return;
@@ -427,11 +427,11 @@ void warm_object_delete(warm_prep_db_t *wdb, clog_obj_info_t *obj)
     rocksdb_delete(p->inode->db, p->inode->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
     if (errstr) {
         info_printf(lio_ifd, 0, "ERROR: RocksDB error removing write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
-        free(errstr);
+        tbx_free(errstr);
     }
 
 error:
-    free(v);
+    tbx_free(v);
 }
 
 //*************************************************************************
@@ -487,24 +487,24 @@ void process_objects(warm_prep_db_t *wdb, apr_hash_t *obj_hash)
             rocksdb_put(wdb->p[modulo]->write_errors->db, wdb->p[modulo]->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), NULL, 0, &errstr);
             if (errstr) {
                 info_printf(lio_ifd, 0, "ERROR: RocksDB error putting write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
-                free(errstr);
+                tbx_free(errstr);
             }
         } else if (obj->write_error_state == 2) {  //** Write error clear
             errstr = NULL;
             rocksdb_delete(wdb->p[modulo]->write_errors->db, wdb->p[modulo]->write_errors->wopt, (const char *)&(obj->inode), sizeof(ex_id_t), &errstr);
             if (errstr) {
                 info_printf(lio_ifd, 0, "ERROR: RocksDB error removing write_error entry! fname=%s errstr=%s\n", obj->fname, errstr);
-                free(errstr);
+                tbx_free(errstr);
             }
         }
 
 next:
         apr_hash_set(obj_hash, obj->fname, APR_HASH_KEY_STRING, NULL);
         for (i=0; i<3; i++) {
-            if (obj->v_size[i] > 0) free(obj->vals[i]);
+            if (obj->v_size[i] > 0) tbx_free(obj->vals[i]);
         }
-        free(obj->fname);
-        free(obj);
+        tbx_free(obj->fname);
+        tbx_free(obj);
 
     }
 }
@@ -620,10 +620,10 @@ int main(int argc, char **argv)
     //** Cleanup the hashes
     for (hi=apr_hash_first(NULL, obj_hash); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&obj);
-        free(obj->fname);
-        if (obj->v_size[0] > 0) free(obj->vals[0]);
-        if (obj->v_size[1] > 0) free(obj->vals[1]);
-        free(obj);
+        tbx_free(obj->fname);
+        if (obj->v_size[0] > 0) tbx_free(obj->vals[0]);
+        if (obj->v_size[1] > 0) tbx_free(obj->vals[1]);
+        tbx_free(obj);
     }
 
     lio_shutdown();

@@ -24,6 +24,7 @@
 #include <string.h>
 #include <tbx/list.h>
 #include <tbx/log.h>
+#include <tbx/type_malloc.h>
 
 #include <lio/blacklist.h>
 #include <lio/cache.h>
@@ -112,8 +113,8 @@ int main(int argc, char **argv)
         lio_os_path_split(dtuple.path, &dir, &file);
         snprintf(fullname, OS_PATH_MAX, "%s/%s", dir, stuple.path);
         ftype = lio_exists(stuple.lc, stuple.creds, fullname);
-        free(dir);
-        free(file);
+        tbx_free(dir);
+        tbx_free(file);
     }
 
     //** Check on the source file

@@ -288,16 +288,16 @@ gop_op_status_t _sl_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_size_
             b = block[i];
             tbx_atomic_dec(b->data->ref_count);
             data_block_destroy(b->data);
-            free(b);
+            tbx_free(b);
         }
     }
 
     log_printf(15, "_sl_grow: sid=" XIDT " END used=" XOT " max=" XOT "\n", segment_id(seg), s->used_size, s->total_size);
 
     //** And cleanup
-    free(block);
-    free(req_list);
-    free(cap_list);
+    tbx_free(block);
+    tbx_free(req_list);
+    tbx_free(cap_list);
 
     status = (err == OP_STATE_SUCCESS) ? gop_success_status : gop_failure_status;
 
@@ -376,7 +376,7 @@ gop_op_status_t _sl_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new_siz
         log_printf(15, "_sl_shrink: sid=" XIDT " removing from interval bid=" XIDT " seg_off=" XOT " remove_isl=%d\n", segment_id(seg), data_block_id(b->data), b->seg_offset, i);
         tbx_atomic_dec(b->data->ref_count);
         data_block_destroy(b->data);
-        free(b);
+        tbx_free(b);
     }
 
     tbx_stack_free(stack, 0);
@@ -577,7 +577,7 @@ gop_op_status_t seglin_read_func(void *arg, int id)
     }
 
     if (s->crypt_enabled) {
-        free(cbuffer);
+        tbx_free(cbuffer);
     }
 
     gop_free(gop, OP_DESTROY);
@@ -718,7 +718,7 @@ int seglin_write_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw_hints_t 
     }
 
     if (s->crypt_enabled) {
-        free(cbuffer);
+        tbx_free(cbuffer);
     }
 
     return(err);
@@ -939,7 +939,7 @@ int sli_read_data(seglin_inspect_t *op, int *block_status, seglin_slot_t **b_lis
         }
     }
 
-    free(buffer);
+    tbx_free(buffer);
     return(((bad == 0) ? 0 : 1));
 }
 
@@ -1054,9 +1054,9 @@ finished:
         b_list[i]->len = block[i].block_len;
     }
 
-    if (b_list) free(b_list);
-    if (block) free(block);
-    if (block_status) free(block_status);
+    if (b_list) tbx_free(b_list);
+    if (block) tbx_free(block);
+    if (block_status) tbx_free(block_status);
     rs_query_destroy(s->rs, query);
 
     return(status);
@@ -1195,14 +1195,14 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
         log_printf(0, " ERROR: failed creating blocks! sid=" XIDT "\n", segment_id(slc->dseg));
         for (i=0; i<n_blocks; i++) {
             data_block_destroy(block[i]->data);
-            free(block[i]);
-            if (req_list[i].rid_key) free(req_list[i].rid_key);
+            tbx_free(block[i]);
+            if (req_list[i].rid_key) tbx_free(req_list[i].rid_key);
         }
 
         //** And cleanup
-        free(block);
-        free(req_list);
-        free(cap_list);
+        tbx_free(block);
+        tbx_free(req_list);
+        tbx_free(cap_list);
         gop_free(gop, OP_DESTROY);
         return(gop_failure_status);
     }
@@ -1232,9 +1232,9 @@ gop_op_status_t seglin_clone_func(void *arg, int id)
     opque_waitall(q);
     status = (gop_opque_tasks_failed(q) == 0) ? gop_success_status : gop_failure_status;
 
-    free(block);
-    free(req_list);
-    free(cap_list);
+    tbx_free(block);
+    tbx_free(req_list);
+    tbx_free(cap_list);
 
     gop_opque_free(q, OP_DESTROY);
 
@@ -1382,7 +1382,7 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_LINEAR);
 
@@ -1391,8 +1391,8 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
         ext = rs_query_print(s->rs, s->rsq);
         etext = tbx_stk_escape_text("=", '\\', ext);
         tbx_append_printf(segbuf, &sused, bufsize, "query_default=%s\n", etext);
-        free(etext);
-        free(ext);
+        tbx_free(etext);
+        tbx_free(ext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "n_rid_default=%d\n", s->n_rid_default);
 
@@ -1409,9 +1409,9 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
         tbx_append_printf(segbuf, &sused, bufsize, "crypt_enabled=%d\n", s->crypt_enabled);
         if (s->total_size > 0) {   //** Only dump the keys if the file has data
             etext = crypt_bin2etext(s->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
-            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); free(etext);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); tbx_free(etext);
             etext = crypt_bin2etext(s->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
-            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); free(etext);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); tbx_free(etext);
         }
     }
 
@@ -1524,8 +1524,8 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     etext = tbx_inip_get_string(fd, seggrp, "query_default", "");
     text = tbx_stk_unescape_text('\\', etext);
     s->rsq = rs_query_parse(s->rs, text);
-    free(text);
-    free(etext);
+    tbx_free(text);
+    tbx_free(etext);
     s->n_rid_default = tbx_inip_get_integer(fd, seggrp, "n_rid_default", 2);
 
     //** Basic size info
@@ -1566,13 +1566,13 @@ int seglin_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->cap_offset));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->seg_end));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XOT, &(b->len));
-            free(token);
+            tbx_free(token);
 
             //** Find the cooresponding cap
             b->data = data_block_deserialize(seg->ess, id, exp);
             if (b->data == NULL) {
                 log_printf(0, "Missing data block!  block id=" XIDT " seg=" XIDT "\n", id, segment_id(seg));
-                free(b);
+                tbx_free(b);
                 fail = 1;
             } else {
                 tbx_atomic_inc(b->data->ref_count);
@@ -1641,9 +1641,9 @@ void seglin_destroy(tbx_ref_t *ref)
     for (i=0; i<n; i++) {
         tbx_atomic_dec(b_list[i]->data->ref_count);
         data_block_destroy(b_list[i]->data);
-        free(b_list[i]);
+        tbx_free(b_list[i]);
     }
-    free(b_list);
+    tbx_free(b_list);
 
     if (s->db_cleanup != NULL) {
         while ((db = tbx_stack_pop(s->db_cleanup)) != NULL) {
@@ -1657,7 +1657,7 @@ void seglin_destroy(tbx_ref_t *ref)
 
     if (s->crypt_enabled) crypt_destroykeys(&(s->cinfo));
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
-    free(s);
+    tbx_free(s);
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
@@ -1667,7 +1667,7 @@ void seglin_destroy(tbx_ref_t *ref)
     apr_thread_cond_destroy(seg->cond);
     tbx_apr_pool_destroy(seg->mpool);
 
-    free(seg);
+    tbx_free(seg);
 }
 
 

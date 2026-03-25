@@ -160,8 +160,8 @@ int osaz_fake_attr_access(lio_os_authz_t *osa, lio_creds_t *c, lio_os_authz_loca
 
 void osaz_fake_destroy(lio_os_authz_t *osa)
 {
-    if (osa->priv) free(osa->priv);
-    free(osa);
+    if (osa->priv) tbx_free(osa->priv);
+    tbx_free(osa);
 }
 
 

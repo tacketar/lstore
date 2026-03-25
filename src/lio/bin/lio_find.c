@@ -22,6 +22,7 @@
 #include <string.h>
 #include <tbx/log.h>
 #include <tbx/stdinarray_iter.h>
+#include <tbx/type_malloc.h>
 #include <lio/lio.h>
 #include <lio/os.h>
 
@@ -103,12 +104,12 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {  //** Can't resolve path
                 fprintf(stderr, "Unable to resolve path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
             }
-            free(path);
+            tbx_free(path);
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
@@ -133,7 +134,7 @@ int main(int argc, char **argv)
                 info_printf(lio_ifd, 0, "%s\n", fname);
             }
 
-            free(fname);
+            tbx_free(fname);
         }
 
         lio_destroy_object_iter(tuple.lc, it);

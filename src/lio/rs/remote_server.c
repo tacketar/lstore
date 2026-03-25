@@ -228,7 +228,7 @@ void rsrs_abort_cb(void *arg, gop_mq_task_t *task)
             log_printf(5, "Aborting task\n");
             tbx_stack_delete_current(rsrs->pending, 0, 0);
             gop_mq_submit(rsrs->server_portal, gop_mq_task_new(rsrs->mqc, h->msg, NULL, NULL, 30));
-            free(h);  //** The msg is deleted after sending
+            tbx_free(h);  //** The msg is deleted after sending
             break;
         }
 
@@ -409,7 +409,7 @@ void rsrs_client_notify(lio_resource_service_fn_t *rs, int everyone)
             gop_mq_frame_set(h->config_frame, tbx_stk_strdup(config), clen, MQF_MSG_AUTO_FREE);
             gop_mq_submit(rsrs->server_portal, gop_mq_task_new(rsrs->mqc, h->msg, NULL, NULL, 30));
             tbx_stack_delete_current(rsrs->pending, 0, 0);
-            free(h);  //** The msg is auto destroyed after being sent
+            tbx_free(h);  //** The msg is auto destroyed after being sent
         } else if ((new_wakeup_time > h->reply_time) || (new_wakeup_time == 0)) {
             new_wakeup_time = h->reply_time;
         }
@@ -422,7 +422,7 @@ void rsrs_client_notify(lio_resource_service_fn_t *rs, int everyone)
 
     apr_thread_mutex_unlock(rsrs->lock);
 
-    free(config);
+    tbx_free(config);
 }
 
 //***********************************************************************
@@ -522,7 +522,7 @@ void rs_remote_server_destroy(lio_resource_service_fn_t *rs)
     if (rsrs->hostname) {
         gop_mq_portal_remove(rsrs->mqc, rsrs->server_portal);
         gop_mq_portal_destroy(rsrs->server_portal);
-        free(rsrs->hostname);
+        tbx_free(rsrs->hostname);
     }
 
     //** Shutdown the child RS
@@ -531,10 +531,10 @@ void rs_remote_server_destroy(lio_resource_service_fn_t *rs)
     //** Now do the normal cleanup
     tbx_apr_pool_destroy(rsrs->mpool);
     tbx_stack_free(rsrs->pending, 0);
-    free(rsrs->section);
-    free(rsrs->rs_local_section);
-    free(rsrs);
-    free(rs);
+    tbx_free(rsrs->section);
+    tbx_free(rsrs->rs_local_section);
+    tbx_free(rsrs);
+    tbx_free(rs);
 }
 
 
@@ -590,7 +590,7 @@ lio_resource_service_fn_t *rs_remote_server_create(void *arg, tbx_inip_file_t *f
         tbx_log_flush();
         abort();
     }
-    free(ctype);
+    tbx_free(ctype);
 
     //** Get the MQC
     rsrs->mqc = lio_lookup_service(ess, ESS_RUNNING, ESS_MQ);FATAL_UNLESS(rsrs->mqc != NULL);

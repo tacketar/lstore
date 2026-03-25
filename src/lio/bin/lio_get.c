@@ -138,7 +138,7 @@ int main(int argc, char **argv)
     while ((path = tbx_stdinarray_iter_next(it)) != NULL) {
         //** Get the source
         tuple = lio_path_resolve(lio_gc->auto_translate, path);
-        free(path);
+        tbx_free(path);
         if (tuple.is_lio == 0) {
             if (enable_local == 1) {
                 return_code = local_get(&tuple, bufsize, buffer, offset, len, cp_hints);
@@ -185,7 +185,7 @@ finished_early:
         lio_path_release(&tuple);
     }
 
-    free(buffer);
+    tbx_free(buffer);
     tbx_stdinarray_iter_destroy(it);
     lio_shutdown();
 

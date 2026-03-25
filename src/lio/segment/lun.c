@@ -190,7 +190,7 @@ void lun_global_state_create(int n_max_retry)
 
     if (lun_global != lg) {  //** IF different then someone else beat us to it.
         tbx_apr_pool_destroy(lg->mpool);
-        free(lg);
+        tbx_free(lg);
     }
 }
 
@@ -208,13 +208,13 @@ void lun_global_state_destroy()
     apr_thread_mutex_lock(lun_global->lock);
     n = (lun_global->used_retry >= lun_global->n_max_retry) ? lun_global->n_max_retry : lun_global->used_retry;
     for (i=0; i<n; i++) {
-        if (lun_global->retry[i].cap) free(lun_global->retry[i].cap);
+        if (lun_global->retry[i].cap) tbx_free(lun_global->retry[i].cap);
     }
     apr_thread_mutex_unlock(lun_global->lock);
 
     //** Free the emmory
     tbx_apr_pool_destroy(lun_global->mpool);
-    free(lun_global);
+    tbx_free(lun_global);
     lun_global = NULL;
 }
 
@@ -230,7 +230,7 @@ void lun_global_retry_add(ex_id_t sid, char *cap)
 
     apr_thread_mutex_lock(lun_global->lock);
     n = lun_global->slot_retry;
-    if (lun_global->retry[n].cap) free(lun_global->retry[n].cap);
+    if (lun_global->retry[n].cap) tbx_free(lun_global->retry[n].cap);
     lun_global->retry[n].t = apr_time_now();
     lun_global->retry[n].sid = sid;
     lun_global->retry[n].cap = tbx_stk_strdup(cap);
@@ -614,7 +614,7 @@ int slun_row_replace_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, i
                 err = m;
                 loop = kick_out + 10;  //** Kick us out of the loop
                 for (j=0; j<m; j++) {
-                    if (req_list[j].rid_key) free(req_list[j].rid_key);
+                    if (req_list[j].rid_key) tbx_free(req_list[j].rid_key);
                 }
                 goto oops;
             } else if (status.error_code == RS_ERROR_EMPTY_STACK) { //** No use looping
@@ -622,7 +622,7 @@ int slun_row_replace_fix(lio_segment_t *seg, data_attr_t *da, seglun_row_t *b, i
                 err = m;
                 loop = kick_out + 10;  //** Kick us out of the loop
                 for (j=0; j<m; j++) {
-                    if (req_list[j].rid_key) free(req_list[j].rid_key);
+                    if (req_list[j].rid_key) tbx_free(req_list[j].rid_key);
                 }
                 goto oops;
             }
@@ -833,8 +833,8 @@ gop_op_status_t _seglun_grow(lio_segment_t *seg, data_attr_t *da, ex_off_t new_s
                     data_block_destroy(block[i].data);
                 }
             }
-            free(block);
-            free(b);
+            tbx_free(block);
+            tbx_free(b);
             goto oops;
         }
 
@@ -949,8 +949,8 @@ gop_op_status_t _seglun_shrink(lio_segment_t *seg, data_attr_t *da, ex_off_t new
             if (cnt > 0) tbx_atomic_dec(b->block[i].data->ref_count);
             data_block_destroy(b->block[i].data);
         }
-        free(b->block);
-        free(b);
+        tbx_free(b->block);
+        tbx_free(b);
     }
 
     tbx_stack_free(stack, 0);
@@ -1355,22 +1355,22 @@ int seglun_row_decompose_test()
                 cerr += seglun_compare_buffers_print(&(ref_buf[offset]), buf, len);
             }
 
-            free(iovbuf);
+            tbx_free(iovbuf);
         }
 
         for (i=0; i < s->n_devices; i++) {
-            free(iov_ref[i]);
+            tbx_free(iov_ref[i]);
         }
     }
 
     ///** Clean up
-    free(ref_buf);
-    free(buf);
+    tbx_free(ref_buf);
+    tbx_free(buf);
     for (i=0; i<max_dev; i++) {
         data_block_destroy(block[i].data);
     }
-    free(block);
-    free(b);
+    tbx_free(block);
+    tbx_free(b);
     tbx_obj_put(&seg->obj);
 
     log_printf(0, " Total error count=%d\n", cerr);
@@ -1668,13 +1668,13 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
                         }
                     }
 
-                    if (s->crypt_enabled) free(rwb_table[j+i].crwb.crypt_buffer);
-                    free(rwb_table[j+i].crwb.ex_iov);
-                    if (s->crypt_enabled) free(rwb_table[j+i].crwb.lun_offset);
+                    if (s->crypt_enabled) tbx_free(rwb_table[j+i].crwb.crypt_buffer);
+                    tbx_free(rwb_table[j+i].crwb.ex_iov);
+                    if (s->crypt_enabled) tbx_free(rwb_table[j+i].crwb.lun_offset);
                     log_printf(15, "end stage i=%d gid=%d gop_completed_successfully=%d nerr=%d\n", i, gop_id(rwb_table[j+i].gop), gop_completed_successfully(rwb_table[j+i].gop), nerr);
                 }
 
-                if (rwb_table[j+i].iov != NULL) free(rwb_table[j+i].iov);
+                if (rwb_table[j+i].iov != NULL) tbx_free(rwb_table[j+i].iov);
                 if (rwb_table[j+i].gop != NULL) gop_free(rwb_table[j+i].gop, OP_DESTROY);
             }
 
@@ -1700,8 +1700,8 @@ gop_op_status_t seglun_rw_op(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     segment_unlock(seg);
 
     if (bused != bused_ptr) {
-        free(rwb_table);
-        free(bused);
+        tbx_free(rwb_table);
+        tbx_free(bused);
     }
     tbx_stack_free(stack, 0);
     gop_opque_free(q, OP_DESTROY);
@@ -2403,7 +2403,7 @@ gop_op_status_t seglun_clone_func(void *arg, int id)
             if (err != OP_STATE_SUCCESS) {
                 log_printf(15, "Error growing destination! dseg=" XIDT "\n", segment_id(slc->dseg));
                 sd->grow_break = 0; //** Undo the break flag
-                free(max_index);
+                tbx_free(max_index);
                 segment_unlock(slc->sseg);
                 return(gop_failure_status);
             }
@@ -2431,7 +2431,7 @@ gop_op_status_t seglun_clone_func(void *arg, int id)
         if (err != OP_STATE_SUCCESS) {
             log_printf(15, "Error growing destination! dseg=" XIDT "\n", segment_id(slc->dseg));
             sd->grow_break = 0; //** Undo the break flag
-            free(max_index);
+            tbx_free(max_index);
             segment_unlock(slc->sseg);
             return(gop_failure_status);
         }
@@ -2507,9 +2507,9 @@ gop_op_status_t seglun_clone_func(void *arg, int id)
     status = (gop_opque_tasks_failed(q) == 0) ? gop_success_status : gop_failure_status;
 
     gop_opque_free(q, OP_DESTROY);
-    free(max_index);
+    tbx_free(max_index);
     for (i=0; i<n_rows*ss->n_devices; i++) tbx_stack_free(gop_stack[i], 0);
-    free(gop_stack);
+    tbx_free(gop_stack);
     return(status);
 }
 
@@ -2679,7 +2679,7 @@ int seglun_serialize_text_try(lio_segment_t *seg, char *segbuf, int bufsize, lio
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_LUN);
 
@@ -2688,8 +2688,8 @@ int seglun_serialize_text_try(lio_segment_t *seg, char *segbuf, int bufsize, lio
         ext = rs_query_print(s->rs, s->rsq);
         etext = tbx_stk_escape_text("=", '\\', ext);
         tbx_append_printf(segbuf, &sused, bufsize, "query_default=%s\n", etext);
-        free(etext);
-        free(ext);
+        tbx_free(etext);
+        tbx_free(ext);
     }
 
     tbx_append_printf(segbuf, &sused, bufsize, "n_devices=%d\n", s->n_devices);
@@ -2700,9 +2700,9 @@ int seglun_serialize_text_try(lio_segment_t *seg, char *segbuf, int bufsize, lio
         tbx_append_printf(segbuf, &sused, bufsize, "crypt_enabled=%d\n", s->crypt_enabled);
         if (s->total_size > 0) {   //** Only dump the keys if the file has data
             etext = crypt_bin2etext(s->cinfo.crypt_key, SEGMENT_CRYPT_KEY_LEN);
-            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); free(etext);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_key=%s\n", etext); tbx_free(etext);
             etext = crypt_bin2etext(s->cinfo.crypt_nonce, SEGMENT_CRYPT_NONCE_LEN);
-            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); free(etext);
+            tbx_append_printf(segbuf, &sused, bufsize, "crypt_nonce=%s\n", etext); tbx_free(etext);
         }
     }
 
@@ -2745,7 +2745,7 @@ int seglun_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
         cap_exp = lio_exnode_exchange_create(EX_TEXT);
         err = seglun_serialize_text_try(seg, segbuf, bufsize, cap_exp);
         if (err == -1) { //** Need to grow the buffer
-            if (staticbuf != segbuf) free(segbuf);
+            if (staticbuf != segbuf) tbx_free(segbuf);
             lio_exnode_exchange_destroy(cap_exp);
 
             bufsize = 2*bufsize;
@@ -2760,7 +2760,7 @@ int seglun_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
 
     exnode_exchange_append_text(exp, segbuf);
 
-    if (staticbuf != segbuf) free(segbuf);
+    if (staticbuf != segbuf) tbx_free(segbuf);
 
     return(0);
 }
@@ -2829,8 +2829,8 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
     etext = tbx_inip_get_string(fd, seggrp, "query_default", "");
     text = tbx_stk_unescape_text('\\', etext);
     s->rsq = rs_query_parse(s->rs, text);
-    free(text);
-    free(etext);
+    tbx_free(text);
+    tbx_free(etext);
 
     s->n_devices = tbx_inip_get_integer(fd, seggrp, "n_devices", 2);
 
@@ -2892,7 +2892,7 @@ int seglun_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_
                 }
 
             }
-            free(token);
+            tbx_free(token);
 
             //** Finally add it to the ISL
             tbx_isl_insert(s->isl, (tbx_sl_key_t *)&(b->seg_offset), (tbx_sl_key_t *)&(b->seg_end), (tbx_sl_data_t *)b);
@@ -2967,10 +2967,10 @@ void seglun_destroy(tbx_ref_t *ref)
                 data_block_destroy(b_list[i]->block[j].data);
             }
         }
-        free(b_list[i]->block);
-        free(b_list[i]);
+        tbx_free(b_list[i]->block);
+        tbx_free(b_list[i]);
     }
-    free(b_list);
+    tbx_free(b_list);
 
     if (s->db_cleanup != NULL) {
         while ((db = tbx_stack_pop(s->db_cleanup)) != NULL) {
@@ -2985,7 +2985,7 @@ void seglun_destroy(tbx_ref_t *ref)
     if (s->crypt_enabled) crypt_destroykeys(&(s->cinfo));
 
     if (s->rsq != NULL) rs_query_destroy(s->rs, s->rsq);
-    free(s);
+    tbx_free(s);
 
     ex_header_release(&(seg->header));
 
@@ -2995,7 +2995,7 @@ void seglun_destroy(tbx_ref_t *ref)
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
-    free(seg);
+    tbx_free(seg);
 }
 
 //***********************************************************************

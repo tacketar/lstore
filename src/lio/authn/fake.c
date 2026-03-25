@@ -92,8 +92,8 @@ void authn_fake_print_running_config(lio_authn_t *an, FILE *fd, int print_sectio
 
 void authn_fake_destroy(lio_authn_t *an)
 {
-    if (an->priv) free(an->priv);
-    free(an);
+    if (an->priv) tbx_free(an->priv);
+    tbx_free(an);
 }
 
 //***********************************************************************

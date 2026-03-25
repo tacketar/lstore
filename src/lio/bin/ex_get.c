@@ -196,8 +196,8 @@ int main(int argc, char **argv)
 
     lio_shutdown();
 
-    free(rbuf);
-    free(wbuf);
+    tbx_free(rbuf);
+    tbx_free(wbuf);
 
     return(0);
 }

@@ -99,7 +99,7 @@ int data_block_set_attr(lio_data_block_t *b, char *key, char *val)
         attr->key = tbx_stk_strdup(key);
     }
 
-    if (attr->value != NULL) free(attr->value);  //** Free the old value
+    if (attr->value != NULL) tbx_free(attr->value);  //** Free the old value
     attr->value = (val != NULL) ? tbx_stk_strdup(val) : NULL;  //** Store the new one
 
     if (b->attr_stack == NULL) b->attr_stack = tbx_stack_new();
@@ -151,13 +151,13 @@ int data_block_serialize_text(lio_data_block_t *b, lio_exnode_exchange_t *exp)
 
     etext = tbx_stk_escape_text("=#[]", '\\', ds_get_cap(b->ds, b->cap, DS_CAP_READ));
     tbx_append_printf(capsbuf, &cused, bufsize, "read_cap=%s\n", etext);
-    free(etext);
+    tbx_free(etext);
     etext = tbx_stk_escape_text("=#[]", '\\', ds_get_cap(b->ds, b->cap, DS_CAP_WRITE));
     tbx_append_printf(capsbuf, &cused, bufsize, "write_cap=%s\n", etext);
-    free(etext);
+    tbx_free(etext);
     etext = tbx_stk_escape_text("=#[]", '\\', ds_get_cap(b->ds, b->cap, DS_CAP_MANAGE));
     tbx_append_printf(capsbuf, &cused, bufsize, "manage_cap=%s\n", etext);
-    free(etext);
+    tbx_free(etext);
 
     if (b->attr_stack != NULL) {  //** Deserialze the other attributes
         while ((attr = (lio_data_block_attr_t *)tbx_stack_pop(b->attr_stack)) != NULL) {
@@ -165,13 +165,13 @@ int data_block_serialize_text(lio_data_block_t *b, lio_exnode_exchange_t *exp)
                 ekey = tbx_stk_escape_text("=#[]", '\\', attr->key);
                 etext = tbx_stk_escape_text("=#[]", '\\', attr->value);
                 tbx_append_printf(capsbuf, &cused, bufsize, "%s=%s\n", ekey, etext);
-                free(etext);
-                free(ekey);
-                free(attr->value);
+                tbx_free(etext);
+                tbx_free(ekey);
+                tbx_free(attr->value);
             }
 
-            free(attr->key);
-            free(attr);
+            tbx_free(attr->key);
+            tbx_free(attr);
         }
     }
 
@@ -245,7 +245,7 @@ lio_data_block_t *data_block_deserialize_text(lio_service_manager_t *sm, ex_id_t
         log_printf(0, "data_block_deserialize_text: b->id=" XIDT " Unknown data service tpye=%s!\n", id, text);
         return(NULL);;
     }
-    free(text);
+    tbx_free(text);
 
     //** Make the space
     b = data_block_create_with_id(ds, id);
@@ -259,13 +259,13 @@ lio_data_block_t *data_block_deserialize_text(lio_service_manager_t *sm, ex_id_t
     tbx_atomic_set(b->initial_ref_count, i);
     etext = tbx_inip_get_string(cfd, capgrp, "read_cap", "");
     ds_set_cap(b->ds, b->cap, DS_CAP_READ, tbx_stk_unescape_text('\\', etext));
-    free(etext);
+    tbx_free(etext);
     etext = tbx_inip_get_string(cfd, capgrp, "write_cap", "");
     ds_set_cap(b->ds, b->cap, DS_CAP_WRITE, tbx_stk_unescape_text('\\', etext));
-    free(etext);
+    tbx_free(etext);
     etext = tbx_inip_get_string(cfd, capgrp, "manage_cap", "");
     ds_set_cap(b->ds, b->cap, DS_CAP_MANAGE, tbx_stk_unescape_text('\\', etext));
-    free(etext);
+    tbx_free(etext);
 
     //** Now cycle through any misc attributes set
     ele = tbx_inip_ele_first(tbx_inip_group_find(cfd, capgrp));
@@ -358,12 +358,12 @@ void data_block_destroy(lio_data_block_t *b)
     if (b->attr_stack != NULL) tbx_stack_free(b->attr_stack, 1);
 
     ds_cap_set_destroy(b->ds, b->cap, 1);
-    if (b->rid_key != NULL) free(b->rid_key);
+    if (b->rid_key != NULL) tbx_free(b->rid_key);
     log_printf(15, "b->id=" XIDT " ref_count=" AIT " p=%p\n", b->id, tbx_atomic_get(b->ref_count), b);
 
     if (b->warm != NULL) data_block_stop_warm(b);
 
-    free(b);
+    tbx_free(b);
 }
 
 

@@ -129,11 +129,11 @@ void ls_format_entry(tbx_log_fd_t *ifd, ls_entry_t *lse)
 
     //** Cleanup the attributes
     for (i=0; i<5; i++) {
-        if (lse->vals[i]) free(lse->vals[i]);
+        if (lse->vals[i]) tbx_free(lse->vals[i]);
     }
-    free(lse->fname);  //** and the name
-    if (lse->link) free(lse->link);  //** and the link if needed
-    free(lse);  //** And the struct itself
+    tbx_free(lse->fname);  //** and the name
+    if (lse->link) tbx_free(lse->link);  //** and the link if needed
+    tbx_free(lse);  //** And the struct itself
     return;
 }
 
@@ -236,7 +236,7 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
@@ -245,7 +245,7 @@ int main(int argc, char **argv)
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
@@ -253,7 +253,7 @@ int main(int argc, char **argv)
             rg_mode = 0;  //** Use the initial rp
         }
 
-        free(path);
+        tbx_free(path);
 
         for (i=0; i<n_keys; i++) v_size[i] = -tuple.lc->max_attr;
         memset(vals, 0, sizeof(vals));

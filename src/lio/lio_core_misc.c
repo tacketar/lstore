@@ -292,7 +292,7 @@ try_again:
                 if (is_special(':', startpath, j, '\\')) j++;
 
                 if (hints_string) {
-                    if (*hints_string) free(*hints_string);
+                    if (*hints_string) tbx_free(*hints_string);
                     *hints_string = NULL;
                 }
                 shortcut = lio_get_shortcut(label, hints_string);
@@ -301,8 +301,8 @@ try_again:
                     s = m + strlen(shortcut)+2;
                     tbx_type_malloc(dummy, char, s);
                     snprintf(dummy, s, "%s:%s", shortcut, startpath + j);
-                    free(shortcut);
-                    if (startpath != basepath) free(startpath);
+                    tbx_free(shortcut);
+                    if (startpath != basepath) tbx_free(startpath);
                     startpath = dummy;
 
                     if (*user == NULL) {   //** If we still don't have a user see if we can find a default one from the accounts files
@@ -324,7 +324,7 @@ try_again:
     if ((found == -1) && (uri == 0)) {
         if (is_special('/', startpath, k, '\\')) { //** Didn't find anything else to to parse
             if (path) {
-                if (*path) free(*path);
+                if (*path) tbx_free(*path);
                 *path = tbx_stk_strdup(startpath + k);
             }
             goto kick_out;
@@ -344,7 +344,7 @@ try_again:
         } else if (is_special('|', startpath, i, '\\')) {  //** Got an MQ name
             got_mq = 1;
             if ((i>k) && (mq_name)) {
-                if (*mq_name) free(*mq_name);
+                if (*mq_name) tbx_free(*mq_name);
                 *mq_name = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;  //** Move the starting forward to skip the MQ name
@@ -356,7 +356,7 @@ try_again:
         if (k < n) {
             if ((uri_type == 2) || got_at || got_mq) {
                 if (host) {
-                    if (*host) free(*host);
+                    if (*host) tbx_free(*host);
                     *host = tbx_stk_unescape_strndup('\\', startpath+k, -1);
                 }
             } else if (uri_type == 0) {
@@ -368,7 +368,7 @@ try_again:
     } else {
         if (k<n) {
             if ((i>k) && (host)) {
-                if (*host) free(*host);
+                if (*host) tbx_free(*host);
                 *host = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;  //** Move the starting forward to skip the MQ name
@@ -387,7 +387,7 @@ try_again:
             if (i>k) {
                 dummy = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
                 found2 = atoi(dummy);
-                free(dummy);
+                tbx_free(dummy);
                 if (found2 > 0) {  //** Got a valid port
                     k = i+1;
                     found = 1;
@@ -414,7 +414,7 @@ try_again:
     for (i=k; i<n; i++) {
         if (is_special(':', startpath, i, '\\')) {
             if ((i>k) && (cfg)) {
-                if (*cfg) free(*cfg);
+                if (*cfg) tbx_free(*cfg);
                 *cfg = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             found = 1;
@@ -427,10 +427,10 @@ try_again:
 
     if (!found) { //** At the end and we don't have a path so it's a cfg
         if ((i>k) && (cfg)) {
-            if (*cfg) free(*cfg);
+            if (*cfg) tbx_free(*cfg);
             *cfg = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             if (strcmp(*cfg, "@") == 0) {  //** Malformed path
-                free(*cfg);
+                tbx_free(*cfg);
                 *cfg = NULL;
                 ptype = -1;
             }
@@ -442,7 +442,7 @@ try_again:
     for (i=k; i<n; i++) {
         if (is_special(':', startpath, i, '\\')) {
             if ((i>k) && (section)) {
-                if (*section) free(*section);
+                if (*section) tbx_free(*section);
                 *section = tbx_stk_unescape_strndup('\\', startpath + k, i-k);
             }
             k = i+1;
@@ -454,12 +454,12 @@ handle_path:
 
     //** Anythng else is the path
     if ((k<n) && (path)) {
-        if (*path) free(*path);
+        if (*path) tbx_free(*path);
         *path = (path_is_literal == 0) ? tbx_stk_unescape_strndup('\\', startpath + k, -1) : tbx_stk_strdup(startpath + k);
     }
 
 kick_out:
-    if (startpath != basepath) free(startpath);
+    if (startpath != basepath) tbx_free(startpath);
     return(ptype);
 }
 
@@ -488,7 +488,7 @@ tbx_inip_file_t *lio_fetch_config(gop_mq_context_t *mqc, lio_creds_t *creds, con
             if (cfg) {
                 ifd = tbx_inip_string_read_with_hints_string(cfg, hints_string, 1);
                 if (ifd) tbx_inip_string_auto_destroy(ifd);
-                if (hints_string) free(hints_string);
+                if (hints_string) tbx_free(hints_string);
                 return(ifd);
             }
             return(NULL);
@@ -552,12 +552,12 @@ int parse_path_check(char *uri, char *user, char *mq_name, char *host, int port,
     if (strcmp_null(section, section2) != 0) {ret=1; printf("    ERROR: section=%s  section2=%s\n", section, section2); }
     if (strcmp_null(path, path2) != 0) {ret=1; printf("    ERROR: path=%s  path2=%s\n", path, path2); }
 
-    if (user2) free(user2);
-    if (mq_name2) free(mq_name2);
-    if (host2) free(host2);
-    if (cfg2) free(cfg2);
-    if (section2) free(section2);
-    if (path2) free(path2);
+    if (user2) tbx_free(user2);
+    if (mq_name2) tbx_free(mq_name2);
+    if (host2) tbx_free(host2);
+    if (cfg2) tbx_free(cfg2);
+    if (section2) tbx_free(section2);
+    if (path2) tbx_free(path2);
 
     return(ret);
 }
@@ -673,7 +673,7 @@ void lio_unified_object_iter_destroy(lio_unified_object_iter_t *it)
         destroy_local_object_iter(it->lit);
     }
 
-    free(it);
+    tbx_free(it);
 }
 
 //*************************************************************************

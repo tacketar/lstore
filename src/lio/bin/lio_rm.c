@@ -126,7 +126,7 @@ int main(int argc, char **argv)
         flist[i] = lio_path_resolve(lio_gc->auto_translate, path_list[i]);
         if (flist[i].is_lio < 0) {
             fprintf(stderr, "Unable to parse path: %s\n", path_list[i]);
-            free(path);
+            tbx_free(path);
             return_code = EINVAL;
             lio_path_release(&(flist[i]));
             continue;
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
             }
             lio_path_release(&(flist[i]));
             lio_os_regex_table_destroy(rpath[i]);
-            free(path_list[i]);
+            tbx_free(path_list[i]);
             gop_free(gop, OP_DESTROY);
         }
     }
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
         if (status.op_status != OP_STATE_SUCCESS) info_printf(lio_ifd, 0, "ERROR with %s\n", path_list[i]);
         lio_path_release(&(flist[i]));
         lio_os_regex_table_destroy(rpath[i]);
-        free(path_list[i]);
+        tbx_free(path_list[i]);
         gop_free(gop, OP_DESTROY);
     }
 
@@ -173,9 +173,9 @@ int main(int argc, char **argv)
 
     tbx_stdinarray_iter_destroy(piter);
 
-    free(flist);
-    free(rpath);
-    free(path_list);
+    tbx_free(flist);
+    tbx_free(rpath);
+    tbx_free(path_list);
 
 finished:
     lio_shutdown();

@@ -45,8 +45,8 @@ void blacklist_remove_rs_added(lio_blacklist_t *bl)
         if (r->rs_added > 0) {
             //if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_RS_ADDED: rid=%s\n", r->rid);
             apr_hash_set(bl->table, r->rid, APR_HASH_KEY_STRING, NULL);
-            free(r->rid);
-            free(r);
+            tbx_free(r->rid);
+            tbx_free(r);
         }
     }
 
@@ -97,8 +97,8 @@ int blacklist_check(lio_blacklist_t *bl, char *rid_key, int do_lock)
             log_printf(5, "EXPIRED rid=%s\n", bl_rid->rid);
             if (bl->notify) tbx_notify_printf(bl->notify, 1, NULL, "BLACKLIST_REMOVE_EXPIRED: rid=%s\n", bl_rid->rid);
             apr_hash_set(bl->table, bl_rid->rid, APR_HASH_KEY_STRING, NULL);
-            free(bl_rid->rid);
-            free(bl_rid);
+            tbx_free(bl_rid->rid);
+            tbx_free(bl_rid);
             bl_rid = NULL;  //** No blacklisting
         }
     }
@@ -120,13 +120,13 @@ void blacklist_destroy(lio_blacklist_t *bl)
     //** Destroy all the blacklist RIDs
     for (hi=apr_hash_first(NULL, bl->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&r);
-        free(r->rid);
-        free(r);
+        tbx_free(r->rid);
+        tbx_free(r);
     }
 
     apr_thread_mutex_destroy(bl->lock);
     tbx_apr_pool_destroy(bl->mpool);
-    free(bl);
+    tbx_free(bl);
 }
 
 //***************************************************************

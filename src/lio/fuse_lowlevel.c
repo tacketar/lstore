@@ -95,7 +95,7 @@ int ll_inode2path_from_ilut(lio_fuse_t *lfs, ex_id_t inode_target, char *path, i
 
     //** Cleanup up the dentry
     for (i=0; i<n_dirs; i++) {
-        if (dentry[i]) free(dentry[i]);
+        if (dentry[i]) tbx_free(dentry[i]);
     }
 
     return(err);
@@ -148,7 +148,7 @@ int ll_inode2path_from_os(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int
 
     log_printf(2, "END inode=" XIDT " path=%s\n", inode_target, path);
 
-    if (blob) free(blob);
+    if (blob) tbx_free(blob);
 
     *ftype_target = ftype;
     return(0);
@@ -276,7 +276,7 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
         if (os_inode_lut_get(lfs->ilut, 1, fe.attr.st_ino, &hparent, &hftype, &hlen, &hde) == 0) { //** Get the inode record
             log_printf(1, "REMOVING primary HARDLINK hparent=" XIDT " hde=%s fname=%s\n", hparent, hde, fname);
             os_inode_lut_dentry_del(lfs->ilut, 1, hparent, hde);
-            if (hde) free(hde);
+            if (hde) tbx_free(hde);
         }
 hl_exists:  //** We've done any cleanup so continue as normal
     }
@@ -501,7 +501,7 @@ retry:
 
     if (err < 0) {  //** On error err is negative
         if (buf != tmpbuf) {
-            free(buf);
+            tbx_free(buf);
             TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_LISTXATTR].finished);
         }
         if (force_os == 0) { force_os = 1; goto retry; }
@@ -518,7 +518,7 @@ retry:
         fuse_reply_err(req, ERANGE);
     }
 
-    if (buf != tmpbuf) free(buf);
+    if (buf != tmpbuf) tbx_free(buf);
 }
 
 //*****************************************************************
@@ -551,7 +551,7 @@ retry:
     _lfs_hint_release(lfs, &ug);
 
     if (err < 0) {  //** On error err is negative
-        if (buf != tmpbuf) free(buf);
+        if (buf != tmpbuf) tbx_free(buf);
         if (err != -ENODATA) {  //** No need to rety if the data is missing
             if (force_os == 0) { force_os = 1; goto retry; }
         }
@@ -568,7 +568,7 @@ retry:
         fuse_reply_err(req, ERANGE);
     }
 
-    if (buf != tmpbuf) free(buf);
+    if (buf != tmpbuf) tbx_free(buf);
 }
 
 //*****************************************************************
@@ -652,7 +652,7 @@ retry:
     _lfs_hint_release(lfs, &ug);
 
     if (dit->fsit == NULL) {
-        free(dit);
+        tbx_free(dit);
         if (force_os == 0) { force_os = 1; goto retry; }
         fuse_reply_err(req, ENOENT);
         return;
@@ -685,15 +685,15 @@ void ll_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
         while ((de = (ll_dir_entry_t *)tbx_stack_pop(dit->stack)) != NULL) {
             log_printf(15, "fname=%s\n", de->dentry);
             tbx_log_flush();
-            free(de->dentry);
-            free(de);
+            tbx_free(de->dentry);
+            tbx_free(de);
         }
 
         tbx_stack_free(dit->stack, 0);
     }
 
     if (dit->fsit) lio_fs_closedir(dit->fsit);
-    free(dit);
+    tbx_free(dit);
 
     fuse_reply_err(req, 0);
 }
@@ -751,7 +751,7 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         ftype = 0;
         err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->fe.attr), NULL, &ftype);
         if (err != 0) {   //** Nothing left to process
-            free(de);
+            tbx_free(de);
             if (err == 1) {
                 fuse_reply_buf(req, buf, bused);  //** Flush the buffer if data
                 return;
@@ -1229,7 +1229,7 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
     if (err < 0) {
         fuse_reply_err(req, -err);
         if (buf != tmpbuf) {
-            free(buf);
+            tbx_free(buf);
             TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_FLL_LISTXATTR].finished);
         }
         return;
@@ -1237,7 +1237,7 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
 
     fuse_reply_buf(req, buf, err);
 
-    if (buf != tmpbuf) free(buf);
+    if (buf != tmpbuf) tbx_free(buf);
 }
 
 //********************************************************
@@ -1417,7 +1417,7 @@ void lfs_ll_destroy(void *private_data)
 {
     lio_fuse_t *lfs = _get_lfs_context();
 
-    if (lfs->ilut_section) free(lfs->ilut_section);
+    if (lfs->ilut_section) tbx_free(lfs->ilut_section);
     if (lfs->ilut) os_inode_lut_destroy(lfs->ilut);
 
     lfs_destroy(lfs);

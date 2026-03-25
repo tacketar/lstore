@@ -85,13 +85,13 @@ int main(int argc, char **argv)
         *tuple = lio_path_resolve(lio_gc->auto_translate, path);
         if (tuple->is_lio < 0) {
             fprintf(stderr, "Unable to parse path: %s\n", path);
-            free(path);
+            tbx_free(path);
             lio_path_release(tuple);
-            free(tuple);
+            tbx_free(tuple);
             return_code = EINVAL;
             continue;
         }
-        free(path);
+        tbx_free(path);
         rpath = lio_os_path_glob2regex(tuple->path);
         status = gop_sync_exec_status(lio_remove_regex_gop(tuple->lc, tuple->creds, rpath, NULL, OS_OBJECT_DIR_FLAG, 0, lio_parallel_task_count));
         if (status.op_status != OP_STATE_SUCCESS) {
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
             info_printf(lio_ifd, 0, "Failed with directory %s\n", tuple->path);
         }
 
-        lio_path_release(tuple); free(tuple);
+        lio_path_release(tuple); tbx_free(tuple);
         lio_os_regex_table_destroy(rpath);
     }
 

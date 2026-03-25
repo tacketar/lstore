@@ -144,7 +144,7 @@ int main(int argc, char **argv)
         fclose(fd);
     }
 
-    if (exnode_data != NULL) free(exnode_data);
+    if (exnode_data != NULL) tbx_free(exnode_data);
 
     //** Spawn the tasks
     it = tbx_stdinarray_iter_create(argc-start_index, (const char **)(argv+start_index));
@@ -157,12 +157,12 @@ int main(int argc, char **argv)
             *tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple->is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
-                free(tuple);
+                tbx_free(path);
+                tbx_free(tuple);
                 return_code = EINVAL;
                 continue;
             }
-            free(path);
+            tbx_free(path);
             gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, mkdir_fn, tuple, NULL, 1);
             gop_set_private(gop, tuple);
             log_printf(0, "gid=%d fname=%s\n", gop_id(gop), tuple->path);
@@ -185,7 +185,7 @@ int main(int argc, char **argv)
             }
             gop_free(gop, OP_DESTROY);
             lio_path_release(tuple);
-            free(tuple);
+            tbx_free(tuple);
         }
     }
 

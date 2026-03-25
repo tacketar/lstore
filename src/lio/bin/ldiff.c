@@ -180,8 +180,8 @@ int main(int argc, char **argv)
     printf("\n");
     printf("Bad bytes: " I64T " Bad groups: " I64T "\n", bad_bytes, bad_groups);
 
-    free(buf1);
-    free(buf2);
+    tbx_free(buf1);
+    tbx_free(buf2);
 
     fclose(fd1);
     fclose(fd2);

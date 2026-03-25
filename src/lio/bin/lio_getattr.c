@@ -241,12 +241,12 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
             }
-            free(path);
+            tbx_free(path);
             lio_path_wildcard_auto_append(&tuple);
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
@@ -303,10 +303,10 @@ int main(int argc, char **argv)
             info_printf(lio_ifd, 0, end_obj_fmt, fname);
 
             //** Free the space
-            free(fname);
+            tbx_free(fname);
             for (i=0; i<n_keys; i++) {
-                if (val[i] != NULL) free(val[i]);
-                if (attr_regex != NULL) free(key[i]);
+                if (val[i] != NULL) tbx_free(val[i]);
+                if (attr_regex != NULL) tbx_free(key[i]);
             }
         }
 
@@ -334,10 +334,10 @@ int main(int argc, char **argv)
         lio_os_regex_table_destroy(attr_regex);
     }
 
-    free(new_obj_fmt);
-    free(end_obj_fmt);
-    free(attr_fmt);
-    free(attr_sep);
+    tbx_free(new_obj_fmt);
+    tbx_free(end_obj_fmt);
+    tbx_free(attr_fmt);
+    tbx_free(attr_sep);
     tbx_stdinarray_iter_destroy(it_args);
 
     lio_shutdown();

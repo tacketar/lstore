@@ -113,7 +113,7 @@ int rc_parse(char *remote_config, char **rc_host, char **rc_fname)
     fname = tbx_stk_string_token(NULL, "@", &bstate, &i);
 
     if (!*rc_host) {
-        if (rc) free(rc);
+        if (rc) tbx_free(rc);
         return(1);
     }
 
@@ -314,7 +314,7 @@ void rcs_config_send(rc_t *rc, lio_creds_t *creds, gop_mq_frame_t *fid, mq_msg_t
         nbytes = 0;
         timestamp = 0;
     }
-    free(path);
+    tbx_free(path);
     tbx_type_malloc_clear(buf, uint8_t, 32);
     n = tbx_zigzag_encode(timestamp, buf);
     gop_mq_msg_append_mem(msg, buf, n, MQF_MSG_AUTO_FREE);
@@ -496,10 +496,10 @@ int rc_client_get_config(gop_mq_context_t *mqc, lio_creds_t *creds, char *rc_str
 
     if (!mqc) gop_mq_destroy_context(rc.mqc);
 
-    if (rc_host) free(rc_host);
-    if (rc_file) free(rc_file);
-    if (rc_section) free(rc_section);
-    if (mq) free(mq);
+    if (rc_host) tbx_free(rc_host);
+    if (rc_file) tbx_free(rc_file);
+    if (rc_section) tbx_free(rc_section);
+    if (mq) tbx_free(mq);
 
     return((err == OP_STATE_SUCCESS) ? 0 : 1);
 }
@@ -555,13 +555,13 @@ void _rc_configs_destroy(rc_configs_t *cfgs)
     for (hi=apr_hash_first(NULL, cfgs->table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&obj);
         apr_hash_set(cfgs->table, obj->object, APR_HASH_KEY_STRING, NULL);
-        for (i=0; i<obj->n_account; i++) free(obj->account[i]);
-        if (obj->account) free(obj->account);
-        free(obj->object);
-        free(obj);
+        for (i=0; i<obj->n_account; i++) tbx_free(obj->account[i]);
+        if (obj->account) tbx_free(obj->account);
+        tbx_free(obj->object);
+        tbx_free(obj);
     }
     tbx_apr_pool_destroy(cfgs->mpool);
-    free(cfgs);
+    tbx_free(cfgs);
 }
 
 //***********************************************************************
@@ -758,7 +758,7 @@ void rc_server_destroy()
 
     //** Remove and destroy the server portal if needed
     if (rc_server->host) {
-        free(rc_server->host);
+        tbx_free(rc_server->host);
         gop_mq_portal_remove(lio_gc->mqc, rc_server->server_portal);
         gop_mq_portal_destroy(rc_server->server_portal);
     }
@@ -769,9 +769,9 @@ void rc_server_destroy()
     apr_thread_cond_destroy(rc_server->cond);
     tbx_apr_pool_destroy(rc_server->mpool);
 
-    if (rc_server->prefix) free(rc_server->prefix);
-    if (rc_server->section) free(rc_server->section);
-    if (rc_server->config_file) free(rc_server->config_file);
-    free(rc_server);
+    if (rc_server->prefix) tbx_free(rc_server->prefix);
+    if (rc_server->section) tbx_free(rc_server->section);
+    if (rc_server->config_file) tbx_free(rc_server->config_file);
+    tbx_free(rc_server);
     rc_server = NULL;
 }

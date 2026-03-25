@@ -44,7 +44,7 @@ void ex_header_init(lio_ex_header_t *eh)
 
 void ex_header_release(lio_ex_header_t *h)
 {
-    if (h->name != NULL) free(h->name);
+    if (h->name != NULL) tbx_free(h->name);
 }
 
 
@@ -67,7 +67,7 @@ lio_ex_header_t *ex_header_create()
 void ex_header_destroy(lio_ex_header_t *eh)
 {
     ex_header_release(eh);
-    free(eh);
+    tbx_free(eh);
 }
 
 //*************************************************************************
@@ -80,7 +80,7 @@ char *ex_header_get_name(lio_ex_header_t *h)
 }
 void ex_header_set_name(lio_ex_header_t *h, char *name)
 {
-    if (h->name != NULL) free(h->name);
+    if (h->name != NULL) tbx_free(h->name);
     h->name = tbx_stk_strdup(name);
 }
 

@@ -453,14 +453,14 @@ void segdc_destroy(tbx_ref_t *ref)
 
     segdc_priv_t *s = (segdc_priv_t *)seg->priv;
 
-    if (s->fname != NULL) free(s->fname);
-    if (s->qname != NULL) free(s->qname);
+    if (s->fname != NULL) tbx_free(s->fname);
+    if (s->qname != NULL) tbx_free(s->qname);
 
-    free(s);
+    tbx_free(s);
 
     ex_header_release(&(seg->header));
 
-    free(seg);
+    tbx_free(seg);
 }
 
 
@@ -637,7 +637,7 @@ void sdc_close_db(sdc_db_t *dbc)
     rocksdb_writeoptions_destroy(dbc->wopts);
     rocksdb_readoptions_destroy(dbc->ropts);
 
-    free(dbc->path);
+    tbx_free(dbc->path);
 }
 
 //***********************************************************************
@@ -674,7 +674,7 @@ void dbc_data_iter_delete_sid(sdc_context_t *sdc, rocksdb_iterator_t *it, ex_id_
         if (kptr->sid == sid) {
             key = *kptr;
             rocksdb_delete(sdc->db_sinfo.db, sdc->db_sinfo.wopts, (const char *)&key, sizeof(sdc_data_key_t), &errstr);
-            if (errstr != NULL) { free(errstr); errstr = NULL; }
+            if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
             kptr = dbc_iter_key_advance(sdc, it, sizeof(sdc_data_key_t), 1);
         } else {   //** SID has changed so kick out
             return;
@@ -726,12 +726,12 @@ int sdc_dirty_cleanup(sdc_context_t *sdc)
     path = tbx_stk_strdup(db_open->path);
     sdc_close_db(db_open);
     sdc_open_db(db_open, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_sid_compare_op, db_sid_compare_name), 0);
-    free(path);
+    tbx_free(path);
 
     path = tbx_stk_strdup(db_dirty->path);
     sdc_close_db(db_dirty);
     sdc_open_db(db_dirty, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_page_compare_op, db_page_compare_name), 0);
-    free(path);
+    tbx_free(path);
 
     //** Cleanup
     rocksdb_iter_destroy(it_dirty);
@@ -762,7 +762,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
     path = tbx_stk_strdup(db_lru->path);
     sdc_close_db(db_lru);
     sdc_open_db(db_lru, path, rocksdb_comparator_create(sdc, db_generic_compare_destroy, db_lru_compare_op, db_lru_compare_name), 1);
-    free(path);
+    tbx_free(path);
 
     //** Make the iterators
     it_sinfo = rocksdb_create_iterator(db_sinfo->db, db_sinfo->ropts);
@@ -782,7 +782,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
                 rsinfo = (void *)rocksdb_iter_key(it_sinfo, &n);
                 klru.sid = *key_sinfo_ptr; klru.last_used = rsinfo->last_used;
                 rocksdb_put(db_lru->db, db_lru->wopts, (const char *)&klru, sizeof(sdc_lru_key_t), (const char *)NULL, 0, &errstr);
-                if (errstr != NULL) { free(errstr); errstr = NULL; }
+                if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
 
                 //**Advance to the next entry on both
                 key_sinfo_ptr = dbc_iter_key_advance(sdc, it_sinfo, sizeof(ex_id_t), 1);
@@ -798,7 +798,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
                 sid = *key_sinfo_ptr;
                 key_sinfo_ptr = dbc_iter_key_advance(sdc, it_sinfo, sizeof(ex_id_t), 1);
                 rocksdb_delete(db_sinfo->db, db_sinfo->wopts, (const char *)&sid, sizeof(ex_id_t), &errstr);
-                if (errstr != NULL) { free(errstr); errstr = NULL; }
+                if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
             }
         } else if (key_data_ptr) { //** Only the data DB has a key
             sid = key_data_ptr->sid;
@@ -807,7 +807,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
         } else {   //** Only the sinfo DB has a valid key
             sid = *key_sinfo_ptr;
             rocksdb_delete(db_sinfo->db, db_sinfo->wopts, (const char *)&sid, sizeof(ex_id_t), &errstr);
-            if (errstr != NULL) { free(errstr); errstr = NULL; }
+            if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
         }
     }
 
@@ -995,9 +995,9 @@ void segment_disk_cache_context_destroy(void *arg)
     tbx_io_fclose(sdc->fd_lock);  //** This also releases the lock
 
     //** Clean up
-    free(sdc->group);
-    free(sdc->loc);
-    free(sdc);
+    tbx_free(sdc->group);
+    tbx_free(sdc->loc);
+    tbx_free(sdc);
 }
 
 //***********************************************************************

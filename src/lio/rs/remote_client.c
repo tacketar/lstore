@@ -290,7 +290,7 @@ gop_op_status_t rsrc_response_get_config(void *task_arg, int tid)
             log_printf(0, "ERROR: writing target temp file!  tmp=%s target=%s n_config=%d errno=%d\n", fname_tmp, rsrc->child_target_file, n_config, eno);
             fprintf(stderr, "ERROR: writing target temp file!  tmp=%s target=%s n_config=%d errno=%d\n", fname_tmp, rsrc->child_target_file, n_config, eno);
         }
-        free(fname_tmp);
+        tbx_free(fname_tmp);
     }
 
     //** Clean up
@@ -515,13 +515,13 @@ void rs_remote_client_destroy(lio_resource_service_fn_t *rs)
 
     //** Now do the normal cleanup
     tbx_apr_pool_destroy(rsrc->mpool);
-    free(rsrc->host_remote_rs);
-    free(rsrc->child_target_file);
-    free(rsrc->section);
-    free(rsrc->local_child_section);
-    if (rsrc->rrs_test_section) free(rsrc->rrs_test_section);
-    free(rsrc);
-    free(rs);
+    tbx_free(rsrc->host_remote_rs);
+    tbx_free(rsrc->child_target_file);
+    tbx_free(rsrc->section);
+    tbx_free(rsrc->local_child_section);
+    if (rsrc->rrs_test_section) tbx_free(rsrc->rrs_test_section);
+    tbx_free(rsrc);
+    tbx_free(rs);
 }
 
 
@@ -572,7 +572,7 @@ lio_resource_service_fn_t *rs_remote_client_create(void *arg, tbx_inip_file_t *f
             tbx_log_flush();
             abort();
         }
-        free(ctype);
+        tbx_free(ctype);
     }
 
     //** Contact the Remote RS and get the initial config
@@ -615,7 +615,7 @@ lio_resource_service_fn_t *rs_remote_client_create(void *arg, tbx_inip_file_t *f
         tbx_log_flush();
         abort();
     }
-    free(ctype);
+    tbx_free(ctype);
 
     //** Set up the fn ptrs
     rs->print_running_config = rsrc_print_running_config;

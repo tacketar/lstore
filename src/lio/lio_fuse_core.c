@@ -217,13 +217,13 @@ SHADOW_CODE(
         tbx_stack_move_to_top(sdir->stack);
         while ((dentry = tbx_stack_pop(sdir->stack)) != NULL) {
             if (dentry->matched != 1) { SHADOW_ERROR("prefix_fname=%s dentry=%s MISSING from LIO\n", sdir->fname, dentry->dentry); }
-            if (dentry->dentry) free(dentry->dentry);
-            free(dentry);
+            if (dentry->dentry) tbx_free(dentry->dentry);
+            tbx_free(dentry);
         }
         tbx_stack_free(sdir->stack, 1);
 
-        free(sdir->fname);
-        free(sdir);
+        tbx_free(sdir->fname);
+        tbx_free(sdir);
     }
 
     //***********************************************************************
@@ -411,13 +411,13 @@ void lfs_pending_delete_destroy(lio_fuse_t *lfs)
     for (hi=apr_hash_first(NULL, lfs->pending_delete_table); hi != NULL; hi = apr_hash_next(hi)) {
        apr_hash_this(hi, NULL, &hlen, (void **)&map);
        apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, NULL);
-       free(map->original);
-       free(map->mapping);
-       free(map);
+       tbx_free(map->original);
+       tbx_free(map->mapping);
+       tbx_free(map);
     }
     apr_thread_mutex_unlock(lfs->lock);
 
-    if (lfs->pending_delete_prefix) free(lfs->pending_delete_prefix);
+    if (lfs->pending_delete_prefix) tbx_free(lfs->pending_delete_prefix);
 }
 
 //*************************************************************************
@@ -469,9 +469,9 @@ void lfs_pending_delete_mapping_remove(lio_fuse_t *lfs, const char *path)
         //** Remove mappings in both directions
         apr_hash_set(lfs->pending_delete_table, map->original, APR_HASH_KEY_STRING, NULL);
         apr_hash_set(lfs->pending_delete_table, map->mapping, APR_HASH_KEY_STRING, NULL);
-        if (map->original) free(map->original);
-        if (map->mapping) free(map->mapping);
-        free(map);
+        if (map->original) tbx_free(map->original);
+        if (map->mapping) tbx_free(map->mapping);
+        tbx_free(map);
     }
 
     //** Update the count
@@ -581,7 +581,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
             } else if (strncmp(flink, OS_SL_OOB_MAGIC, OS_SL_OOB_MAGIC_LEN) == 0) {
                 sbuf->st_size -= OS_SL_OOB_MAGIC_LEN;
             }
-            free(flink);
+            tbx_free(flink);
         }
     }
 
@@ -594,7 +594,7 @@ int lfs_stat(const char *fname, struct stat *sbuf, struct fuse_file_info *fi)
         }
     )
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     return(err);
 }
 
@@ -623,15 +623,15 @@ int lfs_closedir(const char *fname, struct fuse_file_info *fi)
         while ((de = (lfs_dir_entry_t *)tbx_stack_pop(dit->stack)) != NULL) {
             log_printf(15, "fname=%s\n", de->dentry);
             tbx_log_flush();
-            free(de->dentry);
-            free(de);
+            tbx_free(de->dentry);
+            tbx_free(de);
         }
 
         tbx_stack_free(dit->stack, 0);
     }
 
     if (dit->fsit) lio_fs_closedir(dit->fsit);
-    free(dit);
+    tbx_free(dit);
 
     return(0);
 }
@@ -654,7 +654,7 @@ int lfs_opendir(const char *fname, struct fuse_file_info *fi)
     SHADOW_CODE(shadow_opendir(fname, dit);)
 
     if (dit->fsit == NULL) {
-        free(dit);
+        tbx_free(dit);
         return(-EACCES);
     }
 
@@ -720,7 +720,7 @@ LFS_READDIR()
         tbx_type_malloc(de, lfs_dir_entry_t, 1);
         err = lio_fs_readdir(dit->fsit, &(de->dentry), &(de->stat), NULL, NULL);
         if (err != 0) {   //** Nothing left to process
-            free(de);
+            tbx_free(de);
             return((err == 1) ? 0 : -EIO);
         }
 
@@ -780,7 +780,7 @@ int lfs_chmod(const char *fname, mode_t mode)
 
     SHADOW_GENERIC_COMPARE(fname, err, chmod(sfname, mode));
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     return(err);
 }
 
@@ -807,7 +807,7 @@ int lfs_chown(const char *fname, uid_t owner, gid_t group)
 
     SHADOW_GENERIC_COMPARE(fname, err, chown(sfname, owner, group));
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     return(err);
 }
 
@@ -843,7 +843,7 @@ int lfs_unlink(const char *fname)
     mpath = lfs_pending_delete_mapping_get(lfs, fname);
     if (mpath != fname) { //** We have a pending delete removal
         err = lfs_pending_delete_remove_object(lfs, fname, mpath);
-        if (mpath) free(mpath);
+        if (mpath) tbx_free(mpath);
     } else {
         err = lio_fs_object_remove(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), fname, OS_OBJECT_FILE_FLAG);
         _lfs_hint_release(lfs, &ug);
@@ -933,7 +933,7 @@ int lfs_open(const char *fname, struct fuse_file_info *fi)
         }
     )
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     if (!fd) return(-errno);  //On error lio_fs_open sets the error code in errno
     return(0);
 }
@@ -969,7 +969,7 @@ int lfs_release(const char *fname, struct fuse_file_info *fi)
                 SHADOW_ERROR("fnam=%s lfd=%p sfd=%d lerr=%d serr=%d\n", fname, fd, sfd->sfd, err, errno);
             }
         }
-        free(sfd);
+        tbx_free(sfd);
     )
 
     return(err);
@@ -1142,7 +1142,7 @@ int lfs_truncate(const char *fname, off_t new_size)
 
     SHADOW_GENERIC_COMPARE(fname, err, truncate(sfname, new_size));
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     return(err);
 }
 
@@ -1186,7 +1186,7 @@ int lfs_utimens(const char *fname, const struct timespec tv[2], struct fuse_file
     err = lio_fs_utimens(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, tv);
     _lfs_hint_release(lfs, &ug);
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
     return(err);
 }
 
@@ -1212,7 +1212,7 @@ int lfs_listxattr(const char *fname, char *list, size_t size)
     mpath = lfs_pending_delete_mapping_get(lfs, fname);
     err = lio_fs_listxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, list, size);
     _lfs_hint_release(lfs, &ug);
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
 
     SHADOW_CODE(shadow_listxattr(fname, list, size, err);)
     return(err);
@@ -1239,7 +1239,7 @@ int lfs_getxattr(const char *fname, const char *name, char *buf, size_t size, ui
     err = lio_fs_getxattr(lfs->fs, _get_fuse_ug(lfs, &ug, fuse_get_context()), mpath, name, buf, size);
     _lfs_hint_release(lfs, &ug);
 
-    if (mpath != fname) free(mpath);
+    if (mpath != fname) tbx_free(mpath);
 
     SHADOW_CODE(
         char sbuf[size+1];
@@ -1752,11 +1752,11 @@ void lfs_destroy(void *private_data)
     lfs_pending_delete_destroy(lfs);
 
     //** Clean up everything else
-    if (lfs->lfs_section) free(lfs->lfs_section);
+    if (lfs->lfs_section) tbx_free(lfs->lfs_section);
     if (lfs->id) free (lfs->id);
-    free(lfs->mount_point);
+    tbx_free(lfs->mount_point);
     tbx_apr_pool_destroy(lfs->mpool);
-    free(lfs);
+    tbx_free(lfs);
 
     lio_shutdown(); // Reference counting in this function protects against shutdown if lio is still in use elsewhere
 }

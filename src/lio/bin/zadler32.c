@@ -90,6 +90,6 @@ int main(int argc, char **argv)
         printf("%08x  %s\n", aval, fname);
     }
 
-    free(buffer);
+    tbx_free(buffer);
     return(0);
 }

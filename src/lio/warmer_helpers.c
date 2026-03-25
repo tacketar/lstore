@@ -98,7 +98,7 @@ warm_db_t *open_a_db(char *db_path, rocksdb_comparator_t *cmp, int mode)
 
         db->db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists
-            free(errstr);
+            tbx_free(errstr);
             errstr = NULL;
 
             if (mode == DB_OPEN_WIPE_CLEAN) { //** Remove it
@@ -160,7 +160,7 @@ void close_a_db(warm_db_t *db)
     rocksdb_close(db->db);
     rocksdb_writeoptions_destroy(db->wopt);
     rocksdb_readoptions_destroy(db->ropt);
-    free(db);
+    tbx_free(db);
 }
 
 //=========================================================================
@@ -190,7 +190,7 @@ int warm_put_inode(warm_db_t *db, ex_id_t inode, int state, int nfailed, char *n
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
-        free(errstr);
+        tbx_free(errstr);
     }
 
     return((errstr == NULL) ? 0 : 1);
@@ -245,11 +245,11 @@ int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int s
 
     rocksdb_put(db->db, db->wopt, key, klen, (const char *)buf, n, &errstr);
 
-    free(key);
+    tbx_free(key);
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
-        free(errstr);
+        tbx_free(errstr);
     }
 
     return((errstr == NULL) ? 0 : 1);
@@ -292,7 +292,7 @@ warm_results_db_part_t *create_results_part_db(char *db_base, int n_part)
     tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
     sprintf(db_path, "%s/inode", db_base); p->inode = create_a_db(db_path, NULL);
     sprintf(db_path, "%s/rid", db_base); p->rid = create_a_db(db_path, NULL);
-    free(db_path);
+    tbx_free(db_path);
 
     return(p);
 }
@@ -321,7 +321,7 @@ warm_results_db_t *create_results_db(char *db_base, int n_partitions)
 
         r->p[i] = create_results_part_db(db_path, i);
     }
-    free(db_path);
+    tbx_free(db_path);
 
     //** Store the partitions
     put_partitions(db_base, n_partitions);
@@ -343,7 +343,7 @@ warm_results_db_part_t *open_results_part_db(char *db_base, int mode, int n_part
     tbx_type_malloc(db_path, char, strlen(db_base) + 1 + 5 + 1);
     sprintf(db_path, "%s/inode", db_base); p->inode = open_a_db(db_path, NULL, mode);
     sprintf(db_path, "%s/rid", db_base); p->rid = open_a_db(db_path, NULL, mode);
-    free(db_path);
+    tbx_free(db_path);
 
     return(p);
 }
@@ -373,7 +373,7 @@ warm_results_db_t *open_results_db(char *db_base, int mode)
         sprintf(db_path, "%s/%d", db_base, i);
         r->p[i] = open_results_part_db(db_path, mode, i);
     }
-    free(db_path);
+    tbx_free(db_path);
 
     return(r);
 }
@@ -387,7 +387,7 @@ void close_results_db_part(warm_results_db_part_t *p)
     close_a_db(p->inode);
     close_a_db(p->rid);
 
-    free(p);
+    tbx_free(p);
 }
 
 
@@ -402,8 +402,8 @@ void close_results_db(warm_results_db_t *r)
     for (i=0; i<r->n_partitions; i++) {
         close_results_db_part(r->p[i]);
     }
-    free(r->p);
-    free(r);
+    tbx_free(r->p);
+    tbx_free(r);
 }
 
 //=========================================================================
@@ -621,7 +621,7 @@ void close_prep_db_part(warm_prep_db_part_t *p)
     rocksdb_comparator_destroy(p->inode_cmp);
     rocksdb_comparator_destroy(p->rid_cmp);
 
-    free(p);
+    tbx_free(p);
 }
 
 //****************************************************************************
@@ -635,8 +635,8 @@ void close_prep_db(warm_prep_db_t *wdb)
     for (i=0; i<wdb->n_partitions; i++) {
         close_prep_db_part(wdb->p[i]);
     }
-    free(wdb->p);
-    free(wdb);
+    tbx_free(wdb->p);
+    tbx_free(wdb);
 }
 
 //****************************************************************************
@@ -668,11 +668,11 @@ void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, cha
     errstr = NULL;
     modulo = inode % wdb->n_partitions;
     rocksdb_put(wdb->p[modulo]->rid->db, wdb->p[modulo]->rid->wopt, (const char *)rkey, n, (const char *)&nbytes, sizeof(ex_off_t), &errstr);
-    if (rkey != (rid_prep_key_t *)rbuf) free(rkey);
+    if (rkey != (rid_prep_key_t *)rbuf) tbx_free(rkey);
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: RID DB put id=" LU " rid_key=%s error=%s\n", inode, rid_key, errstr);
-        free(errstr);
+        tbx_free(errstr);
     }
     return;
 }
@@ -739,14 +739,14 @@ void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int
     errstr = NULL;
     modulo = inode % wdb->n_partitions;
     rocksdb_put(wdb->p[modulo]->inode->db, wdb->p[modulo]->inode->wopt, (const char *)&inode, sizeof(ex_id_t), (const char *)v, n_v, &errstr);
-    free(v);
+    tbx_free(v);
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: inode DB put id=" LU " fname=%s error=%s\n", inode, fname, errstr);
-        free(errstr);
+        tbx_free(errstr);
     }
 
-    if (rbuf != rid_buffer) free(rid_buffer);
+    if (rbuf != rid_buffer) tbx_free(rid_buffer);
 
     return;
 }
@@ -784,12 +784,12 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
     //** inode
     if (v_size[1] > 0) {
         sscanf(vals[1], XIDT, &inode);
-        free(vals[1]);
+        tbx_free(vals[1]);
         v_size[1] = 0;
     } else {
         info_printf(ifd, 0, "ERROR: Missing inode! fname=%s\n", fname);
         if (v_size[0] > 0) {
-            free(vals[0]);
+            tbx_free(vals[0]);
             v_size[0] = 0;
         }
         return;
@@ -804,11 +804,11 @@ void update_warm_prep_db(tbx_log_fd_t *ifd, warm_prep_db_t *wdb, char *fname, ch
 info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inode, modulo);
         info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT "\n", fname, inode);
         rocksdb_put(p->write_errors->db, p->write_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
-        free(vals[2]);
+        tbx_free(vals[2]);
         v_size[2] = 0;
         if (errstr) {
             info_printf(ifd, 0, "ERROR: RocksDB error putting write_error entry! fname=%s errstr=%s\n", fname, errstr);
-            free(errstr);
+            tbx_free(errstr);
         }
     }
 
@@ -817,23 +817,23 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
         errstr = NULL;
         info_printf(ifd, 0, "MISSING_EXNODE_ERROR: fname=%s inode=" XIDT "\n", fname, inode);
         rocksdb_put(p->missing_exnode_errors->db, p->missing_exnode_errors->wopt, (const char *)&inode, sizeof(inode), NULL, 0, &errstr);
-        free(vals[2]);
+        tbx_free(vals[2]);
         v_size[2] = 0;
         if (errstr) {
             info_printf(ifd, 0, "ERROR: RocksDB error putting missing_exnode_error entry! fname=%s errstr=%s\n", fname, errstr);
-            free(errstr);
+            tbx_free(errstr);
         }
         goto no_exnode;
     } else {  //** Got an exnode so check if we need to clear it
         errstr = NULL;
         iptr = (ex_id_t *)rocksdb_get(p->missing_exnode_errors->db, p->missing_exnode_errors->ropt, (const char *)&inode, sizeof(ex_id_t), &ns, &errstr);
-        if (errstr) free(errstr);
+        if (errstr) tbx_free(errstr);
         if (iptr != NULL) { //** Got a match so delete
             errstr = NULL;
             rocksdb_delete(p->missing_exnode_errors->db, p->missing_exnode_errors->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
             if (errstr) {
                 info_printf(ifd, 0, "ERROR: RocksDB error removing missing_exnode_error entry! fname=%s errstr=%s\n", fname, errstr);
-                free(errstr);
+                tbx_free(errstr);
             }
         }
     }
@@ -850,7 +850,7 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
                 goto next;
             }
             mcap = tbx_stk_unescape_text('\\', etext);
-            free(etext);
+            tbx_free(etext);
 
             //** Get the RID key
             etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "rid_key", NULL);
@@ -865,7 +865,7 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
 
             //** Add the entry to the RID DB
             prep_warm_rid_db_put(wdb, inode, etext, mcap, nbytes);
-            free(mcap);
+            tbx_free(mcap);
         }
 next:
         g = tbx_inip_group_next(g);
@@ -873,7 +873,7 @@ next:
 
     tbx_inip_destroy(fd);
     v_size[0] = 0;
-    free(vals[0]);
+    tbx_free(vals[0]);
 
 no_exnode:
     //** Store the inode entry
@@ -882,7 +882,7 @@ no_exnode:
     //** Cleanup
     for (hi=apr_hash_first(NULL, rids); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, (const void **)&etext, &hlen, NULL);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_apr_pool_destroy(mpool);
 }

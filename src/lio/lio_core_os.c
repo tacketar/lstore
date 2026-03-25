@@ -283,12 +283,12 @@ void lio_free_mk_mv_rm(void *arg)
 {
     lio_mk_mv_rm_t *op = (lio_mk_mv_rm_t *)arg;
 
-    if (op->src_path != NULL) free(op->src_path);
-    if (op->dest_path != NULL) free(op->dest_path);
-    if (op->id != NULL) free(op->id);
-    if (op->ex != NULL) free(op->ex);
+    if (op->src_path != NULL) tbx_free(op->src_path);
+    if (op->dest_path != NULL) tbx_free(op->dest_path);
+    if (op->id != NULL) tbx_free(op->id);
+    if (op->ex != NULL) tbx_free(op->ex);
 
-    free(op);
+    tbx_free(op);
 }
 
 //***********************************************************************
@@ -308,8 +308,8 @@ void lio_update_parent(lio_config_t *lc, lio_creds_t *creds, char *id, const cha
     //** Do the update
     lio_setattr(lc, creds, parent, id, "os.timestamp.system.modify_data", NULL, 0);
 
-    if (parent) free(parent);
-    if (file) free(file);
+    if (parent) tbx_free(parent);
+    if (file) tbx_free(file);
 }
 
 //***********************************************************************
@@ -361,13 +361,13 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
     if (op->ex == NULL) {
         lio_os_path_split(op->src_path, &dir, &fname);
         log_printf(15, "dir=%s\n fname=%s\n", dir, fname);
-        free(fname);
+        tbx_free(fname);
 
         status = gop_sync_exec_status(os_open_object(op->lc->os, op->creds, dir, OS_MODE_READ_IMMEDIATE, op->id, &fd, op->lc->timeout));
         if (status.op_status != OP_STATE_SUCCESS) {
             log_printf(ll, "ERROR: opening parent=%s\n", dir);
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - opening parent=%s error_code=%d\n", dir, status.error_code);
-            free(dir);
+            tbx_free(dir);
             goto fail;
         }
 
@@ -395,7 +395,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_create_object_fn - closing parent fname=%s error_code=%d\n", dir, status2.error_code);
         }
 
-        free(dir);
+        tbx_free(dir);
 
         //** See if we need to kick out
         if (status.op_status != OP_STATE_SUCCESS) {
@@ -517,7 +517,7 @@ gop_op_status_t lio_create_object_fn(void *arg, int id)
 fail:
     notify_printf(op->lc->notify, 1, op->creds, "LIO_CREATE_OBJECT_FN: fname=%s ftype=%d  status=%d error_code=%d\n", op->src_path, op->type, status.op_status, status.error_code);
 
-    if (val[ex_key] != NULL) free(val[ex_key]);
+    if (val[ex_key] != NULL) tbx_free(val[ex_key]);
 
     return(status);
 }
@@ -686,22 +686,22 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         if (val[0] == NULL) {
             log_printf(15, "ERROR: Missing link count for fname=%s\n", op->src_path);
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: Missing link count for fname=%s\n", op->src_path);
-            if (val[1] != NULL) free(val[1]);
+            if (val[1] != NULL) tbx_free(val[1]);
             return(gop_failure_status);
         }
 
         n = 100;
         sscanf(val[0], "%d", &n);
-        free(val[0]);
+        tbx_free(val[0]);
         if (n <= 1) {
             ex_remove = 1;
             if (op->ex == NULL) {
                 op->ex = val[1];
             } else {
-                if (val[1] != NULL) free(val[1]);
+                if (val[1] != NULL) tbx_free(val[1]);
             }
         } else {
-            if (val[1] != NULL) free(val[1]);
+            if (val[1] != NULL) tbx_free(val[1]);
         }
     } else if ((op->type & (OS_OBJECT_SYMLINK_FLAG|OS_OBJECT_DIR_FLAG)) == 0) {
         ex_remove = 1;
@@ -720,14 +720,14 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         if (inode) {
             snprintf(sfname, OS_PATH_MAX, "%s%s", op->lc->special_file_prefix, inode);
             remove(sfname);
-            free(inode);
+            tbx_free(inode);
         }
     }
 
     //** Remove the OS entry first.  This way if it fails we'll just kick out and the data is still good.
     err = gop_sync_exec(os_remove_object(op->lc->os, op->creds, op->src_path));
     if (err != OP_STATE_SUCCESS) {
-        if ((op->ex == NULL) && (ex_data != NULL)) free(ex_data);  //** Fee the exnode we just fetched if needed
+        if ((op->ex == NULL) && (ex_data != NULL)) tbx_free(ex_data);  //** Fee the exnode we just fetched if needed
         log_printf(0, "ERROR: removing file: %s err=%d\n", op->src_path, err);
         notify_printf(op->lc->notify, 1, op->creds, "ERROR: removing file: %s err=%d\n", op->src_path, err);
         status = gop_failure_status;
@@ -754,7 +754,7 @@ gop_op_status_t lio_remove_object_fn(void *arg, int id)
         }
 
         //** Clean up
-        if (op->ex != NULL) exp->text.text = NULL;  //** The inital exnode is free()-ed by the TP op
+        if (op->ex != NULL) exp->text.text = NULL;  //** The inital exnode is tbx_free()-ed by the TP op
         lio_exnode_exchange_destroy(exp);
         lio_exnode_destroy(ex);
     }
@@ -825,7 +825,7 @@ gop_op_status_t lio_remove_regex_object_fn(void *arg, int id)
 
         gop = lio_remove_gop(op->lc, op->creds, fname, ex, atype);
         ex = NULL;  //** Freed in lio_remove_object
-        free(fname);
+        tbx_free(fname);
         gop_opque_add(q, gop);
 
         if (gop_opque_tasks_left(q) > op->np) {
@@ -917,11 +917,11 @@ int lio_dir_empty(lio_config_t *lc, lio_creds_t *creds, char *path)
     }
 
     err = lio_next_object(lc, it, &fname, &prefix_len);
-    if (err != 0) free(fname);
+    if (err != 0) tbx_free(fname);
     lio_destroy_object_iter(lc, it);
 
 fail:
-    free(p2);
+    tbx_free(p2);
 
     log_printf(5, "err=%d\n", err);
     return(err);
@@ -973,7 +973,7 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
 
         if (status.op_status != OP_STATE_SUCCESS) {  //** Temp move failed so kick out
             notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_move_object_fn - Esiting object in dest and temp move failed. old=%s temp=%s\n", op->dest_path, dtmp);
-            free(dtmp);
+            tbx_free(dtmp);
             return(status);
        }
     }
@@ -1002,7 +1002,7 @@ gop_op_status_t lio_move_object_fn(void *arg, int id)
         }
     }
 
-    if (dtmp) free(dtmp);
+    if (dtmp) tbx_free(dtmp);
 
     return(status);
 }
@@ -1812,7 +1812,7 @@ void lio_parse_stat_vals(char *fname, struct stat *stat, char **val, int *v_size
     //** Clean up
     for (i=0; i<_lio_stat_key_size; i++) {
         if (val[i] != NULL) {
-            free(val[i]);
+            tbx_free(val[i]);
             val[i] = NULL;
         }
     }
@@ -1844,7 +1844,7 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
         hit = 1;
         if (val[0] != NULL) {
             sscanf(val[0], XIDT, &ino);
-            free(val[0]);
+            tbx_free(val[0]);
         }
         ocl_slot = ino % lc->open_close_lock_size;
         apr_thread_mutex_lock(lc->open_close_lock[ocl_slot]);
@@ -1880,7 +1880,7 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
     if (readlink) {
         *readlink = slink;
     } else if (slink) {
-        free(slink);
+        tbx_free(slink);
     }
 
     log_printf(1, "END fname=%s err=%d\n", fname, err);
@@ -1895,12 +1895,12 @@ int lio_stat(lio_config_t *lc, lio_creds_t *creds, char *fname, struct stat *sta
 
 void lio_stat_iter_destroy(lio_stat_iter_t *dit)
 {
-    if (dit->dot.readlink) free(dit->dot.readlink);
-    if (dit->dotdot.readlink) free(dit->dotdot.readlink);
+    if (dit->dot.readlink) tbx_free(dit->dot.readlink);
+    if (dit->dotdot.readlink) tbx_free(dit->dotdot.readlink);
 
     if (dit->it) lio_destroy_object_iter(dit->lc, dit->it);
     lio_os_regex_table_destroy(dit->path_regex);
-    free(dit);
+    tbx_free(dit);
 }
 
 //***********************************************************************
@@ -1950,14 +1950,14 @@ lio_stat_iter_t *lio_stat_iter_create(lio_config_t *lc, lio_creds_t *creds, cons
     //** And ".."
     if (strcmp(path, "/") != 0) {
         lio_os_path_split((char *)path, &dir, &file);
-        free(file);
+        tbx_free(file);
     } else {
         dir = tbx_stk_strdup(path);
     }
 
     dit->dot.dentry = "..";
     if (lio_stat(lc, creds, (char *)dir, &(dit->dot.stat), &(dit->dot.readlink), stat_symlink, 0) != 0) {
-        if (dir) free(dir);
+        if (dir) tbx_free(dir);
         lio_stat_iter_destroy(dit);
         return(NULL);
     }
@@ -2022,7 +2022,7 @@ int lio_stat_iter_next(lio_stat_iter_t *dit, struct stat *stat, char **dentry, c
     if (readlink) {
         *readlink = flink;
     } else if (flink) {
-        free(flink);
+        tbx_free(flink);
     }
 
     return(0);
@@ -2075,7 +2075,7 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
         case LIO_FSCK_PARENT:
             lio_os_path_split(path, &dir, &file);
             log_printf(15, "fname=%s parent=%s file=%s\n", path, dir, file);
-            free(file);
+            tbx_free(file);
             file = NULL;
             vs = -lc->max_attr;
             lio_getattr(lc, creds, dir, NULL, "system.owner", (void **)&file, &vs);
@@ -2083,12 +2083,12 @@ int lio_fsck_check_object(lio_config_t *lc, lio_creds_t *creds, char *path, int 
             if (vs > 0) {
                 if (file) {
                     lio_setattr(lc, creds, path, NULL, "system.owner", (void *)file, strlen(file));
-                    free(file);
+                    tbx_free(file);
                 }
             } else {
                 state |= LIO_FSCK_MISSING_OWNER;
             }
-            free(dir);
+            tbx_free(dir);
             break;
         case LIO_FSCK_DELETE:
             gop_sync_exec(lio_remove_gop(lc, creds, path, val[ex_index], ftype));
@@ -2142,7 +2142,7 @@ exnode_again:
             break;
         case LIO_FSCK_PARENT:
             lio_os_path_split(path, &dir, &file);
-            free(file);
+            tbx_free(file);
             file = NULL;
             vs = -lc->max_attr;
             lio_getattr(lc, creds, dir, NULL, "system.exnode", (void **)&file, &vs);
@@ -2151,10 +2151,10 @@ exnode_again:
                 do_clone = 1;  //** flag we need to clone and store it
             } else {
                 state |= LIO_FSCK_MISSING_EXNODE;
-                free(dir);
+                tbx_free(dir);
                 return(state);
             }
-            free(dir);
+            tbx_free(dir);
             break;
         case LIO_FSCK_DELETE:
             gop_sync_exec(lio_remove_gop(lc, creds, path, val[ex_index], ftype));
@@ -2321,7 +2321,7 @@ gop_op_status_t lio_fsck_gop_fn(void *arg, int id)
         }
         lio_get_multiple_attrs(op->lc, op->creds, op->path, NULL, _fsck_keys, (void **)&val, v_size, _n_fsck_keys, 0);
         err = lio_fsck_check_object(op->lc, op->creds, op->path, op->ftype, op->owner_mode, op->owner, op->exnode_mode, val, v_size);
-        for (i=0; i<_n_fsck_keys; i++) if (val[i] != NULL) free(val[i]);
+        for (i=0; i<_n_fsck_keys; i++) if (val[i] != NULL) tbx_free(val[i]);
     } else {
         err = lio_fsck_check_object(op->lc, op->creds, op->path, op->ftype, op->owner_mode, op->owner, op->exnode_mode, op->val, op->v_size);
     }
@@ -2422,7 +2422,7 @@ int lio_next_fsck(lio_config_t *lc, lio_fsck_iter_t *oit, char **bad_fname, int 
         *bad_fname = task->fname;
         log_printf(15, "fname=%s slot=%d state=%d\n", task->fname, slot, status.error_code);
         for (i=0; i<_n_fsck_keys; i++) {
-            if (task->val[i] != NULL) free(task->val[i]);
+            if (task->val[i] != NULL) tbx_free(task->val[i]);
         };
 
         if (it->firsttime == 2) {  //** Only go here if we hanve't finished iterating
@@ -2445,7 +2445,7 @@ int lio_next_fsck(lio_config_t *lc, lio_fsck_iter_t *oit, char **bad_fname, int 
             return(status.error_code);
         }
 
-        free(*bad_fname);  //** IF we made it here we can throw away the old fname
+        tbx_free(*bad_fname);  //** IF we made it here we can throw away the old fname
     }
 
     log_printf(15, "nothing left\n");
@@ -2507,16 +2507,16 @@ void lio_destroy_fsck_iter(lio_config_t *lc, lio_fsck_iter_t *oit)
 
     while ((gop = opque_waitany(it->q)) != NULL) {
         slot = gop_get_myid(gop);
-        if (it->task[slot].fname != NULL) free(it->task[slot].fname);
+        if (it->task[slot].fname != NULL) tbx_free(it->task[slot].fname);
     }
     gop_opque_free(it->q, OP_DESTROY);
 
     os_destroy_object_iter(it->lc->os, it->it);
 
     lio_os_regex_table_destroy(it->regex);
-    free(it->path);
-    free(it->task);
-    free(it);
+    tbx_free(it->path);
+    tbx_free(it->task);
+    tbx_free(it);
 
     return;
 }

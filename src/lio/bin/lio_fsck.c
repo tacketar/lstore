@@ -23,6 +23,7 @@
 #include <string.h>
 #include <tbx/log.h>
 #include <tbx/stdinarray_iter.h>
+#include <tbx/type_malloc.h>
 #include <lio/ex3.h>
 #include <lio/lio.h>
 #include <lio/os.h>
@@ -174,12 +175,12 @@ int main(int argc, char **argv)
         tuple = lio_path_resolve(lio_gc->auto_translate, path);
         if (tuple.is_lio < 0) {  //** Mangled path
             fprintf(stderr, "Unable to resolve path: %s\n", path);
-            free(path);
+            tbx_free(path);
             return_code = EINVAL;
             lio_path_release(&tuple);
             continue;
         }
-        free(path);
+        tbx_free(path);
 
         it = lio_create_fsck_iter(tuple.lc, tuple.creds, tuple.path, LIO_FSCK_MANUAL, NULL, LIO_FSCK_MANUAL);  //** WE use resolve to clean up so we can see the problem objects
         while ((err = lio_next_fsck(tuple.lc, it, &fname, &ftype)) != LIO_FSCK_FINISHED) {
@@ -197,7 +198,7 @@ int main(int argc, char **argv)
                     }
                 }
             }
-            free(fname);
+            tbx_free(fname);
             fname = NULL;
             n++;
         }

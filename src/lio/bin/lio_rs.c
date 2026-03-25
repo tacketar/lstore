@@ -244,10 +244,10 @@ int main(int argc, char **argv)
                 printf("ERROR NULL config!\n");
             } else if (summary == 1) {
                 print_rid_summary(config, base);
-                free(config);
+                tbx_free(config);
             } else {
                 printf("%s", config);
-                free(config);
+                tbx_free(config);
             }
 
             printf("---------------------------------------------------------------------------------------------------------\n");

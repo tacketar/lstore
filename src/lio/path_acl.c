@@ -358,7 +358,7 @@ int pacl_ug_hint_get(path_acl_context_t *pa, lio_os_authz_local_t *ug)
             if (hint->inuse) {
                 hint->to_release = 1;
             } else {
-                free(hint);
+                tbx_free(hint);
             }
         }
     }
@@ -401,7 +401,7 @@ void pacl_ug_hint_free(path_acl_context_t *pa, lio_os_authz_local_t *ug)
     log_printf(10, "HINT_FREE ug=%p\n", ug);
 
     if (ug->hint) {
-        if (ug->uid == _pa_guid_unused) free(ug->hint);
+        if (ug->uid == _pa_guid_unused) tbx_free(ug->hint);
     }
     ug->hint = NULL;
 }
@@ -426,7 +426,7 @@ void pacl_ug_hint_release(path_acl_context_t *pa, lio_os_authz_local_t *ug)
                     pacl_destroy(hint->pa);
                 }
             }
-            free(ug->hint);
+            tbx_free(ug->hint);
         }
     }
     ug->hint = NULL;
@@ -1042,7 +1042,7 @@ int _mount_nfs4(const char *prefix)
 
     snprintf(cmd, sizeof(cmd)-1, "MIN_IGNORE_XATTR_REPLACE='1' %s -o fsname=min %s", min_fuse, prefix);
     err = system(cmd);
-    free(min_fuse);
+    tbx_free(min_fuse);
 
     if (err != 0) {
         err = errno;
@@ -1357,12 +1357,12 @@ oops:
     if (dir != NULL) closedir(dir);
     if (fname) remove(fname);
     if (dname) rmdir(dname);
-    if (fname) free(fname);
-    if (dname) free(dname);
+    if (fname) tbx_free(fname);
+    if (dname) tbx_free(dname);
     if (nfs4_dname) {
         if (mount_err == 0) _umount_nfs4(nfs4_dname);
         rmdir(nfs4_dname);
-        free(nfs4_dname);
+        tbx_free(nfs4_dname);
     }
     return(err);
 }
@@ -1613,7 +1613,7 @@ void lfs_add_account_mappings(path_acl_context_t *ctx, path_acl_t *acl)
     }
 
     if (n_gid > n_old) { //** Added some entries so add them
-        if (acl->gid_map) free(acl->gid_map);
+        if (acl->gid_map) tbx_free(acl->gid_map);
         tbx_malloc(acl->gid_map, sizeof(fs_acl_list_t) + n_gid*sizeof(fs_acl_t));
         memcpy(acl->gid_map->id, gid_list, sizeof(fs_acl_t)*n_gid);
         acl->gid_map->n = n_gid;
@@ -2101,10 +2101,10 @@ void facl_destroy(fuse_acl_t *facl, char **acl_text)
     if (!facl) return;
 
     for (i=0; i<ACL_MAX; i++) {
-        if (facl->acl[i]) free(facl->acl[i]);
-        if (acl_text[i]) { free(acl_text[i]); acl_text[i] = NULL; }
+        if (facl->acl[i]) tbx_free(facl->acl[i]);
+        if (acl_text[i]) { tbx_free(acl_text[i]); acl_text[i] = NULL; }
      }
-     free(facl);
+     tbx_free(facl);
 }
 
 //**************************************************************************
@@ -2119,25 +2119,25 @@ void prefix_destroy(path_acl_t *acl)
     facl_destroy(acl->lfs_acl, acl->acl_text);
     if (acl->uid_map) {
         for (i=0; i<acl->uid_map->n; i++) {
-            if (acl->uid_map->id[i].name) free(acl->uid_map->id[i].name);
+            if (acl->uid_map->id[i].name) tbx_free(acl->uid_map->id[i].name);
         }
-        free(acl->uid_map);
+        tbx_free(acl->uid_map);
     }
 
     if (acl->gid_map) {
         for (i=0; i<acl->gid_map->n; i++) {
-            if (acl->gid_map->id[i].name) free(acl->gid_map->id[i].name);
+            if (acl->gid_map->id[i].name) tbx_free(acl->gid_map->id[i].name);
         }
-        free(acl->gid_map);
+        tbx_free(acl->gid_map);
     }
 
-    if (acl->prefix) free(acl->prefix);
+    if (acl->prefix) tbx_free(acl->prefix);
     for (i=0; i<acl->n_account; i++) {
-        free(acl->account[i].account);
+        tbx_free(acl->account[i].account);
     }
-    if (acl->lfs_account) free(acl->lfs_account);
-    free(acl->account);
-    free(acl);
+    if (acl->lfs_account) tbx_free(acl->lfs_account);
+    tbx_free(acl->account);
+    tbx_free(acl);
 }
 
 //**************************************************************************
@@ -2156,7 +2156,7 @@ void pacl_destroy(path_acl_context_t *pa)
     for (hi=apr_hash_first(NULL, pa->hints_hash); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&hint);
         if (hint->inuse == 0) {
-            free(hint);  //** The interior strings are just pointers to fields in a2g above
+            tbx_free(hint);  //** The interior strings are just pointers to fields in a2g above
         } else {  //** Still in use so we have to defer destruction
             pa->inuse_pending++;
             hint->to_release = 1;
@@ -2168,29 +2168,29 @@ void pacl_destroy(path_acl_context_t *pa)
 
     log_printf(10, "n_path_acl=%d\n", pa->n_path_acl);
     if (pa->pacl_default) prefix_destroy(pa->pacl_default);
-    if (pa->lut) free(pa->lut);
+    if (pa->lut) tbx_free(pa->lut);
 
     //** Tear down the Path ACL list strcture
     for (i=0; i<pa->n_path_acl; i++) {
         prefix_destroy(pa->path_acl[i]);
     }
-    free(pa->path_acl);
+    tbx_free(pa->path_acl);
 
     //** And the LFS account2gid mappings
-    if (pa->fname_acl) free(pa->fname_acl);
+    if (pa->fname_acl) tbx_free(pa->fname_acl);
     for (i=0; i<pa->n_a2gid; i++) {
         a2g = pa->a2gid[i];
-        free(a2g->account);
-        free(a2g->gid);
-        free(a2g);
+        tbx_free(a2g->account);
+        tbx_free(a2g->gid);
+        tbx_free(a2g);
     }
-    free(pa->a2gid);
+    tbx_free(pa->a2gid);
 
     //** This also destroys the hash
     tbx_apr_pool_destroy(pa->mpool);
 
     //** and container
-    free(pa);
+    tbx_free(pa);
 }
 
 //**************************************************************************
@@ -2339,12 +2339,12 @@ oops:
     if (dir != NULL) closedir(dir);
     if (fname) remove(fname);
     if (dname) rmdir(dname);
-    if (fname) free(fname);
-    if (dname) free(dname);
+    if (fname) tbx_free(fname);
+    if (dname) tbx_free(dname);
     if (nfs4_dname) {
         if (mount_err == 0) _umount_nfs4(nfs4_dname);
         rmdir(nfs4_dname);
-        free(nfs4_dname);
+        tbx_free(nfs4_dname);
     }
     return(err);
 }

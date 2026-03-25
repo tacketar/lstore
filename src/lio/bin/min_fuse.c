@@ -113,21 +113,21 @@ void ns_object_destroy(min_object_t *mo)
     //** Remove all the attrs
     for (hi=apr_hash_first(NULL, mo->xattrs_query); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&attr);
-        if (attr->key) free(attr->key);
-        if (attr->val) free(attr->val);
-        free(attr);
+        if (attr->key) tbx_free(attr->key);
+        if (attr->val) tbx_free(attr->val);
+        tbx_free(attr);
     }
 
     for (hi=apr_hash_first(NULL, mo->xattrs); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, &hlen, (void **)&attr);
-        if (attr->key) free(attr->key);
-        if (attr->val) free(attr->val);
-        free(attr);
+        if (attr->key) tbx_free(attr->key);
+        if (attr->val) tbx_free(attr->val);
+        tbx_free(attr);
     }
 
     //* Now clean up the object
     tbx_apr_pool_destroy(mo->mpool);
-    free(mo);
+    tbx_free(mo);
 }
 
 //*************************************************************************
@@ -253,9 +253,9 @@ xattr_t *xattr_create(const char *name, const char *val, int v_size)
 
 void xattr_destroy(xattr_t *attr)
 {
-    if (attr->key) free(attr->key);
-    if (attr->val) free(attr->val);
-    free(attr);
+    if (attr->key) tbx_free(attr->key);
+    if (attr->val) tbx_free(attr->val);
+    tbx_free(attr);
 }
 
 //*************************************************************************
@@ -364,7 +364,7 @@ int min_setxattr(const char *fname, const char *name, const char *fval, size_t s
     if (size == 0) {
         if (attr) {
             if (attr->v_size > 0) {
-                free(attr->val);
+                tbx_free(attr->val);
                 attr->val = NULL; attr->v_size = 0;
             }
         } else {

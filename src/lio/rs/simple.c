@@ -361,23 +361,23 @@ disable_too_full:
                         a = (int *)tbx_stack_pop(stack);
                         state = (*a == 0) ? 1 : 0;
                         //log_printf(0, "NOT(%d)=%d\n", *a, state);
-                        free(a);
+                        tbx_free(a);
                         break;
                     case RSQ_BASE_OP_AND:
                         a = (int *)tbx_stack_pop(stack);
                         b = (int *)tbx_stack_pop(stack);
                         state = (*a) && (*b);
                         //log_printf(0, "%d AND %d = %d\n", *a, *b, state);
-                        free(a);
-                        free(b);
+                        tbx_free(a);
+                        tbx_free(b);
                         break;
                     case RSQ_BASE_OP_OR:
                         a = (int *)tbx_stack_pop(stack);
                         b = (int *)tbx_stack_pop(stack);
                         state = a || b;
                         //log_printf(0, "%d OR %d = %d\n", *a, *b, state);
-                        free(a);
-                        free(b);
+                        tbx_free(a);
+                        tbx_free(b);
                         break;
                     }
 
@@ -399,7 +399,7 @@ disable_too_full:
             state = -1;
             if (op_state != NULL) {
                 state = *op_state;
-                free(op_state);
+                tbx_free(op_state);
             }
 
             log_printf(2, "i=%d fixed_size=%d state=%d avg_full_skip=%d\n", i, fixed_size, state, avg_full_skip);
@@ -457,14 +457,14 @@ disable_too_full:
     //** Clean up
     log_printf(15, "FREE j=%d\n", unique_size);
     for (i=0; i<unique_size; i++) {
-        free(kvq_global.unique[i]);
+        tbx_free(kvq_global.unique[i]);
     }
-    free(kvq_global.unique);
-    free(kvq_global.pickone);
+    tbx_free(kvq_global.unique);
+    tbx_free(kvq_global.pickone);
 
-    free(kvq_local.unique[0]);
-    free(kvq_local.unique);
-    free(kvq_local.pickone);
+    tbx_free(kvq_local.unique[0]);
+    tbx_free(kvq_local.unique);
+    tbx_free(kvq_local.pickone);
 
     tbx_stack_free(stack, 1);
 
@@ -534,9 +534,9 @@ void rs_simple_rid_free(tbx_list_data_t *arg)
 
     tbx_list_destroy(rse->attr);
 
-    if (rse->ds_key != NULL) free(rse->ds_key);
+    if (rse->ds_key != NULL) tbx_free(rse->ds_key);
 
-    free(rse);
+    tbx_free(rse);
 }
 
 //***********************************************************************
@@ -620,7 +620,7 @@ char *rss_get_rid_config(lio_resource_service_fn_t *rs)
 
     do {
         if (buffer != NULL) {
-            free(buffer);
+            tbx_free(buffer);
             buffer = NULL;
         }
         bufsize = 2 * bufsize;
@@ -676,9 +676,9 @@ void _rss_clear_check_table(lio_data_service_fn_t *ds, apr_hash_t *table, apr_po
         apr_hash_set(table, rid, klen, NULL);
 
         ds_inquire_destroy(ds, entry->space);
-        free(entry->ds_key);
-        free(entry->rid_key);
-        free(entry);
+        tbx_free(entry->ds_key);
+        tbx_free(entry->rid_key);
+        tbx_free(entry);
     }
 
     apr_hash_clear(table);
@@ -878,9 +878,9 @@ void _rss_make_check_table(lio_resource_service_fn_t *rs)
             log_printf(0, "WARNING duplicate RID found.  Dropping dynamic mapping.  res=%s ---  new res=%s\n", ce2->ds_key, ce->ds_key);
             rss->unique_rids = 0;
             ds_inquire_destroy(rss->ds, ce->space);
-            free(ce->rid_key);
-            free(ce->ds_key);
-            free(ce);
+            tbx_free(ce->rid_key);
+            tbx_free(ce->ds_key);
+            tbx_free(ce);
         }
     }
 
@@ -967,7 +967,7 @@ void _rs_generate_shuffle(int n_shuffles, int n_rids, int *shuffle)
         }
     }
 
-    free(rnd_vals);
+    tbx_free(rnd_vals);
 }
 
 //***********************************************************************
@@ -1099,8 +1099,8 @@ int _rs_simple_refresh(lio_resource_service_fn_t *rs)
         if (err == 0) {
             rss->modify_time = sbuf.st_mtime;
             if (old_table != NULL) tbx_list_destroy(old_table);
-            if (old_random != NULL) free(old_random);
-            if (old_shuffle != NULL) free(old_shuffle);
+            if (old_random != NULL) tbx_free(old_random);
+            if (old_shuffle != NULL) tbx_free(old_shuffle);
             _rss_make_check_table(rs);  //** and make the new inquiry table
             apr_thread_cond_signal(rss->cond);  //** Notify the check thread that we made a change
         } else {
@@ -1139,7 +1139,7 @@ void rss_print_running_config(lio_resource_service_fn_t *rs, FILE *fd, int print
     fprintf(fd, "#------------------RID information start----------------------\n");
     if (rids) {
         fprintf(fd, "%s", rids);
-        free(rids);
+        tbx_free(rids);
     }
     fprintf(fd, "#------------------RID information end----------------------\n");
     fprintf(fd, "\n");
@@ -1173,12 +1173,12 @@ void rs_simple_destroy(lio_resource_service_fn_t *rs)
 
     if (rss->rid_table != NULL) tbx_list_destroy(rss->rid_table);
 
-    free(rss->random_array);
-    free(rss->shuffle);
-    free(rss->fname);
-    free(rss->section);
-    free(rss);
-    free(rs);
+    tbx_free(rss->random_array);
+    tbx_free(rss->shuffle);
+    tbx_free(rss->fname);
+    tbx_free(rss->section);
+    tbx_free(rss);
+    tbx_free(rs);
 }
 
 //***********************************************************************

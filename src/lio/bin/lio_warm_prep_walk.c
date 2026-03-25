@@ -64,7 +64,7 @@ gop_op_status_t update_prep_task(void *arg, int id)
     update_prep_t *op = arg;
 
     update_warm_prep_db(lio_ifd, wdb, op->fname, op->vals, op->v_size);
-    free(op->fname);
+    tbx_free(op->fname);
     return(gop_success_status);
 }
 
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
@@ -168,14 +168,14 @@ int main(int argc, char **argv)
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
-        free(path);  //** No longer needed.  lio_path_resolve will strdup
+        tbx_free(path);  //** No longer needed.  lio_path_resolve will strdup
 
         v_size[0] = v_size[1] = -tuple.lc->max_attr; v_size[2] = -tuple.lc->max_attr;
         it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG|OS_OBJECT_NO_SYMLINK_FLAG|OS_OBJECT_NO_BROKEN_LINK_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
@@ -188,9 +188,9 @@ int main(int argc, char **argv)
             if (v_size[0] == -1) { //** Missing the exnode
                 fprintf(stderr, "MISSING_EXNODE_ERROR for file %s\n", fname);
                 for (i=0; i<3; i++) {
-                    if (v_size[i] > 0) free(vals[i]);
+                    if (v_size[i] > 0) tbx_free(vals[i]);
                 }
-                free(fname);
+                tbx_free(fname);
                 continue;
             }
             if (i>lio_parallel_task_count) {

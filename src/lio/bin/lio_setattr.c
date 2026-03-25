@@ -196,11 +196,11 @@ int main(int argc, char **argv)
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 return_code = EINVAL;
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
-            free(path);
+            tbx_free(path);
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", tuple.path);
@@ -252,7 +252,7 @@ int main(int argc, char **argv)
                     }
                 }
 
-                free(fname);
+                tbx_free(fname);
             }
 
             lio_destroy_object_iter(tuple.lc, it);
@@ -278,8 +278,8 @@ int main(int argc, char **argv)
 
 finished:
     for (i=0; i<n_skeys; i++) {
-        if (sobj[i] != NULL) free(sobj[i]);
-        if (skey[i] != NULL) free(skey[i]);
+        if (sobj[i] != NULL) tbx_free(sobj[i]);
+        if (skey[i] != NULL) tbx_free(skey[i]);
     }
 
     tbx_stdinarray_iter_destroy(it_args);

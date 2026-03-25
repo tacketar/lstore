@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tbx/log.h>
+#include <tbx/type_malloc.h>
 
 #include <lio/blacklist.h>
 #include <lio/cache.h>
@@ -135,7 +136,7 @@ int main(int argc, char **argv)
             }
         }
 
-        free(fname);
+        tbx_free(fname);
         fname = NULL;
         n++;
     }

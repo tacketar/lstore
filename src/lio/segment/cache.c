@@ -1099,7 +1099,7 @@ void cache_cond_free(void *arg, int size, void *data)
     //** All the data is in the memory pool
     tbx_apr_pool_destroy(*pool_ptr);
 
-    free(shelf);
+    tbx_free(shelf);
     TBX_STATS_INC(_misc_stats[LIO_MISC_STATS_SLOT_CACHE_COND_PC].finished);
     return;
 }
@@ -1496,7 +1496,7 @@ int cache_rw_pages(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, lio_pag
             if (rw_mode == CACHE_READ) {
                 for (j=0; j<cio->n_iov; j++) {
                     log_printf(15, "error with read nullifying data p->offset=" XOT "\n", cio->page[j].p->offset);
-                    free(cio->page[j].data->ptr);  //** Errors are signified by data=NULL;
+                    tbx_free(cio->page[j].data->ptr);  //** Errors are signified by data=NULL;
                     error_count++;
                     cio->page[j].data->ptr = NULL;
                 }
@@ -1528,7 +1528,7 @@ int cache_rw_pages(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, lio_pag
         if (do_release == 1) cache_release_pages(cio->n_iov, cio->page, rw_mode);
 
         gop_free(gop, OP_DESTROY);
-        free(cio);
+        tbx_free(cio);
     }
 
     //** And final clean up
@@ -2881,7 +2881,7 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
         if (page_list[i].data != page->curr_data) {
             cow_hit = 1;
             if (page_list[i].data->usage_count <= 0) {  //** Clean up a COW
-                free(page_list[i].data->ptr);
+                tbx_free(page_list[i].data->ptr);
                 page_list[i].data->ptr = NULL;
                 s->c->write_temp_overflow_used -= s->page_size;
                 log_printf(15, "seg=" XIDT " p->offset=" XOT " COP cleanup used=" XOT " rw_mode=%d usage=%d\n", segment_id(seg), page->offset, s->c->write_temp_overflow_used, rw_mode, page_list[i].data->usage_count);
@@ -3228,7 +3228,7 @@ int _cache_ppages_flush_list(lio_segment_t *seg, data_attr_t *da, tbx_stack_t *p
                 r[1] = ex_iov[slot].offset + len - 1;
                 log_printf(5, "seg=" XIDT " pp_start=" XOT " slot=%d off=" XOT " end=" XOT " len=" XOT "\n", segment_id(seg), pp->page_start, slot, ex_iov[slot].offset, r[1], ex_iov[slot].len);
                 slot++;
-                free(rng);
+                tbx_free(rng);
             }
         }
 
@@ -3276,8 +3276,8 @@ int _cache_ppages_flush_list(lio_segment_t *seg, data_attr_t *da, tbx_stack_t *p
     log_printf(5, "Flush completed pp_max=" XOT "\n", s->ppage_max);
     apr_thread_cond_broadcast(s->ppages_cond);
 
-    free(ex_iov);
-    free(iov);
+    tbx_free(ex_iov);
+    tbx_free(iov);
     return((status.op_status == OP_STATE_SUCCESS) ? 0 : 1);
 }
 
@@ -3788,7 +3788,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
     if (((new_size > segment_size(cop->seg)) && (cop->rw_mode == CACHE_READ)) || (rerr != 0)) {
         log_printf(1, "ERROR  Read beyond EOF, bad range, or ppage_flush error!  rw_mode=%d rerr=%d new_size=" XOT " ssize=" XOT "\n", cop->rw_mode, rerr, new_size, segment_size(cop->seg));
         while ((r = tbx_stack_pop(&stack)) != NULL) {
-            free(r);
+            tbx_free(r);
         }
 
         TBX_STATS_INC(s->c->stats.op_stats.op[stat_index].finished);
@@ -3934,7 +3934,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
 
         log_printf(15, "bottom lo=" XOT " hi=" XOT " progress=%d mode=%d top=%d bottom=%d\n", curr->lo, curr->hi, progress, mode, top_cnt, bottom_cnt);
         tbx_log_flush();
-        free(curr);
+        tbx_free(curr);
     }
 
     hit_time = miss_time - hit_time;
@@ -3947,7 +3947,7 @@ gop_op_status_t cache_rw_func(void *arg, int id)
             s->c->fn.cache_update(s->c, seg, cop->rw_mode, cop->iov[i].offset, hi, cache_missed[i]);
         }
     }
-    if (cache_missed != cache_missed_table) free(cache_missed);
+    if (cache_missed != cache_missed_table) tbx_free(cache_missed);
 
     //** Update the counters
     segment_lock(seg);
@@ -4239,7 +4239,7 @@ gop_op_status_t cache_flush_range_gop_func(void *arg, int id)
             progress = 0;
         }
 
-        free(curr);
+        tbx_free(curr);
     }
 
     //** Do a recovery flush as well
@@ -4542,7 +4542,7 @@ retry:
     status = gop_sync_exec_status(segment_inspect(s->child_seg, ci->da, ci->fd, ci->inspect_mode, ci->bufsize, ci->args, ci->timeout));
 
 done:
-    free(buffer);
+    tbx_free(buffer);
     return(status);
 }
 
@@ -4961,7 +4961,7 @@ int segcache_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_CACHE);
 
@@ -5098,7 +5098,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
     //** Get the segment header info
     seg->header.id = myid;
 
-    if (s->qname != NULL) free(s->qname);
+    if (s->qname != NULL) tbx_free(s->qname);
     snprintf(qname, sizeof(qname), XIDT HP_HOSTPORT_SEPARATOR "1" HP_HOSTPORT_SEPARATOR "0" HP_HOSTPORT_SEPARATOR "0", seg->header.id);
     s->qname = tbx_stk_strdup(qname);
 
@@ -5265,8 +5265,8 @@ void segcache_destroy(tbx_ref_t *ref)
         for (i=0; i<s->n_ppages; i++) {
             tbx_stack_free(s->ppage[i].range_stack, 1);
         }
-        free(s->ppages_buffer);
-        free(s->ppage);
+        tbx_free(s->ppages_buffer);
+        tbx_free(s->ppage);
     }
 
     tbx_stack_free(s->ppages_unused, 0);
@@ -5301,14 +5301,14 @@ finished:
 
     TBX_STATS_CODE(if (s->c) TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_SEGMENT_DESTROY].finished);)
 
-    if (s->last_page_buffer) free(s->last_page_buffer);
+    if (s->last_page_buffer) tbx_free(s->last_page_buffer);
 
-    free(s->qname);
-    free(s);
+    tbx_free(s->qname);
+    tbx_free(s);
 
     ex_header_release(&(seg->header));
 
-    free(seg);
+    tbx_free(seg);
 }
 
 //***********************************************************************

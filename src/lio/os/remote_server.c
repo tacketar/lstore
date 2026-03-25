@@ -192,8 +192,8 @@ void osrs_update_active_table(lio_object_service_fn_t *os, gop_mq_frame_t *hid)
             tbx_stack_move_to_bottom(osrs->active_lru);
             a = (osrs_active_t *)tbx_stack_get_current_data(osrs->active_lru);
             apr_hash_set(osrs->active_table, a->host_id, a->host_id_len, NULL);
-            if (a->host_id) free(a->host_id);
-            free(a);
+            if (a->host_id) tbx_free(a->host_id);
+            tbx_free(a);
             tbx_stack_delete_current(osrs->active_lru, 1, 0);
         }
 
@@ -379,7 +379,7 @@ void pending_lock_dec(lio_object_service_fn_t *os, pending_lock_entry_t *entry)
     entry->count--;
     if (entry->count == 0) {
        apr_hash_set(osrs->pending_lock_table, &(entry->key), sizeof(entry->key), NULL);
-       free(entry);
+       tbx_free(entry);
     }
     apr_thread_mutex_unlock(osrs->lock);
 }
@@ -653,7 +653,7 @@ void osrs_create_object_cb(void *arg, gop_mq_task_t *task)
         data = gop_mq_frame_strdup(f);
         gop = os_create_object(osrs->os_child, creds, name, ftype, data);
         gop_waitall(gop);
-        if (data != NULL) free(data);
+        if (data != NULL) tbx_free(data);
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
     } else {
@@ -785,7 +785,7 @@ void osrs_create_object_with_attrs_cb(void *arg, gop_mq_task_t *task)
 
     if (creds != NULL) {
         status = gop_sync_exec_status(os_create_object_with_attrs(osrs->os_child, creds, name, ftype, id, key, (void **)val, v_size, n_keys));
-//        if (id != NULL) free(id);
+//        if (id != NULL) tbx_free(id);
     } else {
         status = bad_creds_status;
     }
@@ -807,16 +807,16 @@ fail:
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     if (key) {
-        for (i=0; i<n_keys; i++) if (key[i]) free(key[i]);
-        free(key);
+        for (i=0; i<n_keys; i++) if (key[i]) tbx_free(key[i]);
+        tbx_free(key);
     }
 
     if (val) {
-        for (i=0; i<n_keys; i++) if (val[i]) free(val[i]);
-        free(val);
+        for (i=0; i<n_keys; i++) if (val[i]) tbx_free(val[i]);
+        tbx_free(val);
     }
 
-    if (v_size) free(v_size);
+    if (v_size) tbx_free(v_size);
 
     log_printf(5, "END\n");
 }
@@ -1006,7 +1006,7 @@ fail:
     if (spin.key != NULL) {
         apr_thread_mutex_lock(osrs->lock);
         apr_hash_set(osrs->spin, spin.key, spin.key_len, NULL);
-        free(spin.key);
+        tbx_free(spin.key);
         if (spin.gop != NULL) gop_free(spin.gop, OP_DESTROY);
         apr_thread_mutex_unlock(osrs->lock);
     }
@@ -1135,7 +1135,7 @@ void osrs_symlink_object_cb(void *arg, gop_mq_task_t *task)
         gop_waitall(gop);
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
-        if (userid != NULL) free(userid);
+        if (userid != NULL) tbx_free(userid);
     } else {
         status = bad_creds_status;
     }
@@ -1198,7 +1198,7 @@ void osrs_hardlink_object_cb(void *arg, gop_mq_task_t *task)
         gop_waitall(gop);
         status = gop_get_status(gop);
         gop_free(gop, OP_DESTROY);
-        if (userid != NULL) free(userid);
+        if (userid != NULL) tbx_free(userid);
     } else {
         status = bad_creds_status;
     }
@@ -1337,7 +1337,7 @@ void osrs_open_object_cb(void *arg, gop_mq_task_t *task)
         status = gop_sync_exec_status(ah.gop);
         osrs_remove_abort_handle(os, &ah);  //** Can remove us now since finished
 
-        if (id != NULL) free(id);
+        if (id != NULL) tbx_free(id);
     } else {
         status = bad_creds_status;
     }
@@ -1855,16 +1855,16 @@ fail:
     }
 
     if (key) {
-        for (i=0; i<n; i++) if (key[i]) free(key[i]);
-        free(key);
+        for (i=0; i<n; i++) if (key[i]) tbx_free(key[i]);
+        tbx_free(key);
     }
 
     if (val) {
-        for (i=0; i<n; i++) if (val[i]) free(val[i]);
-        free(val);
+        for (i=0; i<n; i++) if (val[i]) tbx_free(val[i]);
+        tbx_free(val);
     }
 
-    if (v_size) free(v_size);
+    if (v_size) tbx_free(v_size);
 }
 
 //***********************************************************************
@@ -2055,16 +2055,16 @@ fail:
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     if (key) {
-        for (i=0; i<n; i++) if (key[i]) free(key[i]);
-        free(key);
+        for (i=0; i<n; i++) if (key[i]) tbx_free(key[i]);
+        tbx_free(key);
     }
 
     if (val) {
-        for (i=0; i<n; i++) if (val[i]) free(val[i]);
-        free(val);
+        for (i=0; i<n; i++) if (val[i]) tbx_free(val[i]);
+        tbx_free(val);
     }
 
-    if (v_size) free(v_size);
+    if (v_size) tbx_free(v_size);
 }
 
 
@@ -2336,12 +2336,12 @@ fail:
     if (spin.key != NULL) {
         apr_thread_mutex_lock(osrs->lock);
         apr_hash_set(osrs->spin, spin.key, spin.key_len, NULL);
-        free(spin.key);
+        tbx_free(spin.key);
         if (spin.gop != NULL) gop_free(spin.gop, OP_DESTROY);
         apr_thread_mutex_unlock(osrs->lock);
     }
 
-    if (call_id != NULL) free(call_id);
+    if (call_id != NULL) tbx_free(call_id);
 
     osrs_release_creds(os, creds);
 
@@ -2354,12 +2354,12 @@ fail:
 
     if (key != NULL) {
         for (i=0; i<n_attrs; i++) {
-            if (key[i] != NULL) free(key[i]);
-            if (val[i] != NULL) free(val[i]);
+            if (key[i] != NULL) tbx_free(key[i]);
+            if (val[i] != NULL) tbx_free(val[i]);
         }
-        free(key);
-        free(val);
-        free(v_size);
+        tbx_free(key);
+        tbx_free(val);
+        tbx_free(v_size);
     }
 
     log_printf(5, "END status=%d n_errs=%d\n", status.op_status, status.error_code);
@@ -2527,13 +2527,13 @@ fail:
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     if (key_src) {
-        for (i=0; i<n; i++) if (key_src[i]) free(key_src[i]);
-        free(key_src);
+        for (i=0; i<n; i++) if (key_src[i]) tbx_free(key_src[i]);
+        tbx_free(key_src);
     }
 
     if (key_dest) {
-        for (i=0; i<n; i++) if (key_dest[i]) free(key_dest[i]);
-        free(key_dest);
+        for (i=0; i<n; i++) if (key_dest[i]) tbx_free(key_dest[i]);
+        tbx_free(key_dest);
     }
 }
 
@@ -2681,13 +2681,13 @@ fail:
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     if (key_src) {
-        for (i=0; i<n; i++) if (key_src[i]) free(key_src[i]);
-        free(key_src);
+        for (i=0; i<n; i++) if (key_src[i]) tbx_free(key_src[i]);
+        tbx_free(key_src);
     }
 
     if (key_dest) {
-        for (i=0; i<n; i++) if (key_dest[i]) free(key_dest[i]);
-        free(key_dest);
+        for (i=0; i<n; i++) if (key_dest[i]) tbx_free(key_dest[i]);
+        tbx_free(key_dest);
     }
 }
 
@@ -2850,18 +2850,18 @@ fail:
     gop_mq_submit(osrs->server_portal, gop_mq_task_new(osrs->mqc, response, NULL, NULL, 30));
 
     if (key_src) {
-        for (i=0; i<n; i++) if (key_src[i]) free(key_src[i]);
-        free(key_src);
+        for (i=0; i<n; i++) if (key_src[i]) tbx_free(key_src[i]);
+        tbx_free(key_src);
     }
 
     if (key_dest) {
-        for (i=0; i<n; i++) if (key_dest[i]) free(key_dest[i]);
-        free(key_dest);
+        for (i=0; i<n; i++) if (key_dest[i]) tbx_free(key_dest[i]);
+        tbx_free(key_dest);
     }
 
     if (src_path) {
-        for (i=0; i<n; i++) if (src_path[i]) free(src_path[i]);
-        free(src_path);
+        for (i=0; i<n; i++) if (src_path[i]) tbx_free(src_path[i]);
+        tbx_free(src_path);
     }
 }
 
@@ -3018,12 +3018,12 @@ fail:
             if (v_size[i] > 0) {
                 log_printf(5, "val[%d]=%s\n", i, val[i]);
                 err += gop_mq_stream_write(mqs, val[i], v_size[i]);
-                free(val[i]);
+                tbx_free(val[i]);
                 val[i] = NULL;
             }
         }
 
-        free(fname);
+        tbx_free(fname);
 
         if (err != 0) break;  //** Got a write error so break;
     }
@@ -3050,12 +3050,12 @@ finished:
 
     if (key != NULL) {
         for (i=0; i<n_attrs; i++) {
-            if (key[i] != NULL) free(key[i]);
-            if (val[i] != NULL) free(val[i]);
+            if (key[i] != NULL) tbx_free(key[i]);
+            if (val[i] != NULL) tbx_free(val[i]);
         }
-        free(key);
-        free(val);
-        free(v_size);
+        tbx_free(key);
+        tbx_free(val);
+        tbx_free(v_size);
     }
 
 }
@@ -3194,14 +3194,14 @@ fail:
                 n = tbx_zigzag_encode(len, tbuf);
                 err += gop_mq_stream_write(mqs, tbuf, n);
                 err += gop_mq_stream_write(mqs, key, len);
-                free(key);
+                tbx_free(key);
                 key = NULL;
 
                 n = tbx_zigzag_encode(v_size, tbuf);
                 err += gop_mq_stream_write(mqs, tbuf, n);
                 if (v_size > 0) {
                     err += gop_mq_stream_write(mqs, val, v_size);
-                    free(val);
+                    tbx_free(val);
                     val = NULL;
                 }
                 v_size = v_max;
@@ -3212,7 +3212,7 @@ fail:
         }
 
 
-        free(fname);
+        tbx_free(fname);
     }
 
     //** Flag this as the last object
@@ -3362,13 +3362,13 @@ fail:
         n = tbx_zigzag_encode(len, tbuf);
         err += gop_mq_stream_write(mqs, tbuf, n);
         err += gop_mq_stream_write(mqs, key, len);
-        free(key);
+        tbx_free(key);
 
         n = tbx_zigzag_encode(v_size, tbuf);
         err += gop_mq_stream_write(mqs, tbuf, n);
         if (v_size > 0) {
             err += gop_mq_stream_write(mqs, val, v_size);
-            free(val);
+            tbx_free(val);
         }
 
         v_size = v_size_init;
@@ -3502,7 +3502,7 @@ fail:
         n = tbx_zigzag_encode(len, tbuf);
         err += gop_mq_stream_write(mqs, tbuf, n);
         err += gop_mq_stream_write(mqs, bad_fname, len);
-        free(bad_fname);
+        tbx_free(bad_fname);
 
         n = tbx_zigzag_encode(bad_atype, tbuf);
         n += tbx_zigzag_encode(fsck_err, &(tbuf[n]));
@@ -3522,7 +3522,7 @@ finished:
     osrs_release_creds(os, creds);
     gop_mq_frame_destroy(fcred);
 
-    if (path != NULL) free(path);
+    if (path != NULL) tbx_free(path);
 
     //** Flush the buffer
     gop_mq_stream_destroy(mqs);
@@ -3608,7 +3608,7 @@ void osrs_fsck_object_cb(void *arg, gop_mq_task_t *task)
     osrs_release_creds(os, creds);
     gop_mq_frame_destroy(fcred);
 
-    if (path != NULL) free(path);
+    if (path != NULL) tbx_free(path);
 }
 
 //***********************************************************************
@@ -3656,18 +3656,18 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
         gop_mq_portal_remove(osrs->mqc, osrs->server_portal);
         gop_mq_ongoing_destroy(osrs->ongoing);  //** Shutdown the ongoing thread and task
         gop_mq_portal_destroy(osrs->server_portal);
-        free(osrs->hostname);
+        tbx_free(osrs->hostname);
     }
 
     //** Free the log string
-    if (osrs->fname_activity != NULL) free(osrs->fname_activity);
+    if (osrs->fname_activity != NULL) tbx_free(osrs->fname_activity);
 
     //** Cleanup the activity log
     tbx_stack_move_to_top(osrs->active_lru);
     a = tbx_stack_get_current_data(osrs->active_lru);
     while (a != NULL) {
-        if (a->host_id) free(a->host_id);
-        free(a);
+        if (a->host_id) tbx_free(a->host_id);
+        tbx_free(a);
         tbx_stack_move_down(osrs->active_lru);
         a = tbx_stack_get_current_data(osrs->active_lru);
     }
@@ -3677,7 +3677,7 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     //** Free the pending_lock_table
     for (hi = apr_hash_first(NULL, osrs->pending_lock_table); hi != NULL; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, &id, &id_len, (void **)&count);
-        if (count) free(count);
+        if (count) tbx_free(count);
         apr_hash_set(osrs->pending_lock_table, id, id_len, NULL);
     }
 
@@ -3687,12 +3687,12 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     //** Now do the normal cleanup
     tbx_apr_pool_destroy(osrs->mpool);
 
-    free(osrs->section);
-    free(osrs->os_local_section);
+    tbx_free(osrs->section);
+    tbx_free(osrs->os_local_section);
 
-    if (osrs->fname_active) free(osrs->fname_active);
-    free(osrs);
-    free(os);
+    if (osrs->fname_active) tbx_free(osrs->fname_active);
+    tbx_free(osrs);
+    tbx_free(os);
 }
 
 
@@ -3746,7 +3746,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     if (stype == NULL) {  //** Oops missing child OS
         log_printf(0, "ERROR: Mising child OS  section=%s key=rs_local!\n", section);
         tbx_log_flush();
-        free(stype);
+        tbx_free(stype);
         abort();
     }
     osrs->os_local_section = stype;
@@ -3760,7 +3760,7 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
         tbx_log_flush();
         abort();
     }
-    free(ctype);
+    tbx_free(ctype);
 
     //** Get the AuthN server
     osrs->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);

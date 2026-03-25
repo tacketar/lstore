@@ -55,7 +55,7 @@ void do_generate_walk(os_inode_ctx_t *ctx, const char *path, int recurse_depth)
 
         if (inode == OS_INODE_MISSING) fprintf(stdout, "%s: %s\n", OS_MSG_NO_INODE, fname);
         os_inode_put(ctx, inode, parent, ftype,len-prefix_len, fname + prefix_len);
-        free(fname);
+        tbx_free(fname);
     }
 
     //** Cleanup
@@ -87,7 +87,7 @@ int generate_db(const char *db_prefix, int n_shards, int recurse_depth, int star
     while ((path = tbx_stdinarray_iter_next(it)) != NULL) {
 //fprintf(stderr, "generate_db: path=%s\n", path);
         do_generate_walk(ctx, path, recurse_depth);
-        free(path);
+        tbx_free(path);
     }
 
     tbx_stdinarray_iter_destroy(it);
@@ -121,7 +121,7 @@ void changelog_print(FILE *fd, os_inode_db_t *db, const char *error, ex_id_t ino
     }
 
     for (i=0; i<n; i++) {
-        if (dentry[i]) free(dentry[i]);
+        if (dentry[i]) tbx_free(dentry[i]);
     }
 }
 
@@ -186,7 +186,7 @@ int check_missing_db(os_inode_db_t *src, os_inode_db_t *dest)
 
 //fprintf(stdout, "MATCH: shard=%d src_inode=" XIDT "\n", i, r->inode);
 next:
-            if (de) free(de);
+            if (de) tbx_free(de);
             rocksdb_iter_next(it);
 
             errstr = NULL;
@@ -267,7 +267,7 @@ int check_orphans_db(os_inode_db_t *src, os_inode_db_t *dest)
 
 //fprintf(stdout, "CHECK: shard=%d dest_inode=" XIDT " de=%s\n", i, r->inode, r->dentry.dentry);
 next:
-            if (de) free(de);
+            if (de) tbx_free(de);
             rocksdb_iter_next(it);
 
             errstr = NULL;
@@ -432,7 +432,7 @@ void perform_lookups(int do_check, const char *fdest, int start_option, int argc
     cnt = 0;
     while ((entry = tbx_stdinarray_iter_next(it)) != NULL) {
         sscanf(entry, XIDT, &ino);
-        free(entry);
+        tbx_free(entry);
 
         err = (ilut) ? os_inode_lookup_path_with_lut(ctx, ilut, ino, inode, ftype, dentry, &n) :
                        os_inode_lookup_path(ctx, ino, inode, ftype, dentry, &n);
@@ -447,7 +447,7 @@ void perform_lookups(int do_check, const char *fdest, int start_option, int argc
             os_inode_lookup2path(path, n, inode, dentry);
             fprintf(stdout, "%d: PATH %s\n", cnt, path);
             for (i=n-1; i>=0; i--) {
-                if (dentry[i]) free(dentry[i]);
+                if (dentry[i]) tbx_free(dentry[i]);
             }
 
             fprintf(stdout, "%d: INODE ", cnt);
@@ -506,7 +506,7 @@ void perform_deletes(int do_check, const char *fdest, int start_option, int argc
     cnt = 0;
     while ((entry = tbx_stdinarray_iter_next(it)) != NULL) {
         sscanf(entry, XIDT, &ino);
-        free(entry);
+        tbx_free(entry);
 
 //** FIXME
 if (loop_inode_hack) {
@@ -517,7 +517,7 @@ if (loop_inode_hack) {
     parent = ino;
     os_inode_put(ctx, ino, parent, ftype, len, de);
     fprintf(stderr, "LOOPING: inode=" XIDT "\n", ino);
-    if (de) free(de);
+    if (de) tbx_free(de);
 } else {
         os_inode_del(ctx, ino, 0);
 //fprintf(stderr, "%d: delete inode=" XIDT "\n", cnt, ino);

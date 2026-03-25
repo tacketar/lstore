@@ -299,7 +299,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
 
     //** Determine the account to use
     if (a) {
-        account = tbx_Stk_strdup(a);
+        account = tbx_stk_strdup(a);
     } else {
         account = tbx_inip_get_string(fd, "default", "account", NULL);
         if (!account) {
@@ -444,7 +444,7 @@ lio_authn_t *authn_psk_client_create(lio_service_manager_t *ess, tbx_inip_file_t
     an->cred_init = authn_psk_client_cred_init;
     an->destroy = authn_psk_client_destroy;
 
-    ap->section = tbx_Stk_strdup(section);
+    ap->section = tbx_stk_strdup(section);
     ap->remote_host_string = tbx_inip_get_string(ifd, section, "remote_address", psk_default_options.remote_host_string);
     ap->remote_host = gop_mq_string_to_address(ap->remote_host_string);
 

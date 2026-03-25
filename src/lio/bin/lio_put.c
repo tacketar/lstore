@@ -187,7 +187,7 @@ int main(int argc, char **argv)
 
 
 finished:
-    free(buffer);
+    tbx_free(buffer);
 
     lio_path_release(&tuple);
 

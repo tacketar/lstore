@@ -493,7 +493,7 @@ apr_hash_t *load_pool_config(char *fname, apr_pool_t *mpool, tbx_stack_t *my_poo
 
     if (my_pool_list == NULL) tbx_stack_free(pool_list, 1);
 
-    free(rid_config);
+    tbx_free(rid_config);
     tbx_inip_destroy(rfd);
     tbx_inip_destroy(pfd);
 
@@ -605,7 +605,7 @@ apr_hash_t *rebalance_pool(apr_pool_t *mpool, tbx_stack_t *my_pool_list, char *k
 
     if (my_pool_list == NULL) tbx_stack_free(pool_list, 1);
 
-    free(rid_config);
+    tbx_free(rid_config);
     tbx_inip_destroy(rfd);
     tbx_list_destroy(master);
 
@@ -800,7 +800,7 @@ gop_op_status_t inspect_task(void *arg, int id)
     tbx_inip_destroy(ifd);
     if (dsegid == NULL) {
         msg = "No default segment!";
-        free(w->exnode);
+        tbx_free(w->exnode);
         status = gop_failure_status;
         goto fini_1;
     }
@@ -814,8 +814,8 @@ gop_op_status_t inspect_task(void *arg, int id)
     if (ptr != NULL) {
         apr_thread_mutex_unlock(lock);
         info_printf(lfd, 0, "WARN: Skipping file %s (ftype=%d). Already loaded/processed.\n", w->tuple.path, w->ftype);
-        free(dsegid);
-        free(w->exnode);
+        tbx_free(dsegid);
+        tbx_free(w->exnode);
         status = gop_failure_status;
         goto fini_1;
     }
@@ -924,7 +924,7 @@ gop_op_status_t inspect_task(void *arg, int id)
             lio_getattr(lio_gc, creds, w->tuple.path, NULL, "system.exnode", (void **)&exnode2, &count);
             if (exnode2 != NULL) {
                 count = strcmp(exnode2, exp->text.text);
-                free(exnode2);
+                tbx_free(exnode2);
                 if (count != 0) {
                     info_printf(lfd, 0, "WARN Exnode changed during inspection for file %s (ftype=%d). Aborting exnode update\n", w->tuple.path, w->ftype);
                 } else {
@@ -984,7 +984,7 @@ gop_op_status_t inspect_task(void *arg, int id)
                 lio_getattr(lio_gc, creds, w->tuple.path, NULL, "system.exnode", (void **)&exnode2, &count);
                 if (exnode2 != NULL) {
                     count = strcmp(exnode2, exp->text.text);
-                    free(exnode2);
+                    tbx_free(exnode2);
                     if (count != 0) {
                         info_printf(lfd, 0, "WARN Exnode changed during inspection for file %s (ftype=%d). Aborting exnode update\n", w->tuple.path, w->ftype);
                     } else {
@@ -1055,7 +1055,7 @@ fini_1:
     if (fd) {
         tbx_info_destroy(lfd);
         fclose(fd);
-        free(w->log_name);
+        tbx_free(w->log_name);
     }
 
     return(status);
@@ -1414,7 +1414,7 @@ int main(int argc, char **argv)
     if (do_print == 1) {
         qstr = rs_query_print(lio_gc->rs, query);
         printf("RS query=%s\n", qstr);
-        free(qstr);
+        tbx_free(qstr);
     }
 
     //** See if we need to load the pool config for a rebalance
@@ -1477,7 +1477,7 @@ int main(int argc, char **argv)
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
                 err = EINVAL;
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
@@ -1485,11 +1485,11 @@ int main(int argc, char **argv)
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
-            free(path);
+            tbx_free(path);
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
@@ -1510,7 +1510,7 @@ int main(int argc, char **argv)
             gotone = ((acount == 1) && (assume_skip == 0)) ? 1 : 0;
             for (i=1; i<acount; i++) {
                 if ((vals[i] != NULL) && (i != select_index)) {
-                    free(vals[i]);
+                    tbx_free(vals[i]);
                     gotone = 1;
                 }
             }
@@ -1535,7 +1535,7 @@ int main(int argc, char **argv)
                     break;
                 }
 
-                if (vals[select_index] != NULL) free(vals[select_index]);
+                if (vals[select_index] != NULL) tbx_free(vals[select_index]);
             }
 
             if (gotone == 1) {
@@ -1603,8 +1603,8 @@ int main(int argc, char **argv)
                     slot++;
                 }
             } else {  //** Do some cleanup since we aren't doing a check
-                free(fname);
-                if (vals[0] != NULL) free(vals[0]);
+                tbx_free(fname);
+                if (vals[0] != NULL) tbx_free(vals[0]);
             }
         }
         apr_thread_mutex_unlock(shutdown_lock);
@@ -1664,7 +1664,7 @@ int main(int argc, char **argv)
         }
     }
 
-    free(w);
+    tbx_free(w);
 
     tbx_stdinarray_iter_destroy(piter);
     if (shutdown_mpool) tbx_apr_pool_destroy(shutdown_mpool);

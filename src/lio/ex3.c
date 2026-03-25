@@ -71,7 +71,7 @@ ex_tbx_iovec_t *ex_iovec_create()
 
 void ex_iovec_destroy(ex_tbx_iovec_t *iov)
 {
-    free(iov);
+    tbx_free(iov);
 }
 
 //*************************************************************************
@@ -233,7 +233,7 @@ gop_op_status_t lio_exnode_clone_gop_func(void *arg, int gid)
         gop_free(gop, OP_DESTROY);
     }
 
-    free(new_seg);
+    tbx_free(new_seg);
 
     gop_opque_free(q, OP_DESTROY);
 
@@ -277,7 +277,7 @@ gop_op_generic_t *lio_exnode_clone_gop(gop_thread_pool_context_t *tpc, lio_exnod
 void exnode_exchange_free(lio_exnode_exchange_t *exp)
 {
     if (exp->text.text != NULL) {
-        free(exp->text.text);
+        tbx_free(exp->text.text);
         exp->text.text= NULL;
     }
     if (exp->text.fd != NULL) {
@@ -294,7 +294,7 @@ void exnode_exchange_free(lio_exnode_exchange_t *exp)
 void lio_exnode_exchange_destroy(lio_exnode_exchange_t *exp)
 {
     exnode_exchange_free(exp);
-    free(exp);
+    tbx_free(exp);
 }
 
 //*************************************************************************
@@ -399,7 +399,7 @@ void exnode_exchange_append_text(lio_exnode_exchange_t *exp, char *buffer)
         exp->text.text = text;
     } else {
         sprintf(text, "%s\n%s", exp->text.text, buffer);
-        free(exp->text.text);
+        tbx_free(exp->text.text);
         exp->text.text = text;
     }
 
@@ -457,7 +457,7 @@ int lio_exnode_deserialize_text(lio_exnode_t *ex, lio_exnode_exchange_t *exp, li
             token = tbx_stk_strdup(value);
             id = 0;
             sscanf(tbx_stk_string_token(token, ":", &bstate, &fin), XIDT, &id);
-            free(token);
+            tbx_free(token);
 
             //** and load it
             log_printf(15, "exnode_load_text: Loading view segment " XIDT "\n", id);
@@ -574,7 +574,7 @@ int lio_exnode_serialize_text(lio_exnode_t *ex, lio_exnode_exchange_t *exp)
         if (strcmp(ex->header.name, "") != 0) {
             etext = tbx_stk_escape_text("=", '\\', ex->header.name);
             tbx_append_printf(buffer, &used, bufsize, "name=%s\n", etext);
-            free(etext);
+            tbx_free(etext);
         }
     }
     tbx_append_printf(buffer, &used, bufsize, "id=" XIDT "\n\n", ex->header.id);
@@ -653,7 +653,7 @@ void lio_exnode_destroy(lio_exnode_t *ex)
 
     ex_header_release(&(ex->header));
 
-    free(ex);
+    tbx_free(ex);
 
     return;
 }

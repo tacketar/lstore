@@ -30,7 +30,8 @@ http://www.accre.vanderbilt.edu
 #include <stdlib.h>
 #include <string.h>
 #include <tbx/log.h>
-#include  <lio/lio.h>
+#include <lio/lio.h>
+#include <tbx/type_malloc.h>
 
 
 //*************************************************************************
@@ -63,13 +64,13 @@ int main(int argc, char **argv)
     printf("hints=%s\n", hints);
     printf("breakout:\n  is_lio=%d\n  user=%s\n  mq=%s\n  host=%s\n  port=%d\n  cfg=%s\n  section=%s\n  fname=%s\n", is_lio, user, mq, host, port, cfg, section, fname);
 
-    if (user) free(user);
-    if (mq) free(mq);
-    if (host) free(host);
-    if (cfg) free(cfg);
-    if (section) free(section);
-    if (fname) free(fname);
-    if (hints) free(hints);
+    if (user) tbx_free(user);
+    if (mq) tbx_free(mq);
+    if (host) tbx_free(host);
+    if (cfg) tbx_free(cfg);
+    if (section) tbx_free(section);
+    if (fname) tbx_free(fname);
+    if (hints) tbx_free(hints);
 
     return(0);
 }

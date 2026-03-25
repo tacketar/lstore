@@ -422,8 +422,8 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     }
 
     //** Free the ptrs
-    free(ptr);
-    free(buffer);
+    tbx_free(ptr);
+    tbx_free(buffer);
 
     tbx_io_fclose(fd_file);
     tbx_io_fclose(fd_parity);
@@ -580,9 +580,9 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
     }
 
     //** Free the ptrs
-    free(ptr);
-    free(buffer);
-    free(missing);
+    tbx_free(ptr);
+    tbx_free(buffer);
+    tbx_free(missing);
 
     tbx_io_fclose(fd_file);
     tbx_io_fclose(fd_parity);
@@ -670,7 +670,7 @@ lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
         break;
     default:
         printf("et_new_plan: invalid method!!!!!! method=%d\n", method);
-        free(plan);
+        tbx_free(plan);
         return(NULL);
     }
 
@@ -685,21 +685,21 @@ void et_destroy_plan(lio_erasure_plan_t *plan)
 {
     int i;
 
-    if (plan->encode_matrix != NULL) free(plan->encode_matrix);
-    if (plan->encode_bitmatrix != NULL) free(plan->encode_bitmatrix);
+    if (plan->encode_matrix != NULL) tbx_free(plan->encode_matrix);
+    if (plan->encode_bitmatrix != NULL) tbx_free(plan->encode_bitmatrix);
 
     if (plan->encode_schedule != NULL) {
         i=0;
         while (plan->encode_schedule[i][0] != -1) {
-            free(plan->encode_schedule[i]);
+            tbx_free(plan->encode_schedule[i]);
             i++;
         }
-        free(plan->encode_schedule[i]);
+        tbx_free(plan->encode_schedule[i]);
 
-        free(plan->encode_schedule);
+        tbx_free(plan->encode_schedule);
     }
 
-    free(plan);
+    tbx_free(plan);
 }
 
 //***************************************************************************

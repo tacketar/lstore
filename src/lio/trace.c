@@ -221,8 +221,8 @@ void trace_destroy(lio_trace_t *trace)
         lio_exnode_destroy(trace->files[i].ex);
     }
 
-    free(trace->files);
-    free(trace->ops);
-    free(trace);
+    tbx_free(trace->files);
+    tbx_free(trace->ops);
+    tbx_free(trace);
 }
 

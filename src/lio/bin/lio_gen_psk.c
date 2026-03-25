@@ -51,7 +51,7 @@ int main(int argc, char **argv)
 
         printf("[account-%s]\n", account);
         printf("key = %s\n\n", key_escaped);
-        free(key_escaped);
+        tbx_free(key_escaped);
     } else {
         zmq_curve_keypair((char *)key_public, (char *)key_secret);
 
@@ -60,10 +60,10 @@ int main(int argc, char **argv)
         printf("[%s]\n", account);
         key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', (char *)key_public);
         printf("public_key = %s\n", key_escaped);
-        free(key_escaped);
+        tbx_free(key_escaped);
         key_escaped = tbx_stk_escape_text(TBX_INIP_ESCAPE_CHARS, '\\', (char *)key_secret);
         printf("secret_key = %s\n\n", key_escaped);
-        free(key_escaped);
+        tbx_free(key_escaped);
 
 
     }

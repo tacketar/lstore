@@ -494,7 +494,7 @@ again:
     if (q2) gop_opque_free(q2, OP_DESTROY);
 
     for (i=0; i<s->n_mirrors; i++) {
-        if (buffer[i]) free(buffer[i]);
+        if (buffer[i]) tbx_free(buffer[i]);
     }
     return((redo ? gop_failure_status : gop_success_status));
 }
@@ -701,7 +701,7 @@ do_repair = 0;  //QWERT
 
     status = gop_success_status;
     for (i=0; i<s->n_mirrors; i++) {
-        if (buffer[i]) free(buffer[i]);
+        if (buffer[i]) tbx_free(buffer[i]);
         if (((repaired[i] > 0) && (rerrs[i] > 0)) || (merrs[i] > 0)) {
             state = "BAD ";
             status = gop_failure_status;
@@ -1220,9 +1220,9 @@ gop_op_status_t seg_mirror_clone_fn(void *arg, int id)
         for (i=0; i<sd->n_mirrors; i++) {
             if (sd->child_seg[i]) tbx_obj_put(&(sd->child_seg[i]->obj));
         }
-        free(sd->child_seg);
+        tbx_free(sd->child_seg);
         sd->child_seg = child_mirrors;
-        free(sd->child_status);
+        tbx_free(sd->child_status);
         sd->child_status = child_status;
         status = gop_failure_status;
         child_mirrors = NULL;
@@ -1244,8 +1244,8 @@ gop_op_status_t seg_mirror_clone_fn(void *arg, int id)
         for (i=0; i<sd->n_mirrors; i++) {
             if (child_mirrors[i]) tbx_obj_put(&(child_mirrors[i]->obj));
         }
-        free(child_mirrors);
-        free(child_status);
+        tbx_free(child_mirrors);
+        tbx_free(child_status);
     }
 
     gop_opque_free(q, OP_DESTROY);
@@ -1393,7 +1393,7 @@ int seg_mirror_serialize(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     if ((seg->header.name != NULL) && (strcmp(seg->header.name, "") != 0)) {
         etext = tbx_stk_escape_text("=", '\\', seg->header.name);
         tbx_append_printf(segbuf, &sused, bufsize, "name=%s\n", etext);
-        free(etext);
+        tbx_free(etext);
     }
     tbx_append_printf(segbuf, &sused, bufsize, "type=%s\n", SEGMENT_TYPE_MIRROR);
 
@@ -1466,19 +1466,19 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
     if (token) {
         sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->errors_wc[E_SOFT]));
         sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), "%d", &(s->errors[E_SOFT]));
-        free(token);
+        tbx_free(token);
     }
     token = tbx_inip_get_string(fd, seggrp, "hard_errors", NULL);
     if (token) {
         sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->errors_wc[E_HARD]));
         sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), "%d", &(s->errors[E_HARD]));
-        free(token);
+        tbx_free(token);
     }
     token = tbx_inip_get_string(fd, seggrp, "write_errors", NULL);
     if (token) {
         sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->errors_wc[E_WRITE]));
         sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), "%d", &(s->errors[E_WRITE]));
-        free(token);
+        tbx_free(token);
     }
 
     //** Now load the mirrors
@@ -1494,7 +1494,7 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
             token = tbx_stk_strdup(value);
             sscanf(tbx_stk_escape_string_token(token, ":", '\\', 0, &bstate, &fin), XOT, &(s->child_status[i]));
             sscanf(tbx_stk_escape_string_token(NULL, ":", '\\', 0, &bstate, &fin), XIDT, &cid);
-            free(token);
+            tbx_free(token);
 
             cseg = load_segment(seg->ess, cid, exp);
             if (!cseg) fail = 1;
@@ -1512,7 +1512,7 @@ int seg_mirror_deserialize(lio_segment_t *seg, ex_id_t id, lio_exnode_exchange_t
         for (i=1; i<s->n_mirrors; i++) {
             if (s->child_seg[i]) tbx_obj_put(&(s->child_seg[i]->obj));
         }
-        free(s->child_seg);
+        tbx_free(s->child_seg);
         s->child_seg = NULL;
         return(-1);
     }
@@ -1570,20 +1570,20 @@ void seg_mirror_destroy(tbx_ref_t *ref)
             tbx_obj_put(&(s->child_seg[i]->obj));
             tbx_monitor_obj_ungroup(&(seg->header.mo), &cmo);
         }
-        free(s->child_seg);
+        tbx_free(s->child_seg);
     }
-    if (s->child_status) free(s->child_status);
+    if (s->child_status) tbx_free(s->child_status);
 
     tbx_monitor_obj_destroy(&(seg->header.mo));
 
-    free(s);
+    tbx_free(s);
     ex_header_release(&(seg->header));
 
     apr_thread_mutex_destroy(seg->lock);
     apr_thread_cond_destroy(seg->cond);
     tbx_apr_pool_destroy(seg->mpool);
 
-    free(seg);
+    tbx_free(seg);
 }
 
 

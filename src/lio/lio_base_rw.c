@@ -459,7 +459,7 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
             //** This is sloppy should use tbuffer_next to do this but this is all going ot be thrown away once we track
             //** down the gridftp plugin issue
             if (blen < a32->len) {
-                if (buf != NULL) free(buf);
+                if (buf != NULL) tbx_free(buf);
                 blen = a32->len;
                 tbx_type_malloc(buf, unsigned char, blen);
             }
@@ -473,7 +473,7 @@ gop_op_status_t lio_write_ex_fn_aio(void *arg, int id)
             bpos += a32->len;
         }
 
-        if (buf != NULL) free(buf);
+        if (buf != NULL) tbx_free(buf);
     }
 
     //** Calculate the total bytes written
@@ -631,9 +631,9 @@ void wq_context_destroy(wq_context_t *ctx)
 {
     wq_ctx_shutdown(ctx);
     gop_hp_context_destroy(ctx->pc);
-    free(ctx->fd->path);
-    free(ctx->fd);
-    free(ctx);
+    tbx_free(ctx->fd->path);
+    tbx_free(ctx->fd);
+    tbx_free(ctx);
 }
 
 //*************************************************************
@@ -644,8 +644,8 @@ void _wqp_op_free(gop_op_generic_t *gop, int mode)
 
     gop_generic_free(gop, OP_FINALIZE);  //** I free the actual op
     if (mode == OP_DESTROY) {
-        free(op->rw);
-        free(gop->free_ptr);
+        tbx_free(op->rw);
+        tbx_free(gop->free_ptr);
     }
 }
 
@@ -770,7 +770,7 @@ int wq_ctx_fetch_tasks(wq_context_t *ctx)
 
     //** Make sure we have enough IOV space to process everything
     if (n_iov > ctx->max_iov) {
-        free(ctx->iov);
+        tbx_free(ctx->iov);
         ctx->max_iov = 1.5* n_iov;
         tbx_type_malloc_clear(ctx->iov, struct iovec, ctx->max_iov);
     }
@@ -1039,9 +1039,9 @@ void wq_ctx_shutdown(wq_context_t *ctx)
 {
     tbx_stack_free(ctx->wq, 0);
 
-    free(ctx->iov);
-    free(ctx->work[OP_READ].tasks); free(ctx->work[OP_WRITE].tasks);
-    free(ctx->work[OP_READ].merged); free(ctx->work[OP_WRITE].merged);
+    tbx_free(ctx->iov);
+    tbx_free(ctx->work[OP_READ].tasks); tbx_free(ctx->work[OP_WRITE].tasks);
+    tbx_free(ctx->work[OP_READ].merged); tbx_free(ctx->work[OP_WRITE].merged);
 
     tbx_apr_pool_destroy(ctx->mpool);
 }
@@ -1089,5 +1089,5 @@ void lio_wq_shutdown()
     tbx_apr_pool_destroy(wq_global->mpool);
 
     //** And free the structure
-    free(wq_global);
+    tbx_free(wq_global);
 }

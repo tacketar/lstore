@@ -107,8 +107,8 @@ int path_scan_and_check(char *path, char **match, int n_match, int recurse_depth
         log_printf(0,"----------------------------------------------------------------------------------------------\n");
     }
 
-    for (i=0; i<n; i++) free(name[i]);
-    free(name);
+    for (i=0; i<n; i++) tbx_free(name[i]);
+    tbx_free(name);
 
     if (size_err != 0) err = size_err;
     return(err);
@@ -803,7 +803,7 @@ int os_create_remove_tests(char *prefix)
     lio_os_regex_table_destroy(regex);
 
     for (i=0; i<10; i++) {
-        free(match_path[i]);
+        tbx_free(match_path[i]);
     }
 
     log_printf(0, "PASSED!\n");
@@ -838,8 +838,8 @@ int attr_check(os_attr_iter_t *it, char **key, char **val, int *v_size, int n)
             }
         }
 
-        free(ikey);
-        free(ival);
+        tbx_free(ikey);
+        tbx_free(ival);
         ikey = ival = NULL;
     }
 
@@ -922,7 +922,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: attributre timestamp is off attr=%s dt=" XOT " should be less than 5\n", key, dt);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     // ** Create FILE LINK bar->foo
     snprintf(bar_path, PATH_LEN, "%s/bar", prefix);
@@ -957,7 +957,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** get_attr(type) bar
     v_size = -1000;
@@ -973,7 +973,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** get_attr(link) for foo
     v_size = -1000;
@@ -990,7 +990,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=NULL got=%s\n", key, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** get_attr(link) bar
     v_size = -1000;
@@ -1006,7 +1006,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** Check out the timestamps
     //** make /bar{user.timestamp}
@@ -1034,7 +1034,7 @@ int os_attribute_tests(char *prefix)
             nfailed++;
             log_printf(0, "ERROR: Cant find my tag in key=%s timestamp=%s tag=%s err=%d\n", key, rval, val, err);
         }
-        free(rval);
+        tbx_free(rval);
     } else {
         nfailed++;
         log_printf(0, "ERROR: val missing\n");
@@ -1056,7 +1056,7 @@ int os_attribute_tests(char *prefix)
             nfailed++;
             log_printf(0, "ERROR: Cant find my tag in key=%s timestamp=%s tag=%s err=%d\n", key, rval, val, err);
         }
-        free(rval);
+        tbx_free(rval);
     } else {
         nfailed++;
         log_printf(0, "ERROR: val missing\n");
@@ -1078,7 +1078,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val missing\n");
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** Make an attribute for root/prefix "/"
     snprintf(root_path, PATH_LEN, "%s", prefix);
@@ -1115,7 +1115,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=foo1 got=%s\n", key, val);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     //** Now softlink /bar{user.link_root} -> /{foo1}
     //** Now do a link between attributes
@@ -1145,7 +1145,7 @@ int os_attribute_tests(char *prefix)
 
 //abort();
 
-    free(rval);
+    tbx_free(rval);
 
     //** Now remove the foo1 attribute for root
     v_size = -1;
@@ -1220,7 +1220,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=foo1 got=%s\n", key, val);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     // ** set_attr(foo2=foo2);
     key = "user.foo2";
@@ -1248,7 +1248,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     // ** set_mult_attr(foo1=FOO1,foo3=foo3, bar1=bar1);
     mkey[0] = "user.foo1";
@@ -1284,7 +1284,7 @@ int os_attribute_tests(char *prefix)
             return(nfailed);
         }
 
-        free(mrval[i]);
+        tbx_free(mrval[i]);
     }
 
     // ** get_attr(*);
@@ -1377,7 +1377,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", key, val, rval);
         return(nfailed);
     }
-    free(rval);
+    tbx_free(rval);
 
     // ** Now rename foo2->bar2 and foo3->bar3
     mkey[0] = "user.foo2";
@@ -1572,8 +1572,8 @@ int os_attribute_tests(char *prefix)
                 }
             }
 
-            free(key);
-            free(val);
+            tbx_free(key);
+            tbx_free(val);
             v_size = -1000;
         }
 
@@ -1583,7 +1583,7 @@ int os_attribute_tests(char *prefix)
             return(nfailed);
         }
 
-        free(fname);
+        tbx_free(fname);
     }
     os_destroy_object_iter(os, oit);
     lio_os_regex_table_destroy(regex);
@@ -1633,10 +1633,10 @@ int os_attribute_tests(char *prefix)
                 log_printf(0, "ERROR bad value fname=%s key=%s val=%s should be mval=%s\n", fname, mkey[i], mrval[i], mval[i]);
                 return(nfailed);
             }
-            if (mrval[i] != NULL) free(mrval[i]);
+            if (mrval[i] != NULL) tbx_free(mrval[i]);
         }
 
-        free(fname);
+        tbx_free(fname);
     }
     os_destroy_object_iter(os, oit);
     lio_os_regex_table_destroy(regex);
@@ -1701,7 +1701,7 @@ int os_attribute_tests(char *prefix)
             return(nfailed);
         }
 
-        free(mrval[i]);
+        tbx_free(mrval[i]);
     }
 
     //** Now do a link between attributes
@@ -1741,7 +1741,7 @@ int os_attribute_tests(char *prefix)
             return(nfailed);
         }
 
-        free(mrval[i]);
+        tbx_free(mrval[i]);
     }
 
     //** Now get the type of bar user.link_bar2 and user.bar2 os.create
@@ -1766,7 +1766,7 @@ int os_attribute_tests(char *prefix)
             return(nfailed);
         }
 
-        free(mrval[i]);
+        tbx_free(mrval[i]);
     }
 
     //** Now get the type of bar user.link_bar2 and user.bar2 os.create
@@ -1790,7 +1790,7 @@ int os_attribute_tests(char *prefix)
         log_printf(0, "ERROR: val mismatch attr=%s should be=%s got=%s\n", mkey[0], mval[0], mrval[0]);
         return(nfailed);
     }
-    free(mrval[0]);
+    tbx_free(mrval[0]);
 
 
     for (i=1; i<2; i++) {
@@ -1855,10 +1855,10 @@ int os_attribute_tests(char *prefix)
 
     log_printf(0, "PASSED!\n");
 
-    for (i=0; i<10; i++) free(match[i]);
-    free(mval);
-    free(mkey);
-    free(mrval);
+    for (i=0; i<10; i++) tbx_free(match[i]);
+    tbx_free(mval);
+    tbx_free(mkey);
+    tbx_free(mrval);
     return(nfailed);
 }
 
@@ -1944,7 +1944,7 @@ int check_lock_state(os_fd_t *foo_fd, char **active, int n_active, char **pendin
 
     tbx_inip_destroy(ifd);
 
-    free(lval);
+    tbx_free(lval);
 
     return(err);
 }

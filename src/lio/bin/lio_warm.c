@@ -199,9 +199,9 @@ void object_warm_finish(warm_thread_t *w, inode_entry_t *inode)
     if (do_setattr) {
         tbx_que_put(w->que_setattr, &(inode->fname), TBX_QUE_BLOCK);
     } else {
-        if (inode->fname) free(inode->fname);
+        if (inode->fname) tbx_free(inode->fname);
     }
-    free(inode);
+    tbx_free(inode);
 }
 
 //*************************************************************************
@@ -236,7 +236,7 @@ void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
             j = failed[i];
             info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", inode[j]->fname, cap[j]);
             inode[j]->n_bad++;
-            free(cap[j]);
+            tbx_free(cap[j]);
             cap[j] = NULL; //** Flag that it's bad
             wr->bad++;
         }
@@ -244,7 +244,7 @@ void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
         for (i=0; i<r->n_running; i++) {
             info_printf(lio_ifd, 1, "ERROR: %s  cap=%s\n", inode[i]->fname, cap[i]);
             inode[i]->n_bad++;
-            free(cap[i]);
+            tbx_free(cap[i]);
             cap[i] = NULL; //** Flag that it's bad
             wr->bad++;
         }
@@ -254,7 +254,7 @@ void process_warm_op(warm_hash_entry_t *wr, warm_thread_t *w)
     for (i=0; i<r->n_running; i++) {
         mod = inode[i]->inode % n_partitions;
         if (cap[i] != NULL) {
-            free(cap[i]);
+            tbx_free(cap[i]);
             wr->good++;
             inode[i]->n_good++;
             warm_put_rid(results->p[mod]->rid, wr->rid_key, inode[i]->inode, nbytes[i], WFE_SUCCESS);
@@ -412,11 +412,11 @@ rid_warm_t *rid_todo_create(char *rid_key, int n, char *cap)
 
 void rid_todo_destroy(rid_warm_t *rid)
 {
-    free(rid->cap);
-    free(rid->inode);
-    free(rid->nbytes);
-    free(rid->failed);
-    free(rid);
+    tbx_free(rid->cap);
+    tbx_free(rid->inode);
+    tbx_free(rid->nbytes);
+    tbx_free(rid->failed);
+    tbx_free(rid);
 }
 
 //*************************************************************************
@@ -450,7 +450,7 @@ void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
                 goto next;
             }
             mcap = tbx_stk_unescape_text('\\', etext);
-            free(etext);
+            tbx_free(etext);
 
             //** Get the RID key
             etext = tbx_inip_get_string(fd, tbx_inip_group_get(g), "rid_key", NULL);
@@ -463,7 +463,7 @@ void gen_warm_tasks(warm_thread_t *w, inode_entry_t *inode)
 
                     wrid->warm = rid_todo_create(etext, w->n_bulk, mcap);
                 } else {
-                    free(etext);
+                    tbx_free(etext);
                 }
             }
             r = wrid->warm;
@@ -495,7 +495,7 @@ next:
     inode->n_left--; //** Undo our offset so we can reap the inode
     tbx_inip_destroy(fd);
 
-    free(exnode);
+    tbx_free(exnode);
 
     //** Check if there was nothing to do. If so go ahead and mark the inode as complete
     if (cnt == 0) object_warm_finish(w, inode);
@@ -526,7 +526,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
         while ((gop = opque_get_next_finished(q)) != NULL) {
             running--;
             fn = gop_get_private(gop);
-            free(fn);
+            tbx_free(fn);
             gop_free(gop, OP_DESTROY);
         }
 
@@ -539,7 +539,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
                 gop = opque_waitany(q);
                 running--;
                 fn = gop_get_private(gop);
-                free(fn);
+                tbx_free(fn);
                 gop_free(gop, OP_DESTROY);
             }
 
@@ -554,7 +554,7 @@ void *setattr_thread(apr_thread_t *th, void *data)
     opque_finished_submission(q);
     while ((gop = opque_waitany(q)) != NULL) {
         fn = gop_get_private(gop);
-        free(fn);
+        tbx_free(fn);
         gop_free(gop, OP_DESTROY);
     }
 
@@ -632,7 +632,7 @@ void *warming_thread(apr_thread_t *th, void *data)
     gop_opque_free(w->q, OP_DESTROY);
     tbx_monitor_thread_destroy(MON_MY_THREAD);
 
-    free(w->inode);
+    tbx_free(w->inode);
     return(NULL);
 }
 
@@ -816,7 +816,7 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
@@ -825,14 +825,14 @@ int main(int argc, char **argv)
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
-        free(path);  //** No longer needed.  lio_path_resolve will tbx_stk_strdup
+        tbx_free(path);  //** No longer needed.  lio_path_resolve will tbx_stk_strdup
 
         v_size[0] = v_size[1] = -tuple.lc->max_attr; v_size[2] = -tuple.lc->max_attr;
         it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG|OS_OBJECT_NO_SYMLINK_FLAG|OS_OBJECT_NO_BROKEN_LINK_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
@@ -845,9 +845,9 @@ int main(int argc, char **argv)
             if (v_size[0] == -1) { //** Missing exnode
                 info_printf(lio_ifd, 0, "MISSING_EXNODE_ERROR for file %s\n", fname);
                 missing_err++;
-                free(fname);
+                tbx_free(fname);
                 for (i=-0; i<3; i++) {
-                    if (v_size[i] > 0) free(vals[i]);
+                    if (v_size[i] > 0) tbx_free(vals[i]);
                 }
                 continue;
             }
@@ -864,7 +864,7 @@ int main(int argc, char **argv)
                 inode->write_err = 1;
                 info_printf(lio_ifd, 0, "WRITE_ERROR for file %s\n", fname);
                 if (vals[2] != NULL) {
-                    free(vals[2]);
+                    tbx_free(vals[2]);
                     vals[2] = NULL;
                 }
             }
@@ -872,7 +872,7 @@ int main(int argc, char **argv)
             inode->inode = 0;
             if (v_size[1] > 0) {
                sscanf(vals[1], XIDT, &(inode->inode));
-               free(vals[1]);
+               tbx_free(vals[1]);
                vals[1] = NULL;
             }
 
@@ -972,8 +972,8 @@ int main(int argc, char **argv)
                 mrid->dtime += wrid->dtime;
 
                 apr_hash_set(w[i].hash, wrid->rid_key, APR_HASH_KEY_STRING, NULL);
-                free(wrid->rid_key);
-                free(wrid);
+                tbx_free(wrid->rid_key);
+                tbx_free(wrid);
             }
 
             hi = apr_hash_next(hi);
@@ -1033,7 +1033,7 @@ int main(int argc, char **argv)
         info_printf(lio_ifd, 0, "%-40s  %s  %s   %10" PXOT "  %10" PXOT "  %10" PXOT "%s", rkey,
                     tbx_stk_pretty_print_double_with_scale_full(1024, (double)mrid->nbytes, ppbuf, 1),  tbx_stk_pretty_print_double_with_scale_full(1024, dtime, ppbuf2, 1),
                     total, mrid->good, mrid->bad, line_end);
-        free(rkey);
+        tbx_free(rkey);
     }
     if (summary_mode != 0) info_printf(lio_ifd, 0, "----------------------------------------  ---------  ---------   ----------  ----------  ----------\n");
 
@@ -1046,11 +1046,11 @@ int main(int argc, char **argv)
     tbx_list_destroy(master);
 
     tbx_inip_destroy(ifd);
-    free(config);
+    tbx_free(config);
 
     while ((mrid = tbx_stack_pop(stack)) != NULL) {
-        free(mrid->rid_key);
-        free(mrid);
+        tbx_free(mrid->rid_key);
+        tbx_free(mrid);
     }
     tbx_stack_free(stack, 0);
 cleanup:
@@ -1058,7 +1058,7 @@ cleanup:
         tbx_apr_pool_destroy(w[j].mpool);
     }
 
-    free(w);
+    tbx_free(w);
 
 finished:
     if (tagged_rids != NULL) {
@@ -1068,7 +1068,7 @@ finished:
 
     close_results_db(results);  //** Close the DBs
 
-    free(inode_list);
+    tbx_free(inode_list);
     tbx_stdinarray_iter_destroy(piter);
     lio_shutdown();
 

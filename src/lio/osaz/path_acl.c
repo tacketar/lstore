@@ -558,7 +558,7 @@ void _pacl_load(lio_os_authz_t *az)
         tbx_monitor_thread_message(MON_MY_THREAD, "No changes");
     }
 
-    if (obj_name) free(obj_name);
+    if (obj_name) tbx_free(obj_name);
 }
 
 //***********************************************************************
@@ -609,19 +609,19 @@ void osaz_pacl_destroy(lio_os_authz_t *az)
 
     if (or->n_override) {
         for (i=0; i<or->n_override; i++) {
-            if (or->attrs[i]) free(or->attrs[i]);
+            if (or->attrs[i]) tbx_free(or->attrs[i]);
         }
     }
-    if (osaz->acl_ns) free(osaz->acl_ns);
+    if (osaz->acl_ns) tbx_free(osaz->acl_ns);
  
-    if (osaz->lfs_tmp_prefix) free(osaz->lfs_tmp_prefix);
-    if (osaz->pa_file) free(osaz->pa_file);
-    free(osaz->section);
+    if (osaz->lfs_tmp_prefix) tbx_free(osaz->lfs_tmp_prefix);
+    if (osaz->pa_file) tbx_free(osaz->pa_file);
+    tbx_free(osaz->section);
     apr_thread_mutex_destroy(osaz->lock);
     apr_thread_cond_destroy(osaz->cond);
     tbx_apr_pool_destroy(osaz->mpool);
-    free(osaz);
-    free(az);
+    tbx_free(osaz);
+    tbx_free(az);
 }
 
 //***********************************************************************

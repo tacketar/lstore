@@ -164,7 +164,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
                     wrid->rid_key = etext;
                     apr_hash_set(w->hash, wrid->rid_key, APR_HASH_KEY_STRING, wrid);
                 } else {
-                    free(etext);
+                    tbx_free(etext);
                 }
             }
 
@@ -179,7 +179,7 @@ gop_op_status_t gen_warm_task(void *arg, int id)
                 goto next;
             }
             w->cap[w->n].cap = tbx_stk_unescape_text('\\', etext);
-            free(etext);
+            tbx_free(etext);
 
             //** Add the task
             gop = ibp_modify_alloc_gop(w->ic, w->cap[w->n].cap, -1, dt, -1, lio_gc->timeout);
@@ -240,9 +240,9 @@ next:
 
     lio_path_release(&w->tuple);
 
-    free(w->exnode);
-    for (i=0; i<w->n; i++) free(w->cap[i].cap);
-    free(w->cap);
+    tbx_free(w->exnode);
+    for (i=0; i<w->n; i++) tbx_free(w->cap[i].cap);
+    tbx_free(w->cap);
 
     return(status);
 }
@@ -391,7 +391,7 @@ int main(int argc, char **argv)
             tuple = lio_path_resolve(lio_gc->auto_translate, path);
             if (tuple.is_lio < 0) {
                 fprintf(stderr, "Unable to parse path: %s\n", path);
-                free(path);
+                tbx_free(path);
                 return_code = EINVAL;
                 lio_path_release(&tuple);
                 continue;
@@ -400,14 +400,14 @@ int main(int argc, char **argv)
             rp_single = lio_os_path_glob2regex(tuple.path);
             if (!rp_single) {  //** Got a bad path
                 info_printf(lio_ifd, 0, "ERROR: processing path=%s\n", path);
-                free(path);
+                tbx_free(path);
                 lio_path_release(&tuple);
                 continue;
             }
         } else {
             rg_mode = 0;  //** Use the initial rp
         }
-        free(path);  //** No longer needed.  lio_path_resolve will tbx_stk_strdup
+        tbx_free(path);  //** No longer needed.  lio_path_resolve will tbx_stk_strdup
 
         v_size[0] = v_size[1] = -tuple.lc->max_attr; v_size[2] = -tuple.lc->max_attr;
         it = lio_create_object_iter_alist(tuple.lc, tuple.creds, rp_single, ro_single, OS_OBJECT_FILE_FLAG|OS_OBJECT_NO_SYMLINK_FLAG|OS_OBJECT_NO_BROKEN_LINK_FLAG, recurse_depth, keys, (void **)vals, v_size, 3);
@@ -422,9 +422,9 @@ int main(int argc, char **argv)
             if (v_size[0] == -1) { //** No exnode
                 info_printf(lio_ifd, 0, "MISSING_EXNODE_ERROR for file %s\n", fname);
                 missing_err++;
-                free(fname);
+                tbx_free(fname);
                 for (i=0; i<3; i++) {
-                    if (v_size[i] > 0) free(vals[i]);
+                    if (v_size[i] > 0) tbx_free(vals[i]);
                 }
                 continue;
             }
@@ -438,7 +438,7 @@ int main(int argc, char **argv)
                 w[slot].write_err = 1;
                 info_printf(lio_ifd, 0, "WRITE_ERROR for file %s\n", fname);
                 if (vals[1] != NULL) {
-                    free(vals[1]);
+                    tbx_free(vals[1]);
                     vals[1] = NULL;
                 }
             }
@@ -446,7 +446,7 @@ int main(int argc, char **argv)
             w[slot].inode = 0;
             if (v_size[2] > 0) {
                sscanf(vals[2], XIDT, &(w[slot].inode));
-               free(vals[2]);
+               tbx_free(vals[2]);
                vals[2] = NULL;
             }
 
@@ -538,8 +538,8 @@ int main(int argc, char **argv)
                 mrid->dtime += wrid->dtime;
 
                 apr_hash_set(w[i].hash, wrid->rid_key, APR_HASH_KEY_STRING, NULL);
-                free(wrid->rid_key);
-                free(wrid);
+                tbx_free(wrid->rid_key);
+                tbx_free(wrid);
             }
 
             hi = apr_hash_next(hi);
@@ -599,7 +599,7 @@ int main(int argc, char **argv)
         info_printf(lio_ifd, 0, "%-40s  %s  %s   %10" PXOT "  %10" PXOT "  %10" PXOT "%s", rkey,
                     tbx_stk_pretty_print_double_with_scale_full(1024, (double)mrid->nbytes, ppbuf, 1),  tbx_stk_pretty_print_double_with_scale_full(1024, dtime, ppbuf, 12),
                     total, mrid->good, mrid->bad, line_end);
-        free(rkey);
+        tbx_free(rkey);
     }
     if (summary_mode != 0) info_printf(lio_ifd, 0, "----------------------------------------  ---------  ---------   ----------  ----------  ----------\n");
 
@@ -612,11 +612,11 @@ int main(int argc, char **argv)
     tbx_list_destroy(master);
 
     tbx_inip_destroy(ifd);
-    free(config);
+    tbx_free(config);
 
     while ((mrid = tbx_stack_pop(stack)) != NULL) {
-        free(mrid->rid_key);
-        free(mrid);
+        tbx_free(mrid->rid_key);
+        tbx_free(mrid);
     }
     tbx_stack_free(stack, 0);
 cleanup:
@@ -624,7 +624,7 @@ cleanup:
         tbx_apr_pool_destroy(w[j].mpool);
     }
 
-    free(w);
+    tbx_free(w);
 
 finished:
     if (tagged_rids != NULL) {

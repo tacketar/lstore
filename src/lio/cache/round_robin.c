@@ -97,11 +97,11 @@ int rr_cache_destroy(lio_cache_t *c)
 
     cache_base_destroy(c);
 
-    if (cp->section) free(cp->section);
-    if (cp->child_section) free(cp->child_section);
-    if (cp->child) free(cp->child);
-    free(cp);
-    free(c);
+    if (cp->section) tbx_free(cp->section);
+    if (cp->child_section) tbx_free(cp->child_section);
+    if (cp->child) tbx_free(cp->child);
+    tbx_free(cp);
+    tbx_free(c);
 
     return(0);
 }
@@ -154,7 +154,7 @@ lio_cache_t *round_robin_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, d
     cp = (cache_rr_t *)c->fn.priv;
 
     if (grp != NULL) {
-        free(cp->section);
+        tbx_free(cp->section);
         cp->section = tbx_stk_strdup(grp);
     }
 
@@ -162,7 +162,7 @@ lio_cache_t *round_robin_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, d
     cp->n_cache = tbx_inip_get_integer(fd, cp->section, "n_cache", cp->n_cache);
     cs = cp->child_section;
     cp->child_section = tbx_inip_get_string(fd, cp->section, "child", cs);
-    if (cs) free(cs);
+    if (cs) tbx_free(cs);
     ctype = tbx_inip_get_string(fd, cp->child_section, "type", NULL);
 
     tbx_type_malloc(cp->child, lio_cache_t *, cp->n_cache);
@@ -171,7 +171,7 @@ lio_cache_t *round_robin_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, d
          cp->child[i] = (*cache_create)(arg, fd, cp->child_section, da, timeout);FATAL_UNLESS(cp->child[i] != NULL);
     }
 
-    if (ctype) free(ctype);
+    if (ctype) tbx_free(ctype);
 
     cache_unlock(c);
 

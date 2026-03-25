@@ -69,9 +69,9 @@ int direct_cache_destroy(lio_cache_t *c)
 
     cache_base_destroy(c);
 
-    if (cp->section) free(cp->section);
-    free(cp);
-    free(c);
+    if (cp->section) tbx_free(cp->section);
+    tbx_free(cp);
+    tbx_free(c);
 
     return(0);
 }
@@ -119,7 +119,7 @@ lio_cache_t *direct_cache_load(void *arg, tbx_inip_file_t *fd, char *grp, data_a
     cp = (cache_direct_t *)c->fn.priv;
 
     if (grp != NULL) {
-        if (cp->section) free(cp->section);
+        if (cp->section) tbx_free(cp->section);
         cp->section = tbx_stk_strdup(grp);
     }
 

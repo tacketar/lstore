@@ -356,8 +356,8 @@ int _lc_object_destroy_ptr(char *key, void **obj)
         if (lcc->count <= 0) {
             *obj = lcc->object;
             tbx_list_remove(_lc_object_list, key, lcc);
-            free(lcc->key);
-            free(lcc);
+            tbx_free(lcc->key);
+            tbx_free(lcc);
         }
     } else {
         *obj = NULL;
@@ -508,7 +508,7 @@ void _lio_destroy_plugins(lio_config_t *lio)
             handle = lio_lookup_service(lio->ess, "plugin", library_key);
             if (handle != NULL) apr_dso_unload(handle);
         }
-        free(library_key);
+        tbx_free(library_key);
     }
 
     tbx_stack_free(lio->plugin_stack, 0);
@@ -551,11 +551,11 @@ void lio_find_lfs_mounts()
                 }
             }
 
-            free(text);
+            tbx_free(text);
             text = NULL;
         }
         if (text != NULL)
-            free(text);  //** Getline() always returns something
+            tbx_free(text);  //** Getline() always returns something
     }
     //** Convert it to a simple array
     _lfs_mount_count = tbx_stack_count(stack);
@@ -565,7 +565,7 @@ void lio_find_lfs_mounts()
         lfs_mount[i].shortcut = entry->shortcut;
         lfs_mount[i].prefix = entry->prefix;
         lfs_mount[i].len = entry->len;
-        free(entry);
+        tbx_free(entry);
     }
 
     tbx_stack_free(stack, 0);
@@ -586,7 +586,7 @@ void lio_path_release(lio_path_tuple_t *tuple)
         if (strcmp(tuple->path, "ANONYMOUS") == 1) {
             anon = 1;
         } else {
-            free(tuple->path);
+            tbx_free(tuple->path);
         }
     }
     if (tuple->lc == NULL) return;
@@ -600,8 +600,8 @@ void lio_path_release(lio_path_tuple_t *tuple)
             if (_lc_object_destroy_ptr(tuple2->lc->obj_name, (void **)&lc2) == 0) {
                 lio_destroy_nl(lc2);
             }
-            free(tuple2);
-            if (anon) free(tuple);
+            tbx_free(tuple2);
+            if (anon) tbx_free(tuple);
         }
     }
 
@@ -683,9 +683,9 @@ wildcard:
         } else {
             snprintf(path, sizeof(path), "%s%s", rp, &(p[last_slash]));
             tuple->path = tbx_stk_strdup(path);
-            free(rp);
+            tbx_free(rp);
         }
-        free(p);
+        tbx_free(p);
     }
 }
 
@@ -752,7 +752,7 @@ char *tuple_fname_helper(lio_config_t *lc, char *fname)
     if (lc->root_prefix && fname) {
         snprintf(buf, sizeof(buf), "%s%s", lc->root_prefix, fname);
         new_fname = tbx_stk_strdup(buf);
-        free(fname);
+        tbx_free(fname);
         return(new_fname);
     }
 
@@ -842,7 +842,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
             tuple.lc = lio_create_nl(lio_gc->ifd, pp_section, userid, uri, _lio_exe_name, 0, &tuple2);  //** Use the non-locking routine
             if (tuple.lc == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
-                if (fname != NULL) free(fname);
+                if (fname != NULL) tbx_free(fname);
                 goto finished;
             }
             tuple = *tuple2;  //** Copy the one we just created over since it also has the creds
@@ -853,19 +853,19 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
         } else { //** Look up using the remote config query
             if (rc_client_get_config(NULL, NULL, uri, NULL,  &config, &hints_string, &obj_name, NULL, &ts) != 0) {
                 memset(&tuple, 0, sizeof(tuple));
-                if (fname != NULL) free(fname);
+                if (fname != NULL) tbx_free(fname);
                 goto finished;
             }
 
             tbx_stk_strncpy(uri, obj_name, sizeof(uri), sizeof(uri));
-            free(obj_name);
+            tbx_free(obj_name);
 
             ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 1);
-            if (config) free(config);
-            if (hints_string) free(hints_string);
+            if (config) tbx_free(config);
+            if (hints_string) tbx_free(hints_string);
             if (ifd == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
-                if (fname) free(fname);
+                if (fname) tbx_free(fname);
                 goto finished;
             }
 
@@ -876,7 +876,7 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
             if (tuple.lc == NULL) {
                 memset(&tuple, 0, sizeof(tuple));
                 tbx_inip_destroy(ifd);
-                if (fname != NULL) free(fname);
+                if (fname != NULL) tbx_free(fname);
                 goto finished;
             }
 
@@ -917,12 +917,12 @@ lio_path_tuple_t lio_path_resolve_base_full(char *lpath, int path_is_literal)
 finished:
     apr_thread_mutex_unlock(_lc_lock);
 
-    if (pp_mq != NULL) free(pp_mq);
-    if (pp_host != NULL) free(pp_host);
-    if (pp_cfg != NULL) free(pp_cfg);
-    if (pp_section != NULL) free(pp_section);
-    if (userid != NULL) free(userid);
-    if (hints_string) free(hints_string);
+    if (pp_mq != NULL) tbx_free(pp_mq);
+    if (pp_host != NULL) tbx_free(pp_host);
+    if (pp_cfg != NULL) tbx_free(pp_cfg);
+    if (pp_section != NULL) tbx_free(pp_section);
+    if (userid != NULL) tbx_free(userid);
+    if (hints_string) tbx_free(hints_string);
 
     tuple.is_lio = is_lio;
     log_printf(15, "END: uri=%s path=%s is_lio=%d\n", tuple.path, uri, tuple.is_lio);
@@ -1160,10 +1160,10 @@ void lio_destroy_nl(lio_config_t *lio)
             lio->creds = NULL;
             an_cred_destroy(creds);
         }
-        free(tuple);
+        tbx_free(tuple);
     }
 
-    free(lio->creds_name);
+    tbx_free(lio->creds_name);
 
     log_printf(15, "removing lio=%s\n", lio->obj_name);
 
@@ -1171,13 +1171,13 @@ void lio_destroy_nl(lio_config_t *lio)
     if (_lc_object_destroy(lc_obj) <= 0) {
         rs_destroy_service(lio->rs);
     }
-    free(lio->rs_section);
+    tbx_free(lio->rs_section);
 
     ds_attr_destroy(lio->ds, lio->da);
     if (_lc_object_destroy(lio->ds_section) <= 0) {
         ds_destroy_service(lio->ds);
     }
-    free(lio->ds_section);
+    tbx_free(lio->ds_section);
 
     if (_lc_object_destroy(ESS_ONGOING_CLIENT) <= 0) {
         gop_mq_ongoing_t *on = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_CLIENT);
@@ -1187,14 +1187,14 @@ void lio_destroy_nl(lio_config_t *lio)
     }
 
     char *host_id = lio_lookup_service(lio->ess, ESS_RUNNING, ESS_ONGOING_HOST_ID);
-    if (host_id) free(host_id);
+    if (host_id) tbx_free(host_id);
 
     //** The OS should be destroyed AFTER the ongoing service since it's used by the onging
     snprintf(lc_obj, sizeof(lc_obj), "%s:%s", lio->os_section, lio->obj_name);
     if (_lc_object_destroy(lc_obj) <= 0) {
         os_destroy_service(lio->os);
     }
-    free(lio->os_section);
+    tbx_free(lio->os_section);
 
 
     if (_lc_object_destroy(lio->mq_section) <= 0) {  //** Destroy the MQ context
@@ -1208,7 +1208,7 @@ void lio_destroy_nl(lio_config_t *lio)
         }
         gop_mq_destroy_context(lio->mqc);
     }
-    free(lio->mq_section);
+    tbx_free(lio->mq_section);
 
     snprintf(lc_obj, sizeof(lc_obj), "%s:%s", lio->authn_section, lio->obj_name);
     if (_lc_object_destroy(lc_obj) <= 0) {  //** Destroy the AuthN
@@ -1216,21 +1216,21 @@ void lio_destroy_nl(lio_config_t *lio)
             authn_destroy(lio->authn);
         }
     }
-    free(lio->authn_section);
+    tbx_free(lio->authn_section);
 
     if (_lc_object_destroy(lio->notify_section) <= 0) {
         tbx_notify_destroy(lio->notify);
     }
-    free(lio->notify_section);
+    tbx_free(lio->notify_section);
 
-    if (lio->section_name != NULL) free(lio->section_name);
+    if (lio->section_name != NULL) tbx_free(lio->section_name);
 
     void *val = lio_lookup_service(lio->ess, ESS_RUNNING, "jerase_paranoid");
     remove_service(lio->ess, ESS_RUNNING, "jerase_paranoid");
-    if (val) free(val);
+    if (val) tbx_free(val);
     val = lio_lookup_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack");
     remove_service(lio->ess, ESS_RUNNING, "jerase_max_parity_on_stack");
-    if (val) free(val);
+    if (val) tbx_free(val);
 
     _lio_destroy_plugins(lio);
 
@@ -1251,46 +1251,46 @@ void lio_destroy_nl(lio_config_t *lio)
     if (lio->blacklist != NULL) {
         blacklist_destroy(lio->blacklist);
     }
-    if (lio->blacklist_section) free(lio->blacklist_section);
+    if (lio->blacklist_section) tbx_free(lio->blacklist_section);
 
-    if (lio->cache_section) free(lio->cache_section);
-    if (lio->creds_user) free(lio->creds_user);
+    if (lio->cache_section) tbx_free(lio->cache_section);
+    if (lio->creds_user) tbx_free(lio->creds_user);
 
-    if (lio->server_address) free(lio->server_address);
+    if (lio->server_address) tbx_free(lio->server_address);
 
     //** Shutdown the thread pools after everything using it has been stopped
     if (_lc_object_destroy(lio->tpc_unlimited_section) <= 0) {
         gop_tp_context_destroy(lio->tpc_unlimited);
     }
-    free(lio->tpc_unlimited_section);
+    tbx_free(lio->tpc_unlimited_section);
 
     if (_lc_object_destroy(lio->tpc_cache_section) <= 0) {
         gop_tp_context_destroy(lio->tpc_cache);
     }
-    free(lio->tpc_cache_section);
+    tbx_free(lio->tpc_cache_section);
 
     if (_lc_object_destroy(lio->tpc_ongoing_section) <= 0) {
         gop_tp_context_destroy(lio->tpc_ongoing);
     }
-    free(lio->tpc_ongoing_section);
+    tbx_free(lio->tpc_ongoing_section);
 
-    if (lio->special_file_prefix) free(lio->special_file_prefix);
+    if (lio->special_file_prefix) tbx_free(lio->special_file_prefix);
     if (lio->monitor_fname) {
         tbx_monitor_destroy();
-        free(lio->monitor_fname);
+        tbx_free(lio->monitor_fname);
     }
 
-    if (lio->host_id) free(lio->host_id);
-    if (lio->open_close_lock) free(lio->open_close_lock);
+    if (lio->host_id) tbx_free(lio->host_id);
+    if (lio->open_close_lock) tbx_free(lio->open_close_lock);
 
     apr_thread_mutex_destroy(lio->lock);
     tbx_apr_pool_destroy(lio->mpool);
 
-    if (lio->obj_name) free(lio->obj_name);
-    if (lio->root_prefix) free(lio->root_prefix);
+    if (lio->obj_name) tbx_free(lio->obj_name);
+    if (lio->root_prefix) tbx_free(lio->root_prefix);
 
-    if (lio->exe_name != NULL) free(lio->exe_name);
-    free(lio);
+    if (lio->exe_name != NULL) tbx_free(lio->exe_name);
+    tbx_free(lio);
 
     return;
 }
@@ -1322,7 +1322,7 @@ void _check_for_inode_tracking(lio_config_t *lio)
 
     if (blob) {
         lio->tracks_inodes = 1;
-        free(blob);
+        tbx_free(blob);
     } else {
         lio->tracks_inodes = 0;
     }
@@ -1407,7 +1407,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         lio->uuid = atoll(stype);
         if (lio->uuid == 0) lio->uuid = -1;
     }
-    free(stype);
+    tbx_free(stype);
 
     //** Set up the monitoring
     if (make_monitor == 1) {
@@ -1575,7 +1575,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
             fflush(stderr);
             abort();
         }
-        free(ctype);
+        tbx_free(ctype);
 
         _lc_object_put(lc_obj, lio->authn);  //** Add it to the table
     }
@@ -1597,7 +1597,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         } else {
             add_service(lio->ess, DS_SM_RUNNING, ctype, lio->ds);  //** It's used by the block loader
         }
-        free(ctype);
+        tbx_free(ctype);
 
         _lc_object_put(stype, lio->ds);  //** Add it to the table
     } else {
@@ -1623,7 +1623,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
             fflush(stderr);
             abort();
         }
-        free(ctype);
+        tbx_free(ctype);
 
         _lc_object_put(lc_obj, lio->rs);  //** Add it to the table
     }
@@ -1644,7 +1644,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
             fflush(stderr);
             abort();
         }
-        free(ctype);
+        tbx_free(ctype);
 
         _lc_object_put(lc_obj, lio->os);  //** Add it to the table
     }
@@ -1683,7 +1683,7 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
         lio->creds = tuple->creds;
         lio->creds_name = tbx_stk_strdup(buffer);
     }
-    if (cred_args[0] != NULL) free(cred_args[0]);
+    if (cred_args[0] != NULL) tbx_free(cred_args[0]);
 
     lio->creds_user = (lio->creds) ? tbx_stk_strdup(an_cred_get_account(lio->creds, NULL)) : tbx_stk_strdup("NONE");
 
@@ -1700,8 +1700,8 @@ lio_config_t *lio_create_nl(tbx_inip_file_t *ifd, char *section, char *user, cha
             fflush(stderr);
             abort();
         }
-        free(stype);
-        free(ctype);
+        tbx_free(stype);
+        tbx_free(ctype);
     }
 
     //** This is just used for creating empty exnodes or dup them.
@@ -1915,7 +1915,7 @@ int lio_init(int *argc, char ***argvp)
     //** Determine the preferred environment variable based on the calling name to use for the args
     lio_os_path_split(argv[0], &dummy, &name);
     _lio_exe_name = name;
-    if (dummy != NULL) free(dummy);
+    if (dummy != NULL) tbx_free(dummy);
     j = strncmp(name, "lio_", 4) == 0 ? 4 : 0;
     i = 0;
     memcpy(var, "LIO_OPTIONS_", 12);
@@ -1943,7 +1943,7 @@ int lio_init(int *argc, char ***argvp)
             argv = myargv;
             *argvp = myargv;
             *argc = ll;
-            free(eargv);
+            tbx_free(eargv);
 
         }
     }
@@ -2135,8 +2135,8 @@ no_args:
         ts = 0;
         if (rc_client_get_config(NULL, NULL, cfg_name, NULL, &config, &hints_string, &obj_name, &userid, &ts) == 0) {
             ifd = tbx_inip_string_read_with_hints_string(config, hints_string, 1);
-            free(config);
-            if (hints_string) free(hints_string);
+            tbx_free(config);
+            if (hints_string) tbx_free(hints_string);
         } else {
             printf("Failed loading config: %s\n", cfg_name);
             exit(1);
@@ -2158,7 +2158,7 @@ no_args:
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
         fprintf(stdout, "%s", cfg_dump);
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
-        if (cfg_dump) free(cfg_dump);
+        if (cfg_dump) tbx_free(cfg_dump);
     }
 
     tbx_inip_apply_params(ifd);
@@ -2170,7 +2170,7 @@ no_args:
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
         fprintf(stdout, "%s", cfg_dump);
         fprintf(stdout, "-------------------------------------------------------------------------------\n\n");
-        if (cfg_dump) free(cfg_dump);
+        if (cfg_dump) tbx_free(cfg_dump);
     }
 
     tbx_mlog_load(ifd, out_override, ll_override);
@@ -2194,7 +2194,7 @@ no_args:
 
     lio_gc->ref_cnt = 1;
 
-    if (obj_name) free(obj_name);
+    if (obj_name) tbx_free(obj_name);
 
     if (auto_mode != -1) lio_gc->auto_translate = auto_mode;
 
@@ -2250,7 +2250,7 @@ int lio_shutdown()
     }
 
     rc_server_destroy();
-    if (lio_gc->rc_section) free(lio_gc->rc_section);
+    if (lio_gc->rc_section) tbx_free(lio_gc->rc_section);
 
     lio_wq_shutdown();
     lun_global_state_destroy();
@@ -2267,8 +2267,8 @@ int lio_shutdown()
 
     tbx_info_destroy(lio_ifd);
     lio_ifd = NULL;
-    if (_lio_exe_name) free(_lio_exe_name);
-    if (myargv != NULL) free(myargv);
+    if (_lio_exe_name) tbx_free(_lio_exe_name);
+    if (myargv != NULL) tbx_free(myargv);
 
     tbx_list_destroy(_lc_object_list);
 
