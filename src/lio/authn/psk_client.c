@@ -115,11 +115,11 @@ void authn_psk_client_cred_destroy(lio_creds_t *c)
 
     psk_logout(an, c);
     notify_printf(ap->notify, 1, NULL, "CREDS_DESTROY: creds=%s\n", c->descriptive_id);
-    if (c->handle != NULL) free(c->handle);
-    if (c->id != NULL) free(c->id);
-    if (c->account != NULL) free(c->account);
-    if (c->descriptive_id != NULL) free(c->descriptive_id);
-    free(c);
+    if (c->handle != NULL) tbx_free(c->handle);
+    if (c->id != NULL) tbx_free(c->id);
+    if (c->account != NULL) tbx_free(c->account);
+    if (c->descriptive_id != NULL) tbx_free(c->descriptive_id);
+    tbx_free(c);
 }
 
 
@@ -174,7 +174,7 @@ gop_op_status_t psk_response_exchange(void *task_arg, int tid)
     //** Decrypt the message
     tbx_type_malloc_clear(decrypted, char, len);
     if (crypto_secretbox_open_easy((unsigned char *)decrypted, (unsigned char *)data, len, nonce, (unsigned char *)pxs->psk) != 0) {
-        free(decrypted);
+        tbx_free(decrypted);
         log_printf(0, "ERROR: PSK exchange failed! Forged message! account:%s\n", an_cred_get_id(c, NULL));
         fprintf(stderr, "ERROR: PSK exchange failed! Forged message! account:%s\n", an_cred_get_id(c, NULL));
         exit(4);
@@ -182,7 +182,7 @@ gop_op_status_t psk_response_exchange(void *task_arg, int tid)
 
     //** Validate it by checking the salt
     if (memcmp(decrypted, pxs->salt, SALT_BYTES) != 0) {
-        free(decrypted);
+        tbx_free(decrypted);
         log_printf(0, "ERROR: PSK exchange failed! Salt doesn't match! account:%s\n", an_cred_get_id(c, NULL));
         fprintf(stderr, "ERROR: PSK exchange failed! Salt doesn't match! account:%s\n", an_cred_get_id(c, NULL));
         exit(5);
@@ -193,7 +193,7 @@ gop_op_status_t psk_response_exchange(void *task_arg, int tid)
     tbx_type_malloc(c->handle, char, c->handle_len);
     memcpy(c->handle, decrypted + SALT_BYTES, c->handle_len);
 
-    free(decrypted);
+    tbx_free(decrypted);
 
     //** Add it to the tracking
     gop_mq_ongoing_host_inc(ap->ongoing, ap->remote_host, ap->host_id, ap->host_id_len, ap->heartbeat);
@@ -299,7 +299,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
 
     //** Determine the account to use
     if (a) {
-        account = strdup(a);
+        account = tbx_Stk_strdup(a);
     } else {
         account = tbx_inip_get_string(fd, "default", "account", NULL);
         if (!account) {
@@ -322,7 +322,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
             fprintf(stderr, "ERROR: PSK key missing! account=%s fname:%s\n", account, psk_name);
             abort();
         }
-        free(account);
+        tbx_free(account);
         return(1);
     }
 
@@ -331,7 +331,7 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     n = strlen(text);
     tbx_type_malloc_clear(psk, char, n);  //** The actual size needed is 0.8*strlen(text)+1
     zmq_z85_decode((unsigned char *)psk, text);
-    free(etext); free(text);
+    tbx_free(etext); tbx_free(text);
 
     //** Set the default ID's
     cred_default_set_ids(c, user, account);
@@ -339,9 +339,9 @@ int get_psk(lio_authn_t *an, lio_creds_t *c, char *psk_name, char *a, int do_fai
     //** Do the validation with the server
     psk_exchange(an, c, psk);
 
-    free(account);
-    free(user);
-    memset(psk, 0, n); free(psk);  //** Clear the key before freeing it
+    tbx_free(account);
+    tbx_free(user);
+    memset(psk, 0, n); tbx_free(psk);  //** Clear the key before freeing it
 
     return(0);
 }
@@ -421,11 +421,11 @@ void authn_psk_client_destroy(lio_authn_t *an)
 {
     lio_authn_psk_client_priv_t *ap = an->priv;
 
-    if (ap->section) free(ap->section);
-    free(ap->remote_host_string);
+    if (ap->section) tbx_free(ap->section);
+    tbx_free(ap->remote_host_string);
     gop_mq_msg_destroy(ap->remote_host);
-    free(ap);
-    free(an);
+    tbx_free(ap);
+    tbx_free(an);
 }
 
 //***********************************************************************
@@ -444,7 +444,7 @@ lio_authn_t *authn_psk_client_create(lio_service_manager_t *ess, tbx_inip_file_t
     an->cred_init = authn_psk_client_cred_init;
     an->destroy = authn_psk_client_destroy;
 
-    ap->section = strdup(section);
+    ap->section = tbx_Stk_strdup(section);
     ap->remote_host_string = tbx_inip_get_string(ifd, section, "remote_address", psk_default_options.remote_host_string);
     ap->remote_host = gop_mq_string_to_address(ap->remote_host_string);
 
