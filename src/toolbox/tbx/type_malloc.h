@@ -45,4 +45,5 @@
 #define tbx_type_memclear(var, type, count) \
             memset(var, 0, sizeof(type)*(count))
 
+#define tbx_free(var) free(var)
 #endif
