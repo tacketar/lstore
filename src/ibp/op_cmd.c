@@ -210,7 +210,7 @@ gop_op_status_t vec_read_command(gop_op_generic_t *gop, tbx_ns_t *ns)
         log_printf(10, "read_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
     }
 
-    if (buffer != stackbuffer) free(buffer);
+    if (buffer != stackbuffer) tbx_free(buffer);
 
     return(err);
 }
@@ -412,7 +412,7 @@ gop_op_status_t vec_write_command(gop_op_generic_t *gop, tbx_ns_t *ns)
         log_printf(10, "write_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
     }
 
-    if (buffer != stackbuffer) free(buffer);
+    if (buffer != stackbuffer) tbx_free(buffer);
 
     return(err);
 }
@@ -1556,7 +1556,7 @@ gop_op_status_t rid_bulk_warm_command(gop_op_generic_t *gop, tbx_ns_t *ns)
         log_printf(10, "Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
     }
 
-    if (buffer != stackbuffer) free(buffer);
+    if (buffer != stackbuffer) tbx_free(buffer);
 
     return(err);
 }

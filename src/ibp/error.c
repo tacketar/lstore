@@ -64,7 +64,7 @@ void ibp_errno_init()
 
 void _errno_destructor( void *ptr)
 {
-    free(ptr);
+    tbx_free(ptr);
 }
 
 //***************************************************************************

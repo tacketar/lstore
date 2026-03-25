@@ -51,7 +51,7 @@ ibp_depot_t *ibp_depot_new()
 
 void ibp_depot_destroy(ibp_depot_t *d)
 {
-    free(d);
+    tbx_free(d);
 }
 
 
@@ -96,8 +96,8 @@ void ibp_cap2depot(const ibp_cap_t *cap, ibp_depot_t *d)
 
     ibp_depot_set(d, host, port, ibp_str2rid(rid));
 
-    free(temp); //** Cleanup
-    free(rid);
+    tbx_free(temp); //** Cleanup
+    tbx_free(rid);
 }
 
 //===================================================================
@@ -121,7 +121,7 @@ ibp_attributes_t *new_ibp_attributes()
 
 void destroy_ibp_attributes(ibp_attributes_t *attr)
 {
-    free(attr);
+    tbx_free(attr);
 }
 
 //*****************************************************************
@@ -173,7 +173,7 @@ ibp_timer_t *new_ibp_timer()
 
 void destroy_ibp_timer(ibp_timer_t *t)
 {
-    free(t);
+    tbx_free(t);
 }
 
 //*****************************************************************
@@ -205,7 +205,7 @@ void get_ibp_timer(ibp_timer_t *t, int *client_timeout, int *server_timeout)
 
 void ibp_cap_destroy(ibp_cap_t *cap)
 {
-    free(cap);
+    tbx_free(cap);
 }
 
 //*****************************************************************
@@ -255,7 +255,7 @@ void ibp_capset_clear(ibp_capset_t *caps)
 void ibp_capset_destroy(ibp_capset_t *caps)
 {
     ibp_capset_clear(caps);
-    free(caps);
+    tbx_free(caps);
 }
 
 //*****************************************************************
@@ -299,13 +299,13 @@ int ibp_cap_set(ibp_capset_t *caps, int ctype, ibp_cap_t *c, int dofree)
     int err = 0;
 
     if (ctype == IBP_READCAP) {
-        if (dofree && caps->readCap) free(caps->readCap);
+        if (dofree && caps->readCap) tbx_free(caps->readCap);
         caps->readCap = c;
     } else if (ctype == IBP_WRITECAP) {
-        if (dofree && caps->writeCap) free(caps->writeCap);
+        if (dofree && caps->writeCap) tbx_free(caps->writeCap);
         caps->writeCap = c;
     } else if (ctype == IBP_MANAGECAP) {
-        if (dofree && caps->manageCap) free(caps->manageCap);
+        if (dofree && caps->manageCap) tbx_free(caps->manageCap);
         caps->manageCap = c;
     } else {
         err = 1;
@@ -344,7 +344,7 @@ ibp_proxy_capstatus_t *new_ibp_proxy_capstatus()
 
 void destroy_ibp_proxy_capstatus(ibp_proxy_capstatus_t *cs)
 {
-    free(cs);
+    tbx_free(cs);
 }
 
 //*****************************************************************
@@ -400,7 +400,7 @@ ibp_capstatus_t *new_ibp_capstatus()
 
 void ibp_cap_destroystatus(ibp_capstatus_t *cs)
 {
-    free(cs);
+    tbx_free(cs);
 }
 
 //*****************************************************************
@@ -457,8 +457,8 @@ ibp_ridlist_t *ibp_ridlist_create()
 
 void ibp_ridlist_destroy(ibp_ridlist_t *rlist)
 {
-    free(rlist->rl);
-    free(rlist);
+    tbx_free(rlist->rl);
+    tbx_free(rlist);
 }
 
 //*****************************************************************

@@ -126,7 +126,7 @@ void rwc_gop_stack_free(void *arg, int size, void *data)
         tbx_stack_empty(&(shelf[i].stack), 0);
     }
 
-    free(shelf);
+    tbx_free(shelf);
     return;
 }
 
@@ -161,7 +161,7 @@ void rwc_stacks_free(void *arg, int size, void *data)
         tbx_stack_empty(&(shelf[i].list_stack), 0);
     }
 
-    free(shelf);
+    tbx_free(shelf);
     return;
 }
 
@@ -396,7 +396,7 @@ void _ibp_op_free(gop_op_generic_t *gop, int mode)
     tbx_log_flush();
 
     if (gop->op->cmd.hostport != NULL) {
-        free(gop->op->cmd.hostport);
+        tbx_free(gop->op->cmd.hostport);
         gop->op->cmd.hostport = NULL;
     }
 
@@ -404,12 +404,12 @@ void _ibp_op_free(gop_op_generic_t *gop, int mode)
         log_printf(15, "gid=%d Freeing rwbuf\n", gop_id(gop));
         iop = ibp_get_iop(gop);
         tbx_pch_release(iop->ic->coalesced_gop_stacks, &(iop->ops.rw_op.rwcg_pch));
-        free(iop->ops.rw_op.rwbuf);
+        tbx_free(iop->ops.rw_op.rwbuf);
         gop->op->cmd.coalesced_ops = NULL;
     }
     gop_generic_free(gop, OP_FINALIZE);  //** I free the actual op
 
-    if (mode == OP_DESTROY) free(gop->free_ptr);
+    if (mode == OP_DESTROY) tbx_free(gop->free_ptr);
     log_printf(15, "_ibp_op_free: END\n");
     tbx_log_flush();
 
@@ -453,7 +453,7 @@ void _ibp_destroy_connect_context(void *connect_context)
 {
     if (connect_context == NULL) return;
 
-    free(connect_context);
+    tbx_free(connect_context);
 
     return;
 }
@@ -845,6 +845,6 @@ void ibp_context_destroy(ibp_context_t *ic)
         tbx_dnsc_shutdown();
     }
 
-    if (ic->section) free(ic->section);
-    free(ic);
+    if (ic->section) tbx_free(ic->section);
+    tbx_free(ic);
 }

@@ -195,7 +195,7 @@ char *change_hostport_cc(char *old_hostport, ibp_connect_context_t *cc)
 
     set_hostport(new_hostport, sizeof(new_hostport), host, port, cc);
 
-    free(hp2);
+    tbx_free(hp2);
     return(tbx_stk_strdup(new_hostport));
 }
 
@@ -320,7 +320,7 @@ void ibp_op_cc_set(gop_op_generic_t *gop, ibp_connect_context_t *cc)
     if (orig == NULL) return;
 
     op->dop.cmd.hostport = change_hostport_cc(orig, cc);
-    free(orig);
+    tbx_free(orig);
 }
 
 int ibp_tbx_chksum_set(tbx_ns_chksum_t *ncs, tbx_chksum_t *cs, int blocksize)

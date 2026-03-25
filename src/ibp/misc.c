@@ -26,6 +26,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/log.h>
 #include <tbx/string_token.h>
+#include <tbx/type_malloc.h>
 
 #include "op.h"
 #include "types.h"
@@ -155,7 +156,7 @@ int parse_cap(ibp_context_t *ic, ibp_cap_t *cap, char *host, int *port, char *ke
     }
 
 error:
-    free(temp);
+    tbx_free(temp);
 
     log_printf(14, "parse_cap: CAP=%s * parsed=[%s]:%d/%s/%s\n", cap, host, *port, key, typekey);
 
