@@ -556,7 +556,7 @@ int handle_internal_get_alloc(ibp_task_t *task)
     err = server_ns_write_block(task->ns, task->cmd_timeout, (char *)h.manage_ts, sizeof(Allocation_manage_ts_t)*h.n_manage);
 
     //** Free the internal history structure
-    free(h.read_ts); free(h.write_ts); free(h.manage_ts);
+    tbx_free(h.read_ts); tbx_free(h.write_ts); tbx_free(h.manage_ts);
 
     //** ..and the block information if needed
     log_printf(10, "handle_internal_get_alloc: ns=%d print_blocks=%d nblocks=" I64T "\n",
@@ -1571,7 +1571,7 @@ next:
     tbx_monitor_obj_destroy(&(task->mo));
 
 cleanup:
-    free(args->caps);
+    tbx_free(args->caps);
 
     return(err);
 }
@@ -2755,7 +2755,7 @@ int handle_copy(ibp_task_t *task)
         if ((strcmp(rhost, global_config->server.iface[i].hostname) == 0)
             && (rport == global_config->server.iface[i].port)) {
             err = same_depot_copy(task, key, typekey, r->remote_offset, rpid);
-            free(temp);
+            tbx_free(temp);
             return (err);
         }
     }
@@ -2781,7 +2781,7 @@ int handle_copy(ibp_task_t *task)
             send_cmd_result(task, IBP_E_TYPE_NOT_SUPPORTED);
             tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: PHOEBUS support not compiled");
             tbx_ns_destroy(ns);
-            free(temp);
+            tbx_free(temp);
             return (0);
         }
 
@@ -2810,7 +2810,7 @@ int handle_copy(ibp_task_t *task)
         if (ppath.p_count != 0)
             phoebus_path_destroy(&ppath);
         tbx_ns_destroy(ns);
-        free(temp);
+        tbx_free(temp);
         return (0);
     }
 
@@ -2827,7 +2827,7 @@ int handle_copy(ibp_task_t *task)
     if (ppath.p_count != 0)
         phoebus_path_destroy(&ppath);
 
-    free(temp);
+    tbx_free(temp);
     return (err);
 }
 
@@ -3512,11 +3512,11 @@ int handle_internal_mount(ibp_task_t *task)
             srid = tbx_stk_string_token(NULL, " ", &bstate, &fin);      //** This should be the RID
             tbx_stk_string_token(NULL, " ", &bstate, &fin);
             if ((fin == 1) && (strcmp(srid, arg->crid) == 0)) { //** Got a match!
-                free(str);
+                tbx_free(str);
                 found = 1;
                 break;
             }
-            free(str);
+            tbx_free(str);
         }
     }
 
@@ -3572,7 +3572,7 @@ int handle_internal_mount(ibp_task_t *task)
         log_printf(0, "handle_internal_mount:  Error mounting resource!! Exiting\n");
         rid_log_append(arg->crid, "ATTACH", "ERROR during mount", arg->msg, start, apr_time_now());
         send_cmd_result(task, IBP_E_INTERNAL);
-        free(r);
+        tbx_free(r);
         tbx_monitor_obj_destroy_message(&(task->mo), "HANDLE_ERROR: Error during mount");
         return (0);
     }
@@ -3653,7 +3653,7 @@ int handle_internal_umount(ibp_task_t *task)
                    err);
     }
 
-    free(r);                    //** Free the space
+    tbx_free(r);                    //** Free the space
 
 fail:
 

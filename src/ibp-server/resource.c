@@ -164,12 +164,12 @@ char *fname2dev(char *fname)
             if ((int) strlen(apath) > len) {
                 if ((apath[len] == '/') || (minfo.mnt_dir[len - 1] == '/')) {
                     if (dev)
-                        free(dev);
+                        tbx_free(dev);
                     dev = tbx_stk_strdup(minfo.mnt_fsname);
                 }
             } else {
                 if (dev)
-                    free(dev);
+                    tbx_free(dev);
                 dev = tbx_stk_strdup(minfo.mnt_fsname);
             }
         }
@@ -177,7 +177,7 @@ char *fname2dev(char *fname)
 
     endmntent(fd);
 
-    free(apath);
+    tbx_free(apath);
 
     return (dev);
 }
@@ -760,7 +760,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     }
     sscanf(str, "" I64T "", &(res->max_size[ALLOC_TOTAL]));
     res->max_size[ALLOC_TOTAL] *= 1024 * 1024;
-    free(str);
+    tbx_free(str);
 
     str = tbx_inip_get_string(keyfile, group, "soft_size", NULL);
     if (str == NULL) {
@@ -769,7 +769,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     }
     sscanf(str, "" I64T "", &(res->max_size[ALLOC_SOFT]));
     res->max_size[ALLOC_SOFT] *= 1024 * 1024;
-    free(str);
+    tbx_free(str);
 
     str = tbx_inip_get_string(keyfile, group, "hard_size", NULL);
     if (str == NULL) {
@@ -778,7 +778,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     }
     sscanf(str, "" I64T "", &(res->max_size[ALLOC_HARD]));
     res->max_size[ALLOC_HARD] *= 1024 * 1024;
-    free(str);
+    tbx_free(str);
 
     str = tbx_inip_get_string(keyfile, group, "minfree_size", NULL);
     if (str == NULL) {
@@ -787,7 +787,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
     }
     sscanf(str, "" I64T "", &(res->minfree));
     res->minfree *= 1024 * 1024;
-    free(str);
+    tbx_free(str);
 
     res->enable_chksum = tbx_inip_get_integer(keyfile, group, "enable_chksum", 0);
     res->chksum_blocksize = tbx_inip_get_integer(keyfile, group, "chksum_blocksize_kb", 64);
@@ -810,7 +810,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
                    group, str);
         abort();
     }
-    free(str);
+    tbx_free(str);
 
     //** Get the cache information
     res->n_cache = tbx_inip_get_integer(keyfile, group, "n_cache", 100000);
@@ -834,7 +834,7 @@ int parse_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group)
 
         str2 = tbx_stk_string_token(NULL, " ,:|", &bstate, &fin);
     }
-    free(str);
+    tbx_free(str);
 
     //** Setup the LRU table
     res->n_lru = tbx_inip_get_integer(keyfile, group, "n_lru", 100000);
@@ -918,7 +918,7 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
 
     //** We can tear down the merge DBs
     if (res->db_merge_valid) umount_db(&(res->db_merge));
-    if (db_snap_merge) free(db_snap_merge);
+    if (db_snap_merge) tbx_free(db_snap_merge);
 
     log_printf(15, "mount_resource: err=%d  res=%s cleanup_shutdown=%d\n", err,
                res->name, res->cleanup_shutdown);
@@ -977,11 +977,11 @@ int umount_resource(Resource_t *res)
     //** The threadattr is destroyed via the pool.  APR has no attr destroy call:(
     apr_pool_destroy(res->pool);
 
-    free(res->name);
-    free(res->keygroup);
-    free(res->device);
-    if (res->data_pdev) free(res->data_pdev);
-    if (res->device_type != NULL) free(res->device_type);
+    tbx_free(res->name);
+    tbx_free(res->keygroup);
+    tbx_free(res->device);
+    if (res->data_pdev) tbx_free(res->data_pdev);
+    if (res->device_type != NULL) tbx_free(res->device_type);
 
     return (0);
 }
@@ -2252,7 +2252,7 @@ void walk_expire_iterator_end(walk_expire_iterator_t *wei)
 
     dbr_unlock(&(wei->r->db));
 
-    free(wei);
+    tbx_free(wei);
 }
 
 //*****************************************************************

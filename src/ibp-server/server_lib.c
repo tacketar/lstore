@@ -784,9 +784,9 @@ void join_completed()
     while ((t = (Thread_task_t *) tbx_stack_pop(taskmgr.completed)) != NULL) {
         apr_thread_join(&err, t->thread);
         tbx_ns_destroy(t->ns);
-//handled by the pool free     if (t->attr != NULL) apr_threadattr_destroy(t->attr);
+        //handled by the pool free     if (t->attr != NULL) apr_threadattr_destroy(t->attr);
         apr_pool_destroy(t->pool);
-        free(t);
+        tbx_free(t);
     }
 
     apr_thread_mutex_unlock(taskmgr.lock);

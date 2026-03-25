@@ -167,7 +167,7 @@ int resource_list_delete(Resource_list_t *rl, Resource_t *r)
                 rl->res[i].r = NULL;
                 rl->res[i].used = 0;
                 apr_hash_set(rl->table, rl->res[i].crid, APR_HASH_KEY_STRING, NULL);
-                free(rl->res[i].crid);
+                tbx_free(rl->res[i].crid);
                 notfound = 0;
                 break;
             }
@@ -224,12 +224,12 @@ void free_resource_list(Resource_list_t *rl)
 
     for (i = 0; i < rl->max_res; i++) {
         if (rl->res[i].used == 1)
-            free(rl->res[i].crid);
+            tbx_free(rl->res[i].crid);
     }
 
     tbx_stack_free(rl->pending, 0);
-    free(rl->res);
-    free(rl);
+    tbx_free(rl->res);
+    tbx_free(rl);
 }
 
 //****************************************************************

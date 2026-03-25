@@ -367,7 +367,7 @@ int read_status(ibp_task_t *task, char **bstate)
         tbx_stk_string_token(NULL, " ", &dstate, &finished);
     }
     finished = 0;
-    free(dupstr);
+    tbx_free(dupstr);
 
 //   log_printf(10, "read_status: ns=%d nargs = %d\n", tbx_ns_getid(task->ns), nargs);
 

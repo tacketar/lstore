@@ -58,7 +58,7 @@ int ipdecstr2address(char *src, char *dest)
     if (j > 3)
         fin = AF_INET;
 
-    free(srcdup);
+    tbx_free(srcdup);
 
     return (fin);
 }
@@ -164,7 +164,7 @@ subnet_list_t *new_subnet_list(char *list_string)
         }
     }
 
-    free(list_str);
+    tbx_free(list_str);
     return (sn);
 }
 
@@ -174,8 +174,8 @@ subnet_list_t *new_subnet_list(char *list_string)
 
 void destroy_subnet_list(subnet_list_t *sn)
 {
-    free(sn->range);
-    free(sn);
+    tbx_free(sn->range);
+    tbx_free(sn);
 }
 
 //*************************************************************************
@@ -222,7 +222,7 @@ int subnet_list_validate(subnet_list_t *sl, char *address)
     case SUBNET_LOCAL:
         add = tbx_stk_strdup(address);
         ipdecstr2address(add, sadd.mask);
-        free(add);
+        tbx_free(add);
 
         for (i = 0; i < sl->n; i++) {
             if (subnet_validate(&(sl->range[i]), sadd.mask) == 1) {

@@ -18,6 +18,7 @@
 #include "ibp_server.h"
 #include <tbx/log.h>
 #include <tbx/append_printf.h>
+#include <tbx/type_malloc.h>
 
 //***************************************************************************
 // generate_command_acl - Fills in the command ACL list for a new connection
@@ -180,7 +181,7 @@ void destroy_commands()
             if (cmd->destroy != NULL)
                 cmd->destroy();
             if (cmd->acl != NULL)
-                free(cmd->acl);
+                tbx_free(cmd->acl);
             destroy_subnet_list(cmd->subnet);
         }
     }

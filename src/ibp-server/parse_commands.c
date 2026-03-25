@@ -420,7 +420,7 @@ int read_status(ibp_task_t *task, char **bstate)
         tbx_stk_string_token(NULL, " ", &dstate, &finished);
     }
     finished = 0;
-    free(dupstr);
+    tbx_free(dupstr);
 
 //   log_printf(10, "read_status: ns=%d nargs = %d\n", tbx_ns_getid(task->ns), nargs);
 
@@ -1384,7 +1384,7 @@ int read_rid_bulk_warm(ibp_task_t *task, char **bstate)
     for (i=0; i<arg->n_caps; i++) {
         d = parse_key2(bstate, &caps[i], &rid, crid, sizeof(crid));
         if ((ibp_compare_rid(arg->rid, rid) != 0) || (d != 0)) {
-            free(caps);
+            tbx_free(caps);
             log_printf(10, "Bad RID/master_cap!\n");
             send_cmd_result(task, IBP_E_INVALID_RID);
             tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad RID for cap index=%d", cmd->name, i);

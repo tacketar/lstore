@@ -71,7 +71,7 @@ void init_stats(int n)
 
 void free_stats()
 {
-    free(stats.table);
+    tbx_free(stats.table);
     apr_thread_mutex_destroy(stats.lock);
     apr_pool_destroy(stats.pool);
 }

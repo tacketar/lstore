@@ -2811,7 +2811,7 @@ int alog_read_resource_list(activity_log_t *alog, int cmd, FILE *outfd)
     char name[512];
 
     if (alog->rl_map != NULL)
-        free(alog->rl_map);
+        tbx_free(alog->rl_map);
 
     aread(alog->fd, &n16, sizeof(n16), "alog_read_resource_list: Error reading data!\n");
     nres = n16;
@@ -3301,7 +3301,7 @@ void _alog_send_data()
     _alog_config();
     _alog_resources();
     _alog_nsmap(nsmap, 2 * global_config->server.max_threads);
-    free(nsmap);
+    tbx_free(nsmap);
 
 //  alog_unlock();
 }
@@ -3363,7 +3363,7 @@ int activity_log_open_rec(activity_log_t *alog)
 
     //** Create the space for the network maps
     if (alog->ns_map != NULL)
-        free(alog->ns_map);
+        tbx_free(alog->ns_map);
     tbx_type_malloc_clear(alog->ns_map, ns_map_t, alog->max_id);
     assert_result_not_null(alog->ns_map);
 
@@ -3398,7 +3398,7 @@ int activity_log_read_open_rec(activity_log_t *alog, int cmd, FILE *outfd)
 
 
     if (alog->ns_map != NULL)
-        free(alog->ns_map);
+        tbx_free(alog->ns_map);
     tbx_type_malloc_clear(alog->ns_map, ns_map_t, alog->max_id);
     assert_result_not_null(alog->ns_map);
 
@@ -3809,13 +3809,13 @@ void activity_log_close(activity_log_t *alog)
     }
 
     if (alog->ns_map != NULL)
-        free(alog->ns_map);
+        tbx_free(alog->ns_map);
 
     if (alog->rl_map != NULL)
-        free(alog->rl_map);
+        tbx_free(alog->rl_map);
 
     fclose(alog->fd);
-    free(alog->table);
-    free(alog->name);
-    free(alog);
+    tbx_free(alog->table);
+    tbx_free(alog->name);
+    tbx_free(alog);
 }

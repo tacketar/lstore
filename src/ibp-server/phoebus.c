@@ -136,11 +136,11 @@ void phoebus_path_set(phoebus_t *p, const char *path)
 void phoebus_path_destroy(phoebus_t *p)
 {
 
-    free(p->path_string);
+    tbx_free(p->path_string);
 
-    free(p->path);
+    tbx_free(p->path);
 
-    free(p->key);
+    tbx_free(p->key);
 }
 
 
@@ -245,7 +245,7 @@ void phoebus_destroy(void)
 
     phoebus_path_destroy(global_phoebus);
 
-    free(global_phoebus);
+    tbx_free(global_phoebus);
 }
 
 
@@ -302,7 +302,7 @@ void phoebus_load_config(tbx_inip_file_t *kf)
 
         log_printf(10, "phoebus_init: Using the gateway specified in local config: %s\n", gateway);
 
-        free(gateway);
+        tbx_free(gateway);
 
     } else if (!global_phoebus->path) {
 

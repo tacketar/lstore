@@ -147,10 +147,10 @@ void fs_cache_destroy(fs_cache_table_t *c)
 
     //---There is no apr_hash_destroy() must use the pool which is handled via the fs
     apr_thread_mutex_destroy(c->lock);
-    free(c->block_free_count);
-    free(c->block_last_offset);
-    free(c->table);
-    free(c);
+    tbx_free(c->block_free_count);
+    tbx_free(c->block_last_offset);
+    tbx_free(c->table);
+    tbx_free(c);
 }
 
 //******************************************************************************
@@ -573,8 +573,8 @@ void fs_destroy_corrupt_iterator(osd_iter_t *oi)
 
     apr_pool_destroy(iter->pool);
 
-    free(iter);
-    free(oi);
+    tbx_free(iter);
+    tbx_free(oi);
 }
 
 //*************************************************************
@@ -2885,8 +2885,8 @@ osd_iter_t *fs_new_iterator(osd_t *d, int partition)
     iter->fs = (osd_fs_t *) (d->private);
 
     if (fs_opendir(iter) != 0) {
-        free(iter);
-        free(oi);
+        tbx_free(iter);
+        tbx_free(oi);
         return (NULL);
     }
 
@@ -2907,8 +2907,8 @@ void fs_destroy_iterator(osd_iter_t *oi)
 
     if (iter->cdir != NULL) closedir(iter->cdir);
 
-    free(iter);
-    free(oi);
+    tbx_free(iter);
+    tbx_free(oi);
 }
 
 //*************************************************************
@@ -2977,8 +2977,8 @@ osd_iter_t *fs_new_trash_iterator(osd_t *d, int trash_type)
         snprintf(dname, sizeof(dname), "%s/deleted_trash", fs->devicename);
     } else {
         log_printf(0, "fs_new_trash_iterator: invalid trash_type=%d\n", trash_type);
-        free(iter);
-        free(oi);
+        tbx_free(iter);
+        tbx_free(oi);
         return (NULL);
     }
 
@@ -2988,8 +2988,8 @@ osd_iter_t *fs_new_trash_iterator(osd_t *d, int trash_type)
 
     if (iter->cdir == NULL) {
         log_printf(0, "new_iterator: error with opendir(%s)\n", dname);
-        free(iter);
-        free(oi);
+        tbx_free(iter);
+        tbx_free(oi);
         return (NULL);
     }
 
@@ -3057,9 +3057,9 @@ int fs_umount(osd_t *d)
     apr_thread_mutex_destroy(fs->obj_lock);
     apr_pool_destroy(fs->pool);
 
-    free(fs->devicename);
-    free(fs);
-    free(d);
+    tbx_free(fs->devicename);
+    tbx_free(fs);
+    tbx_free(d);
 
     return (0);
 }
@@ -3106,7 +3106,7 @@ void fs_shelf_fd_free(void *arg, int size, void *data)
         apr_thread_cond_destroy(shelf[i].cond);
     }
 
-    free(shelf);
+    tbx_free(shelf);
 }
 
 //*************************************************************
@@ -3127,7 +3127,7 @@ void *fs_shelf_range_new(void *arg, int size)
 void fs_shelf_range_free(void *arg, int size, void *data)
 {
 //  log_printf(15, "fs_shelf_range_free: size=%d\n", size);
-    free(data);
+    tbx_free(data);
 }
 
 
@@ -3191,7 +3191,7 @@ void fs_shelf_object_free(void *arg, int size, void *data)
     }
 
     //** Lastly free the shelf itself
-    free(shelf);
+    tbx_free(shelf);
 
     return;
 }
