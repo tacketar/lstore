@@ -33,6 +33,7 @@
 #include <lio/lio.h>
 #include <tbx/assert_result.h>
 #include <tbx/constructor_wrapper.h>
+#include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include <apr_thread_mutex.h>
 #include <apr_pools.h>
@@ -369,9 +370,9 @@ int close_and_reserve(int fd, FILE *stream, fd_core_t *cfd_new, int delta)
         if (cfd->lfd) {
             ret = lio_fs_close(cfd->fs, cfd->lfd);
         }
-        if (cfd->lname_dir) free(cfd->lname_dir);
-        if (cfd->sname_dir) free(cfd->sname_dir);
-        free(cfd);
+        if (cfd->lname_dir) tbx_free(cfd->lname_dir);
+        if (cfd->sname_dir) tbx_free(cfd->sname_dir);
+        tbx_free(cfd);
     }
 
     return(ret);
@@ -413,15 +414,15 @@ int lio_dir_is_empty(lio_fs_t *fs, const char *path)
 
     //** This should be the 1st entry of "."
     if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
-    if (dname) free(dname);
+    if (dname) tbx_free(dname);
 
     //** This is ".."
     if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
-    if (dname) free(dname);
+    if (dname) tbx_free(dname);
 
     //** This should be the 1st real entry
     if (lio_fs_readdir(dir, &dname, &stat, NULL, NULL) != 0) { lio_fs_closedir(dir); return(1); }
-    if (dname) free(dname);
+    if (dname) tbx_free(dname);
 
     lio_fs_closedir(dir);
     return(0);
@@ -988,7 +989,7 @@ int vopenat64(int dirfd, const char *pathname, int flags, va_list ap)
             apr_thread_mutex_unlock(lock);
             fd_table[fd].cfd = corefd_new(FD_MODE_STD, flags, -1, NULL, NULL, NULL, NULL, fs);
             fd_table[fd].cfd->lname_dir = NULL;
-            fd_table[fd].cfd->sname_dir = strdup(fullpath);
+            fd_table[fd].cfd->sname_dir = tbx_stk_strdup(fullpath);
             n = strlen(fullpath);
             if (fullpath[n-1] == '/') fd_table[fd].cfd->sname_dir[n-1] = '\0';
             FPRINTF("vopenat64 normal O_DIR slot=%d _fileno=%d\n", fd, fd_table[fd].dfd._fileno);
@@ -1003,8 +1004,8 @@ int vopenat64(int dirfd, const char *pathname, int flags, va_list ap)
     ftype = lio_fs_exists(fs, fname + len);
     if (ftype & OS_OBJECT_DIR_FLAG) { //** This is directory and not a file so fake an FD for a subsequent fdopendir
         slot = get_free_slot(-1, corefd_new(FD_MODE_LIO, flags, -1, NULL, NULL, NULL, NULL, fs), 0);
-        fd_table[slot].cfd->lname_dir = strdup(fname + len);
-        fd_table[slot].cfd->sname_dir = strdup(fullpath);
+        fd_table[slot].cfd->lname_dir = tbx_stk_strdup(fname + len);
+        fd_table[slot].cfd->sname_dir = tbx_stk_strdup(fullpath);
         FPRINTF("vopenat64 lio O_DIR slot=%d _fileno=%d\n", slot, fd_table[slot].dfd._fileno);
         fd_table[slot].cfd->prefix_index = index;
         return(fd_table[slot].dfd._fileno);
@@ -3018,11 +3019,11 @@ void load_prefix_table(int argc, char **argv, lio_fs_t *fs_default)
                     fprintf(stderr, "ERROR: lio_parse_path error! arg=%s\n", argv[i]);
                     exit(-1);
                 }
-                if (!section) section = strdup("lio");
+                if (!section) section = tbx_stk_strdup("lio");
                 lc = lio_create(ifd, section, user, obj_name, argv[0], 0);
 
-                free(section);
-                if (user) free(user);
+                tbx_free(section);
+                if (user) tbx_free(user);
                 lc_table[n_lc] = lc;
                 n_lc++;
 
@@ -3173,19 +3174,19 @@ static void lio_stdio_wrapper_destruct_fn() {
     FPRINTF("lio_stdio_wrapper_destruct_fn: AFTER close loop\n");
 
     //** Clean up the prefix table
-    if (prefix_table) free(prefix_table);
+    if (prefix_table) tbx_free(prefix_table);
 
     //** And the FS instances
     for (i=0; i<n_fs; i++) {
         lio_fs_destroy(fs_table[i]);
     }
-    if (fs_table) free(fs_table);
+    if (fs_table) tbx_free(fs_table);
 
     //** and latly the lio_configs
     for (i=0; i<n_lc; i++) {
         lio_destroy(lc_table[i]);
     }
-    if (lc_table) free(lc_table);
+    if (lc_table) tbx_free(lc_table);
 
     apr_thread_mutex_destroy(lock);
     apr_pool_destroy(mpool);
