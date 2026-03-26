@@ -913,9 +913,10 @@ health_check_instance() {
 
     # So we have a timeout on the current stat.  See if we have one as well on the pending
     if [[ ${SPENDING} =~ PENDING ]]; then
-        echo "PENDING"
         if [[ ${SCURR} -gt ${CK_PENDING_TIMEOUT} ]]; then   ## The time is to long so we err out anyway
             echo "HUNG"
+        else
+            echo "PENDING"
         fi
         return
     elif [[ ${SPENDING} =~ TIMEOUT ]]; then  # The pending also failed so kill it
