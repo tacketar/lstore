@@ -316,7 +316,7 @@ mnt_top_info() {
         return
     fi
 
-    top -b -p ${FPID} -d 2 -n 2 | grep lio_fuse | awk '{print "%cpu=" $9 " %mem=" $10}' | tail -n 1
+    top -b -p ${FPID} -d 2 -n 2 | grep ${FPID} | awk '{print "%cpu=" $9 " %mem=" $10}' | tail -n 1
 }
 
 #******************************************************************************
@@ -851,15 +851,16 @@ health_check_instance() {
     # Read the status args
     ID=$1
     set_instance_vars ${ID}
-    PRIMARY=$2
-    EXISTS=$3
-    MOUNTED=$4
-    IS_RUNNING=$5
+    PRIMARY="$2"
+    EXISTS="$3"
+    MOUNTED="$4"
+    IS_RUNNING="$5"
+
     if [[ "$IS_RUNNING" =~ "is_running=yes" ]]; then
         d=$(echo "$6" | cut -f2 -d=)
         RSS=$( echo "scale=4; ${d} * 1024 * 1024" | bc | cut -f1 -d\. )
-        FILES_IN_USE=$8
-        STAT=$9
+        FILES_IN_USE="$8"
+        STAT="$9"
     else
         FILES_IN_USE="files_in_use=0+0+0"
     fi
