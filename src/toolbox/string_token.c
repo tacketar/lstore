@@ -40,6 +40,11 @@ char NULL_TERMINATOR = '\0';
 //      tbx_malloc calls.
 //***************************************************************
 
+//** The routine below generates a warning for some compilers about string
+//** overflow which is impossible since the destination is forced to be large enough.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+
 char *tbx_stk_strndup(const char *s, size_t n)
 {
     size_t len;
@@ -54,6 +59,8 @@ char *tbx_stk_strndup(const char *s, size_t n)
 
     return(str);
 }
+
+#pragma GCC diagnostic pop
 
 //***************************************************************
 // tbx_stk_strdup - Internal version of strdup using the
