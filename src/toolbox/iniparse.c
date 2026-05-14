@@ -1017,9 +1017,9 @@ tbx_inip_file_t *inip_load(FILE *fd, const char *text, const char *prefix, const
 
 tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, const char *jail_prefix)
 {
-
     FILE *fd;
     char *prefix;
+    char rpath[PATH_MAX];
     int i;
 
     log_printf(15, "Parsing file %s\n", fname);
@@ -1033,7 +1033,7 @@ tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, 
         return(NULL);
     }
 
-    prefix = realpath(fname, NULL);
+    prefix = realpath(fname, rpath);
     if (prefix != NULL) {
         for (i=strlen(prefix); i>0; i--) {
             if (prefix[i] == '/') {
@@ -1045,7 +1045,6 @@ tbx_inip_file_t *tbx_inip_file_read_jail(const char *fname, int resolve_params, 
 
     tbx_inip_file_t *ret = inip_load(fd, NULL, prefix, NULL, resolve_params, jail_prefix);
 
-    if (prefix) tbx_free(prefix);
     return ret;
 }
 
@@ -1167,6 +1166,7 @@ int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, c
 {
     FILE *fd;
     char *prefix;
+    char rpath[PATH_MAX];
     int i;
 
     log_printf(15, "Parsing file %s\n", fname);
@@ -1182,7 +1182,7 @@ int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, c
         return(-1);
     }
 
-    prefix = realpath(fname, NULL);
+    prefix = realpath(fname, rpath);
     if (prefix != NULL) {
         for (i=strlen(prefix); i>0; i--) {
             if (prefix[i] == '/') {
@@ -1193,7 +1193,6 @@ int tbx_inip_file2string_jail(const char *fname, char **text_out, int *nbytes, c
     }
 
     i = inip_convert2string_jail(fd, NULL, text_out, nbytes, prefix, jail_prefix);
-    if (prefix) tbx_free(prefix);
 
     return(i);
 }
