@@ -335,7 +335,7 @@ gop_op_generic_t *lio_segment_copy_gop(gop_thread_pool_context_t *tpc, data_attr
     sc->buffer = buffer;
     sc->truncate = do_truncate;
 
-    return(gop_tp_op_new(tpc, NULL, lio_segment_copy_gop_func, (void *)sc, free, 1));
+    return(gop_tp_op_new(tpc, NULL, lio_segment_copy_gop_func, (void *)sc, tbx_free, 1));
 }
 
 
@@ -509,7 +509,7 @@ gop_op_generic_t *segment_get_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
     sc->buffer = buffer;
     sc->cp_write = cp_write;
 
-    return(gop_tp_op_new(tpc, NULL, segment_get_gop_func, (void *)sc, free, 1));
+    return(gop_tp_op_new(tpc, NULL, segment_get_gop_func, (void *)sc, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -687,7 +687,7 @@ gop_op_generic_t *segment_put_gop(gop_thread_pool_context_t *tpc, data_attr_t *d
     sc->truncate = do_truncate;
     sc->cp_read = cp_read;
 
-    return(gop_tp_op_new(tpc, NULL, segment_put_gop_func, (void *)sc, free, 1));
+    return(gop_tp_op_new(tpc, NULL, segment_put_gop_func, (void *)sc, tbx_free, 1));
 }
 
 

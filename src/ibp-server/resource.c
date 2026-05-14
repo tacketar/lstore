@@ -149,10 +149,11 @@ char *fname2dev(char *fname)
     FILE *fd;
     struct mntent minfo;
     char buffer[4096];
+    char rpath[PATH_MAX];
     char *apath, *dev;
     int len;
 
-    apath = realpath(fname, NULL);
+    apath = realpath(fname, rpath);
     dev = NULL;
 
     fd = setmntent("/etc/mtab", "r");
@@ -176,8 +177,6 @@ char *fname2dev(char *fname)
     }
 
     endmntent(fd);
-
-    tbx_free(apath);
 
     return (dev);
 }

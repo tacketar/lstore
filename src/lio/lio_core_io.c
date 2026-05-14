@@ -713,7 +713,7 @@ gop_op_generic_t *lio_flock_gop(lio_fd_t *fd, int rw_lock, char *id, int timeout
     op->rw_lock = rw_lock;
     op->timeout = timeout;
 
-    gop = gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flock_fn, (void *)op, free, 1);
+    gop = gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flock_fn, (void *)op, tbx_free, 1);
     gop_set_private(gop, op);  //** This is used to handle the abort operation
 
     return(gop);
@@ -1549,7 +1549,7 @@ gop_op_generic_t *lio_open_gop(lio_config_t *lc, lio_creds_t *creds, char *path,
     op->fd = fd;
     op->max_wait = max_wait;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_myopen_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_myopen_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -1814,7 +1814,7 @@ gop_op_generic_t *lio_close_gop(lio_fd_t *fd)
 
 gop_op_generic_t *lio_read_ex_gop_aio(lio_rw_op_t *op)
 {
-    return(gop_tp_op_new(op->fd->lc->tpc_unlimited, NULL, lio_read_ex_fn_aio, (void *)op, free, 1));
+    return(gop_tp_op_new(op->fd->lc->tpc_unlimited, NULL, lio_read_ex_fn_aio, (void *)op, tbx_free, 1));
 }
 
 //*************************************************************************
@@ -2015,7 +2015,7 @@ int lio_read(lio_fd_t *fd, char *buf, ex_off_t size, off_t off, lio_segment_rw_h
 
 gop_op_generic_t *lio_write_ex_gop_aio(lio_rw_op_t *op)
 {
-    return(gop_tp_op_new(op->fd->lc->tpc_unlimited, NULL, lio_write_ex_fn_aio, (void *)op, free, 1));
+    return(gop_tp_op_new(op->fd->lc->tpc_unlimited, NULL, lio_write_ex_fn_aio, (void *)op, tbx_free, 1));
 }
 
 //*************************************************************************
@@ -2332,7 +2332,7 @@ gop_op_generic_t *lio_cp_local2local_gop(FILE *sfd, FILE *dfd, ex_off_t bufsize,
     op->rw_hints = rw_hints;
     op->which_align = which_align;
 
-    return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, lio_cp_local2local_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, lio_cp_local2local_fn, (void *)op, tbx_free, 1));
 
 }
 
@@ -2475,7 +2475,7 @@ gop_op_generic_t *lio_cp_local2lio_gop(FILE *sfd, lio_fd_t *dfd, ex_off_t bufsiz
     op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
-    return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_local2lio_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_local2lio_fn, (void *)op, tbx_free, 1));
 
 }
 
@@ -2556,7 +2556,7 @@ gop_op_generic_t *lio_cp_lio2local_gop(lio_fd_t *sfd, FILE *dfd, ex_off_t bufsiz
     op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
-    return(gop_tp_op_new(sfd->lc->tpc_unlimited, NULL, lio_cp_lio2local_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(sfd->lc->tpc_unlimited, NULL, lio_cp_lio2local_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2752,7 +2752,7 @@ gop_op_generic_t *lio_cp_lio2lio_gop(lio_fd_t *sfd, lio_fd_t *dfd, ex_off_t bufs
     op->cp_hints = cp_hints;
     op->rw_hints = rw_hints;
 
-    return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_lio2lio_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(dfd->lc->tpc_unlimited, NULL, lio_cp_lio2lio_fn, (void *)op, tbx_free, 1));
 }
 
 //*************************************************************************
@@ -3263,7 +3263,7 @@ gop_op_generic_t *lio_flush_full_gop(lio_fd_t *fd, ex_off_t lo, ex_off_t hi, int
     op->slfd = fd;
     op->which_align = do_lock;
 
-    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flush_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_flush_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -3339,7 +3339,7 @@ gop_op_generic_t *lio_truncate_full_gop(lio_fd_t *fd, ex_off_t newsize, int do_l
     op->slfd = fd;
     op->which_align = do_lock;
 
-    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_truncate_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_truncate_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -3383,5 +3383,5 @@ gop_op_generic_t *lio_segment_tool_gop(lio_fd_t *fd, ex_id_t segment_id, const c
     op->dryrun = dryrun;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_segment_tool_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(fd->lc->tpc_unlimited, NULL, lio_segment_tool_fn, (void *)op, tbx_free, 1));
 }

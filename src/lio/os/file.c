@@ -4252,7 +4252,7 @@ gop_op_generic_t *osfile_remove_regex_object(lio_object_service_fn_t *os, lio_cr
     op->object_regex = object_regex;
     op->recurse_depth = recurse_depth;
     op->obj_types = obj_types;
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_remove_regex_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_remove_regex_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -4392,7 +4392,7 @@ gop_op_generic_t *osfile_regex_object_set_multiple_attrs(lio_object_service_fn_t
     op->object_types = object_types;
     op->abort = 0;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_regex_object_set_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_regex_object_set_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5421,7 +5421,7 @@ gop_op_generic_t *osfile_copy_multiple_attrs(lio_object_service_fn_t *os, lio_cr
     op->key_dest = key_dest;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_copy_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_copy_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5445,7 +5445,7 @@ gop_op_generic_t *osfile_copy_attr(lio_object_service_fn_t *os, lio_creds_t *cre
     op->single_dest = key_dest;
     op->n = 1;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_copy_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_copy_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5514,7 +5514,7 @@ gop_op_generic_t *osfile_symlink_multiple_attrs(lio_object_service_fn_t *os, lio
     op->key_dest = key_dest;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_symlink_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_symlink_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5539,7 +5539,7 @@ gop_op_generic_t *osfile_symlink_attr(lio_object_service_fn_t *os, lio_creds_t *
     op->single_dest = key_dest;
     op->n = 1;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_symlink_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_symlink_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -5608,7 +5608,7 @@ gop_op_generic_t *osfile_move_multiple_attrs(lio_object_service_fn_t *os, lio_cr
     op->key_new = key_new;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_move_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_move_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5631,7 +5631,7 @@ gop_op_generic_t *osfile_move_attr(lio_object_service_fn_t *os, lio_creds_t *cre
     op->single_new = key_new;
     op->n = 1;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_move_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_move_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5847,7 +5847,7 @@ gop_op_generic_t *osfile_get_attr(lio_object_service_fn_t *os, lio_creds_t *cred
 
     log_printf(15, "PTR val=%p op->val=%p\n", val, op->val);
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5871,7 +5871,7 @@ gop_op_generic_t *osfile_get_multiple_attrs(lio_object_service_fn_t *os, lio_cre
     op->v_size= v_size;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -5979,7 +5979,7 @@ gop_op_generic_t *osfile_get_multiple_attrs_immediate(lio_object_service_fn_t *o
     op->v_size= v_size;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_immediate_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_get_multiple_attr_immediate_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -6139,7 +6139,7 @@ gop_op_generic_t *osfile_set_attr(lio_object_service_fn_t *os, lio_creds_t *cred
     op->v_tmp = v_size;
     op->n = 1;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -6162,7 +6162,7 @@ gop_op_generic_t *osfile_set_multiple_attrs(lio_object_service_fn_t *os, lio_cre
     op->v_size = v_size;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -6251,7 +6251,7 @@ gop_op_generic_t *osfile_set_multiple_attrs_immediate(lio_object_service_fn_t *o
     op->v_size = v_size;
     op->n = n;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_immediate_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osf_set_multiple_attr_immediate_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -6988,7 +6988,7 @@ gop_op_generic_t *osfile_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     op->os = os;
     op->cfd = (osfile_fd_t *)ofd;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_close_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_close_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -7083,7 +7083,7 @@ gop_op_generic_t *osfile_lock_user_object(lio_object_service_fn_t *os, os_fd_t *
     op->max_wait = max_wait;
     op->mode = rw_mode;
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_lock_user_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_lock_user_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -7358,7 +7358,7 @@ gop_op_generic_t *osfile_fsck_object(lio_object_service_fn_t *os, lio_creds_t *c
     op->mode = resolution;
     op->uuid = ftype;   //** We store the ftype here
 
-    return(gop_tp_op_new(osf->tpc, NULL, osfile_fsck_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(osf->tpc, NULL, osfile_fsck_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************

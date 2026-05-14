@@ -276,7 +276,7 @@ gop_op_generic_t *io_read_gop(target_t *t, int n_iov, ex_tbx_iovec_t *iov, tbx_t
         case RW_LIO_WQ:
             return(lio_read_ex_gop(t->fd, n_iov, iov, tbuf, boff, NULL));
         case RW_LOCAL:
-            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_read_fn, local_rw_op(t, n_iov, iov, tbuf, boff), free, 1));
+            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_read_fn, local_rw_op(t, n_iov, iov, tbuf, boff), tbx_free, 1));
     }
 
     return(gop_dummy(gop_failure_status));
@@ -293,7 +293,7 @@ gop_op_generic_t *io_write_gop(target_t *t, int n_iov, ex_tbx_iovec_t *iov, tbx_
         case RW_LIO_WQ:
             return(lio_write_ex_gop(t->fd, n_iov, iov, tbuf, boff, NULL));
         case RW_LOCAL:
-            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_write_fn, local_rw_op(t, n_iov, iov, tbuf, boff), free, 1));
+            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_write_fn, local_rw_op(t, n_iov, iov, tbuf, boff), tbx_free, 1));
     }
 
     return(gop_dummy(gop_failure_status));
@@ -333,7 +333,7 @@ gop_op_generic_t *io_truncate_gop(target_t *t, ex_off_t new_size)
             tbx_type_malloc_clear(op, local_op_t, 1);
             op->fd = t->fd_local;
             op->offset = new_size;
-            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_truncate_fn, op, free, 1));
+            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_truncate_fn, op, tbx_free, 1));
     }
 
     return(gop_dummy(gop_failure_status));
@@ -354,7 +354,7 @@ gop_op_generic_t *io_flush_gop(target_t *t)
         case RW_LOCAL:
             tbx_type_malloc_clear(op, local_op_t, 1);
             op->fd = t->fd_local;
-            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_flush_fn, op, free, 1));
+            return(gop_tp_op_new(lio_gc->tpc_unlimited, NULL, local_flush_fn, op, tbx_free, 1));
     }
 
     return(gop_dummy(gop_failure_status));

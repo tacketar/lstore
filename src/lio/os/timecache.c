@@ -1723,7 +1723,7 @@ gop_op_generic_t *ostc_remove_object(lio_object_service_fn_t *os, lio_creds_t *c
     op->creds = creds;
     op->src_path = path;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_remove_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_remove_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1806,7 +1806,7 @@ gop_op_generic_t *ostc_object_exec_modify(lio_object_service_fn_t *os, lio_creds
     op->src_path = path;
     op->ftype = exec_state;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_object_exec_modify_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_object_exec_modify_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1846,7 +1846,7 @@ gop_op_generic_t *ostc_create_object(lio_object_service_fn_t *os, lio_creds_t *c
     op->ftype = type;
     op->id = id;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -1891,7 +1891,7 @@ gop_op_generic_t *ostc_create_object_with_attrs(lio_object_service_fn_t *os, lio
     op->val = val;
     op->v_size = v_size;
     op->n_keys = n_keys;
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_with_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_create_object_with_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1926,7 +1926,7 @@ gop_op_generic_t *ostc_symlink_object(lio_object_service_fn_t *os, lio_creds_t *
     op->dest_path = dest_path;
     op->id = id;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_object_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -2006,7 +2006,7 @@ gop_op_generic_t *ostc_hardlink_object(lio_object_service_fn_t *os, lio_creds_t 
     op->dest_path = dest_path;
     op->id = id;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_hardlink_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_hardlink_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2074,7 +2074,7 @@ gop_op_generic_t *ostc_move_object(lio_object_service_fn_t *os, lio_creds_t *cre
     op->src_path = src_path;
     op->dest_path = dest_path;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2126,7 +2126,7 @@ gop_op_generic_t *ostc_copy_multiple_attrs(lio_object_service_fn_t *os, lio_cred
     ma->key_dest = key_dest;
     ma->n = n;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_copy_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_copy_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 
@@ -2151,7 +2151,7 @@ gop_op_generic_t *ostc_copy_attr(lio_object_service_fn_t *os, lio_creds_t *creds
 
     ma->n = 1;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_copy_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_copy_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2198,7 +2198,7 @@ gop_op_generic_t *ostc_symlink_multiple_attrs(lio_object_service_fn_t *os, lio_c
     ma->key_dest = key_dest;
     ma->n = n;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 
@@ -2224,7 +2224,7 @@ gop_op_generic_t *ostc_symlink_attr(lio_object_service_fn_t *os, lio_creds_t *cr
 
     ma->n = 1;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_symlink_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 
@@ -2271,7 +2271,7 @@ gop_op_generic_t *ostc_move_multiple_attrs(lio_object_service_fn_t *os, lio_cred
     ma->key_dest = key_new;
     ma->n = n;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 
@@ -2295,7 +2295,7 @@ gop_op_generic_t *ostc_move_attr(lio_object_service_fn_t *os, lio_creds_t *creds
 
     ma->n = 1;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_move_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2481,7 +2481,7 @@ gop_op_generic_t *ostc_get_multiple_attrs_immediate(lio_object_service_fn_t *os,
     ma->n = n;
     ma->is_immediate = 1;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2505,7 +2505,7 @@ gop_op_generic_t *ostc_get_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->n = n;
     ma->is_immediate = 0;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2530,7 +2530,7 @@ gop_op_generic_t *ostc_get_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->n = 1;
     ma->is_immediate = 0;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_get_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2583,7 +2583,7 @@ gop_op_generic_t *ostc_set_multiple_attrs_immediate(lio_object_service_fn_t *os,
     ma->n = n;
     ma->is_immediate = 1;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2606,7 +2606,7 @@ gop_op_generic_t *ostc_set_multiple_attrs(lio_object_service_fn_t *os, lio_creds
     ma->n = n;
     ma->is_immediate = 0;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 
@@ -2633,7 +2633,7 @@ gop_op_generic_t *ostc_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds,
     ma->n = 1;
     ma->is_immediate = 0;
 
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_set_attrs_fn, (void *)ma, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2954,7 +2954,7 @@ void ostc_open_free(void *arg)
 {
     ostc_open_op_t *op = (ostc_open_op_t *)arg;
 
-    if (op->path != NULL) free (op->path);
+    if (op->path != NULL) tbx_free (op->path);
     if (op->gop != NULL) gop_free(op->gop, OP_DESTROY);
     tbx_free(op);
 }
@@ -3029,7 +3029,7 @@ gop_op_generic_t *ostc_close_object(lio_object_service_fn_t *os, os_fd_t *ofd)
     tbx_type_malloc(op, ostc_open_op_t, 1);
     op->os = os;
     op->close_fd = ofd;
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_close_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_close_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -3065,7 +3065,7 @@ gop_op_generic_t *ostc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *of
     op->close_fd = ofd;
     op->mode = rw_mode;
     op->max_wait = max_wait;
-    return(gop_tp_op_new(ostc->tpc, NULL, ostc_lock_user_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(ostc->tpc, NULL, ostc_lock_user_object_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************

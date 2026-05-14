@@ -705,9 +705,9 @@ gop_op_generic_t *recovery_read(lio_segment_t *seg, data_attr_t *da, lio_segment
     //** check if we have a recovery log, if not just return the child read op
     segment_lock(seg);
     if ((s->recovery_seg == NULL) || (bypass_mode == 1)) {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, normal_read_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, normal_read_func, (void *)cop, tbx_free, 1);
     } else {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, recovery_read_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, recovery_read_func, (void *)cop, tbx_free, 1);
     }
     segment_unlock(seg);
 
@@ -866,9 +866,9 @@ gop_op_generic_t *recovery_write(lio_segment_t *seg, data_attr_t *da, lio_segmen
 
     segment_lock(seg);
     if (s->recovery_seg) {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, recovery_write_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, recovery_write_func, (void *)cop, tbx_free, 1);
     } else {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, normal_write_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, normal_write_func, (void *)cop, tbx_free, 1);
     }
     segment_unlock(seg);
 
@@ -4018,10 +4018,10 @@ gop_op_generic_t *cache_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
     if (s->direct_io == 1) {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, tbx_free, 1);
         tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_READ_DIRECT: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     } else {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, tbx_free, 1);
         tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_READ: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     }
 
@@ -4057,10 +4057,10 @@ gop_op_generic_t *cache_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
     if (s->direct_io == 1) {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_direct_rw_func, (void *)cop, tbx_free, 1);
         tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_WRITE_DIRECT: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     } else {
-        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, free, 1);
+        gop = gop_tp_op_new(s->tpc_unlimited, s->qname, cache_rw_func, (void *)cop, tbx_free, 1);
         tbx_monitor_obj_label_irate(gop_mo(gop), len, "CACHE_WRITE: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     }
 
@@ -4331,7 +4331,7 @@ gop_op_generic_t *cache_flush_range_gop(lio_segment_t *seg, data_attr_t *da, ex_
     s->flushing_count++;
     segment_unlock(seg);
 
-    return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_flush_range_gop_func, (void *)cop, free, 1));
+    return(gop_tp_op_new(s->tpc_unlimited, s->qname, cache_flush_range_gop_func, (void *)cop, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -4671,7 +4671,7 @@ gop_op_generic_t *segcache_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_
         ci->args = args;
         ci->timeout = timeout;
 
-        return(gop_tp_op_new(s->tpc_unlimited, NULL, cache_inspect_func, (void *)ci, free, 1));
+        return(gop_tp_op_new(s->tpc_unlimited, NULL, cache_inspect_func, (void *)ci, tbx_free, 1));
     }
 
     return(segment_inspect(s->child_seg, da, fd, mode, bufsize, args, timeout));
@@ -4776,7 +4776,7 @@ gop_op_generic_t *segcache_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_
     cop->new_size = new_size;
     cop->timeout = timeout;
 
-    gop = gop_tp_op_new(s->tpc_unlimited, NULL, segcache_truncate_func, (void *)cop, free, 1);
+    gop = gop_tp_op_new(s->tpc_unlimited, NULL, segcache_truncate_func, (void *)cop, tbx_free, 1);
 
 
     return(gop);
@@ -4866,7 +4866,7 @@ gop_op_generic_t *segcache_clone(lio_segment_t *seg, data_attr_t *da, lio_segmen
     }
 
     log_printf(5, "child_clone gid=%d\n", gop_id(cop->gop));
-    return(gop_tp_op_new(ss->tpc_unlimited, NULL, segcache_clone_func, (void *)cop, free, 1));
+    return(gop_tp_op_new(ss->tpc_unlimited, NULL, segcache_clone_func, (void *)cop, tbx_free, 1));
 }
 
 

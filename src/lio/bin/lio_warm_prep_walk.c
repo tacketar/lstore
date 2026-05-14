@@ -202,7 +202,7 @@ int main(int argc, char **argv)
             op->fname = fname;
             memcpy(op->vals, vals, sizeof(vals));
             memcpy(op->v_size, v_size, sizeof(v_size));
-            gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, update_prep_task, op, free, 1);
+            gop = gop_tp_op_new(lio_gc->tpc_unlimited, NULL, update_prep_task, op, tbx_free, 1);
             gop_opque_add(q, gop);
             i++;
             if ((count > 0) && ((i/count) != last)) {

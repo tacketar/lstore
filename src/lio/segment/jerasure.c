@@ -760,7 +760,7 @@ gop_op_generic_t *segjerase_inspect_full(segjerase_inspect_t *si, int do_print, 
     sf->do_print = do_print;
     sf->bad_stripes = 0;
 
-    gop = gop_tp_op_new(s->tpc, NULL, segjerase_inspect_full_func, (void *)sf, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, segjerase_inspect_full_func, (void *)sf, tbx_free, 1);
     gop_set_private(gop, sf);
 
     return(gop);
@@ -1173,7 +1173,7 @@ gop_op_generic_t *segjerase_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log
         si->bufsize = bufsize;
         si->timeout = timeout;
         si->args = args;
-        gop = gop_tp_op_new(s->tpc, NULL, segjerase_inspect_func, (void *)si, free, 1);
+        gop = gop_tp_op_new(s->tpc, NULL, segjerase_inspect_func, (void *)si, tbx_free, 1);
         break;
     case (INSPECT_MIGRATE):
         info_printf(fd, 1, XIDT ": jerase segment maps to child " XIDT "\n", segment_id(seg), segment_id(s->child_seg));
@@ -1274,7 +1274,7 @@ gop_op_generic_t *segjerase_clone(lio_segment_t *seg, data_attr_t *da, lio_segme
     cop->gop = segment_clone(ss->child_seg, da, &(sd->child_seg), mode, attr, timeout);
     log_printf(5, "child_clone gid=%d\n", gop_id(cop->gop));
 
-    return(gop_tp_op_new(ss->tpc, NULL, segjerase_clone_func, (void *)cop, free, 1));
+    return(gop_tp_op_new(ss->tpc, NULL, segjerase_clone_func, (void *)cop, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1993,7 +1993,7 @@ gop_op_generic_t *segjerase_write(lio_segment_t *seg, data_attr_t *da, lio_segme
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 1;
-    gop = gop_tp_op_new(s->tpc, NULL, segjerase_write_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, segjerase_write_func, (void *)sw, tbx_free, 1);
 
     tbx_monitor_obj_label_irate(gop_mo(gop), nbytes, "JERASE_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
@@ -2044,7 +2044,7 @@ gop_op_generic_t *segjerase_read(lio_segment_t *seg, data_attr_t *da, lio_segmen
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 1;
-    gop = gop_tp_op_new(s->tpc, NULL, segjerase_read_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, segjerase_read_func, (void *)sw, tbx_free, 1);
 
     tbx_monitor_obj_label_irate(gop_mo(gop), nbytes, "JERASE_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, nbytes);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));

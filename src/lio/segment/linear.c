@@ -458,7 +458,7 @@ gop_op_generic_t *seglin_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_t 
     st->timeout = timeout;
     st->da = da;
 
-    return(gop_tp_op_new(s->tpc, NULL, seglin_truncate_func, (void *)st, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seglin_truncate_func, (void *)st, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -610,7 +610,7 @@ gop_op_generic_t *seglin_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, NULL, seglin_read_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seglin_read_func, (void *)sw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGLIN_READ: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -808,7 +808,7 @@ gop_op_generic_t *seglin_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, NULL, seglin_write_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seglin_write_func, (void *)sw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGLIN_WRITE: n_iov=%d off=" XOT " len=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -1094,7 +1094,7 @@ gop_op_generic_t *seglin_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
         op->bufsize = bufsize;
         op->args = args;
         op->timeout = timeout;
-        gop = gop_tp_op_new(s->tpc, NULL, seglin_inspect_func, (void *)op, free, 1);
+        gop = gop_tp_op_new(s->tpc, NULL, seglin_inspect_func, (void *)op, tbx_free, 1);
         break;
     case (INSPECT_MIGRATE):
         gop = gop_dummy(gop_failure_status);
@@ -1316,7 +1316,7 @@ gop_op_generic_t *seglin_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
         slc->mode = mode;
         slc->timeout = timeout;
         slc->trunc = use_existing;
-        gop = gop_tp_op_new(sd->tpc, NULL, seglin_clone_func, (void *)slc, free, 1);
+        gop = gop_tp_op_new(sd->tpc, NULL, seglin_clone_func, (void *)slc, tbx_free, 1);
     }
 
     return(gop);

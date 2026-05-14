@@ -485,12 +485,12 @@ gop_op_generic_t *seglog_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
 
     if (rw_hints) {
         if (rw_hints->log_write_update == 0) {
-            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, free, 1);
+            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, tbx_free, 1);
         } else {
-            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_update_func, (void *)sw, free, 1);
+            gop = gop_tp_op_new(s->tpc, NULL, seglog_write_update_func, (void *)sw, tbx_free, 1);
         }
     } else {
-        gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, free, 1);
+        gop = gop_tp_op_new(s->tpc, NULL, seglog_write_add_func, (void *)sw, tbx_free, 1);
     }
 
     return(gop);
@@ -639,7 +639,7 @@ gop_op_generic_t *seglog_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 0;
-    gop = gop_tp_op_new(s->tpc, NULL, seglog_read_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seglog_read_func, (void *)sw, tbx_free, 1);
 
     return(gop);
 }
@@ -896,7 +896,7 @@ gop_op_generic_t *seglog_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
     slc->timeout = timeout;
     slc->attr = attr;
     slc->trunc = use_existing;
-    gop = gop_tp_op_new(sd->tpc, NULL, seglog_clone_func, (void *)slc, free, 1);
+    gop = gop_tp_op_new(sd->tpc, NULL, seglog_clone_func, (void *)slc, tbx_free, 1);
 
     return(gop);
 }
@@ -1004,7 +1004,7 @@ gop_op_generic_t *seglog_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_t 
     st->timeout = timeout;
     st->da = da;
 
-    return(gop_tp_op_new(s->tpc, NULL, seglog_truncate_func, (void *)st, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seglog_truncate_func, (void *)st, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1137,7 +1137,7 @@ gop_op_generic_t *seglog_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, 
     op->dryrun = dryrun;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seglog_tool_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seglog_tool_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1603,7 +1603,7 @@ gop_op_generic_t *lio_slog_merge_with_base_gop(lio_segment_t *seg, data_attr_t *
     st->timeout = timeout;
     st->da = da;
 
-    return(gop_tp_op_new(s->tpc, NULL, seglog_merge_with_base_func, (void *)st, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seglog_merge_with_base_func, (void *)st, tbx_free, 1));
 }
 
 const lio_segment_vtable_t lio_seglog_vtable = {

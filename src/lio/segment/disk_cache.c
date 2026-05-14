@@ -245,7 +245,7 @@ gop_op_generic_t *segdc_read(lio_segment_t *seg, data_attr_t *da, lio_segment_rw
     srw->buffer = buffer;
     srw->mode = 0;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segdc_rw_func, (void *)srw, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segdc_rw_func, (void *)srw, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -267,7 +267,7 @@ gop_op_generic_t *segdc_write(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     srw->buffer = buffer;
     srw->mode = 1;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segdc_rw_func, (void *)srw, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segdc_rw_func, (void *)srw, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -308,7 +308,7 @@ gop_op_generic_t *segdc_remove(lio_segment_t *seg, data_attr_t *da, int timeout)
     cmd->seg = seg;
     cmd->new_size = -1;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segdc_multi_func, (void *)cmd, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segdc_multi_func, (void *)cmd, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -327,7 +327,7 @@ gop_op_generic_t *segdc_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_t n
     cmd->seg = seg;
     cmd->new_size = new_size;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segdc_multi_func, (void *)cmd, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segdc_multi_func, (void *)cmd, tbx_free, 1));
 }
 
 

@@ -220,7 +220,7 @@ gop_op_generic_t *rcc_get_config_op(rc_t *rc, lio_creds_t *creds, mq_msg_t *rc_h
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(rc->mqc, msg, rcc_response_get_config, arg, free, timeout);
+    gop = gop_mq_op_new(rc->mqc, msg, rcc_response_get_config, arg, tbx_free, timeout);
     gop_set_private(gop, arg);
 
     log_printf(5, "mqid=%s timeout=%d gid=%d\n", gop_mq_id2str((char *)&(arg->id), sizeof(uint64_t), dt, sizeof(dt)), timeout, gop_id(gop));

@@ -445,7 +445,7 @@ gop_op_generic_t *osrc_remove_regex_object(lio_object_service_fn_t *os, lio_cred
     op->my_id = 0;
     tbx_random_get_bytes(&(op->my_id), sizeof(op->my_id));
 
-    gop = gop_tp_op_new(osrc->tpc, NULL, osrc_remove_regex_object_func, (void *)op, free, 1);
+    gop = gop_tp_op_new(osrc->tpc, NULL, osrc_remove_regex_object_func, (void *)op, tbx_free, 1);
     return(gop);
 }
 
@@ -700,7 +700,7 @@ gop_op_generic_t *osrc_regex_object_set_multiple_attrs(lio_object_service_fn_t *
     op->my_id = 0;
     tbx_random_get_bytes(&(op->my_id), sizeof(op->my_id));
 
-    gop = gop_tp_op_new(osrc->tpc, NULL, osrc_regex_object_set_multiple_attrs_func, (void *)op, free, 1);
+    gop = gop_tp_op_new(osrc->tpc, NULL, osrc_regex_object_set_multiple_attrs_func, (void *)op, tbx_free, 1);
     gop_set_private(gop, op);
 
     return(gop);
@@ -837,7 +837,7 @@ gop_op_generic_t *osrc_realpath(lio_object_service_fn_t *os, lio_creds_t *creds,
     OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_realpath, arg, tbx_free, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:REALPATH path=%s", path);
 
     log_printf(5, "END\n");
@@ -1152,7 +1152,7 @@ gop_op_generic_t *osrc_copy_mult_attrs_internal(lio_object_service_fn_t *os, osr
     OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, tbx_free, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:COPY_ATTRS");
 
     log_printf(5, "END\n");
@@ -1261,7 +1261,7 @@ gop_op_generic_t *osrc_symlink_mult_attrs_internal(lio_object_service_fn_t *os, 
     OSRC_DEBUG_MQ_PRINTF(msg, "FIXME=MISSING\n");
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, tbx_free, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -1361,7 +1361,7 @@ gop_op_generic_t *osrc_move_mult_attrs_internal(lio_object_service_fn_t *os, osr
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, tbx_free, osrc->timeout);
 
     log_printf(5, "END\n");
 
@@ -1565,7 +1565,7 @@ gop_op_generic_t *osrc_get_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_get_multiple_attrs, ma, tbx_free, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:GET_ATTRS");
 
     log_printf(5, "END\n");
@@ -1698,7 +1698,7 @@ gop_op_generic_t *osrc_set_mult_attrs_internal(lio_object_service_fn_t *os, osrc
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, free, osrc->timeout);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, ma, tbx_free, osrc->timeout);
     tbx_monitor_obj_label(gop_mo(gop), "OS:SET_ATTRS");
 
     log_printf(5, "END\n");
@@ -2448,7 +2448,7 @@ gop_op_generic_t *osrc_open_object(lio_object_service_fn_t *os, lio_creds_t *cre
     OSRC_DEBUG_MQ_PRINTF(msg, "fname=%s\n", path);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, free, max_wait);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_open, arg, tbx_free, max_wait);
     gop_set_private(gop, arg);
 
     tbx_monitor_obj_label(gop_mo(gop), "OS:OPEN path=%s", path);
@@ -2587,7 +2587,7 @@ gop_op_generic_t *osrc_lock_user_object(lio_object_service_fn_t *os, os_fd_t *of
     OSRC_DEBUG_MQ_PRINTF(msg, "OSRC: FLOCK: fd=%" PRIdPTR " mode=%d max_wait=%d\n", *(intptr_t *)fd->data, rw_mode, max_wait);
 
     //** Make the gop
-    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, free, max_wait + 10);
+    gop = gop_mq_op_new(osrc->mqc, msg, osrc_response_status, arg, tbx_free, max_wait + 10);
     gop_set_private(gop, arg);
 
     return(gop);
@@ -2888,7 +2888,7 @@ lio_object_service_fn_t *object_service_remote_client_create(lio_service_manager
         osrc->os_remote = object_service_remote_server_create(ess, fd, str);
         FATAL_UNLESS(osrc->os_remote != NULL);
         osrc->os_temp = ((lio_osrs_priv_t *)(osrc->os_remote->priv))->os_child;
-        tbx_free(str);
+        osrc->temp_section = str;
     } else {
         osrc->authn = lio_lookup_service(ess, ESS_RUNNING, ESS_AUTHN);
     }

@@ -176,7 +176,7 @@ gop_op_generic_t *segfile_read(lio_segment_t *seg, data_attr_t *da, lio_segment_
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1);
+    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGFILE_READ: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -208,7 +208,7 @@ gop_op_generic_t *segfile_write(lio_segment_t *seg, data_attr_t *da, lio_segment
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, free, 1);
+    gop = gop_tp_op_new(s->tpc, s->qname, segfile_rw_func, (void *)srw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGFILE_WRITE: n_iov=%d off[0]=" XOT " len_total=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -253,7 +253,7 @@ gop_op_generic_t *segfile_remove(lio_segment_t *seg, data_attr_t *da, int timeou
     cmd->seg = seg;
     cmd->new_size = -1;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segfile_multi_func, (void *)cmd, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segfile_multi_func, (void *)cmd, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -272,7 +272,7 @@ gop_op_generic_t *segfile_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_t
     cmd->seg = seg;
     cmd->new_size = new_size;
 
-    return(gop_tp_op_new(s->tpc, s->qname, segfile_multi_func, (void *)cmd, free, 1));
+    return(gop_tp_op_new(s->tpc, s->qname, segfile_multi_func, (void *)cmd, tbx_free, 1));
 }
 
 
@@ -443,7 +443,7 @@ gop_op_generic_t *segfile_clone(lio_segment_t *seg, data_attr_t *da, lio_segment
 
     if (mode == CLONE_STRUCT_AND_DATA) sfc->copy_data = 1;
 
-    gop = gop_tp_op_new(sd->tpc, sd->qname, segfile_clone_func, (void *)sfc, free, 1);
+    gop = gop_tp_op_new(sd->tpc, sd->qname, segfile_clone_func, (void *)sfc, tbx_free, 1);
 
     return(gop);
 }

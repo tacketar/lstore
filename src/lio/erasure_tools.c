@@ -685,21 +685,23 @@ void et_destroy_plan(lio_erasure_plan_t *plan)
 {
     int i;
 
-    if (plan->encode_matrix != NULL) tbx_free(plan->encode_matrix);
-    if (plan->encode_bitmatrix != NULL) tbx_free(plan->encode_bitmatrix);
+    //** These arrays are created OUTSIDE of the framework so use the stock free() call
+
+    if (plan->encode_matrix != NULL) free(plan->encode_matrix);
+    if (plan->encode_bitmatrix != NULL) free(plan->encode_bitmatrix);
 
     if (plan->encode_schedule != NULL) {
         i=0;
         while (plan->encode_schedule[i][0] != -1) {
-            tbx_free(plan->encode_schedule[i]);
+            free(plan->encode_schedule[i]);
             i++;
         }
-        tbx_free(plan->encode_schedule[i]);
+        free(plan->encode_schedule[i]);
 
-        tbx_free(plan->encode_schedule);
+        free(plan->encode_schedule);
     }
 
-    tbx_free(plan);
+    tbx_free(plan);  //** This is directly created so use TBX tooling
 }
 
 //***************************************************************************

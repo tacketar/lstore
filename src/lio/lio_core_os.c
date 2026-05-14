@@ -870,7 +870,7 @@ gop_op_generic_t *lio_remove_regex_gop(lio_config_t *lc, lio_creds_t *creds, lio
     op->recurse_depth = recurse_depth;
     op->np = np;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_remove_regex_object_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_remove_regex_object_fn, (void *)op, tbx_free, 1));
 }
 
 //*************************************************************************
@@ -1327,7 +1327,7 @@ gop_op_generic_t *lio_get_multiple_attrs_gop(lio_config_t *lc, lio_creds_t *cred
     op->n_keys = n_keys;
     op->no_cache_attrs_if_file = no_cache_attrs_if_file;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_get_multiple_attrs_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_get_multiple_attrs_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1424,7 +1424,7 @@ gop_op_generic_t *lio_getattr_gop(lio_config_t *lc, lio_creds_t *creds, const ch
     op->sval = val;
     op->sv_size = v_size;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_getattr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_getattr_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1495,7 +1495,7 @@ gop_op_generic_t *lio_multiple_setattr_gop(lio_config_t *lc, lio_creds_t *creds,
     op->mv_size = v_size;
     op->n_keys = n_keys;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_multiple_setattr_op_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_multiple_setattr_op_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1576,7 +1576,7 @@ gop_op_generic_t *lio_setattr_gop(lio_config_t *lc, lio_creds_t *creds, const ch
     op->sval = val;
     op->n_keys = v_size;  //** Double use for the vaiable
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1625,7 +1625,7 @@ gop_op_generic_t *lio_multiple_setattr_fd_gop(lio_config_t *lc, lio_creds_t *cre
     op->mv_size = v_size;
     op->n_keys = n_keys;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_multiple_setattr_fd_op_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_multiple_setattr_fd_op_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1671,7 +1671,7 @@ gop_op_generic_t *lio_setattr_fd_gop(lio_config_t *lc, lio_creds_t *creds, os_fd
     op->sval = val;
     op->n_keys = v_size;  //** Double use for the vaiable
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fd_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_setattr_fd_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2353,7 +2353,7 @@ gop_op_generic_t *lio_fsck_gop(lio_config_t *lc, lio_creds_t *creds, char *fname
     op->owner = owner;
     op->exnode_mode = exnode_mode;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_fsck_gop_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_fsck_gop_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -2377,7 +2377,7 @@ gop_op_generic_t *lio_fsck_gop_full(lio_config_t *lc, lio_creds_t *creds, char *
     op->v_size = v_size;
     op->full = 1;
 
-    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_fsck_gop_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(lc->tpc_unlimited, NULL, lio_fsck_gop_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************

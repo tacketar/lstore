@@ -778,7 +778,7 @@ void _amp_prefetch(lio_segment_t *seg, ex_off_t lo, ex_off_t hi, int start_prefe
     ca->hi = hi_row;
     ca->start_prefetch = start_prefetch;
     ca->start_trigger = start_trigger;
-    gop = gop_tp_op_new(s->tpc_unlimited, NULL, amp_prefetch_fn, (void *)ca, free, 1);
+    gop = gop_tp_op_new(s->tpc_unlimited, NULL, amp_prefetch_fn, (void *)ca, tbx_free, 1);
     ca->gop = gop;
 
     gop_set_auto_destroy(gop, 1);

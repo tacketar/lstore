@@ -1043,7 +1043,7 @@ gop_op_generic_t *seglun_truncate(lio_segment_t *seg, data_attr_t *da, ex_off_t 
     st->timeout = timeout;
     st->da = da;
 
-    return(gop_tp_op_new(s->tpc, NULL, seglun_truncate_func, (void *)st, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seglun_truncate_func, (void *)st, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1833,7 +1833,7 @@ gop_op_generic_t *seglun_write(lio_segment_t *seg, data_attr_t *da, lio_segment_
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 1;
-    gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, tbx_free, 1);
 
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
@@ -1866,7 +1866,7 @@ gop_op_generic_t *seglun_read(lio_segment_t *seg, data_attr_t *da, lio_segment_r
     sw->buffer = buffer;
     sw->timeout = timeout;
     sw->rw_mode = 0;
-    gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seglun_rw_func, (void *)sw, tbx_free, 1);
 
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
@@ -2303,7 +2303,7 @@ gop_op_generic_t *seglun_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
         si->bufsize = bufsize;
         si->timeout = timeout;
         si->args = args;
-        gop = gop_tp_op_new(s->tpc, NULL, seglun_inspect_func, (void *)si, free, 1);
+        gop = gop_tp_op_new(s->tpc, NULL, seglun_inspect_func, (void *)si, tbx_free, 1);
         break;
     case (INSPECT_MIGRATE):
         tbx_type_malloc(si, seglun_inspect_t, 1);
@@ -2314,7 +2314,7 @@ gop_op_generic_t *seglun_inspect(lio_segment_t *seg, data_attr_t *da, tbx_log_fd
         si->bufsize = bufsize;
         si->timeout = timeout;
         si->args = args;
-        gop = gop_tp_op_new(s->tpc, NULL, seglun_migrate_func, (void *)si, free, 1);
+        gop = gop_tp_op_new(s->tpc, NULL, seglun_migrate_func, (void *)si, tbx_free, 1);
         break;
     case (INSPECT_SOFT_ERRORS):
     case (INSPECT_HARD_ERRORS):
@@ -2588,7 +2588,7 @@ gop_op_generic_t *seglun_clone(lio_segment_t *seg, data_attr_t *da, lio_segment_
         slc->timeout = timeout;
         slc->trunc = use_existing;
         slc->max_transfer = 20*1024*1024;
-        gop = gop_tp_op_new(sd->tpc, NULL, seglun_clone_func, (void *)slc, free, 1);
+        gop = gop_tp_op_new(sd->tpc, NULL, seglun_clone_func, (void *)slc, tbx_free, 1);
     }
 
     return(gop);

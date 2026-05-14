@@ -170,7 +170,7 @@ gop_op_generic_t *exnode_remove_gop(gop_thread_pool_context_t *tpc, lio_exnode_t
     exc->da = da;
     exc->timeout = timeout;
 
-    gop = gop_tp_op_new(tpc, NULL, exnode_remove_gop_func, (void *)exc, free, 1);
+    gop = gop_tp_op_new(tpc, NULL, exnode_remove_gop_func, (void *)exc, tbx_free, 1);
     return(gop);
 }
 
@@ -265,7 +265,7 @@ gop_op_generic_t *lio_exnode_clone_gop(gop_thread_pool_context_t *tpc, lio_exnod
     exc->timeout = timeout;
     exc->arg = arg;
 
-    gop = gop_tp_op_new(tpc, NULL, lio_exnode_clone_gop_func, (void *)exc, free, 1);
+    gop = gop_tp_op_new(tpc, NULL, lio_exnode_clone_gop_func, (void *)exc, tbx_free, 1);
     return(gop);
 }
 

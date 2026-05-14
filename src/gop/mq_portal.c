@@ -97,7 +97,7 @@ void mq_long_running_check()
     if (_mq_long_running_pool == NULL) {
         //** this pool persists for the duration of execution
         apr_pool_create(&_mq_long_running_pool, NULL);
-        apr_threadkey_private_create(&_mq_long_running_key, free, _mq_long_running_pool);
+        apr_threadkey_private_create(&_mq_long_running_key, tbx_free, _mq_long_running_pool);
     }
 }
 

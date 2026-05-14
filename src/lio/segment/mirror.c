@@ -276,7 +276,7 @@ gop_op_generic_t *mirror_child_cleanup_gop(seg_mirror_multi_op_t *op, lio_segmen
     cop->da = op->da;
     cop->timeout = op->timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_cleanup_fn, (void *)cop, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_cleanup_fn, (void *)cop, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -795,7 +795,7 @@ gop_op_generic_t *seg_mirror_inspect(lio_segment_t *seg, data_attr_t *da, tbx_lo
     op->args = args;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_inspect_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_inspect_fn, (void *)op, tbx_free, 1));
 }
 
 
@@ -863,7 +863,7 @@ gop_op_generic_t *seg_mirror_read(lio_segment_t *seg, data_attr_t *da, lio_segme
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_read_fn, (void *)srw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_read_fn, (void *)srw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGMIRROR_READ: n_iov=%d off[0]=" XOT " len=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -968,7 +968,7 @@ gop_op_generic_t *seg_mirror_write(lio_segment_t *seg, data_attr_t *da, lio_segm
     len = iov[0].len;
     for (i=1; i<n_iov; i++) len += iov[i].len;
 
-    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_write_fn, (void *)srw, free, 1);
+    gop = gop_tp_op_new(s->tpc, NULL, seg_mirror_write_fn, (void *)srw, tbx_free, 1);
     tbx_monitor_obj_label_irate(gop_mo(gop), len, "SEGMIRROR_WRITE: n_iov=%d off[0]=" XOT " len=" XOT, n_iov, iov[0].offset, len);
     tbx_monitor_obj_reference(gop_mo(gop), &(seg->header.mo));
 
@@ -1015,7 +1015,7 @@ gop_op_generic_t *seg_mirror_remove(lio_segment_t *seg, data_attr_t *da, int tim
     op->da = da;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_remove_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_remove_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1109,7 +1109,7 @@ gop_op_generic_t *seg_mirror_truncate(lio_segment_t *seg, data_attr_t *da, ex_of
     op->da = da;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_truncate_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_truncate_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1271,7 +1271,7 @@ gop_op_generic_t *seg_mirror_clone(lio_segment_t *seg, data_attr_t *da, lio_segm
     op->attr = attr;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_clone_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_clone_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
@@ -1358,7 +1358,7 @@ gop_op_generic_t *seg_mirror_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t s
     op->dryrun = dryrun;
     op->timeout = timeout;
 
-    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_tool_fn, (void *)op, free, 1));
+    return(gop_tp_op_new(s->tpc, NULL, seg_mirror_tool_fn, (void *)op, tbx_free, 1));
 }
 
 //***********************************************************************
