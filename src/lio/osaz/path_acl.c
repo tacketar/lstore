@@ -550,7 +550,9 @@ void _pacl_load(lio_os_authz_t *az)
             if (osaz->pa) pacl_destroy(osaz->pa);
             osaz->pa = pa;
         } else {
-            log_printf(5, "ERROR: Failed to reload data\n");
+            log_printf(5, "ERROR: Failed to reload data: %s\n", osaz->pa_file); tbx_log_flush();
+            fprintf(stderr, "ERROR: Failed to reload data: %s\n", osaz->pa_file); fflush(stderr);
+            fprintf(stdout, "ERROR: Failed to reload data: %s\n", osaz->pa_file); fflush(stdout);
             tbx_monitor_thread_message(MON_MY_THREAD, "ERROR: Failed to reload PACL data pa_file=%s", osaz->pa_file);
         }
         tbx_inip_destroy(ifd);
