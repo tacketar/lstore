@@ -57,6 +57,7 @@ set(TOOL_OBJS
     string_token.c
     thread_pool.c
     transfer_buffer.c
+    type_malloc.c
     varint.c
 )
 
