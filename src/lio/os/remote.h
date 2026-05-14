@@ -131,8 +131,6 @@ struct lio_osrs_priv_t {
     int max_stream;
     int max_active;             //** Max size of the active table.
     lio_authn_t *authn;
-    char *fname_active;         //** Filename for logging ACTIVE operations.
-    char *fname_activity;       //** Filename for logging create/remove/move operations.
 };
 
 struct lio_osrc_priv_t {

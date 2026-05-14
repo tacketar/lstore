@@ -79,11 +79,9 @@
 static lio_osrs_priv_t osrs_default_options = {
     .section = "os_remote_server",
     .hostname = NULL,
-    .fname_activity = NULL,
     .ongoing_interval = 30,
     .max_stream = 10*1024*1024,
     .os_local_section = "rs_simple",
-    .fname_active = "/lio/log/os_active.log",
     .max_active = 1024
 };
 
@@ -3628,10 +3626,8 @@ void osrs_print_running_config(lio_object_service_fn_t *os, FILE *fd, int print_
         fprintf(fd, "# Using global host portal for address\n");
         fprintf(fd, "# Using global host portal for ongoing_interval\n");
     }
-    fprintf(fd, "log_activity = %s\n", osrs->fname_activity);
     fprintf(fd, "max_stream = %d\n", osrs->max_stream);
     fprintf(fd, "os_local = %s\n", osrs->os_local_section);
-    fprintf(fd, "active_output = %s\n", osrs->fname_active);
     fprintf(fd, "max_active = %d\n", osrs->max_active);
     fprintf(fd, "\n");
 
@@ -3658,9 +3654,6 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
         gop_mq_portal_destroy(osrs->server_portal);
         tbx_free(osrs->hostname);
     }
-
-    //** Free the log string
-    if (osrs->fname_activity != NULL) tbx_free(osrs->fname_activity);
 
     //** Cleanup the activity log
     tbx_stack_move_to_top(osrs->active_lru);
@@ -3690,7 +3683,6 @@ void os_remote_server_destroy(lio_object_service_fn_t *os)
     tbx_free(osrs->section);
     tbx_free(osrs->os_local_section);
 
-    if (osrs->fname_active) tbx_free(osrs->fname_active);
     tbx_free(osrs);
     tbx_free(os);
 }
@@ -3733,10 +3725,6 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
 
     //** Get the host name we bind to NULL is global default
     osrs->hostname= tbx_inip_get_string(fd, section, "address", osrs_default_options.hostname);
-
-    //** Get the activity log file
-    osrs->fname_activity = tbx_inip_get_string(fd, section, "log_activity", osrs_default_options.fname_activity);
-    log_printf(5, "section=%s log_activity=%s\n", section, osrs->fname_activity);
 
     //** Max Stream size
     osrs->max_stream = tbx_inip_get_integer(fd, section, "max_stream", osrs_default_options.max_stream);
@@ -3825,7 +3813,6 @@ lio_object_service_fn_t *object_service_remote_server_create(lio_service_manager
     os->type = OS_TYPE_REMOTE_SERVER;
 
     //** This is for the active tables
-    osrs->fname_active = tbx_inip_get_string(fd, section, "active_output", osrs_default_options.fname_active);
     osrs->max_active = tbx_inip_get_integer(fd, section, "active_size", osrs_default_options.max_active);
     osrs->pending_lock_table = apr_hash_make(osrs->mpool);
     osrs->active_lru = tbx_stack_new();
