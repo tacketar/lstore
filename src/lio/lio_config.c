@@ -110,7 +110,7 @@ lio_config_t lio_default_options = {
     .rs_section = "rs_simple",
     .notify_section = "lio_notify",
     .os_section = "os_remote_client",
-    .authn_section = "authn",
+    .authn_section = "authn_psk_client",
     .cache_section = "cache_amp",
     .special_file_prefix = "/tmp/lfs_special.",
     .root_prefix = NULL,
@@ -269,6 +269,7 @@ void lio_print_running_config(FILE *fd, lio_config_t *lio)
     lun_global_print_running_stats(NULL, fd, 1);
     print_misc_stats(fd);
     memory_usage_dump(fd);
+    tbx_type_malloc_stats_printf(fd);
 }
 
 //***************************************************************
@@ -551,11 +552,11 @@ void lio_find_lfs_mounts()
                 }
             }
 
-            tbx_free(text);
+            free(text);  //** We use the builtin free because getline is directly doing the malloc
             text = NULL;
         }
         if (text != NULL)
-            tbx_free(text);  //** Getline() always returns something
+            free(text);  //** Getline() always returns something... and we always use the builtin free
     }
     //** Convert it to a simple array
     _lfs_mount_count = tbx_stack_count(stack);
@@ -623,6 +624,7 @@ void lio_path_local_make_absolute(lio_path_tuple_t *tuple)
     char *p, *rp, *pp;
     int i, n, last_slash, glob_index;
     char path[OS_PATH_MAX];
+    char rpath[OS_PATH_MAX];
     char c;
 
     log_printf(5, "initial path=%s\n", tuple->path);
@@ -670,7 +672,8 @@ wildcard:
         if (last_slash == -1) last_slash = n;
         c = p[last_slash];
         p[last_slash] = 0;
-        rp = realpath(p, NULL);
+        rp = realpath(p, rpath);
+        if (rp) rp = tbx_stk_strdup(rp);
         p[last_slash] = c;
         if ((p[n-1] == '/') && (last_slash == n)) last_slash--;  //** '/' terminator so preserve it
     }
