@@ -1753,7 +1753,7 @@ void lfs_destroy(void *private_data)
 
     //** Clean up everything else
     if (lfs->lfs_section) tbx_free(lfs->lfs_section);
-    if (lfs->id) free (lfs->id);
+    if (lfs->id) tbx_free(lfs->id);
     tbx_free(lfs->mount_point);
     tbx_apr_pool_destroy(lfs->mpool);
     tbx_free(lfs);

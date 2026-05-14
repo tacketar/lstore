@@ -340,7 +340,7 @@ gop_op_generic_t *rsrc_update_config_op(lio_resource_service_fn_t *rs, int mode,
     arg->mode = mode;
 
     //** Make the gop
-    gop = gop_mq_op_new(rsrc->mqc, msg, rsrc_response_get_config, arg, free, timeout);
+    gop = gop_mq_op_new(rsrc->mqc, msg, rsrc_response_get_config, arg, tbx_free, timeout);
     gop_set_private(gop, arg);
 
     log_printf(5, "mqid=%s timeout=%d gid=%d\n", gop_mq_id2str((char *)&(arg->id), sizeof(uint64_t), dt, sizeof(dt)), timeout, gop_id(gop));
@@ -401,7 +401,7 @@ void _rsrc_update_abort(lio_resource_service_fn_t *rs)
     gop_mq_msg_append_mem(msg, NULL, 0, MQF_MSG_KEEP_DATA);
 
     //** Make the gop
-    gop = gop_mq_op_new(rsrc->mqc, msg, NULL, NULL, free, 60);
+    gop = gop_mq_op_new(rsrc->mqc, msg, NULL, NULL, tbx_free, 60);
 
     //** And execute it
     gop_waitany(gop);
