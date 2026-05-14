@@ -20,6 +20,7 @@ option(BUILD_GRIDFTP "Build GridFTP bindings" OFF)
 option(BUILD_TCMU "Build TCMU-Runner bindings" OFF)
 option(BUILD_HDFS "Build HDFS bindings" OFF)
 
+option(ENABLE_TYPE_MALLOC_PROFILE "Enable detailed MQ debugging" OFF)
 option(ENABLE_MQ_DEBUG "Enable detailed MQ debugging" OFF)
 option(ENABLE_OSRS_DEBUG "Enable detailed OS remote server debugging" OFF)
 option(ENABLE_FUSE3_LIO "Use the custom built FUSE3-LIO" OFF)
@@ -117,6 +118,10 @@ set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 # Defines
 set(USE_SUPERBUILD ON)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -D_REENTRANT -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -fvisibility=hidden -fno-strict-aliasing -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Wno-error=sign-compare")
+
+if (ENABLE_TBX_TYPE_MALLOC_PROFILE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_TBX_TYPE_MALLOC_PROFILE")
+endif()
 
 if (ENABLE_MQ_DEBUG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_MQ_DEBUG")
