@@ -39,11 +39,34 @@ tbx_stack_ele_t * tbx_stack_ele_get_down(tbx_stack_ele_t * stack) {
 }
 
 // Boilerplate for tbs_stack_t
-TBX_TYPE_SIZEOF_DEFAULT(tbx_stack_t, tbx_stack);
-TBX_TYPE_INIT_DEFAULT(tbx_stack_t, tbx_stack);
-TBX_TYPE_FINI_DEFAULT(tbx_stack_t, tbx_stack);
-TBX_TYPE_NEW_DEFAULT(tbx_stack_t, tbx_stack);
-//TBX_TYPE_DEL_DEFAULT(tbx_stack_t, tbx_stack);
+//TBX_TYPE_SIZEOF_DEFAULT(tbx_stack_t, tbx_stack);
+//TBX_TYPE_INIT_DEFAULT(tbx_stack_t, tbx_stack);
+//TBX_TYPE_FINI_DEFAULT(tbx_stack_t, tbx_stack);
+//TBX_TYPE_NEW_DEFAULT(tbx_stack_t, tbx_stack);
+//-TBX_TYPE_DEL_DEFAULT(tbx_stack_t, tbx_stack);
+
+//**************************************
+// tbx_stack_init
+//**************************************
+
+int tbx_stack_init(tbx_stack_t *stack)
+{
+    memset(stack, 0, sizeof(tbx_stack_t));
+    return(0);
+}
+
+//**************************************
+// tbx_stack_new - Make a new stack
+//**************************************
+
+tbx_stack_t *tbx_stack_new()
+{
+    tbx_stack_t *stack;
+
+    tbx_type_malloc_clear(stack, tbx_stack_t, 1);
+
+    return(stack);
+}
 
 //**************************************
 // tbx_stack_del - this has to be done manually since we have to tell it to remove the data as well.

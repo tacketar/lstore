@@ -20,7 +20,7 @@
 
 #include <stddef.h>
 #include <tbx/visibility.h>
-#include <tbx/tbx_decl.h>
+//#include <tbx/tbx_decl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,8 +28,13 @@ extern "C" {
 
 // Types
 typedef struct tbx_stack_ele_t tbx_stack_ele_t;
+typedef struct tbx_stack_t tbx_stack_t;
 
-TBX_TYPE(tbx_stack_t, tbx_stack);
+TBX_API int tbx_stack_init(tbx_stack_t *stack);
+TBX_API tbx_stack_t *tbx_stack_new();
+TBX_API void tbx_stack_del(tbx_stack_t *stack);
+
+//TBX_TYPE(tbx_stack_t, tbx_stack);
 
 // Functions
 TBX_API int tbx_stack_count(tbx_stack_t *stack);
