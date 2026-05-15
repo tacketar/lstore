@@ -35,11 +35,11 @@
 #endif
 
 #ifndef TBX_MALLOC_BIN_BYTES
-    #define TBX_MALLOC_BIN_BYTES 1024   //** Default to 1k/bucket
+    #define TBX_MALLOC_BIN_BYTES 128   //** Default to 128 bytes/bucket
 #endif
 
 #ifndef TBX_MALLOC_BIN_COUNT
-    #define TBX_MALLOC_BIN_COUNT 1024   //** Total number of buckets
+    #define TBX_MALLOC_BIN_COUNT 49152   //** Total number of buckets. This gives a default of 6MB range
 #endif
 
 #define TBX_MALLOC_BIN_UNDERFLOW TBX_MALLOC_BIN_COUNT
@@ -81,11 +81,35 @@ int64_t _tm_slot(size_t nbytes)
 }
 
 //*****************************************************************************
+//   _tm_malloc - Allocates the requested space, updates the counters, and returns
+//       the pointer for the user
+//*****************************************************************************
+
+void *_tm_malloc(size_t nbytes)
+{
+    int64_t slot;
+    tm_handle_t *handle;
+
+    handle = malloc(nbytes + sizeof(tm_handle_t));
+    if (handle == NULL) return(NULL);
+
+    slot = _tm_slot(nbytes);
+    handle->slot = slot;
+    handle->nbytes = nbytes;
+
+    tbx_atomic_inc(mem_bin[slot].malloc_count);
+    tbx_atomic_add(mem_bin[slot].malloc_bytes, nbytes);
+
+    return(handle->data);
+}
+
+//*****************************************************************************
 //   _tm_aligned_alloc - Allocates the requested space, based on alignment,
 //       updates the counters, and returns the pointer for the user
 //
 //   NOTE: Not an easy way to do this so we just don't try and hope the calling
-//       program can handle it.
+//       program can handle it.  The issue is that the requested bytes must be
+//       a power of 2 which isn't possible with our extra bits.
 //*****************************************************************************
 
 void *_tm_aligned_alloc(size_t alignment, size_t nbytes)
@@ -110,30 +134,6 @@ void *WONTWORK_tm_aligned_alloc(size_t alignment, size_t nbytes)
 
     return(handle->data);
 }
-
-//*****************************************************************************
-//   _tm_malloc - Allocates the requested space, updates the counters, and returns
-//       the pointer for the user
-//*****************************************************************************
-
-void *_tm_malloc(size_t nbytes)
-{
-    int64_t slot;
-    tm_handle_t *handle;
-
-    handle = malloc(nbytes + sizeof(tm_handle_t));
-    if (handle == NULL) return(NULL);
-
-    slot = _tm_slot(nbytes);
-    handle->slot = slot;
-    handle->nbytes = nbytes;
-
-    tbx_atomic_inc(mem_bin[slot].malloc_count);
-    tbx_atomic_add(mem_bin[slot].malloc_bytes, nbytes);
-
-    return(handle->data);
-}
-
 
 //*****************************************************************************
 //   _tm_relloc - Reallocates the requested space, updates the counters, and returns
