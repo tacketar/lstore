@@ -36,6 +36,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/fmttypes.h>
+#include <tbx/type_malloc.h>
 #include "cmd_send.h"
 
 apr_time_t parse_time(char *buffer)
@@ -149,7 +150,7 @@ int main(int argc, char **argv)
     if (ns == NULL)
         return (-1);
     if (bstate != NULL)
-        free(bstate);
+        tbx_free(bstate);
 
     //** Cycle through the data **
     total_bytes = 0;

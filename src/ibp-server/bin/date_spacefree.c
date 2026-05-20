@@ -36,6 +36,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/fmttypes.h>
+#include <tbx/type_malloc.h>
 #include "ibp_time.h"
 #include "cmd_send.h"
 
@@ -114,7 +115,7 @@ int main(int argc, char **argv)
     if (ns == NULL)
         return (-1);
     if (bstate != NULL)
-        free(bstate);
+        tbx_free(bstate);
 
     //** Cycle through the data **
     a_total = p_total = 0;

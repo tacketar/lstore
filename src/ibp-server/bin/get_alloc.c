@@ -179,7 +179,7 @@ int main(int argc, char **argv)
     ndata = atoi(tbx_stk_string_token(NULL, " ", &bstate, &err));
     log_printf(15, "parsed: nb=%d s=%d cs_type=%d hbs=" I64T " bs=" I64T " ndata=%d\n", nblocks,
                state, cs_type, header_bs, bs, ndata);
-    free(result);
+    tbx_free(result);
 
     //** Read the Allocation ***
     to = apr_time_now() + apr_time_make(max_wait, 0);
@@ -247,9 +247,9 @@ int main(int argc, char **argv)
 
     tbx_ns_destroy(ns);
 
-    if (h.n_read > 0) free(h.read_ts);
-    if (h.n_write > 0) free(h.write_ts);
-    if (h.n_manage > 0) free(h.manage_ts);
+    if (h.n_read > 0) tbx_free(h.read_ts);
+    if (h.n_write > 0) tbx_free(h.write_ts);
+    if (h.n_manage > 0) tbx_free(h.manage_ts);
 
     apr_terminate();
 

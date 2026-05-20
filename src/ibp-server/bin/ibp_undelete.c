@@ -32,6 +32,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/string_token.h>
+#include <tbx/type_malloc.h>
 #include "cmd_send.h"
 
 
@@ -92,7 +93,7 @@ int main(int argc, char **argv)
     if (ns == NULL)
         return (-1);
     if (bstate != NULL)
-        free(bstate);
+        tbx_free(bstate);
 
     tbx_ns_timeout_set(&dt, 5, 0);
 
