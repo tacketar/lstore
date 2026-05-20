@@ -33,6 +33,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/string_token.h>
+#include <tbx/type_malloc.h>
 #include "cmd_send.h"
 
 
@@ -48,6 +49,7 @@ int main(int argc, char **argv)
     apr_time_t end_time;
     tbx_ns_t *ns;
     char cmd[512];
+    char host_buffer[1024];
     char *host;
     int port = 6714;
     int timeout = 15;
@@ -59,7 +61,7 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(argv[1], "-a") == 0) {
-        host = (char *) malloc(1024);
+        host = host_buffer;
         gethostname(host, 1023);
     } else {
         host = argv[1];

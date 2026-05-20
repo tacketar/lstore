@@ -33,6 +33,7 @@
 #include <tbx/log.h>
 #include <tbx/dns_cache.h>
 #include <tbx/string_token.h>
+#include <tbx/type_malloc.h>
 #include "cmd_send.h"
 
 //** This is a hack to not have to have the ibp source
@@ -50,6 +51,7 @@ int main(int argc, char **argv)
     tbx_ns_timeout_t dt;
     tbx_ns_t *ns;
     char cmd[512];
+    char host_buffer[1024];
     char *host;
     int port = 6714;
     int timeout = 15;
@@ -62,7 +64,7 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(argv[1], "-a") == 0) {
-        host = (char *) malloc(1024);
+        host = host_buffer;
         gethostname(host, 1023);
     } else {
         host = argv[1];
@@ -84,7 +86,7 @@ int main(int argc, char **argv)
     if (ns == NULL)
         return (-1);
     if (bstate != NULL)
-        free(bstate);
+        tbx_free(bstate);
 
     //** Read the result.  Termination occurs when the line "END" is read.
     //** Note that server_ns_readline strips the "\n" from the end of the line
