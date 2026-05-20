@@ -573,6 +573,21 @@ void lio_find_lfs_mounts()
 }
 
 //***************************************************************
+//  lio_find_lfs_mounts_free - Frees the memory associated with the LFS mounts
+//***************************************************************
+
+void lio_find_lfs_mounts_free()
+{
+    int i;
+
+    for (i=0; i<_lfs_mount_count; i++) {
+        if (lfs_mount[i].shortcut) tbx_free(lfs_mount[i].shortcut);
+        if (lfs_mount[i].prefix) tbx_free(lfs_mount[i].prefix);
+    }
+    if (lfs_mount) tbx_free(lfs_mount);
+}
+
+//***************************************************************
 //  lio_path_release - Decrs a path tuple object
 //***************************************************************
 
@@ -2279,6 +2294,8 @@ int lio_shutdown()
     tbx_apr_pool_destroy(_lc_mpool);
     _lc_mpool = NULL;
     _lc_lock  = NULL;
+
+    lio_find_lfs_mounts_free();
 
     tbx_siginfo_shutdown();
 
