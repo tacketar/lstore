@@ -70,7 +70,8 @@ static gop_mq_context_t mqc_default_options = {
     .heartbeat_failure = 60,
     .min_ops_per_sec = 100,
     .bind_short_running_max = 40,
-    .enable_monitoring = 0
+    .enable_monitoring = 0,
+    .warn_to = apr_time_from_sec(10)
 };
 
 
@@ -1787,6 +1788,7 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     double proc_rate, dt;
     apr_status_t dummy;
     char v;
+    apr_time_t tow_loop_start, tow_dt;
     MQ_DEBUG(apr_time_t ts, te, dt_task, dt_incoming, dt_hb;)
     MQ_DEBUG(int hb_check;)
     MQ_DEBUG(int nice_priority = 0;)
@@ -1856,11 +1858,19 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
     last_check = apr_time_now();
 
     do {
+        tow_loop_start = apr_time_now();
+        tow_dt = tow_loop_start;
         if ((short_running_max < 0) || (tbx_atomic_get(c->pc->running) < short_running_max)) {   //** Normal mode
             k = gop_mq_poll(pfd, npoll, heartbeat_ms);
         } else {     //** We've reached saturation for incoming client tasks so don't check
             k = gop_mq_poll(pfd, 1, heartbeat_ms);
             pfd[PI_CONN].revents = 0;
+        }
+        tow_dt = apr_time_now() - tow_dt;
+        if (tow_dt > c->pc->warn_to) {
+            if (tbx_notify_handle) {
+                _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "MQ_WARN: dt=" TT " gop_mq_poll: k=%d short_running_max=%d c->pc->running=%d\n", apr_time_sec(tow_dt), k, short_running_max, tbx_atomic_get(c->pc->running));
+            }
         }
 
         MQ_DEBUG(ts = apr_time_now(); dt_task = 0; dt_incoming = 0; )
@@ -1868,17 +1878,31 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         if (k > 0) {  //** Got an event so process it
             //** Process client requests
             nincoming = 0;
+            tow_dt = apr_time_now();
             if (pfd[PI_CONN].revents != 0) { nincoming = short_running_max; finished += mqc_process_incoming(c, &nincoming); }
             MQ_DEBUG(dt_incoming = apr_time_now();)
             nprocessed += nincoming;
             total_incoming += nincoming;
+            tow_dt = apr_time_now() - tow_dt;
+            if (tow_dt > c->pc->warn_to) {
+                if (tbx_notify_handle) {
+                    _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "MQ_WARN: dt=" TT " mqc_process_incoming: nincoming=%d\n", apr_time_sec(tow_dt), nincoming);
+                }
+            }
 
             //** Send host responses
             nproc = 0;
+            tow_dt = apr_time_now();
             if ((npoll == 2) && (pfd[PI_EFD].revents != 0)) { nproc = submit_max; finished += mqc_process_task(c, &npoll, &nproc); }
             MQ_DEBUG(dt_task = apr_time_now();)
             nprocessed += nproc;
             total_proc += nproc;
+            tow_dt = apr_time_now() - tow_dt;
+            if (tow_dt > c->pc->warn_to) {
+                if (tbx_notify_handle) {
+                    _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "MQ_WARN: dt=" TT " mqc_process_task: nproc=%d\n", apr_time_sec(tow_dt), nproc);
+                }
+            }
         } else if (k < 0) {
             log_printf(0, "ERROR on socket uuid=%s errno=%d\n", c->mq_uuid, errno);
             tbx_log_flush();
@@ -1887,9 +1911,16 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
 
         MQ_DEBUG(dt_hb = 0; hb_check = 0;)
         if ((apr_time_now() > next_hb_check) || (npoll == 1)) {
+            tow_dt = apr_time_now();
             MQ_DEBUG(dt_hb = apr_time_now(); hb_check = 1; )
             finished += mqc_heartbeat(c, npoll);
             MQ_DEBUG(dt_hb = apr_time_now() - dt_hb;)
+            tow_dt = apr_time_now() - tow_dt;
+            if (tow_dt > c->pc->warn_to) {
+                if (tbx_notify_handle) {
+                    _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "MQ_WARN: dt=" TT " mqc_heartbeat: finished=%d\n", apr_time_sec(tow_dt), finished);
+                }
+            }
 
             log_printf(5, "after heartbeat finished=%d\n", finished);
 
@@ -1923,6 +1954,13 @@ void *gop_mq_conn_thread(apr_thread_t *th, void *data)
         MQ_DEBUG_NOTIFY( "MQ_CONN_THREAD: LOOP dt=secs thread_priority=%d host=%s uuid=" LU " pfd[EFD]=%d pfd[CONN]=%d npoll=%d n=%d running=%d long_running=%d ntasks=%d dt_tasks=%d nincoming=%d dt_incoming=%d hb_check=%d dt_hb=%d dtotal=%d\n",
                      nice_priority, c->pc->host, c->counter, pfd[PI_EFD].revents, pfd[PI_CONN].revents, npoll, k, tbx_atomic_get(c->pc->running), tbx_atomic_get(c->pc->long_running),
                      nproc, apr_time_sec(dt_task), nincoming, apr_time_sec(dt_incoming), hb_check, apr_time_sec(dt_hb), apr_time_sec(te-ts));
+
+        tow_dt = apr_time_now() - tow_loop_start;
+        if (tow_dt > c->pc->warn_to) {
+            if (tbx_notify_handle) {
+                _tbx_notify_printf(tbx_notify_handle, 1, NULL, __func__, __LINE__, "MQ_WARN: dt=" TT " LOOP\n", apr_time_sec(tow_dt));
+            }
+        }
     } while (finished == 0);
 
 
@@ -2255,6 +2293,7 @@ gop_mq_portal_t *gop_mq_portal_create(gop_mq_context_t *mqc, char *host, gop_mq_
     p->connect_mode = connect_mode;
     p->conn_priority = mqc->conn_priority;
     p->tp = mqc->tp;
+    p->warn_to = mqc->warn_to;
 
     p->ctx = gop_mq_socket_context_new();
 
@@ -2353,6 +2392,7 @@ void gop_mq_print_running_config(gop_mq_context_t *mqc, FILE *fd, int print_sect
     fprintf(fd, "conn_priority = %d # 20(low priority)..-19(high priority)\n", mqc->conn_priority);
     fprintf(fd, "backlog_trigger = %d\n", mqc->backlog_trigger);
     fprintf(fd, "enable_monitoring = %d\n", mqc->enable_monitoring);
+    fprintf(fd, "warn_timeout_sec = %ld\n", apr_time_sec(mqc->warn_to));
     fprintf(fd, "heartbeat_dt = %d # seconds\n", mqc->heartbeat_dt);
     fprintf(fd, "heartbeat_failure = %d # seconds\n", mqc->heartbeat_failure);
     fprintf(fd, "min_ops_per_sec = %lf\n", mqc->min_ops_per_sec);
@@ -2406,6 +2446,7 @@ gop_mq_context_t *gop_mq_create_context(tbx_inip_file_t *ifd, char *section)
     mqc->min_ops_per_sec = tbx_inip_get_double(ifd, section, "min_ops_per_sec", mqc_default_options.min_ops_per_sec);
     mqc->bind_short_running_max = tbx_inip_get_integer(ifd, section, "bind_short_running_max", mqc_default_options.bind_short_running_max);
     mqc->enable_monitoring = tbx_inip_get_integer(ifd, section, "enable_monitoring", mqc_default_options.enable_monitoring);
+    mqc->warn_to = apr_time_from_sec(tbx_inip_get_integer(ifd, section, "warn_timeout_sec", apr_time_sec(mqc_default_options.warn_to)));
 
     // New socket_type parameter
     mqc->socket_type = tbx_inip_get_integer(ifd, section, "socket_type", MQ_TRACE_ROUTER);

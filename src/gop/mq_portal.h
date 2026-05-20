@@ -134,6 +134,7 @@ struct gop_mq_context_t {      //** Main MQ context
     int bind_short_running_max; //** Max number of short running tasks allowed to run at a time
     int enable_monitoring;     //** Enable socket monitoring/logging
     int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
+    apr_time_t warn_to;        //** Any MQ conn loop taking longer than this gets flagged and reported
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     char *section;             //** Config section used
     char *fname_errors;        //** Where to dump MQ or ongoing hard errors
@@ -166,6 +167,7 @@ struct gop_mq_portal_t {   //** Container for managing connections to a single h
     int conn_priority;         //** Connection priority, "nice" value 20(low priority)..-19(high priority)
     tbx_atomic_int_t running;      //** Short Running tasks
     tbx_atomic_int_t long_running; //** Long Running tasks
+    apr_time_t warn_to;        //** Any MQ conn loop taking longer than this gets flagged and reported
     uint64_t n_ops;            //** Operation count
     double min_ops_per_sec;    //** Minimum ops/sec needed to keep a connection open.
     tbx_stack_t *tasks;            //** List of tasks
