@@ -34,6 +34,7 @@
 #include "debug.h"
 #include <tbx/fmttypes.h>
 #include "rid.h"
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/append_printf.h>
 #include <tbx/monitor.h>
 #include <tbx/string_token.h>
@@ -659,7 +660,7 @@ int rebuild_resource(Resource_t *r, tbx_inip_file_t *kfd, int remove_expired,
 
     for (i=0; i<r->n_partitions; i++) {  //** Iterate over the partitions
         //** Create the LUT
-        apr_pool_create(&mpool, NULL);
+        tbx_apr_pool_create(&mpool, NULL);
         lut = apr_hash_make(mpool);
 
         //** Populate the LUT
@@ -671,7 +672,7 @@ int rebuild_resource(Resource_t *r, tbx_inip_file_t *kfd, int remove_expired,
         rebuild_populate_partition_lut_process(r, lut, remove_expired, truncate_expiration);
 
         //** Destroy the LUT
-        apr_pool_destroy(mpool);
+        tbx_apr_pool_destroy(mpool);
     }
 
 
@@ -883,7 +884,7 @@ int mount_resource(Resource_t *res, tbx_inip_file_t *keyfile, char *group,
                                    osd_mount_fs(res->device, res->n_cache, res->n_partitions, res->cache_expire));
     }
     //** Init the lock **
-    apr_pool_create(&(res->pool), NULL);
+    tbx_apr_pool_create(&(res->pool), NULL);
     apr_thread_mutex_create(&(res->mutex), APR_THREAD_MUTEX_DEFAULT, res->pool);
     apr_thread_mutex_create(&(res->cleanup_lock), APR_THREAD_MUTEX_DEFAULT, res->pool);
     apr_thread_cond_create(&(res->cleanup_cond), res->pool);
@@ -974,7 +975,7 @@ int umount_resource(Resource_t *res)
     apr_thread_mutex_destroy(res->mutex);
     apr_thread_cond_destroy(res->cleanup_cond);
     //** The threadattr is destroyed via the pool.  APR has no attr destroy call:(
-    apr_pool_destroy(res->pool);
+    tbx_apr_pool_destroy(res->pool);
 
     tbx_free(res->name);
     tbx_free(res->keygroup);
@@ -2682,9 +2683,9 @@ void *resource_cleanup_thread(apr_thread_t *th, void *data)
 
     log_printf(5, "resource_cleanup_thread: Exit.  rid=%s time= " TT "\n", r->name, apr_time_now());
     tbx_log_flush();
-    apr_thread_exit(th, 0);
+    //apr_thread_exit(th, 0);  //** Calling this causes SAN to abort
 
-    return (0);                 //** Never makes it here but this suppresses the warning
+    return(NULL);
 }
 
 //*****************************************************************

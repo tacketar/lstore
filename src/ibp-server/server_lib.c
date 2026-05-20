@@ -533,7 +533,6 @@ void *worker_task(apr_thread_t *ath, void *arg)
     int status;
     int myid;
     int ncommands;
-    apr_status_t retval;
     tbx_ns_timeout_t start_read, start_handle, end_time, dt_read, dt_handle, dt_total;
 
     log_printf(10, "worker_task: ns=%d ***START*** Got a connection at " TT "\n",
@@ -559,8 +558,8 @@ void *worker_task(apr_thread_t *ath, void *arg)
         apr_thread_mutex_unlock(taskmgr.lock);
 
         //** Lastly exit
-        retval = 0;
-        apr_thread_exit(th->thread, retval);
+        //apr_thread_exit(th->thread, retval);  //** CAlling this causes issues with ASAN
+        return(NULL);
     }
 
     //** Set up the monitoring bits
@@ -610,7 +609,6 @@ void *worker_task(apr_thread_t *ath, void *arg)
 
         if (request_task_close() == 1)
             closed = 1;
-//      if ((apr_time_now() - start_read) > global_config->server.min_idle) closed = 1;
         if ((apr_time_now() - start_read) > global_config->server.min_idle) {
             closed = 1;
             dt_read = (apr_time_now() - start_read) / APR_USEC_PER_SEC;
@@ -637,9 +635,7 @@ void *worker_task(apr_thread_t *ath, void *arg)
     tbx_monitor_thread_ungroup(&(task.mo_send), MON_MY_THREAD);
     tbx_monitor_thread_ungroup(&(task.mo_recv), MON_MY_THREAD);
 
-    retval = 0;
-    apr_thread_exit(th->thread, retval);
-
+    //apr_thread_exit(th->thread, retval);  //Calling this causes issues with ASAN
     return (NULL);
 }
 
@@ -703,7 +699,7 @@ void spawn_new_task(tbx_ns_t *ns, int reject_connection)
     tbx_type_malloc(t, Thread_task_t, 1);
     t->ns = ns;
 
-    apr_pool_create(&(t->pool), NULL);
+    tbx_apr_pool_create(&(t->pool), NULL);
 
     t->attr = NULL;
 
@@ -721,7 +717,7 @@ void spawn_new_task(tbx_ns_t *ns, int reject_connection)
         apr_thread_mutex_unlock(taskmgr.lock);
     }
     //** then launch the thread
-    apr_thread_create(&(t->thread), t->attr, worker_task, (void *) t, t->pool);
+    apr_thread_create(&(t->thread), t->attr, worker_task, t, t->pool);
 }
 
 //*****************************************************************
@@ -785,7 +781,7 @@ void join_completed()
         apr_thread_join(&err, t->thread);
         tbx_ns_destroy(t->ns);
         //handled by the pool free     if (t->attr != NULL) apr_threadattr_destroy(t->attr);
-        apr_pool_destroy(t->pool);
+        tbx_apr_pool_destroy(t->pool);
         tbx_free(t);
     }
 

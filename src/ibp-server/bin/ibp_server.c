@@ -21,14 +21,17 @@
 #include <assert.h>
 #include <apr_time.h>
 #include <apr_signal.h>
+#include <malloc.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "ibp_server.h"
 #include "debug.h"
 #include <tbx/log.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/assert_result.h>
 #include <tbx/dns_cache.h>
 #include <tbx/fork_helper.h>
+#include <tbx/random.h>
 #include <tbx/siginfo.h>
 #include <tbx/type_malloc.h>
 #include <tbx/lio_monitor.h>
@@ -66,15 +69,15 @@ void *parallel_mount_resource(apr_thread_t *th, void *data)
         exit(-10);
     }
 
-    free(pm->group);
+    tbx_free(pm->group);
 
     r->rl_index = resource_list_insert(global_config->rl, r);
 
     //** Launch the garbage collection threads
 //   launch_resource_cleanup_thread(r);  *** Not safe to do this here due to fork() becing called after mount
 
-    apr_thread_exit(th, 0);
-    return (0);                 //** Never gets here but suppresses compiler warnings
+    //apr_thread_exit(th, 0);  //** Calling this causes ASAN to throw an error
+    return (NULL);
 }
 
 
@@ -250,9 +253,9 @@ void *resource_health_check(apr_thread_t *th, void *data)
                     data_dir = tbx_stack_pop(eject);
                     data_device = tbx_stack_pop(eject);
                     fprintf(fd, "%s|%s|%s|%d\n", rid_name, data_dir, data_device, 1);
-                    free(rid_name);
-                    free(data_dir);
-                    free(data_device);
+                    tbx_free(rid_name);
+                    tbx_free(data_dir);
+                    tbx_free(data_device);
                 }
                 fclose(fd);
 
@@ -266,7 +269,7 @@ void *resource_health_check(apr_thread_t *th, void *data)
                     log_printf(0, "FORK error!!!! rname=%s\n", rname);
                 }
 bail:
-                free(rname);
+                tbx_free(rname);
             }
 
             next_check =
@@ -279,8 +282,8 @@ bail:
 
     tbx_stack_free(eject, 1);
 
-    apr_thread_exit(th, 0);
-    return (0);                 //** Never gets here but suppresses compiler warnings
+    //apr_thread_exit(th, 0);   //** Calling this causes ASAN to throw an error
+    return (NULL);
 }
 
 //*****************************************************************************
@@ -439,7 +442,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     server->n_iface = i;
 
     //** Now parse and store them
-    server->iface = (interface_t *) malloc(sizeof(interface_t) * server->n_iface);
+    tbx_type_malloc(server->iface, interface_t, server->n_iface);
     interface_t *iface;
     for (i = 0; i < server->n_iface; i++) {
         iface = &(server->iface[i]);
@@ -531,7 +534,7 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
     //*** NOTE: RocksDB Will lock based on the PID which changes pre/post fork so this MUST be done
     //***        AFTER the fork()!
     apr_pool_t *mount_pool;
-    apr_pool_create(&mount_pool, NULL);
+    tbx_apr_pool_create(&mount_pool, NULL);
     k = tbx_inip_group_count(keyfile);
     tbx_type_malloc_clear(pmarray, pMount_t, k - 1);
     tbx_inip_group_t *igrp = tbx_inip_group_first(keyfile);
@@ -554,18 +557,19 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
 
         igrp = tbx_inip_group_next(igrp);
     }
-    free(start_snap_prefix);
+    tbx_free(start_snap_prefix);
 
     //** Wait for all the threads to join **
     apr_status_t dummy;
     for (i = 0; i < val; i++) {
         pm = &(pmarray[i]);
         apr_thread_join(&dummy, pm->thread_id);
-        if (pm->snap_prefix) free(pm->snap_prefix);
-        if (pm->merge_prefix) free(pm->merge_prefix);
+        if (pm->snap_prefix) tbx_free(pm->snap_prefix);
+        if (pm->merge_prefix) tbx_free(pm->merge_prefix);
     }
 
-    free(pmarray);
+    tbx_free(pmarray);
+    tbx_apr_pool_destroy(mount_pool);
 
     if (val < 0) {
         printf("parse_config:  No resources defined!!!!\n");
@@ -585,19 +589,21 @@ void cleanup_config(Config_t *cfg)
 
     server = &(cfg->server);
 
+    if (cfg->monitor_fname) tbx_free(cfg->monitor_fname);
+
     if (server->rid_eject_script)
-        free(server->rid_eject_script);
+        tbx_free(server->rid_eject_script);
     if (server->rid_eject_tmp_path)
-        free(server->rid_eject_tmp_path);
-    free(server->password);
-    free(server->logfile);
-    free(server->default_acl);
-    free(server->rid_log);
+        tbx_free(server->rid_eject_tmp_path);
+    tbx_free(server->password);
+    tbx_free(server->logfile);
+    tbx_free(server->default_acl);
+    tbx_free(server->rid_log);
 
     for (i = 0; i < server->n_iface; i++) {
-        free(server->iface[i].hostname);
+        tbx_free(server->iface[i].hostname);
     }
-    free(server->iface);
+    tbx_free(server->iface);
 }
 
 //*****************************************************************************
@@ -639,7 +645,7 @@ int ibp_shutdown(Config_t *cfg)
             log_printf(0, "ibp_server: Error closing Resource %s!  Err=%d\n",
                        ibp_rid2str(r->rid, tmp), err);
         }
-        free(r);
+        tbx_free(r);
     }
     resource_list_iterator_destroy(cfg->rl, &it);
 
@@ -684,6 +690,29 @@ void monitor_check_fn(void *arg, FILE *fd)
 }
 
 //***************************************************************
+//  memory_usage_dump - Dumps the memory usage to the FD
+//***************************************************************
+
+void memory_usage_dump(FILE *fd)
+{
+    int stderr_old;
+    fpos_t stderr_pos, fd_pos;
+
+    fprintf(fd, "-----------Memory usage-------------\n");
+    fflush(stderr);  fflush(fd);
+    fgetpos(stderr, &stderr_pos);
+    stderr_old = dup(fileno(stderr));
+    fgetpos(fd, &fd_pos);
+    dup2(fileno(fd), fileno(stderr));
+    fsetpos(stderr, &fd_pos);
+    malloc_stats();
+    dup2(stderr_old, fileno(stderr));
+    close(stderr_old);
+    fsetpos(stderr, &stderr_pos);
+    fprintf(fd, "\n");
+}
+
+//***************************************************************
 // server_dump_fn - Dump the server config
 //***************************************************************
 
@@ -699,6 +728,12 @@ void server_dump_fn(void *arg, FILE *fd)
     //** Then dump the config
     print_config(buffer, &used, sizeof(buffer), cfg);
     fprintf(fd, "%s", buffer);
+
+    //** Dump the memory usage stats
+    memory_usage_dump(fd);
+
+    //** And the TBX type_malloc stats
+    tbx_type_malloc_stats_printf(fd);
 
     return;
 }
@@ -755,11 +790,11 @@ void configure_signals()
 #endif
 
     //** Add the handler for dumping the config
-    tbx_siginfo_install("/log/ibp_dump.cfg", SIGUSR1);
+    tbx_siginfo_install(tbx_stk_strdup("/log/ibp_dump.cfg"), SIGUSR1);
     tbx_siginfo_handler_add(SIGUSR1, server_dump_fn, global_config);
 
     //** Lastly set up the handler for the doing a DB snap
-    tbx_siginfo_install("/log/snap.log", SIGRTMIN);
+    tbx_siginfo_install(tbx_stk_strdup("/log/snap.log"), SIGRTMIN);
     tbx_siginfo_handler_add(SIGRTMIN, snap_all_rids_handler, NULL);
 }
 
@@ -776,11 +811,10 @@ int main(int argc, const char **argv)
     apr_status_t dummy;
 
     tbx_construct_fn_static();
-    assert_result(apr_pool_create(&global_pool, NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&global_pool, NULL), APR_SUCCESS);
     tbx_random_startup();
 
     shutdown_now = 0;
-
     global_config = &config;    //** Make the global point to what's loaded
     memset(global_config, 0, sizeof(Config_t)); //** init the data
     global_network = NULL;
@@ -861,13 +895,11 @@ int main(int argc, const char **argv)
     parse_config_postfork(keyfile, &config, force_rebuild, merge_snap);
 
     init_thread_slots(2 * config.server.max_threads);   //** Make pigeon holes
-
     tbx_dnsc_startup_sized(1000);
     init_subnet_list(config.server.iface[0].hostname);
 
     //*** Install the commands: loads Vectable info and parses config options only ****
     install_commands(keyfile);
-
     tbx_inip_destroy(keyfile);  //Free the keyfile context
 
     log_preamble(&config);
@@ -901,11 +933,12 @@ int main(int argc, const char **argv)
 
     server_loop(&config);       //***** Main processing loop ******
 
-    //** Wait forthe healther checker thread to complete
+    //** Wait for the healther checker thread to complete
     apr_thread_join(&dummy, rid_check_thread);
 
     //*** Shutdown the activity log ***
     alog_close();
+    alog_destroy();
 
     //*** Destroy all the 3rd party structures ***
     destroy_commands();
@@ -922,6 +955,11 @@ int main(int argc, const char **argv)
     cleanup_config(&config);
     log_printf(0, "main: Completed shutdown. Exiting\n");  tbx_log_flush();
 
+    tbx_apr_pool_destroy(global_pool);
+
+    tbx_random_shutdown();
+    tbx_dnsc_shutdown();
+    tbx_siginfo_shutdown();
     apr_terminate();
 
     return (0);
