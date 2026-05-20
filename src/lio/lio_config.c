@@ -691,8 +691,6 @@ wildcard:
         if ((p[n-1] == '/') && (last_slash == n)) last_slash--;  //** '/' terminator so preserve it
     }
 
-    log_printf(5, "p=%s realpath=%s last_slash=%d n=%d\n", p, rp, last_slash, n);
-
     if (rp != NULL) {
         if (last_slash == n) {
             tuple->path = rp;
