@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <apr_time.h>
 #include <math.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/string_token.h>
 #include "osd_abstract.h"
 #include "osd_fs.h"
@@ -549,7 +550,7 @@ osd_iter_t *fs_new_corrupt_iterator(osd_t *d)
     if (ci == NULL)
         return (NULL);
 
-    apr_pool_create(&(ci->pool), NULL);
+    tbx_apr_pool_create(&(ci->pool), NULL);
     ci->iter = NULL;
     ci->first_time = 1;
     ci->fs = (osd_fs_t *) d->private;
@@ -571,7 +572,7 @@ void fs_destroy_corrupt_iterator(osd_iter_t *oi)
     if (iter == NULL)
         return;
 
-    apr_pool_destroy(iter->pool);
+    tbx_apr_pool_destroy(iter->pool);
 
     tbx_free(iter);
     tbx_free(oi);
@@ -3055,7 +3056,7 @@ int fs_umount(osd_t *d)
     //**NOTE: there is no apr_hash_destroy function:(  so it gets removed when the pool is destroyed
     apr_thread_mutex_destroy(fs->lock);
     apr_thread_mutex_destroy(fs->obj_lock);
-    apr_pool_destroy(fs->pool);
+    tbx_apr_pool_destroy(fs->pool);
 
     tbx_free(fs->devicename);
     tbx_free(fs);
@@ -3158,7 +3159,7 @@ void *fs_shelf_object_new(void *arg, int size)
         assert_result_not_null(obj->write_range_list);
 
         //** Make the locks
-        apr_pool_create(&(obj->pool), NULL);
+        tbx_apr_pool_create(&(obj->pool), NULL);
         apr_thread_cond_create(&(obj->cond), obj->pool);
         apr_thread_mutex_create(&(obj->lock), APR_THREAD_MUTEX_DEFAULT, obj->pool);
     }
@@ -3187,7 +3188,7 @@ void fs_shelf_object_free(void *arg, int size, void *data)
         //** Free the lock
         apr_thread_mutex_destroy(obj->lock);
         apr_thread_cond_destroy(obj->cond);
-        apr_pool_destroy(obj->pool);
+        tbx_apr_pool_destroy(obj->pool);
     }
 
     //** Lastly free the shelf itself
@@ -3265,7 +3266,7 @@ osd_t *osd_mount_fs(const char *device, int n_cache, int n_partitions, apr_time_
     log_printf(10, "osd_fs_mount: %s mount_type=%d\n", fs->devicename, fs->mount_type);
     log_printf(15, "fs_mount fs=%p rid=%s\n", fs, fs->devicename);
 
-    apr_pool_create(&(fs->pool), NULL);
+    tbx_apr_pool_create(&(fs->pool), NULL);
     apr_thread_mutex_create(&(fs->lock), APR_THREAD_MUTEX_DEFAULT, fs->pool);
     apr_thread_mutex_create(&(fs->obj_lock), APR_THREAD_MUTEX_DEFAULT, fs->pool);
 

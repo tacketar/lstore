@@ -24,6 +24,7 @@
 #include "ibp_time.h"
 #include <tbx/network.h>
 #include <tbx/log.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 
@@ -49,7 +50,7 @@ void init_stats(int n)
 
     tbx_type_malloc_clear(stats.table, Transfer_stat_t, n);
 
-    apr_pool_create(&(stats.pool), NULL);
+    tbx_apr_pool_create(&(stats.pool), NULL);
     apr_thread_mutex_create(&(stats.lock), APR_THREAD_MUTEX_DEFAULT, stats.pool);
 
     stats.host = tbx_stk_strdup(global_config->server.iface[0].hostname);
@@ -73,7 +74,7 @@ void free_stats()
 {
     tbx_free(stats.table);
     apr_thread_mutex_destroy(stats.lock);
-    apr_pool_destroy(stats.pool);
+    tbx_apr_pool_destroy(stats.pool);
 }
 
 //****************************************************************

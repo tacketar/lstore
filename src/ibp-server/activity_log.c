@@ -116,7 +116,7 @@ void alog_init()
     if (_alog_mpool != NULL)
         return;
 
-    apr_pool_create(&_alog_mpool, NULL);
+    tbx_apr_pool_create(&_alog_mpool, NULL);
     apr_thread_mutex_create(&_alog_lock, APR_THREAD_MUTEX_DEFAULT, _alog_mpool);
     apr_thread_mutex_create(&_alog_send_lock, APR_THREAD_MUTEX_DEFAULT, _alog_mpool);
 }
@@ -127,7 +127,7 @@ void alog_init()
 
 void alog_destroy()
 {
-    apr_pool_destroy(_alog_mpool);
+    tbx_apr_pool_destroy(_alog_mpool);
 }
 
 
@@ -3285,9 +3285,9 @@ void _alog_send_data()
         //*** Spawn the thread to perform the send if needed ***
         if (new_transfer == 1) {
             if (_alog_send_thread != NULL) {
-                apr_pool_destroy(_alog_send_mpool);     //** Only way to free the _alog_send_thread memory:(
+                tbx_apr_pool_destroy(_alog_send_mpool);     //** Only way to free the _alog_send_thread memory:(
             }
-            assert_result(apr_pool_create(&_alog_send_mpool, NULL), APR_SUCCESS);
+            assert_result(tbx_apr_pool_create(&_alog_send_mpool, NULL), APR_SUCCESS);
             apr_thread_create(&_alog_send_thread, NULL, _send_alog_thread, NULL, _alog_send_mpool);
         }
     }

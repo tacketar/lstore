@@ -26,6 +26,7 @@
 #include <apr_pools.h>
 #include "osd_abstract.h"
 #include <tbx/fmttypes.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/log.h>
 #include "lock_alloc.h"
 
@@ -105,7 +106,7 @@ void lock_alloc_init()
 {
     int i;
 
-    apr_pool_create(&_lock_pool, NULL);
+    tbx_apr_pool_create(&_lock_pool, NULL);
 
     for (i = 0; i < LOCK_MAX; i++) {
         apr_thread_mutex_create(&(_lock_table[i]), APR_THREAD_MUTEX_DEFAULT, _lock_pool);
@@ -124,5 +125,5 @@ void lock_alloc_destroy()
         apr_thread_mutex_destroy(_lock_table[i]);
     }
 
-    apr_pool_destroy(_lock_pool);
+    tbx_apr_pool_destroy(_lock_pool);
 }

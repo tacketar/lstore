@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
 #include "resource_list.h"
@@ -193,7 +194,7 @@ Resource_list_t *create_resource_list(int n)
 
     tbx_type_malloc_clear(rl, Resource_list_t, 1);
     tbx_type_malloc_clear(rl->res, rl_ele_t, n);
-    assert_result(apr_pool_create(&(rl->mpool), NULL), APR_SUCCESS);
+    assert_result(tbx_apr_pool_create(&(rl->mpool), NULL), APR_SUCCESS);
     assert_result_not_null(rl->table = apr_hash_make(rl->mpool));
     apr_thread_mutex_create(&(rl->lock), APR_THREAD_MUTEX_DEFAULT, rl->mpool);
     rl->pending = tbx_stack_new();
@@ -220,7 +221,7 @@ void free_resource_list(Resource_list_t *rl)
     int i;
 
     apr_thread_mutex_destroy(rl->lock);
-    apr_pool_destroy(rl->mpool);
+    tbx_apr_pool_destroy(rl->mpool);
 
     for (i = 0; i < rl->max_res; i++) {
         if (rl->res[i].used == 1)

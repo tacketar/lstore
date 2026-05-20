@@ -23,6 +23,7 @@
 #include <tbx/fmttypes.h>
 #include <tbx/log.h>
 #include "debug.h"
+#include <tbx/apr_pool_wrapper.h>
 #include <tbx/append_printf.h>
 #include <tbx/string_token.h>
 #include <tbx/type_malloc.h>
@@ -423,7 +424,7 @@ int mkfs_db(DB_resource_t *dbres, char *loc, const char *kgroup, FILE *fd, int n
     dbres->kgroup = tbx_stk_strdup(kgroup);
 
     //** and make the mutex
-    apr_pool_create(&(dbres->pool), NULL);
+    tbx_apr_pool_create(&(dbres->pool), NULL);
     apr_thread_mutex_create(&(dbres->mutex), APR_THREAD_MUTEX_DEFAULT, dbres->pool);
 
     used = 0;
@@ -514,7 +515,7 @@ int mount_db_generic(tbx_inip_file_t *kf, const char *kgroup,
     dbres->ropts = rocksdb_readoptions_create();
 
     //** and make the mutex
-    apr_pool_create(&(dbres->pool), NULL);
+    tbx_apr_pool_create(&(dbres->pool), NULL);
     apr_thread_mutex_create(&(dbres->mutex), APR_THREAD_MUTEX_DEFAULT, dbres->pool);
 
     return (0);
@@ -539,7 +540,7 @@ int umount_db(DB_resource_t *dbres)
     rocksdb_readoptions_destroy(dbres->ropts);
 
     apr_thread_mutex_destroy(dbres->mutex);
-    apr_pool_destroy(dbres->pool);
+    tbx_apr_pool_destroy(dbres->pool);
 
     tbx_free(dbres->loc);
     tbx_free(dbres->kgroup);
