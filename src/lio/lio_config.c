@@ -637,7 +637,7 @@ void lio_path_release(lio_path_tuple_t *tuple)
 void lio_path_local_make_absolute(lio_path_tuple_t *tuple)
 {
     char *p, *rp, *pp;
-    int i, n, last_slash, glob_index;
+    int i, n, last_slash;
     char path[OS_PATH_MAX];
     char rpath[OS_PATH_MAX];
     char c;
@@ -648,14 +648,12 @@ void lio_path_local_make_absolute(lio_path_tuple_t *tuple)
     p = tuple->path;
     n = strlen(p);
     last_slash = -1;
-    glob_index = -1;
     if ((p[0] == '*') || (p[0] == '?') || (p[0] == '[')) goto wildcard;
 
     for (i=0; i<n; i++) {
         if (p[i] == '/') last_slash = i;
         if ((p[i] == '*') || (p[i] == '?') || (p[i] == '[')) {
-            if (p[i-1] != '\\') {
-                glob_index = i;
+            if ((i>0) && (p[i-1] != '\\')) {
                 break;
             }
         }
@@ -693,7 +691,7 @@ wildcard:
         if ((p[n-1] == '/') && (last_slash == n)) last_slash--;  //** '/' terminator so preserve it
     }
 
-    log_printf(5, "p=%s realpath=%s last_slash=%d n=%d glob_index=%d\n", p, rp, last_slash, n, glob_index);
+    log_printf(5, "p=%s realpath=%s last_slash=%d n=%d\n", p, rp, last_slash, n);
 
     if (rp != NULL) {
         if (last_slash == n) {
