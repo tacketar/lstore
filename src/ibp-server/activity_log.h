@@ -190,6 +190,7 @@ IBPS_API void _alog_init_constants();
 int _alog_config();
 IBPS_API void alog_open();
 IBPS_API void alog_close();
+IBPS_API void alog_destroy();
 void print_header_date_utime_id(FILE *fd, apr_time_t t, int id);
 void print_header_date_id(FILE *fd, apr_time_t t, int id);
 void print_header_utime_id(FILE *fd, apr_time_t t, int id);
