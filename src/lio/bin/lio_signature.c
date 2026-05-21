@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 {
     int bufsize = 10*1024;
     char buffer[bufsize];
-    int err, ftype, start_index, used;
+    int err, start_index, ftype, used;
     char *ex_data;
     lio_exnode_t *ex;
     lio_exnode_exchange_t *exp;
@@ -67,15 +67,15 @@ int main(int argc, char **argv)
 
     //** Check if it exists
     ftype = lio_exists(tuple.lc, tuple.creds, tuple.path);
-
-    if ((ftype & OS_OBJECT_FILE_FLAG) == 0) { //** Doesn't exist or is a dir
-        info_printf(lio_ifd, 1, "ERROR source file(%s) doesn't exist or is a dir ftype=%d!\n", tuple.path, ftype);
+    if (ftype == 0) { //** Doesn't exist
+        info_printf(lio_ifd, 1, "ERROR source file(%s) doesn't exist\n", tuple.path);
         goto finished;
     }
 
     //** Get the exnode
     v_size = -tuple.lc->max_attr;
     err = lio_getattr(tuple.lc, tuple.creds, tuple.path, NULL, "system.exnode", (void **)&ex_data, &v_size);
+
     if (err != OP_STATE_SUCCESS) {
         info_printf(lio_ifd, 0, "Failed retrieving exnode! err=%d path=%s\n", err, tuple.path);
         goto finished;
