@@ -436,7 +436,7 @@ stop_instance() {
 
         #First try and tell lio_fuse to quit on it's own
         if [ "${FPID}" != "" ]; then
-            echo "Issuing kill -QUIT ${FPID} to instance ${INSANCE_ID}"
+            echo "Issuing kill -QUIT ${FPID} to instance ${INSTANCE_ID}"
             kill -QUIT ${FPID}
             timeout 60 tail --pid=${FPID} -f /dev/null #Give it a bit of time to exit on it's own
         fi
@@ -448,13 +448,13 @@ stop_instance() {
         #See if it's still alive and do a hard kill if needed
         FPID=$(ps -eo pid,comm,args | grep ${INSTANCE_ID} | grep fuse | awk '{print $1}')
         if [ "${FPID}" != "" ]; then
-            echo "Having to do a hard kill -9 ${FPID} to instance ${INSANCE_ID}"
+            echo "Having to do a hard kill -9 ${FPID} to instance ${INSTANCE_ID}"
             kill -9 ${FPID}
             sleep 5
 
             tmp=$(mount | grep ${INSTANCE_ID})
             if [ "${tmp}" != "" ]; then
-                echo "Try one last time after the hard kill instance ${INSANCE_ID}"
+                echo "Try one last time after the hard kill instance ${INSTANCE_ID}"
                 ${FUSE_PATH}/bin/fusermount3 -u -z $INSTANCE_MNT
             fi
         fi
