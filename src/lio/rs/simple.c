@@ -1132,6 +1132,7 @@ void rss_print_running_config(lio_resource_service_fn_t *rs, FILE *fd, int print
     fprintf(fd, "check_interval = %d #seconds\n", rss->check_interval);
     fprintf(fd, "check_timeout = %d #seconds (if 0 then no resource checks are made)\n", rss->check_timeout);
     fprintf(fd, "min_free = %s\n", tbx_stk_pretty_print_int_with_scale(rss->min_free, text));
+    fprintf(fd, "over_avg_fraction = %lf\n", rss->over_avg_fraction);
     fprintf(fd, "\n");
 
     //** Now print all the rids
