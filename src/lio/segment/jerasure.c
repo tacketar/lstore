@@ -2266,6 +2266,7 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     //** Load the child segemnt (should be a LUN segment)
     id = tbx_inip_get_integer(fd, seggrp, "segment", 0);
     if (id == 0) {
+        segment_destroy(seg);
         return (-1);
     }
 
@@ -2276,6 +2277,7 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
 
     s->child_seg = load_segment(seg->ess, id, exp);
     if (s->child_seg == NULL) {
+        segment_destroy(seg);
         return(-2);
     }
 
@@ -2301,23 +2303,28 @@ int segjerase_deserialize_text(lio_segment_t *seg, ex_id_t id, lio_exnode_exchan
     text = tbx_inip_get_string(fd, seggrp, "method", (char *)JE_method[CAUCHY_GOOD]);
     s->method = et_method_type(text);
     tbx_free(text);
-    if (s->method < 0) return(-3);
+    if (s->method < 0) {
+        segment_destroy(seg);
+        return(-3);
+    }
 
     //** From the seg we can determine the other params (and sanity check input)
     if (strcmp(s->child_seg->header.type, SEGMENT_TYPE_LUN) != 0) {
         log_printf(0, "Child segment not type LUN!  got=%s\n", s->child_seg->header.type);
+        segment_destroy(seg);
         return(-4);
     }
     slun = (lio_seglun_priv_t *)s->child_seg->priv;
 
     if (slun->n_devices != (s->n_data_devs + s->n_parity_devs)) {
         log_printf(0, "Child n_devices(%d) != n_data_devs(%d) + n_parity_devs(%d)!\n", slun->n_devices, s->n_data_devs, s->n_parity_devs);
+        segment_destroy(seg);
         return(-5);
     }
 
     if (slun->chunk_size != (s->chunk_size + JE_MAGIC_SIZE)) {
         log_printf(0, "Child chunk_size(%" PRId64 ") != JE chunksize(%d) + JE_MAGIC_SIZE(%d)!\n", slun->chunk_size, s->chunk_size, JE_MAGIC_SIZE);
-        tbx_inip_destroy(fd);
+        segment_destroy(seg);
         return(-6);
     }
 
