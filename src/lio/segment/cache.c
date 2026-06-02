@@ -5050,6 +5050,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
     if (id == 0) {
         log_printf(0, "ERROR missing child segment tag initial sid=" XIDT " myid=" XIDT "\n",segment_id(seg), myid);
         tbx_log_flush();
+        segment_destroy(seg);
         return (-1);
     }
 
@@ -5068,6 +5069,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
     if (s->child_seg == NULL) {
         log_printf(0, "ERROR child_seg = NULL initial sid=" XIDT " myid=" XIDT " cid=" XIDT "\n",segment_id(seg), myid, id);
         tbx_log_flush();
+        segment_destroy(seg);
         return(-2);
     }
 
@@ -5081,6 +5083,7 @@ int segcache_deserialize_text(lio_segment_t *seg, ex_id_t myid, lio_exnode_excha
         if (s->recovery_seg == NULL) {
             log_printf(0, "ERROR recovery_seg = NULL initial sid=" XIDT " myid=" XIDT " rid=" XIDT "\n",segment_id(seg), myid, id);
             tbx_log_flush();
+            segment_destroy(seg);
             return(-2);
         }
     }
