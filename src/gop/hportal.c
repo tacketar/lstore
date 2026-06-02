@@ -103,6 +103,7 @@ struct hconn_t {     //** Host connection structure
     tbx_stack_ele_t *ele;   //** My position in the conn_list
     apr_thread_t *send_thread; //** Connection sending thread
     apr_thread_t *recv_thread; //** Connection receiving thread
+    apr_pool_t *pool;          //** Memory pool for the threads
     gop_op_generic_t *send_gop; //** GOP being processed in send thread
     tbx_atomic_int_t recv_working;  //** 1=Recv thread is working on a GOP, 0=idle
     int64_t cmds_processed; //** Number of commands processed
@@ -198,7 +199,7 @@ static gop_portal_context_t  hpc_default_options = {
 
 
 int process_incoming(gop_portal_context_t *hpc);
-hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing, apr_pool_t *mpool);
+hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing);
 void hconn_add(hportal_t *hp, hconn_t *hc);
 void hconn_destroy(hconn_t *hc);
 hportal_t *hp_create(gop_portal_context_t *hpc, char *id);
@@ -767,7 +768,7 @@ void check_hportal_connections(gop_portal_context_t *hpc, hportal_t *hp)
 
     hpc->running_conn += extra;
     for (i=0; i<extra; i++) {
-        hconn_add(hp, hconn_new(hp, hpc->que, hpc->pool));
+        hconn_add(hp, hconn_new(hp, hpc->que));
     }
 }
 
@@ -1467,12 +1468,13 @@ failed:
 //  hconn_new - Creates a new Hportal connection
 //************************************************************************
 
-hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing, apr_pool_t *mpool)
+hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing)
 {
     hconn_t *hc;
     int err;
     tbx_type_malloc_clear(hc, hconn_t, 1);
 
+    assert_result(tbx_apr_pool_create(&(hc->pool), NULL), APR_SUCCESS);
     hc->hp = hp;
     hp->limbo_conn++;
     hc->incoming = tbx_que_create(1000, sizeof(hpc_cmd_t));
@@ -1486,12 +1488,12 @@ hconn_t *hconn_new(hportal_t *hp, tbx_que_t *outgoing, apr_pool_t *mpool)
     log_printf(10, "CREATE hp=%s\n", hp->skey);
     int i = 0;
     do {
-        tbx_thread_create_warn(err, &(hc->recv_thread), NULL, hc_recv_thread, (void *)hc, mpool);
+        tbx_thread_create_warn(err, &(hc->recv_thread), NULL, hc_recv_thread, (void *)hc, hc->pool);
         if (err != APR_SUCCESS) { i++; fprintf(stderr, "recv: i=%d\n", i); apr_sleep(apr_time_from_sec(1)); }
     } while (err != APR_SUCCESS);
     i = 0;
     do {
-        tbx_thread_create_warn(err, &(hc->send_thread), NULL, hc_send_thread, (void *)hc, mpool);
+        tbx_thread_create_warn(err, &(hc->send_thread), NULL, hc_send_thread, (void *)hc, hc->pool);
         if (err != APR_SUCCESS) { i++; fprintf(stderr, "send: i=%d\n", i); apr_sleep(apr_time_from_sec(1)); }
     } while (err != APR_SUCCESS);
 
@@ -1519,6 +1521,7 @@ void hconn_destroy(hconn_t *hc)
 
     log_printf(10, "DESTROY\n");
     apr_thread_join(&val, hc->send_thread);
+    tbx_apr_pool_destroy(hc->pool);
     tbx_que_destroy(hc->incoming);
     tbx_que_destroy(hc->internal);
     tbx_ns_destroy(hc->ns);
