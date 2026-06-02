@@ -88,8 +88,8 @@ void base_async_test(ibp_depot_t *depot)
 
     for (i=0; i<block+1; i++) buf[i] = tbx_tbuf_create();
 
-    buffer = (char *)malloc(size+1);
-    buffer_cmp = (char *)malloc(size+1);
+    tbx_malloc(buffer, size+1);
+    tbx_malloc(buffer_cmp, size+1);
     assert(buffer != NULL);
     assert(buffer_cmp != NULL);
 
@@ -242,8 +242,8 @@ void base_async_test(ibp_depot_t *depot)
 
     ibp_capset_clear(&caps);
 
-    free(buffer);
-    free(buffer_cmp);
+    tbx_free(buffer);
+    tbx_free(buffer_cmp);
 
     for (i=0; i<block+1; i++) tbx_tbuf_destroy(buf[i]);
 
@@ -280,8 +280,8 @@ void base_tbx_iovec_test(ibp_depot_t *depot)
 //return;
 
     buf = tbx_tbuf_create();
-    buffer = (char *)malloc(size+1);
-    buffer_cmp = (char *)malloc(size+1);
+    tbx_malloc(buffer, size+1);
+    tbx_malloc(buffer_cmp, size+1);
     assert(buffer != NULL);
     assert(buffer_cmp != NULL);
 
@@ -434,9 +434,9 @@ void base_tbx_iovec_test(ibp_depot_t *depot)
 
     gop_opque_free(q, OP_DESTROY);
 
-    free(vec);
-    free(buffer);
-    free(buffer_cmp);
+    tbx_free(vec);
+    tbx_free(buffer);
+    tbx_free(buffer_cmp);
     tbx_tbuf_destroy(buf);
 
     printf("base_tbx_iovec_test: PASSED\n");
@@ -1679,7 +1679,7 @@ log_printf(0, "CHECK WRITE1 END len=%d\n", len);
         failed_tests++;
         printf("ibp_status FAILED error=%d\n", IBP_errno);
     }
-    free(depotinfo);
+    tbx_free(depotinfo);
 
     //** Perform some basic async R/W alloc/remove tests
     if (no_async == 1) {

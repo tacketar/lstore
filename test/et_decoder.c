@@ -30,6 +30,7 @@ http://www.accre.vanderbilt.edu
 #include <stdio.h>
 #include <stdlib.h>
 #include <tbx/constructor.h>
+#include <tbx/type_malloc.h>
 #include "erasure_tools.h"
 
 //#define debug_printf(...) printf(__VA_ARGS__)
@@ -75,7 +76,7 @@ int main(int argc, char **argv)
 printf("w=%d packet=%d base=%d buffer=%d\n", w, packet_size, base_unit, buffer_size);
 
   //** Read in the erased data blocks
-  erasures = (int *)malloc(sizeof(int)*(data_strips+parity_strips));
+  tbx_malloc(erasures, sizeof(int)*(data_strips+parity_strips));
   n_data_missing = atoi(argv[i]); i++;
   if (n_data_missing > data_strips) {
      printf("et_decoder: Error n_data_missing > data_strips!! %d > %d\n", n_data_missing, data_strips);

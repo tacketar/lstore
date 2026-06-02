@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <tbx/assert_result.h>
 #include <tbx/log.h>
+#include <tbx/type_malloc.h>
 #include <ibp/ibp.h>
 #include "ibp_sync.h"
 
@@ -114,7 +115,7 @@ int ibp_sync_command(gop_op_generic_t *gop)
     err = status.error_code;
 
     if (gop->op->cmd.hostport != NULL) {
-        free(gop->op->cmd.hostport);
+        tbx_free(gop->op->cmd.hostport);
         gop->op->cmd.hostport = NULL;
     }
 
@@ -164,15 +165,16 @@ void destroy_ibp_sync_context()
 ibp_capset_t *IBP_allocate(ibp_depot_t  *depot, ibp_timer_t *timer, unsigned long int size, ibp_attributes_t *attr)
 {
     int err;
+    ibp_capset_t *cs;
 
     make_ibp_sync_context();
 
-    ibp_capset_t *cs = (ibp_capset_t *)malloc(sizeof(ibp_capset_t));
+    tbx_malloc(cs, sizeof(ibp_capset_t));
     assert(cs != NULL);
 
     err = ibp_sync_command(ibp_alloc_gop(_ibp_sync, cs, size, depot, attr, CHKSUM_DEFAULT, 0, timer->ClientTimeout));
     if (err != IBP_OK) {
-        free(cs);
+        tbx_free(cs);
         cs = NULL;
     }
 
@@ -323,7 +325,7 @@ ibp_depotinfo_t *IBP_status(ibp_depot_t *depot, int cmd, ibp_timer_t *timer, cha
     make_ibp_sync_context();
 
     if (cmd == IBP_ST_INQ) {
-        di = (ibp_depotinfo_t *)malloc(sizeof(ibp_depotinfo_t));
+        tbx_malloc(di, sizeof(ibp_depotinfo_t));
         assert(di != NULL);
         err = ibp_sync_command(ibp_depot_inq_gop(_ibp_sync, depot, password, di, timer->ClientTimeout));
     } else {
@@ -331,7 +333,7 @@ ibp_depotinfo_t *IBP_status(ibp_depot_t *depot, int cmd, ibp_timer_t *timer, cha
     }
 
     if (err != IBP_OK) {
-        free(di);
+        tbx_free(di);
         return(NULL);
     }
     return(di);

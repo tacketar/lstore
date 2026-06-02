@@ -32,6 +32,7 @@ http://www.accre.vanderbilt.edu
 #include <stdlib.h>
 #include <string.h>
 #include <tbx/iniparse.h>
+#include <tbx/type_malloc.h>
 #include <tbx/log.h>
 
 //*************************************************************************
@@ -55,7 +56,7 @@ void print_file(tbx_inip_file_t *ifd, FILE *fd, char *header)
     fprintf(fd, "# %s (nbytes=%d)\n", header, n);
     fprintf(fd, "#--------------------------------------------------------------------\n");
     fprintf(fd, "%s", text);
-    free(text);
+    tbx_free(text);
 }
 
 //*************************************************************************
@@ -79,7 +80,7 @@ void print_file2string(char *fname, FILE *fd)
     fprintf(fd, "# %s (nbytes=%d)\n", fname, n);
     fprintf(fd, "#--------------------------------------------------------------------\n");
     fprintf(fd, "%s", text);
-    free(text);
+    tbx_free(text);
 }
 
 void print_help()

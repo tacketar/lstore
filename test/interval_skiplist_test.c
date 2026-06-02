@@ -24,6 +24,7 @@
 #include <tbx/skiplist.h>
 #include <tbx/atomic_counter.h>
 #include <tbx/interval_skiplist.h>
+#include <tbx/type_malloc.h>
 
 typedef struct {
     int lo, hi, index, match;
@@ -62,7 +63,7 @@ int main(int argc, char **argv)
     isl = tbx_isl_new_full(l_max, p, &tbx_sl_compare_int, NULL, NULL, NULL);
     it = tbx_isl_iter_new();
 
-    data_list = (interval_t *)malloc(sizeof(interval_t)*n_max);
+    tbx_malloc(data_list, sizeof(interval_t)*n_max);
 
     drand48();
     drand48();  //** First couple of calls default to 0
@@ -177,7 +178,7 @@ int main(int argc, char **argv)
     fflush(stdout);
     tbx_log_flush();
 
-    free(data_list);
+    tbx_free(data_list);
 
     return(0);
 }

@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <apr_pools.h>
 #include <apr_thread_proc.h>
+#include <tbx/type_malloc.h>
 
 static apr_threadkey_t *errno_key;
 
@@ -61,7 +62,7 @@ void ibp_errno_init()
 
 void _errno_destructor( void *ptr)
 {
-    free(ptr);
+    tbx_free(ptr);
 }
 
 //***************************************************************************
@@ -80,7 +81,7 @@ int *_IBP_errno()
     apr_thread_once(_err_once,_errno_once);
     apr_threadkey_private_get(&output, errno_key);
     if (output == NULL ) {
-        output = (void *)malloc(sizeof(int));
+        tbx_malloc(output, sizeof(int));
         apr_threadkey_private_set(output, errno_key);
     }
 

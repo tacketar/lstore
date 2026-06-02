@@ -23,6 +23,17 @@
 #include <tbx/log.h>
 #include <tbx/skiplist.h>
 #include <tbx/atomic_counter.h>
+#include <tbx/type_malloc.h>
+
+
+
+//*************************************************
+
+void my_free(tbx_sl_data_t *data)
+{
+//    log_printf(15, "p=%p\n", data);
+    tbx_free(data);
+}
 
 //*************************************************
 
@@ -80,7 +91,7 @@ int main(int argc, char **argv)
 
     check_slot = n_max / 2;
 
-    sl = tbx_sl_new_full(l_max, p, 1, &tbx_sl_compare_int, dup_int, tbx_sl_free_simple, NULL);
+    sl = tbx_sl_new_full(l_max, p, 1, &tbx_sl_compare_int, dup_int, tbx_sl_free_simple, my_free);
 
     //** Make sure everything works fine with an empty list
     i = 12345;
@@ -91,9 +102,9 @@ int main(int argc, char **argv)
         printf("ERROR got something from an EMPTY list\n");
     }
 
-    key_list = (int *)malloc(sizeof(int)*n_max);
-    data_list = (int *)malloc(sizeof(int)*n_max);
-    found_list = (int *)malloc(sizeof(int)*n_max);
+    tbx_malloc(key_list, sizeof(int)*n_max);
+    tbx_malloc(data_list, sizeof(int)*n_max);
+    tbx_malloc(found_list, sizeof(int)*n_max);
 
     //** Insert phase
     min_key = max_key = -1;
@@ -113,7 +124,6 @@ int main(int argc, char **argv)
             printf("ERROR inserting key_list[%d]=%d\n", i, key_list[i]);
         }
     }
-
 
     printf("********** min_key=%d    max_key=%d **********\n", min_key, max_key);
 
@@ -272,7 +282,6 @@ int main(int argc, char **argv)
     if (*key > j) {
         printf("ERROR! key>j (%d>%d)!!!!!\n", *key, j);
     }
-
 
     j = key_list[check_slot];
     tbx_sl_iter_search_init(it, sl, (tbx_sl_key_t *)&j, 0);
