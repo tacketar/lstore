@@ -1361,6 +1361,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     if (exnode_exchange_get_default_view_id(exp) == 0) {  //** Make sure the vid is valid.
         apr_thread_mutex_unlock(lc->open_close_lock[ocl_slot]);
         log_printf(1, "ERROR loading exnode! fname=%s\n", op->path);
+        fprintf(stderr, "ERROR loading exnode! fname=%s\n", op->path);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
         tbx_free(fd);
@@ -1427,6 +1428,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fh->ex = lio_exnode_create();
     if (lio_exnode_deserialize(fh->ex, exp, lc->ess) != 0) {
         log_printf(0, "ERROR: Bad exnode! fname=%s\n", fd->path);
+        fprintf(stderr, "ERROR: Bad exnode! fname=%s\n", fd->path); fflush(stderr);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, op->mode);
         goto cleanup;
@@ -1436,6 +1438,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
     fh->seg = lio_exnode_default_get(fh->ex);
     if (fh->seg == NULL) {
         log_printf(0, "ERROR: No default segment!  Aborting! fname=%s\n", fd->path);
+        fprintf(stderr, "ERROR: No default segment!  Aborting! fname=%s\n", fd->path); fflush(stderr);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
         notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, fd->id, op->mode);
         goto cleanup;
@@ -1522,6 +1525,8 @@ cleanup:  //** We only make it here on a failure
     lio_exnode_destroy(fh->ex);
     lio_exnode_exchange_destroy(exp);
     if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
+    apr_thread_cond_destroy(fh->cond);
+    tbx_apr_pool_destroy(fh->mpool);
     tbx_free(fd->path);
     if (fh->data) tbx_free(fh->data);
     if (fh->fname) tbx_free(fh->fname);
