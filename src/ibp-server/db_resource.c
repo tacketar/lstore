@@ -129,7 +129,7 @@ char *update_expiresoft_db(rocksdb_t *db, rocksdb_writeoptions_t *opts, osd_id_t
     //** Delete the old key if needed
     if ((old_time > 0) && (old_time != new_time)) {
         rocksdb_delete(db, opts, fill_timekey(&key, old_time, id), sizeof(key), &errstr);
-        if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+        if (errstr != NULL) { free(errstr); errstr = NULL; }
     }
 
     //** Add the entry
@@ -154,7 +154,7 @@ rocksdb_t *open_db(char *db_path, rocksdb_comparator_t *cmp, int wipe_clean)
 
         db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists so need to remove it first
-            tbx_free(errstr);
+            free(errstr);
             errstr = NULL;
 
             //** Remove it
@@ -277,9 +277,9 @@ char *snap_merge_pick(DB_resource_t *dbr)
 
     //** Clean up
     for (i=0; i<n; i++) {
-        tbx_free(list[i]);
+        free(list[i]);
     }
-    tbx_free(list);
+    free(list);
 
     return(merge_prefix);
 }
@@ -298,7 +298,7 @@ int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
     cp = rocksdb_checkpoint_object_create(db, &errstr);
     if (errstr != NULL) {
         fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint object. Error:\"%s\"\n", db_name, errstr);
-        tbx_free(errstr);
+        free(errstr);
         errstr = NULL;
         return(1);
     }
@@ -307,7 +307,7 @@ int snap_a_db(rocksdb_t *db, char *db_name, char *cp_dir, FILE *fd)
     rocksdb_checkpoint_object_destroy(cp);
     if (errstr != NULL) {
         fprintf(fd, "   ERROR(db:%s): Failed creating checkpoint. Checkpoint loc:\"%s\" error:\"%s\"\n", db_name, cp_dir, errstr);
-        tbx_free(errstr);
+        free(errstr);
         errstr = NULL;
         return(2);
     }
@@ -567,7 +567,7 @@ int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
     ptr = rocksdb_get(dbr->pdb, dbr->ropts, (void *)&id, sizeof(id), &nbytes, &errstr);
     if (errstr) {
         log_printf(10, "Unknown ID: " LU " errstr=%s\n", id, errstr);
-        if (ptr) tbx_free(ptr);
+        if (ptr) free(ptr);
         tbx_free(errstr);
         return(1);
     }
@@ -575,13 +575,13 @@ int _get_alloc_with_id_db(DB_resource_t *dbr, osd_id_t id, Allocation_t *alloc)
     //** Make sure the record is the right size
     if (nbytes != sizeof(Allocation_t)) {
         log_printf(0, "ERROR: id=" LU " Record size incorrect size! got=" ST " should be " ST "\n", id, nbytes, sizeof(Allocation_t));
-        if (ptr) tbx_free(ptr);
+        if (ptr) free(ptr);
         return(2);
     }
 
     //** If we made it here all is good so just copy the data over.
     memcpy(alloc, ptr, sizeof(Allocation_t));
-    tbx_free(ptr);
+    free(ptr);
 
     return (0);
 }
@@ -609,14 +609,14 @@ int rebuild_add_expiration_db(DB_resource_t *dbr, Allocation_t *a)
     errstr = update_expiresoft_db(dbr->expire, dbr->wopts, a->id, a->expiration, 0);
     if (errstr) {
         log_printf(1, "ERROR: Failed updating expiration: id=" LU " error: %s\n", a->id, errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     if (a->reliability == ALLOC_SOFT) {
         errstr = update_expiresoft_db(dbr->soft, dbr->wopts, a->id, a->expiration, 0);
         if (errstr) {
             log_printf(1, "ERROR: Failed updating soft expiration: id=" LU " error: %s\n", a->id, errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
     }
 
@@ -642,7 +642,7 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
     rocksdb_put(dbr->pdb, dbr->wopts, (void *)&(a->id), sizeof(osd_id_t), (const char *)a, sizeof(Allocation_t), &errstr);
     if (errstr) {
         log_printf(10, "ERROR: Failed storing primary key: id=" LU " error=%s\n", a->id, errstr);
-        tbx_free(errstr);
+        free(errstr);
         return(1);
     }
 
@@ -651,7 +651,7 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
         errstr = update_expiresoft_db(dbr->expire, dbr->wopts, a->id, a->expiration, old_expiration);
         if (errstr) {
             log_printf(1, "ERROR: Failed updating expiration: id=" LU " error: %s\n", a->id, errstr);
-            tbx_free(errstr);
+            free(errstr);
             errstr = NULL;
         }
 
@@ -659,7 +659,7 @@ int _put_alloc_db(DB_resource_t *dbr, Allocation_t *a, uint32_t old_expiration)
             errstr = update_expiresoft_db(dbr->soft, dbr->wopts, a->id, a->expiration, old_expiration);
             if (errstr) {
                 log_printf(1, "ERROR: Failed updating soft expiration: id=" LU " error: %s\n", a->id, errstr);
-                tbx_free(errstr);
+                free(errstr);
             }
 
         }
@@ -705,17 +705,17 @@ int _remove_alloc_db(DB_resource_t *dbr, Allocation_t *alloc)
     rocksdb_delete(dbr->pdb, dbr->wopts, (void *)&(alloc->id), sizeof(osd_id_t), &errstr);
     if (errstr) {
         log_printf(0, "ERROR removing key! id=" LU " error=%s\n", alloc->id, errstr);
-        tbx_free(errstr);
+        free(errstr);
         err = 1;
     }
 
     errstr = NULL;
     rocksdb_delete(dbr->expire, dbr->wopts, fill_timekey(&tkey, alloc->expiration, alloc->id), sizeof(tkey), &errstr);
-    if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+    if (errstr != NULL) { free(errstr); errstr = NULL; }
     if (alloc->reliability == ALLOC_SOFT) {
         errstr = NULL;
         rocksdb_delete(dbr->soft, dbr->wopts, (const char *)&tkey, sizeof(tkey), &errstr);
-        if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+        if (errstr != NULL) { free(errstr); errstr = NULL; }
     }
     return (err);
 }

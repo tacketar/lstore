@@ -168,7 +168,7 @@ os_inode_shard_t *os_inode_open_a_shard(const char *db_path, rocksdb_comparator_
         if (errstr != NULL) {  //** It already exists
             rocksdb_options_destroy(opts2);
             tbx_free(db);
-            tbx_free(errstr);
+            free(errstr);
             errstr = NULL;
 
             fprintf(stderr, "ERROR: Already exists and OS_INODE_OPEN_CREATE_ONLY is set!  DB:%s\n", db_path); fflush(stderr);
@@ -197,7 +197,7 @@ os_inode_shard_t *os_inode_open_a_shard(const char *db_path, rocksdb_comparator_
 
     if ((errstr != NULL) || (db->db == NULL)) {  //** An Error occured
         fprintf(stderr, "ERROR: Failed Opening/Creating %s. DB error:%s mode=%d\n", db_path, errstr, mode);
-        tbx_free(errstr);
+        free(errstr);
         rocksdb_options_destroy(opts);
         tbx_free(db);
         return(NULL);
@@ -431,7 +431,7 @@ int os_inode_put(os_inode_ctx_t *ctx, ex_id_t inode, ex_id_t parent_inode, int f
     rocksdb_put(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), buf, nbytes, &errstr);
     if (errstr != NULL) {
         log_printf(0, "ERROR: inode prefix=%s shard=%d err=%s\n", ctx->prefix, n, errstr);
-        tbx_free(errstr);
+        free(errstr);
         err = 1;
     }
 
@@ -441,7 +441,7 @@ int os_inode_put(os_inode_ctx_t *ctx, ex_id_t inode, ex_id_t parent_inode, int f
         rocksdb_put(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), buf, nbytes, &errstr);
         if (errstr != NULL) {
             log_printf(0, "ERROR: dir prefix=%s shard=%d err=%s\n", ctx->prefix, n, errstr);
-            tbx_free(errstr);
+            free(errstr);
             err = 1;
         }
     }
@@ -580,7 +580,7 @@ int os_inode_db_del(os_inode_db_t *db, ex_id_t inode)
     n = inode % db->n_shards;
     s = db->shard[n];
     rocksdb_delete(s->db, s->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
-    if (errstr) tbx_free(errstr);
+    if (errstr) free(errstr);
 
     return(0);
 }

@@ -98,7 +98,7 @@ warm_db_t *open_a_db(char *db_path, rocksdb_comparator_t *cmp, int mode)
 
         db->db = rocksdb_open(opts2, db_path, &errstr);
         if (errstr != NULL) {  //** It already exists
-            tbx_free(errstr);
+            free(errstr);
             errstr = NULL;
 
             if (mode == DB_OPEN_WIPE_CLEAN) { //** Remove it
@@ -190,7 +190,7 @@ int warm_put_inode(warm_db_t *db, ex_id_t inode, int state, int nfailed, char *n
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     return((errstr == NULL) ? 0 : 1);
@@ -249,7 +249,7 @@ int warm_put_rid(warm_db_t *db, char *rid, ex_id_t inode, ex_off_t nbytes, int s
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: %s\n", errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     return((errstr == NULL) ? 0 : 1);
@@ -672,7 +672,7 @@ void prep_warm_rid_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *rid_key, cha
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: RID DB put id=" LU " rid_key=%s error=%s\n", inode, rid_key, errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
     return;
 }
@@ -743,7 +743,7 @@ void prep_warm_inode_db_put(warm_prep_db_t *wdb, ex_id_t inode, char *fname, int
 
     if (errstr != NULL) {
         log_printf(0, "ERROR: inode DB put id=" LU " fname=%s error=%s\n", inode, fname, errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     if (rbuf != rid_buffer) tbx_free(rid_buffer);
@@ -808,7 +808,7 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
         v_size[2] = 0;
         if (errstr) {
             info_printf(ifd, 0, "ERROR: RocksDB error putting write_error entry! fname=%s errstr=%s\n", fname, errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
     }
 
@@ -821,19 +821,19 @@ info_printf(ifd, 0, "WRITE_ERROR: fname=%s inode=" XIDT " mod=%d\n", fname, inod
         v_size[2] = 0;
         if (errstr) {
             info_printf(ifd, 0, "ERROR: RocksDB error putting missing_exnode_error entry! fname=%s errstr=%s\n", fname, errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
         goto no_exnode;
     } else {  //** Got an exnode so check if we need to clear it
         errstr = NULL;
         iptr = (ex_id_t *)rocksdb_get(p->missing_exnode_errors->db, p->missing_exnode_errors->ropt, (const char *)&inode, sizeof(ex_id_t), &ns, &errstr);
-        if (errstr) tbx_free(errstr);
+        if (errstr) free(errstr);
         if (iptr != NULL) { //** Got a match so delete
             errstr = NULL;
             rocksdb_delete(p->missing_exnode_errors->db, p->missing_exnode_errors->wopt, (const char *)&inode, sizeof(ex_id_t), &errstr);
             if (errstr) {
                 info_printf(ifd, 0, "ERROR: RocksDB error removing missing_exnode_error entry! fname=%s errstr=%s\n", fname, errstr);
-                tbx_free(errstr);
+                free(errstr);
             }
         }
     }

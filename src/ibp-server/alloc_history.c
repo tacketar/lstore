@@ -416,7 +416,7 @@ void lru_history_populate_core_merge(Resource_t *r, osd_id_t id, rocksdb_iterato
         rocksdb_put(r->db.history, r->db.wopts, (const char *)key, sizeof(db_history_key_t), (const char *)buf, nbytes, &errstr);
         if (errstr != NULL) {
             log_printf(1, "ERROR Adding history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, key->date, errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
 next:
         rocksdb_iter_next(it);
@@ -522,7 +522,7 @@ void lru_history_populate_remove(Resource_t *r, tbx_stack_t *stack)
         rocksdb_delete(r->db.history, r->db.wopts, (const char *)key, sizeof(db_history_key_t), &errstr);
         if (errstr) {
             log_printf(1, "ERROR deleting history key id=" LU " type=%d time=" TT " error=%s\n", key->id, key->type, key->date, errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
 
         tbx_free(key);
@@ -596,7 +596,7 @@ int db_history_index(Resource_t *r, int mode, lru_history_t *lh)
         rocksdb_delete(r->db.history, r->db.wopts, db_fill_history_key(&key, lh->id, mode, lh->ts[k]), sizeof(key), &errstr);
         if (errstr != NULL) {
             log_printf(1, "ERROR deleting read history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, lh->id, lh->ts[k], errstr);
-            tbx_free(errstr);
+            free(errstr);
         }
     }
 
@@ -648,7 +648,7 @@ void db_delete_history(Resource_t *r, osd_id_t id)
                     ptr = rocksdb_get(r->db.history, r->db.ropts, (void *)&key, sizeof(db_history_key_t), &nbytes, &errstr);
                     if (errstr) {
                         log_printf(1, "ERROR getting history key id=" LU " type=%d time=" TT " error=%s\n", key.id, key.type, key.date, errstr);
-                        tbx_free(errstr);
+                        free(errstr);
                     }
                     switch (i) {
                         case 0:  //** Read history
@@ -670,14 +670,14 @@ void db_delete_history(Resource_t *r, osd_id_t id)
                             }
                             break;
                     }
-                    tbx_free(ptr);
+                    free(ptr);
                 }
 
                 //** Delete the record
                 rocksdb_delete(r->db.history, r->db.wopts, (void *)&key, sizeof(db_history_key_t), &errstr);
                 if (errstr) {
                     log_printf(1, "ERROR deleting history key id=" LU " type=%d time=" TT " error=%s\n", key.id, key.type, key.date, errstr);
-                    tbx_free(errstr);
+                    free(errstr);
                 }
             }
         }
@@ -719,7 +719,7 @@ void db_update_read_history(Resource_t *r, osd_id_t id, int is_alias, Allocation
     rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 0, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding read history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     //** Update the LRU version
@@ -752,7 +752,7 @@ void db_update_write_history(Resource_t *r, osd_id_t id, int is_alias, Allocatio
     rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 1, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding write history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     //** Update the LRU version
@@ -786,7 +786,7 @@ void db_update_manage_history(Resource_t *r, osd_id_t id, int is_alias, Allocati
     rocksdb_put(r->db.history, r->db.wopts, db_fill_history_key(&key, id, 2, lh->ts[k]), sizeof(key), (const char *)&ts, sizeof(ts), &errstr);
     if (errstr != NULL) {
         log_printf(1, "ERROR Adding manage history record! loc=%s id=" LU " DT=" TT " error=%s\n", r->db.loc, id, lh->ts[k], errstr);
-        tbx_free(errstr);
+        free(errstr);
     }
 
     //** Update the LRU version

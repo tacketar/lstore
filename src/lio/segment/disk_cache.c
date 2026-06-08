@@ -674,7 +674,7 @@ void dbc_data_iter_delete_sid(sdc_context_t *sdc, rocksdb_iterator_t *it, ex_id_
         if (kptr->sid == sid) {
             key = *kptr;
             rocksdb_delete(sdc->db_sinfo.db, sdc->db_sinfo.wopts, (const char *)&key, sizeof(sdc_data_key_t), &errstr);
-            if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+            if (errstr != NULL) { free(errstr); errstr = NULL; }
             kptr = dbc_iter_key_advance(sdc, it, sizeof(sdc_data_key_t), 1);
         } else {   //** SID has changed so kick out
             return;
@@ -782,7 +782,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
                 rsinfo = (void *)rocksdb_iter_key(it_sinfo, &n);
                 klru.sid = *key_sinfo_ptr; klru.last_used = rsinfo->last_used;
                 rocksdb_put(db_lru->db, db_lru->wopts, (const char *)&klru, sizeof(sdc_lru_key_t), (const char *)NULL, 0, &errstr);
-                if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+                if (errstr != NULL) { free(errstr); errstr = NULL; }
 
                 //**Advance to the next entry on both
                 key_sinfo_ptr = dbc_iter_key_advance(sdc, it_sinfo, sizeof(ex_id_t), 1);
@@ -798,7 +798,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
                 sid = *key_sinfo_ptr;
                 key_sinfo_ptr = dbc_iter_key_advance(sdc, it_sinfo, sizeof(ex_id_t), 1);
                 rocksdb_delete(db_sinfo->db, db_sinfo->wopts, (const char *)&sid, sizeof(ex_id_t), &errstr);
-                if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+                if (errstr != NULL) { free(errstr); errstr = NULL; }
             }
         } else if (key_data_ptr) { //** Only the data DB has a key
             sid = key_data_ptr->sid;
@@ -807,7 +807,7 @@ int sdc_data_cleanup(sdc_context_t *sdc)
         } else {   //** Only the sinfo DB has a valid key
             sid = *key_sinfo_ptr;
             rocksdb_delete(db_sinfo->db, db_sinfo->wopts, (const char *)&sid, sizeof(ex_id_t), &errstr);
-            if (errstr != NULL) { tbx_free(errstr); errstr = NULL; }
+            if (errstr != NULL) { free(errstr); errstr = NULL; }
         }
     }
 
