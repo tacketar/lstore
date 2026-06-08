@@ -86,8 +86,8 @@ static lio_osfile_priv_t osf_default_options = {
     .shard_splits = 10000,
     .n_shard_prefix = 0,
     .shard_prefix = NULL,
-    .internal_lock_size = 200,
-    .max_copy = 1024*1024,
+    .internal_lock_size = 10*1024,
+    .max_copy = 10*1024*1024,
     .hardlink_dir_size = 256,
     .authz_section = NULL,
     .relocate_namespace_attr_to_shard = 1,
@@ -3410,7 +3410,10 @@ int osf_next_object(osf_object_iter_t *it, char **myfname, int *prefix_len, int 
 }
 
 //***********************************************************************
-// piter_fname_thread - Thread that handles the parallel fname fetching
+// piter_fname_thread - Thread that handles the parallel fname fetching.
+//    This thread serially walks the file system just fetching dentries
+//    and placing them on the que_fname iterator que. It does this in blocks
+//    of n_piter_fname_size
 //***********************************************************************
 
 void *piter_fname_thread(apr_thread_t *th, void *arg)
@@ -3698,6 +3701,17 @@ int pattr_append_general(osf_object_iter_t *it, piq_attr_t *pa, int *aslot, piq_
 
 //***********************************************************************
 // piter_attr_thread - Thread that handles the parallel attribute iterator
+//    When parallel iterators are enabled there are n_piter_threads,
+//    each running this routine, fetching objects from que_fname and
+//    and collecting the attributes for each and placing them on the output
+//    que (que_attr) for osfile_next_object_parallel() to return to the application
+//
+//    The format is a collection of vlen, values with a specific format for each
+//    object:
+//        0: len=ftype, value=NULL
+//        1: len=prefix_len, value=<fname>
+//        2: len=<attr 1 len>, value=<attr 1 value>
+//        ...
 //***********************************************************************
 
 void *piter_attr_thread(apr_thread_t *th, void *arg)
@@ -6599,8 +6613,14 @@ os_object_iter_t *osfile_create_object_iter(lio_object_service_fn_t *os, lio_cre
 
 //***********************************************************************
 // osfile_create_object_iter_alist - Creates an object iterator to selectively
-//  retreive object/attribute from a fixed attr list
+//     retreive object/attribute from a fixed attr list
 //
+//     If using a parallel iterator then additional threads are lauched in
+//     the background to generate the fnames(piter_fname_thread) which
+//     feeds a collection of threads(piter_attr_thread) fetching the attributes.
+//     The piter_attr_threads combine the fname and the attributes and place
+//     them on an ouput queue which the parallel osfile_next_object_parallel()
+//     routine fetches them
 //***********************************************************************
 
 os_object_iter_t *osfile_create_object_iter_alist(lio_object_service_fn_t *os, lio_creds_t *creds, lio_os_regex_table_t *path, lio_os_regex_table_t *object_regex, int object_types,
