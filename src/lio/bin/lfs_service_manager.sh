@@ -84,7 +84,7 @@ vars_default() {
     CK_MEM_GB=""
     HUNG_GCORE_ENABLED="0"
     BIND_ENABLE="0"
-#    BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
+#   BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
 #   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
     LIO_INFO="/tmp/lio_info.txt"
 #   NFS_MNT        - Optional exportfs path to the bind mount. Disabled in BIND_ENABLE=0 and/or NFS_MNT is empty
@@ -1147,6 +1147,13 @@ elif [ -f ${1}/vars.sh ]; then  # Make sure the vars file exists for the other c
     elif [ ! -f ${TCM_LIB} ]; then
         TCM_ENABLE="0"
         echo "Disabling Use of TCMalloc since ${TCM_LIB} does not exist"
+    fi
+
+    #Also load the BIND/NFS parameters if undefined. This can happen if BIND_ENABLE=0 on install and then changed
+    if [ "${BIND_ENABLE}" == "1" ]; then
+        [[ -n BIND_MNT ]] && BIND_MNT="${LFS_ROOTS}/bmnt"
+        [[ -n BIND_TARGET ]] && BIND_TARGET="${LFS_ROOTS}/lmnt"
+        [[ -n NFS_MNT ]] && NFS_MNT=""
     fi
 else    # No vars file so print help
     usage
