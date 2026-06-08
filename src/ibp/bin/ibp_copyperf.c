@@ -35,6 +35,7 @@
 #include <tbx/network.h>
 #include <tbx/random.h>
 #include <tbx/siginfo.h>
+#include <tbx/type_malloc.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/lio_monitor.h>
 #include <time.h>
@@ -74,9 +75,9 @@ ibp_capset_t *create_proxy_allocs(int nallocs, ibp_capset_t *base_caps, int n_ba
     gop_opque_t *q;
     gop_op_generic_t *op;
     ibp_capset_t *bcap;
+    ibp_capset_t *caps;
 
-    ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
-
+    tbx_type_malloc(caps, ibp_capset_t, nallocs);
     q = gop_opque_new();
 
     for (i=0; i<nallocs; i++) {
@@ -128,7 +129,7 @@ void proxy_remove_allocs(ibp_capset_t *caps_list, ibp_capset_t *mcaps_list, int 
         ibp_cap_destroy(ibp_cap_get(&(caps_list[i]), IBP_MANAGECAP));
     }
 
-    free(caps_list);
+    tbx_free(caps_list);
 
     return;
 }
@@ -144,9 +145,9 @@ ibp_capset_t *create_allocs(int nallocs, int asize, int nthreads, ibp_depot_t *d
     ibp_depot_t *depot;
     gop_opque_t *q;
     gop_op_generic_t *op;
+    ibp_capset_t *caps;
 
-    ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
-
+    tbx_type_malloc(caps, ibp_capset_t, nallocs);
     ibp_attributes_set(&attr, time(NULL) + a_duration, IBP_HARD, IBP_BYTEARRAY);
     q = gop_opque_new();
 
@@ -197,7 +198,7 @@ void remove_allocs(ibp_capset_t *caps_list, int nallocs, int nthreads)
         ibp_cap_destroy(ibp_cap_get(&(caps_list[i]), IBP_MANAGECAP));
     }
 
-    free(caps_list);
+    tbx_free(caps_list);
 
     return;
 }
@@ -213,7 +214,9 @@ void write_allocs(ibp_capset_t *caps, int n, int asize, int nthreads)
     gop_op_generic_t *op;
     tbx_tbuf_t buf[n];
 
-    char *buffer = (char *)malloc(asize);
+    char *buffer;
+
+    tbx_type_malloc(buffer, char, asize);
     memset(buffer, 'W', asize);
 
     q = gop_opque_new();
@@ -231,7 +234,7 @@ void write_allocs(ibp_capset_t *caps, int n, int asize, int nthreads)
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buffer);
+    tbx_free(buffer);
 }
 
 //*************************************************************************
@@ -244,7 +247,9 @@ void copy_allocs(char *path, ibp_capset_t *src_caps, ibp_capset_t *dest_caps, in
     gop_opque_t *q;
     gop_op_generic_t *op;
 
-    char *buffer = (char *)malloc(asize);
+    char *buffer;
+
+    tbx_type_malloc(buffer, char, asize);
     memset(buffer, 'W', asize);
 
     q = gop_opque_new();
@@ -263,7 +268,7 @@ void copy_allocs(char *path, ibp_capset_t *src_caps, ibp_capset_t *dest_caps, in
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buffer);
+    tbx_free(buffer);
 }
 
 //*************************************************************************
@@ -425,7 +430,7 @@ int main(int argc, char **argv)
     //** Read in source depot list **
     src_n_depots = atoi(argv[i]);
     i++;
-    src_depot_list = (ibp_depot_t *)malloc(sizeof(ibp_depot_t)*src_n_depots);
+    tbx_type_malloc(src_depot_list, ibp_depot_t, src_n_depots);
     int j;
     for (j=0; j<src_n_depots; j++) {
         port = atoi(argv[i+1]);
@@ -437,7 +442,7 @@ int main(int argc, char **argv)
     //** Read in destination depot list **
     dest_n_depots = atoi(argv[i]);
     i++;
-    dest_depot_list = (ibp_depot_t *)malloc(sizeof(ibp_depot_t)*dest_n_depots);
+    tbx_type_malloc(dest_depot_list, ibp_depot_t, dest_n_depots);
     for (j=0; j<dest_n_depots; j++) {
         port = atoi(argv[i+1]);
         rid = ibp_str2rid(argv[i+2]);

@@ -99,8 +99,9 @@ ibp_capset_t *create_proxy_allocs(int n, ibp_capset_t *base_caps, int n_base)
     ibp_capset_t *bcap;
 
     nallocs = abs(n);
-    ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
+    ibp_capset_t *caps;
 
+    tbx_type_malloc(caps, ibp_capset_t, nallocs);
     q = gop_opque_new();
 
     for (i=0; i<nallocs; i++) {
@@ -160,7 +161,7 @@ void proxy_remove_allocs(ibp_capset_t *caps_list, ibp_capset_t *mcaps_list, int 
         ibp_cap_destroy(ibp_cap_get(&(caps_list[i]), IBP_MANAGECAP));
     }
 
-    free(caps_list);
+    tbx_free(caps_list);
 
     return;
 }
@@ -178,8 +179,9 @@ ibp_capset_t *create_allocs(int n, int asize)
     gop_op_generic_t *op;
 
     nallocs = abs(n);
-    ibp_capset_t *caps = (ibp_capset_t *)malloc(sizeof(ibp_capset_t)*nallocs);
+    ibp_capset_t *caps;
 
+    tbx_type_malloc(caps, ibp_capset_t, nallocs);
     ibp_attributes_set(&attr, time(NULL) + a_duration, IBP_HARD, IBP_BYTEARRAY);
     q = gop_opque_new();
 
@@ -238,7 +240,7 @@ void remove_allocs(ibp_capset_t *caps_list, int nallocs)
         ibp_cap_destroy(ibp_cap_get(&(caps_list[i]), IBP_MANAGECAP));
     }
 
-    free(caps_list);
+    tbx_free(caps_list);
 
     return;
 }
@@ -278,9 +280,10 @@ void validate_allocs(ibp_capset_t *caps_list, int nallocs)
     int nalloc_bad, nblocks_bad;
     gop_opque_t *q;
     gop_op_generic_t *op;
-    int *bad_blocks = (int *) malloc(sizeof(int)*nallocs);
+    int *bad_blocks;
     int correct_errors = 0;
 
+    tbx_type_malloc(bad_blocks, int, nallocs);
     q = gop_opque_new();
 
     for (i=0; i<nallocs; i++) {
@@ -308,7 +311,7 @@ void validate_allocs(ibp_capset_t *caps_list, int nallocs)
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(bad_blocks);
+    tbx_free(bad_blocks);
 
     return;
 }
@@ -323,8 +326,9 @@ void write_allocs(ibp_capset_t *caps, int n, int asize, int block_size)
     gop_opque_t *q;
     gop_op_generic_t *op;
     tbx_tbuf_t *buf;
+    char *buffer;
 
-    char *buffer = (char *)malloc(block_size);
+    tbx_type_malloc(buffer, char, block_size);
     init_buffer(buffer, 'W', block_size);
 
     q = gop_opque_new();
@@ -357,8 +361,8 @@ void write_allocs(ibp_capset_t *caps, int n, int asize, int block_size)
 
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(buffer);
+    tbx_free(buf);
+    tbx_free(buffer);
 }
 
 //*************************************************************************
@@ -372,8 +376,9 @@ void read_allocs(ibp_capset_t *caps, int n, int asize, int block_size)
     gop_op_generic_t *op;
     tbx_tbuf_t *buf;
 
-    char *buffer = (char *)malloc(block_size);
+    char *buffer;
 
+    tbx_type_malloc(buffer, char, block_size);
     q = gop_opque_new();
 
     nblocks = asize / block_size;
@@ -382,7 +387,6 @@ void read_allocs(ibp_capset_t *caps, int n, int asize, int block_size)
 
     tbx_type_malloc_clear(buf, tbx_tbuf_t, n*nblocks);
 
-//  for (j=0; j<nblocks; j++) {
     for (j=nblocks-1; j>= 0; j--) {
         for (i=0; i<n; i++) {
             if ((j==(nblocks-1)) && (rem > 0)) {
@@ -404,8 +408,8 @@ void read_allocs(ibp_capset_t *caps, int n, int asize, int block_size)
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(buffer);
+    tbx_free(buf);
+    tbx_free(buffer);
 }
 
 //*************************************************************************
@@ -420,9 +424,11 @@ void random_allocs(ibp_capset_t *caps, int n, int asize, int block_size, double 
     gop_op_generic_t *op;
     double rnd;
     tbx_tbuf_t *buf;
+    char *rbuffer;
+    char *wbuffer;
 
-    char *rbuffer = (char *)malloc(block_size);
-    char *wbuffer = (char *)malloc(block_size);
+    tbx_type_malloc(rbuffer, char, block_size);
+    tbx_type_malloc(wbuffer, char, block_size);
     init_buffer(rbuffer, 'r', block_size);
     init_buffer(wbuffer, 'w', block_size);
 
@@ -464,9 +470,9 @@ void random_allocs(ibp_capset_t *caps, int n, int asize, int block_size, double 
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(rbuffer);
-    free(wbuffer);
+    tbx_free(buf);
+    tbx_free(rbuffer);
+    tbx_free(wbuffer);
 }
 
 //*************************************************************************
@@ -481,6 +487,7 @@ double small_write_allocs(ibp_capset_t *caps, int n, int asize, int small_count,
     double rnd, lmin, lmax;
     double nbytes;
     tbx_tbuf_t *buf;
+    char *buffer;
 
     q = gop_opque_new();
 
@@ -492,7 +499,7 @@ double small_write_allocs(ibp_capset_t *caps, int n, int asize, int small_count,
     lmin = log(min_size);
     lmax = log(max_size);
 
-    char *buffer = (char *)malloc(max_size);
+    tbx_type_malloc(buffer, char, max_size);
     init_buffer(buffer, 'a', max_size);
 
     tbx_type_malloc_clear(buf, tbx_tbuf_t, small_count);
@@ -523,8 +530,8 @@ double small_write_allocs(ibp_capset_t *caps, int n, int asize, int small_count,
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(buffer);
+    tbx_free(buf);
+    tbx_free(buffer);
 
     return(nbytes);
 }
@@ -541,6 +548,7 @@ double small_read_allocs(ibp_capset_t *caps, int n, int asize, int small_count, 
     double rnd, lmin, lmax;
     double nbytes;
     tbx_tbuf_t *buf;
+    char *buffer;
 
     q = gop_opque_new();
 
@@ -552,7 +560,7 @@ double small_read_allocs(ibp_capset_t *caps, int n, int asize, int small_count, 
         log_printf(0, "small_read_allocs:  Adjusting max_size=%d\n", max_size);
     }
 
-    char *buffer = (char *)malloc(max_size);
+    tbx_type_malloc(buffer, char, max_size);
     init_buffer(buffer, 'r', max_size);
 
     tbx_type_malloc_clear(buf, tbx_tbuf_t, small_count);
@@ -584,8 +592,8 @@ double small_read_allocs(ibp_capset_t *caps, int n, int asize, int small_count, 
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(buffer);
+    tbx_free(buf);
+    tbx_free(buffer);
 
     return(nbytes);
 }
@@ -602,6 +610,8 @@ double small_random_allocs(ibp_capset_t *caps, int n, int asize, double readfrac
     double rnd, lmin, lmax;
     double nbytes;
     tbx_tbuf_t *buf;
+    char *rbuffer;
+    char *wbuffer;
 
     q = gop_opque_new();
 
@@ -613,8 +623,8 @@ double small_random_allocs(ibp_capset_t *caps, int n, int asize, double readfrac
         log_printf(0, "small_random_allocs:  Adjusting max_size=%d\n", max_size);
     }
 
-    char *rbuffer = (char *)malloc(max_size);
-    char *wbuffer = (char *)malloc(max_size);
+    tbx_type_malloc(rbuffer, char, max_size);
+    tbx_type_malloc(wbuffer, char, max_size);
     init_buffer(rbuffer, '1', max_size);
     init_buffer(wbuffer, '2', max_size);
 
@@ -655,9 +665,9 @@ double small_random_allocs(ibp_capset_t *caps, int n, int asize, double readfrac
     }
     gop_opque_free(q, OP_DESTROY);
 
-    free(buf);
-    free(rbuffer);
-    free(wbuffer);
+    tbx_free(buf);
+    tbx_free(rbuffer);
+    tbx_free(wbuffer);
 
     return(nbytes);
 }
@@ -831,7 +841,7 @@ int main(int argc, char **argv)
 // FIXME trim
 #if 0
         } else if (strcmp(argv[i], "-phoebus") == 0) { //** Check if we want Phoebus transfers
-            cc = (ibp_connect_context_t *)malloc(sizeof(ibp_connect_context_t));
+            tbx_type_malloc(cc, ibp_connect_context_t, 1);
             cc->type = NS_TYPE_PHOEBUS;
             i++;
 
@@ -871,7 +881,7 @@ int main(int argc, char **argv)
     n_depots = atoi(argv[i]);
     i++;
 
-    depot_list = (ibp_depot_t *)malloc(sizeof(ibp_depot_t)*n_depots);
+    tbx_type_malloc(depot_list, ibp_depot_t, n_depots);
     int j;
     for (j=0; j<n_depots; j++) {
         port = atoi(argv[i+1]);

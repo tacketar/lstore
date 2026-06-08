@@ -209,9 +209,9 @@ void *resource_health_check(apr_thread_t *th, void *data)
 
                     //** Push the failed drive on the ejected stack
                     j++;
-                    tbx_stack_push(eject, strdup(r->data_pdev));
-                    tbx_stack_push(eject, strdup(r->device));
-                    tbx_stack_push(eject, strdup(cmd->crid));
+                    tbx_stack_push(eject, tbx_stk_strdup(r->data_pdev));
+                    tbx_stack_push(eject, tbx_stk_strdup(r->device));
+                    tbx_stack_push(eject, tbx_stk_strdup(cmd->crid));
 
                     apr_thread_mutex_unlock(shutdown_lock);
                     cmd->delay = 10;
@@ -545,10 +545,10 @@ int parse_config_postfork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_reb
         if (strncmp("resource", str, 8) == 0) {
             pm = &(pmarray[val]);
             pm->keyfile = keyfile;
-            pm->group = strdup(str);
+            pm->group = tbx_stk_strdup(str);
             pm->force_resource_rebuild = cfg->force_resource_rebuild;
-            pm->snap_prefix = strdup(start_snap_prefix);
-            pm->merge_prefix = (merge_snap) ? strdup(merge_snap) : NULL;
+            pm->snap_prefix = tbx_stk_strdup(start_snap_prefix);
+            pm->merge_prefix = (merge_snap) ? tbx_stk_strdup(merge_snap) : NULL;
             apr_thread_create(&(pm->thread_id), NULL, parallel_mount_resource, (void *) pm,
                               mount_pool);
 
