@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 #--------------------------------------------------------------------------------------
 #  lfs_bind_and_nfs_update - Swings the bind and optional NFS mounts to the
 #      latest LFS mount
