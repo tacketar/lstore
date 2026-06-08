@@ -365,6 +365,15 @@ int parse_config_prefork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebu
         log_printf(0,
                    "ibp_server: Either make threads < %d or increase the max fd > %d (ulimit -n %d)\n",
                    k, j, j);
+        tbx_log_flush();
+
+        fprintf(stderr,
+                   "ibp_server: ERROR Too many threads!  Current threads=%d, n_resources=%d, and max fd=%d.\n",
+                   server->max_threads, n, i);
+        fprintf(stderr,
+                   "ibp_server: Either make threads < %d or increase the max fd > %d (ulimit -n %d)\n",
+                   k, j, j);
+        fflush(stderr);
         error = 1;
     }
 
