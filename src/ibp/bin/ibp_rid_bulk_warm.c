@@ -78,7 +78,7 @@ void process_serial(gop_op_generic_t *gop, int *good, int *bad)
         printf("ERROR: cap=%s\n", cap);
     }
 
-    free(cap);
+    tbx_free(cap);
     gop_free(gop, OP_DESTROY);
 
     return;
@@ -141,12 +141,12 @@ void bulk_free(bulk_t *bulk)
     int i;
 
     for (i=0; i<bulk->n; i++) {
-        free(bulk->caps[i]);
+        tbx_free(bulk->caps[i]);
     }
 
-    free(bulk->caps);
-    free(bulk->failed);
-    free(bulk);
+    tbx_free(bulk->caps);
+    tbx_free(bulk->failed);
+    tbx_free(bulk);
 }
 
 //*************************************************************************
