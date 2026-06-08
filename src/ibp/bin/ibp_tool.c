@@ -750,21 +750,6 @@ int main(int argc, char **argv)
         i++;
     }
 
-//    if (strcmp(argv[i], "-phoebus") == 0) { //** Check if we want Phoebus transfers
-//        cc = (ibp_connect_context_t *)malloc(sizeof(ibp_connect_context_t));
-//        cc->type = NS_TYPE_PHOEBUS;
-//        i++;
-
-//        ppath = argv[i];
-//        phoebus_path_set(&pcc, ppath);
-//        cc->data = &pcc;
-
-//        ibp_set_read_cc(ic, cc);
-//        ibp_set_write_cc(ic, cc);
-
-//        i++;
-//    }
-
     if (strcmp(argv[i], "-tcpsize") == 0) { //** Check if we want sync tests
         i++;
         tcpsize = atoi(argv[i]) * 1024;
