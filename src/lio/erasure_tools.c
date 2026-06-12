@@ -478,6 +478,16 @@ int matrix_decode_block(lio_erasure_plan_t *plan, char **ptr, int block_size, in
 
 //***************************************************************************
 
+int cauchy_matrix_decode_block(lio_erasure_plan_t *plan, char **ptr, int block_size, int *erasures)
+{
+    // Cauchy parity rows are not all-ones; row_k_ones must be 0 so jerasure
+    // decodes every missing data strip via the inversion matrix.
+    return(jerasure_matrix_decode(plan->data_strips, plan->parity_strips, plan->w, plan->encode_matrix, 0, erasures,
+                                  ptr, &(ptr[plan->data_strips]), block_size));
+}
+
+//***************************************************************************
+
 int schedule_decode_block(lio_erasure_plan_t *plan, char **ptr, int block_size, int *erasures)
 {
     return(jerasure_schedule_decode_lazy(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix,
@@ -702,13 +712,13 @@ lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
         // produce parity that is bit-compatible with what a correct decoder (ISAL or
         // Jerasure) expects from the same matrix, enabling reliable cross use.
         plan->encode_block = matrix_encode_block;
-        plan->decode_block = schedule_decode_block;
+        plan->decode_block = cauchy_matrix_decode_block;
         break;
     case CAUCHY_GOOD:
         plan->form_encoding_matrix = cauchy_good_form_encoding_matrix;
         plan->form_decoding_matrix = cauchy_good_form_coding_matrix;
         plan->encode_block = matrix_encode_block;
-        plan->decode_block = schedule_decode_block;
+        plan->decode_block = cauchy_matrix_decode_block;
         break;
     case BLAUM_ROTH:
         plan->form_encoding_matrix = blaum_roth_form_encoding_matrix;
