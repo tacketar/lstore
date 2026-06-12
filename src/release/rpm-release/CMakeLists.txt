@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 set(LSTORE_REPO_URL "http://repo.accre.vanderbilt.edu"
     CACHE STRING "Repository URL for LStore")
 if(INSTALL_YUM_RELEASE OR (NOT DEFINED INSTALL_YUM_RELEASE))

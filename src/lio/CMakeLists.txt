@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 # Name this project
 set(LSTORE_PROJECT_NAME "lio")
@@ -31,7 +31,7 @@ if(NOT USE_SUPERBUILD)
         endif()
     endif()
     if (NOT HAS_FUSE3)     #Fall back to FUSE2
-        find_package(FUSE REQUIRED)
+        find_package(FUSE)
     endif()
     find_package(Jerasure REQUIRED)
     find_package(ToolBox REQUIRED)

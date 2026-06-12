@@ -1,7 +1,7 @@
 // This file is Autoconfigured!
 #ifndef ACCRE_LIO_STDIO_WRAPPER__CONFIG_H_INCLUDED
 #define ACCRE_LIO__STDIO_WRAPPER_CONFIG_H_INCLUDED
-#define HAVE_ATTR_XATTR_H
+/* #undef HAVE_ATTR_XATTR_H */
 #define HAVE_SYS_XATTR_H
 #if defined(HAVE_SYS_XATTR_H) | defined(HAVE_ATTR_XATTR_H)
 #define HAVE_XATTR

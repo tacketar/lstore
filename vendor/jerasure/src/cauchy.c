@@ -140,6 +140,7 @@ int *cauchy_original_coding_matrix(int k, int m, int w)
   matrix = talloc(int, k*m);
   if (matrix == NULL) return NULL;
   index = 0;
+  // m = p
   for (i = 0; i < m; i++) {
     for (j = 0; j < k; j++) {
       matrix[index] = galois_single_divide(1, (i ^ (m+j)), w);

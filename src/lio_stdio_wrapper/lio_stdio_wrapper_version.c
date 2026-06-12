@@ -6,11 +6,11 @@
 #include <stdlib.h>
 
 const char *vstr = "lio_stdio_wrapper: \n"
-             "CMake Build Date: Sat 07 Mar 2026 05:49:08 PM CST\n"
-             "Compiler: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\n"
+             "CMake Build Date: Thu Jun 11 07:16:00 PM CDT 2026\n"
+             "Compiler: cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n"
              "Compile Flags(Debug): -std=c11 -D_REENTRANT -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -fvisibility=hidden -fno-strict-aliasing -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Wno-error=sign-compare -DHAS_FUSE3 -DHAS_STATX -g \n"
              "Build Host: dragonheartstring\n"
-             "Build OS: Linux-6.8.0-100-generic-x86_64\n";
+             "Build OS: Linux-7.0.0-22-generic-x86_64\n";
 
 const char *lio_stdio_wrapper_version() {
     return(vstr);

@@ -27,6 +27,12 @@
 
 #include "erasure_tools_isal.h"
 
+// No Jerasure includes here — pure ISAL decode path only (gf_* + ec_* from isa-l).
+// The goal is a decode implementation that uses only ISAL primitives while still
+// being able to recover data produced by Jerasure's cauchy-orig encode (when
+// the coding matrix coefficients match).
+
+
 #define MMAX 255
 #define KMAX 255
 
@@ -56,7 +62,30 @@ int form_encoding_matrix(lio_erasure_plan_t *plan)
             gf_gen_rs_matrix(plan->encode_matrix, plan->parity_strips+plan->data_strips, plan->data_strips);
             break;
         case CAUCHY_ORIG_ISA:
-            gf_gen_cauchy1_matrix(plan->encode_matrix, plan->parity_strips+plan->data_strips, plan->data_strips);
+            // Generate full generator matrix (I | P) using the exact same coefficients
+            // as Jerasure's cauchy_original_coding_matrix(k, m, w=8) for the P part.
+            // This is required for the "replace Jerasure with ISAL" goal while
+            // keeping ISAL backwards compatible with data previously encoded
+            // by the Jerasure backend.
+            {
+                int k = plan->data_strips;
+                int m = plan->parity_strips;
+                unsigned char *mat = plan->encode_matrix;
+                // Top kxk: identity (data passes through)
+                for (int i = 0; i < k; i++) {
+                    for (int j = 0; j < k; j++) {
+                        mat[i * k + j] = (i == j ? 1 : 0);
+                    }
+                }
+                // Bottom m x k: coding matrix coeffs matching Jerasure
+                // coeff[i][j] = 1 / (i ^ (m + j))  in GF(2^8)
+                for (int i = 0; i < m; i++) {
+                    for (int j = 0; j < k; j++) {
+                        int denom = i ^ (m + j);
+                        mat[(k + i) * k + j] = (denom == 0 ? 0 : gf_inv(denom));
+                    }
+                }
+            }
             break;
         default:
             return -1;
@@ -245,7 +274,6 @@ static void print_some_g_tbls(const lio_erasure_plan_t *plan, int max_tables)
         tbl += 32;
     }
 }
-
 static int
 gf_gen_decode_matrix_simple(unsigned char *encode_matrix,
                             unsigned char *decode_matrix, unsigned char *invert_matrix,
@@ -299,7 +327,6 @@ gf_gen_decode_matrix_simple(unsigned char *encode_matrix,
         }
         return 0;
 }
-
 static void print_plan(lio_erasure_plan_t *plan){
     if(plan == NULL) return;
     printf("Erasure plan: \n");
@@ -323,7 +350,7 @@ static void print_plan(lio_erasure_plan_t *plan){
     printf("Base unit: %d\n",plan->base_unit);
     if (plan->encode_matrix) {
         printf("Encoding Matrix (%d x %d):\n", plan->parity_strips, plan->data_strips);
-        for (int i = 0; i < plan->parity_strips; i++) {
+        for (int i = 0; i < plan->data_strips+plan->parity_strips; i++) {
             for (int j = 0; j < plan->data_strips; j++) {
                 printf("%3d ", plan->encode_matrix[i * plan->data_strips + j]);
             }
@@ -344,7 +371,7 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     FILE *fd_file, *fd_parity;
     unsigned char **ptr, **data, **parity, *buffer;
     int i, block_size, bsize;
-    long long int rpos, apos, bpos, ppos, file_size;
+    long long int apos, bpos, ppos, file_size;
 
     // Open the files
     fd_file = tbx_io_fopen(fname, "r");
@@ -354,8 +381,9 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     }
 
     // Get the file size
-    tbx_io_fseek(fd_file, 1, SEEK_END);
-    file_size = tbx_io_ftell(fd_file);
+    tbx_io_fseek(fd_file, 0, SEEK_END);
+    //file_size = tbx_io_ftell(fd_file);
+    file_size = ftell(fd_file);
     tbx_io_fseek(fd_file, 0, SEEK_SET);
 
     fd_parity = tbx_io_fopen(pname, "r+");
@@ -373,7 +401,7 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
     block_size = buffer_size/(plan->data_strips + plan->parity_strips);
 
-    //printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
+    // printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, block_size, plan->strip_size);
     // allocate the buffer space
     ptr = (unsigned char **)malloc(sizeof(unsigned char *)*(plan->data_strips + plan->parity_strips));
     FATAL_UNLESS(ptr != NULL);
@@ -390,11 +418,12 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     // Perform the encoding
     apos = foffset;
     ppos = poffset;
-    rpos = 0;
-    log_printf(15, "et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
+    // printf("et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
     while (apos < file_size) {
+
+     // printf("fsize=%lld apos=%lld\n", file_size, apos);
         bsize = block_size;
-        log_printf(15, "et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
+        // printf("et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
 
         // Read the data
         bpos = apos;
@@ -413,8 +442,12 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
         bpos = ppos;
         bsize = block_size;
         for (i=0; i<plan->parity_strips; i++) {
+            // printf("Printing parity %d in bpos %lld \n",i,bpos);
+            /*
             tbx_io_fseek(fd_parity, bpos, SEEK_SET);
             tbx_io_fwrite(parity[i], 1, bsize, fd_parity);
+            */
+            fwrite(parity[i],1,bsize,fd_parity);
             bpos = bpos + plan->strip_size;
         }
         ppos = bpos;
@@ -468,22 +501,6 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         return(1);
     }
 
-    //plan->form_decoding_matrix(plan);  //** Form the matrix if needed
-
-    unsigned char *decode_matrix, *invert_matrix, *temp_matrix;
-    unsigned char decode_index[MMAX];
-    decode_matrix = malloc( (plan->data_strips+plan->parity_strips) * plan->data_strips);
-    invert_matrix = malloc((plan->data_strips+plan->parity_strips) * plan->data_strips);
-    temp_matrix = malloc((plan->data_strips+plan->parity_strips) * plan->data_strips);
-
-    int ret = gf_gen_decode_matrix_simple(plan->encode_matrix, decode_matrix,invert_matrix, temp_matrix, decode_index,frag_err_list,nerrs,plan->data_strips,plan->data_strips+plan->parity_strips);
-    if (ret != 0) {
-        printf("Fail on generate decode matrix\n");
-        return -1;
-    }
-
-    ec_init_tables(plan->data_strips,nerrs,decode_matrix,plan->g_tbls);
-
     //** Determine the buffersize
     buffer_size = (plan->data_strips+plan->parity_strips)*plan->w*plan->packet_size*plan->base_unit;
 
@@ -534,49 +551,85 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         }
         ppos = bpos;
 
-        unsigned char *recover_srcs[MMAX], *recover_outp[MMAX];
-        for (i = 0; i < plan->parity_strips; i++) {
-                if (NULL == (recover_outp[i] = malloc(bsize))) {
-                        printf("alloc error: Fail\n");
-                        return -1;
-                }
+        // Pure ISAL (ISA-L only) recovery.
+        // We use the gf_gen_decode_matrix_simple + ec_init_tables + ec_encode_data
+        // that are native to the ISAL backend. No Jerasure calls, no galois_*, no
+        // jerasure_invert_matrix inside the ISAL et_decode.
+        //
+        // The encode_matrix in the plan is the full (k+m) x k generator with I on top
+        // + the Cauchy P bottom (coefficients generated with the exact same formula
+        // as Jerasure's cauchy_original_coding_matrix so that the numeric P matches).
+        // If the GF(2^8) arithmetic in ISA-L is bit-compatible with Jerasure's for
+        // the elements that appear in this matrix, then the parities produced by
+        // Jerasure encode will be decodable by this pure-ISAL path.
+        {
+            unsigned char decode_index[MMAX];
+            unsigned char *decode_matrix = (unsigned char*)malloc((plan->data_strips + plan->parity_strips) * plan->data_strips);
+            unsigned char *invert_matrix = (unsigned char*)malloc((plan->data_strips + plan->parity_strips) * plan->data_strips);
+            unsigned char *temp_matrix   = (unsigned char*)malloc((plan->data_strips + plan->parity_strips) * plan->data_strips);
+
+            int ret = gf_gen_decode_matrix_simple(plan->encode_matrix,
+                                                  decode_matrix, invert_matrix, temp_matrix,
+                                                  decode_index, frag_err_list,
+                                                  nerrs, plan->data_strips,
+                                                  plan->data_strips + plan->parity_strips);
+            if (ret != 0) {
+                printf("Fail on generate decode matrix (pure ISAL)\n");
+                free(decode_matrix); free(invert_matrix); free(temp_matrix);
+                // fall through to error handling below (we abort for now to surface the issue)
+                abort();
+            }
+
+            // recover_srcs / recover_outp live on the stack for this stripe
+            unsigned char *recover_srcs[MMAX];
+            unsigned char *recover_outp[MMAX];
+
+            for (i = 0; i < nerrs; i++) {
+                recover_outp[i] = (unsigned char*)malloc(bsize);
+            }
+
+            for (i = 0; i < plan->data_strips; i++) {
+                recover_srcs[i] = ptr[ decode_index[i] ];
+            }
+
+            ec_init_tables(plan->data_strips, nerrs, decode_matrix, plan->g_tbls);
+            ec_encode_data(bsize, plan->data_strips, nerrs, plan->g_tbls,
+                           recover_srcs, recover_outp);
+
+            if (plan->data_strips == 6 && nerrs == 3) {
+              printf("DEBUG ISAL recoveries: ");
+              for(int jj=0; jj<nerrs; jj++) {
+                int ii = frag_err_list[jj];
+                if (ii < 6) printf("data%d: %02x ", ii, recover_outp[jj][0]);
+              }
+              printf("\n");
+            }
+
+            // Copy recovered data blocks into the data[] slots so the existing
+            // store loop (which writes data[i] for missing data strips) works
+            // without further changes.
+            for (int j=0; j<nerrs; j++) {
+              int pos = frag_err_list[j];
+              if (pos < plan->data_strips) {
+                memcpy(data[pos], recover_outp[j], bsize);
+              }
+            }
+
+            for (i=0; i<nerrs; i++) free(recover_outp[i]);
+            free(decode_matrix);
+            free(invert_matrix);
+            free(temp_matrix);
         }
 
-        for (i = 0; i < plan->data_strips; i++)
-            recover_srcs[i] = data[decode_index[i]];
-
-        // Perform the decoding
-        //plan->decode_block(plan, ptr, bsize, erasures);
-        ec_encode_data(bsize,plan->data_strips,nerrs,plan->g_tbls,recover_srcs,recover_outp);
-
-        /*
-        printf("The recovery blocks: \n");
-        for (i=0; i<nerrs; i++){
-           printf("%s \n",recover_outp[i]);
-        }
-
-        printf(" check recovery of block {");
-        for (i = 0; i < nerrs; i++) {
-                printf(" %d", frag_err_list[i]);
-                if (memcmp(recover_outp[i], data[frag_err_list[i]], bsize)) {
-                        printf(" Fail erasure recovery %d, frag %d\n", i, frag_err_list[i]);
-                        printf("Data in buffer pointer: %s ",data[frag_err_list[i]]);
-                        printf("Data in recovery output: %s",recover_outp[i]);
-                        return -1;
-                }
-        }*/
-
-        // Store the missing blocks
+        // Store the missing blocks (now the data[] slots for erased data strips
+        // contain the ISAL-recovered data).
         bpos = apos;
         for (i=0; i<plan->data_strips; i++) {  // Skip the last block
             if (missing_data[i] == 1) {
                 nbytes = (bpos + bsize) > fsize ? fsize - bpos : block_size;
                 if (nbytes < 0) break;
                 tbx_io_fseek(fd_file, bpos, SEEK_SET);
-                for(int j=0; j<nerrs; j++){
-                    if(i == frag_err_list[j])
-                    tbx_io_fwrite(recover_outp[j], 1, nbytes, fd_file);
-                }
+                tbx_io_fwrite(data[i], 1, nbytes, fd_file);
             }
             bpos = bpos + plan->strip_size;
         }

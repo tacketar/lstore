@@ -619,9 +619,9 @@ void print_plan(lio_erasure_plan_t *plan) {
 
 int main(int argc, char **argv) {
 
-    int method = 3;
+    int method = 2;
     int strip_size = 16 * 1024; // 16 KB
-    int data_strips = 8;
+    int data_strips = 6;
     int parity_strips = 3;
     int w = 8;
     int packet_size = -1;
@@ -630,9 +630,9 @@ int main(int argc, char **argv) {
 
     printf("Testing JErasure Encoding with Cauchy Good Method, Data Strips: %d, Parity strips: %d, Strip Size: %d \n", data_strips, parity_strips, strip_size);
 
-    printf("1. Generating Random file with size: %.2f MB\n", (double)FILE_SIZE/1024/1024);
-    const char *input_file = "1GB_random.bin";
+    const char *input_file = "input_16KB.txt";
     file_size = getFileSize(input_file);
+    printf("1. Using the pre generated file %s of size: %.2ld MB\n",input_file,file_size);
 
     /*
     printf("1. Generating Random file with size: %.2f MB\n", (double)FILE_SIZE/1024/1024);
@@ -665,7 +665,7 @@ int main(int argc, char **argv) {
     }
     double t1 = get_wall_seconds();
     double runtime_en = t1-t0;
-    printf("\t Encoding successfully finished in %.6f s, fragments written to parity.file\n", runtime_en);
+    printf("\t Encoding successfully finished in %.6f s, fragments written to %s\n", runtime_en, parity_file);
 
     //Print plan details
     printf("Here are the plan details: \n");
@@ -706,7 +706,7 @@ int main(int argc, char **argv) {
 
     const char* recovered_file = "recovered_jerasure.data";
     printf("Making a copy of the input file and parity file: \n");
-    if (copyFile(erased_file_data,recovered_file) == 0) printf("Copied data file %s successfully to %s \n",input_file,erased_file_data);
+    if (copyFile(erased_file_data,recovered_file) == 0) printf("Copied data file %s successfully to %s \n",erased_file_data,recovered_file);
     t0 = get_wall_seconds();
     int erasures_array[num_wipe_data+num_wipe_parity+1];
     for(int i=0; i<num_wipe_data; i++){

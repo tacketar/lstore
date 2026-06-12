@@ -1,5 +1,5 @@
 # Root CMake file for LStore
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 # Preliminary configuration. Need to find ccache to set the defaults for the
 # corresponding option
@@ -245,8 +245,23 @@ else()
     endif()
 endif()
 if (NOT HAS_FUSE3)     #Fall back FUSE2
-    find_package(FUSE REQUIRED)
+    find_package(FUSE)
 endif()
+
+# Sanitize FUSE variables (FUSE is optional; without dev headers the find
+# modules leave NOTFOUND values that would pollute includes/link commands).
+if(NOT HAS_FUSE3)
+    if(NOT FUSE_INCLUDE_DIR OR "${FUSE_INCLUDE_DIR}" MATCHES "-NOTFOUND")
+        set(FUSE_INCLUDE_DIR "")
+    endif()
+    if(NOT FUSE_LIBRARIES OR "${FUSE_LIBRARIES}" MATCHES "-NOTFOUND")
+        set(FUSE_LIBRARIES "")
+    endif()
+    if(NOT FUSE_LIBRARY OR "${FUSE_LIBRARY}" MATCHES "-NOTFOUND")
+        set(FUSE_LIBRARY "")
+    endif()
+endif()
+
 find_package(ZLIB REQUIRED)
 find_package(ZMQ REQUIRED)
 find_package(RocksDB REQUIRED)
@@ -332,11 +347,29 @@ if(BUILD_TESTS)
     add_executable(test_isal test/test_isal.c)
     target_link_libraries(test_isal lio toolbox gop pthread isal)
     target_include_directories(test_isal PRIVATE ${APR_INCLUDE_DIR})
+    add_executable(matrix_test test/matrix_test.c)
+    target_link_libraries(matrix_test lio toolbox gop pthread isal jerasure)
+    target_include_directories(matrix_test PRIVATE ${APR_INCLUDE_DIR})
     add_executable(isal_simple test/isal_simple.c)
     target_link_libraries(isal_simple isal)
     add_executable(test_jerasure test/test_jerasure.c)
     target_include_directories(test_jerasure PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
     target_link_libraries(test_jerasure lio jerasure toolbox gop pthread)
+    add_executable(test_isal_jerasure 
+        test/test_isal_jerasure.c
+        src/lio/erasure_tools_isal.c
+    )
+    target_link_libraries(test_isal_jerasure lio toolbox gop pthread isal jerasure)
+    target_include_directories(test_isal_jerasure PRIVATE ${APR_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
+    # Rename symbols in the ISAL source (and its header in the test) so both
+    # ISAL et_encode and Jerasure et_decode can coexist in one executable.
+    set_source_files_properties(src/lio/erasure_tools_isal.c PROPERTIES
+        COMPILE_DEFINITIONS "et_new_plan=isal_et_new_plan;et_generate_plan=isal_et_generate_plan;et_encode=isal_et_encode;et_decode=isal_et_decode;et_destroy_plan=isal_et_destroy_plan;bread=isal_bread;lio_erasure_plan_t=isal_lio_erasure_plan_t"
+    )
+    # Some static helpers in ISAL .c are not referenced when we only use its encode path.
+    set_source_files_properties(src/lio/erasure_tools_isal.c PROPERTIES
+        COMPILE_FLAGS "-Wno-unused-function -Wno-unused-but-set-variable"
+    )
     add_executable(et_planner test/et_planner.c)
     target_link_libraries(et_planner pthread toolbox gop lio)
     target_include_directories(et_planner PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
@@ -349,6 +382,30 @@ if(BUILD_TESTS)
     add_executable(et_erase_blocks test/et_erase_blocks.c)
     target_link_libraries(et_erase_blocks pthread toolbox gop lio)
     target_include_directories(et_erase_blocks PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+
+    # Two dedicated command-line tools as requested:
+    #   lstore-jerasure  - uses the classic Jerasure backend (via lio)
+    #   lstore-isal      - uses the pure ISAL backend (erasure_tools_isal.c compiled directly)
+    add_executable(lstore-jerasure test/lstore_jerasure.c)
+    target_link_libraries(lstore-jerasure pthread toolbox gop lio)
+    target_include_directories(lstore-jerasure PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+
+    # Rename + warning suppression must be set *before* the target that uses the source file.
+    set_source_files_properties(src/lio/erasure_tools_isal.c PROPERTIES
+        COMPILE_DEFINITIONS "et_new_plan=isal_et_new_plan;et_generate_plan=isal_et_generate_plan;et_encode=isal_et_encode;et_decode=isal_et_decode;et_destroy_plan=isal_et_destroy_plan;bread=isal_bread;lio_erasure_plan_t=isal_lio_erasure_plan_t"
+    )
+    set_source_files_properties(src/lio/erasure_tools_isal.c PROPERTIES
+        COMPILE_FLAGS "-Wno-unused-function -Wno-unused-but-set-variable"
+    )
+
+    add_executable(lstore-isal
+        test/lstore_isal.c
+        src/lio/erasure_tools_isal.c
+    )
+    target_link_libraries(lstore-isal pthread toolbox gop lio isal)
+    target_include_directories(lstore-isal PRIVATE ${APR_INCLUDE_DIR} ${APRUTIL_INCLUDE_DIR} ${ZMQ_INCLUDE_DIR})
+    # Extra safety for unused static print_plan etc. when the isal .c is compiled for this dedicated binary.
+    target_compile_options(lstore-isal PRIVATE -Wno-unused-function -Wno-unused-but-set-variable)
 
 
     add_executable(run-tests test/run-tests.c

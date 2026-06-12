@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 install(DIRECTORY etc/lio DESTINATION "/etc/"
         PATTERN "*.sh" PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_READ)
 install(FILES etc/logrotate.d/lstore DESTINATION "/etc/logrotate.d/")

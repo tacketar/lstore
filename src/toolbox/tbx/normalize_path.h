@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 #ifndef ACCRE_NORMALIZE_PATH_H_INCLUDED
-#define ACCRE_NORMALIZE_APTH_H_INCLUDED
+#define ACCRE_NORMALIZE_PATH_H_INCLUDED
 
 #include <sys/types.h>
 #include <regex.h>

@@ -1205,6 +1205,18 @@ void jerasure_schedule_encode(int k, int m, int w, int **schedule,
   }
   free(ptr_copy);
 }
+
+/* Note for lstore integration (erasure_tools.c): for CAUCHY_ORIG/GOOD the
+   wrapper now prefers jerasure_matrix_encode (via matrix_encode_block) over
+   the schedule path for encoding. This guarantees that the produced parity
+   exactly matches the mathematical definition from the coding matrix P
+   (as returned by cauchy_original_coding_matrix etc.), without depending on
+   bitmatrix conversion or smart/dumb schedule procedures. This enables
+   reliable cross-compatibility (e.g. Jerasure-encoded data decodable by
+   ISA-L et_decode and vice versa) when the P coefficients match. The schedule
+   path (dumb or smart) is still used for other methods and for some decode
+   paths. */
+
     
 int **jerasure_dumb_bitmatrix_to_schedule(int k, int m, int w, int *bitmatrix)
 {

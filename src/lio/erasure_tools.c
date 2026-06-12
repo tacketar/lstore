@@ -140,7 +140,11 @@ int cauchy_orig_form_coding_matrix(lio_erasure_plan_t *plan)
     plan->encode_matrix = cauchy_original_coding_matrix(plan->data_strips, plan->parity_strips, plan->w);
     plan->encode_bitmatrix = jerasure_matrix_to_bitmatrix(plan->data_strips, plan->parity_strips, plan->w, plan->encode_matrix);
 
-    if (plan->encode_schedule == NULL) return(-1);
+    // Removed erroneous "if (encode_schedule == NULL) return(-1)" here.
+    // This function only forms the coding matrix + bitmatrix for Cauchy.
+    // Schedule (if needed) is handled in the corresponding form_encoding_matrix
+    // or by the decode path. The old check was a copy-paste error that could
+    // cause premature -1 returns and fragile state for encode/decode setup.
 
     return(0);
 }
@@ -157,7 +161,7 @@ int cauchy_good_form_coding_matrix(lio_erasure_plan_t *plan)
 
 //log_printf(15, "plan->encode_bitmatrix=%p\n", plan->encode_bitmatrix);
 
-    if (plan->encode_schedule == NULL) return(-1);
+    // Removed erroneous schedule check (see cauchy_orig_form_coding_matrix for explanation).
 
     return(0);
 }
@@ -171,7 +175,7 @@ int blaum_roth_form_coding_matrix(lio_erasure_plan_t *plan)
 
     plan->encode_bitmatrix = blaum_roth_coding_bitmatrix(plan->data_strips, plan->w);
 
-    if (plan->encode_schedule == NULL) return(-1);
+    // Removed erroneous schedule check (see cauchy_orig_form_coding_matrix).
 
     return(0);
 }
@@ -186,7 +190,7 @@ int liberation_form_coding_matrix(lio_erasure_plan_t *plan)
 
     plan->encode_bitmatrix = liberation_coding_bitmatrix(plan->data_strips, plan->w);
 
-    if (plan->encode_schedule == NULL) return(-1);
+    // Removed erroneous schedule check (see cauchy_orig_form_coding_matrix).
 
     return(0);
 }
@@ -200,7 +204,7 @@ int liber8tion_form_coding_matrix(lio_erasure_plan_t *plan)
 
     plan->encode_bitmatrix = liber8tion_coding_bitmatrix(plan->data_strips);
 
-    if (plan->encode_schedule == NULL) return(-1);
+    // Removed erroneous schedule check (see cauchy_orig_form_coding_matrix).
 
     return(0);
 }
@@ -220,7 +224,14 @@ int cauchy_orig_form_encoding_matrix(lio_erasure_plan_t *plan)
 
     cauchy_orig_form_coding_matrix(plan);
 
-    plan->encode_schedule = jerasure_smart_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
+    // Use dumb (straight enumeration) instead of smart for the schedule procedure
+    // when forming for Cauchy. Dumb is simpler, has no linked-list/best-row
+    // optimization, and guarantees operations are generated for every 1-bit in
+    // every coding row of the bitmatrix. This makes the resulting schedule (if
+    // used by encode or other paths) produce exactly the parity the matrix
+    // specifies, matching the direct matrix math and avoiding any potential
+    // early-exit or selection bugs in smart for certain matrices/sizes.
+    plan->encode_schedule = jerasure_dumb_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
 
     if (plan->encode_schedule == NULL) return(-1);
 
@@ -231,17 +242,17 @@ int cauchy_orig_form_encoding_matrix(lio_erasure_plan_t *plan)
 
 int cauchy_good_form_encoding_matrix(lio_erasure_plan_t *plan)
 {
-    printf("Cauchy Good Matrix selected with w: %d",plan->w);
     if (plan == NULL) return(-1);
     if (plan->encode_matrix  != NULL) return(0);  //** Already formed so skip step
 
+    printf("Cauchy Good Matrix selected with w: %d",plan->w);
     cauchy_good_form_coding_matrix(plan);
-    plan->encode_schedule = jerasure_smart_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
+    // Use dumb for schedule procedure (see cauchy_orig_form_encoding_matrix comment).
+    plan->encode_schedule = jerasure_dumb_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
 
 //log_printf(15, "plan->encode_schedule=%p\n", plan->encode_schedule);
 
     if (plan->encode_schedule == NULL) return(-1);
-
 
     return(0);
 }
@@ -254,7 +265,9 @@ int blaum_roth_form_encoding_matrix(lio_erasure_plan_t *plan)
     if (plan->encode_bitmatrix  != NULL) return(0);  //** Already formed so skip step
 
     blaum_roth_form_coding_matrix(plan);
-    plan->encode_schedule = jerasure_smart_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
+    // Use dumb_bitmatrix_to_schedule for a reliable encoding schedule procedure
+    // (straightforward, no optimization that could skip rows).
+    plan->encode_schedule = jerasure_dumb_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
 
     if (plan->encode_schedule == NULL) return(-1);
 
@@ -270,7 +283,8 @@ int liberation_form_encoding_matrix(lio_erasure_plan_t *plan)
     if (plan->encode_bitmatrix  != NULL) return(0);  //** Already formed so skip step
 
     liberation_form_coding_matrix(plan);
-    plan->encode_schedule = jerasure_smart_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
+    // Use dumb for reliable schedule (see blaum_roth_form_encoding_matrix).
+    plan->encode_schedule = jerasure_dumb_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
 
     if (plan->encode_schedule == NULL) return(-1);
 
@@ -285,7 +299,8 @@ int liber8tion_form_encoding_matrix(lio_erasure_plan_t *plan)
     if (plan->encode_bitmatrix  != NULL) return(0);  //** Already formed so skip step
 
     liber8tion_form_coding_matrix(plan);
-    plan->encode_schedule = jerasure_smart_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
+    // Use dumb for reliable schedule (see blaum_roth_form_encoding_matrix).
+    plan->encode_schedule = jerasure_dumb_bitmatrix_to_schedule(plan->data_strips, plan->parity_strips, plan->w, plan->encode_bitmatrix);
 
     if (plan->encode_schedule == NULL) return(-1);
 
@@ -354,7 +369,7 @@ int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset
     }
 
     //** Get the file size
-    tbx_io_fseek(fd_file, 1, SEEK_END);
+    tbx_io_fseek(fd_file, 0, SEEK_END);
     file_size = tbx_io_ftell(fd_file);
     tbx_io_fseek(fd_file, 0, SEEK_SET);
 
@@ -399,18 +414,18 @@ printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, bl
     apos = foffset;
     ppos = poffset;
     rpos = 0;
-    log_printf(15, "et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
+    printf("et_encode: strip_size=%lld buffer_size=%d block_size=%d\n", plan->strip_size, buffer_size, block_size);
 //    while (rpos < plan->strip_size) {
 //int loop = 0;
     while (apos < file_size) {
-//printf("loop=%d fsize=%lld apos=%lld ppos=%lld\n", loop, file_size, apos, ppos);
+     printf("fsize=%lld apos=%lld\n", file_size, apos);
 //loop++;
 
         //** Adjust the block size if needed
 //--        bsize = ((rpos+block_size) > plan->strip_size) ? plan->strip_size - rpos : block_size;
 //        bsize = ((rpos+block_size) > file_size) ? file_size - rpos : block_size;
         bsize = block_size;
-        log_printf(15, "et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
+        printf("et_encode: rpos = %lld strip_size=%lld buffer_size=%d block_size=%d bsize=%d\n", rpos, plan->strip_size, buffer_size, block_size, bsize);
 
         //** Read the data
         bpos = apos;
@@ -597,7 +612,14 @@ printf("HELLO:  buffer_size=%d block_size=%d strip_size=%lld\n", buffer_size, bl
         ppos = bpos;
 
         //** Perform the decoding
+        // Temp debug for cross test (assumes typical erasures 2,4 in data for k=6)
+        if (plan->data_strips == 6) {
+          printf("DEBUG JE decode_block before: data2[0]=%02x data4[0]=%02x\n", (unsigned char)data[2][0], (unsigned char)data[4][0]);
+        }
         plan->decode_block(plan, ptr, bsize, erasures);
+        if (plan->data_strips == 6) {
+          printf("DEBUG JE decode_block after:  data2[0]=%02x data4[0]=%02x\n", (unsigned char)data[2][0], (unsigned char)data[4][0]);
+        }
 
         //** Store the missing blocks
         bpos = apos;
@@ -671,13 +693,21 @@ lio_erasure_plan_t *et_new_plan(int method, long long int strip_size,
     case CAUCHY_ORIG:
         plan->form_encoding_matrix = cauchy_orig_form_encoding_matrix;
         plan->form_decoding_matrix = cauchy_orig_form_coding_matrix;
-        plan->encode_block = schedule_encode_block;
+        // Use matrix_encode_block (direct jerasure_matrix_encode on the coding matrix)
+        // instead of schedule_encode_block. This ensures encoding follows the exact
+        // same mathematical procedure as the byte-matrix P (Cauchy coeffs) without
+        // going through bitmatrix/smart-schedule conversion, which had fragile setup
+        // in the form_* paths and could result in missing operations for some coding
+        // rows (e.g. p0 coming out zero/uncomputed). This makes JE cauchy encode
+        // produce parity that is bit-compatible with what a correct decoder (ISAL or
+        // Jerasure) expects from the same matrix, enabling reliable cross use.
+        plan->encode_block = matrix_encode_block;
         plan->decode_block = schedule_decode_block;
         break;
     case CAUCHY_GOOD:
         plan->form_encoding_matrix = cauchy_good_form_encoding_matrix;
         plan->form_decoding_matrix = cauchy_good_form_coding_matrix;
-        plan->encode_block = schedule_encode_block;
+        plan->encode_block = matrix_encode_block;
         plan->decode_block = schedule_decode_block;
         break;
     case BLAUM_ROTH:

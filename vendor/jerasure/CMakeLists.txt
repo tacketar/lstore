@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 if(DEFINED ENV{JERASURE_CC} )
     message(STATUS "Overriding C compiler since ccache fails for this distro. CMAKE_C_COMPILER=$ENV{JERASURE_CC}")

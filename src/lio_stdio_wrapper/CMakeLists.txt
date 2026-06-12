@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 # Name this project
 set(LSTORE_PROJECT_NAME "lio_stdio_wrapper")

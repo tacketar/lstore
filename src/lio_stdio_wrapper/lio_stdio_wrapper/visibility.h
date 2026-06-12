@@ -1,4 +1,4 @@
-#ifndef LIO_STDIO_WRAPPER_ISIBILITY_H
+#ifndef LIO_STDIO_WRAPPER_VISIBILITY_H
 #define LIO_STDIO_WRAPPER_VISIBILITY_H
 
 // Handle symbol visibility

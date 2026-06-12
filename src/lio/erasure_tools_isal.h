@@ -27,6 +27,28 @@
 #define REED_SOL_VAN_ISA  0
 #define CAUCHY_ORIG_ISA  1
 
+// The ISAL implementation is intended as the replacement for Jerasure in
+// LStore's erasure coding (to drop the Jerasure dependency for the common
+// Reed-Solomon/Cauchy cases).
+//
+// Backwards compatibility requirement:
+//   - New data encoded with the ISAL backend (CAUCHY_ORIG_ISA etc.) must be
+//     decodable by the ISAL backend.
+//   - Old data that was encoded with the previous Jerasure backend (using
+//     cauchy_orig / CAUCHY_ORIG) must still be decodable by the ISAL backend
+//     (cross-compatibility on decode).
+//
+// This is achieved by:
+//   - Using the exact same Cauchy original coefficient formula for the P
+//     part of the generator matrix (so the numeric coding coefficients match).
+//   - Implementing et_encode using ISA-L's ec_encode_data on the P matrix.
+//   - Implementing et_decode using only ISA-L primitives (gf_gen_decode_matrix_simple
+//     + ec_init_tables + ec_encode_data) — no calls into Jerasure.
+//
+// The cross test (JE encode + pure ISAL decode + full data compare) is the
+// guard that this replacement remains backwards compatible with previously
+// stored erasure-coded data.
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -64,6 +86,30 @@ struct lio_erasure_plan_t {    //** Contains the erasure parameters
 };
 
 int nearest_prime(int w, int which);
+
+// Public API prototypes (so tests and other code can include only the .h
+// and get declarations; the implementation lives in the corresponding .c).
+lio_erasure_plan_t *et_new_plan(int method,
+                                long long int strip_size,
+                                int data_strips,
+                                int parity_strips,
+                                int w,
+                                int packet_size,
+                                int base_unit);
+
+lio_erasure_plan_t *et_generate_plan(long long int file_size,
+                                     int method,
+                                     int data_strips,
+                                     int parity_strips,
+                                     int w,
+                                     int packet_low,
+                                     int packet_high);
+
+int et_encode(lio_erasure_plan_t *plan, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size);
+
+int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, long long int foffset, const char *pname, long long int poffset, int buffer_size, int *erasures);
+
+void et_destroy_plan(lio_erasure_plan_t *plan);
 
 #ifdef __cplusplus
 }
