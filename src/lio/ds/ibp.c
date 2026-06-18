@@ -1009,6 +1009,7 @@ void ds_ibp_print_running_config(lio_data_service_fn_t *dsf, FILE *fd, int print
     if (print_section_heading) fprintf(fd, "[%s]\n", ds->section);
     fprintf(fd, "type = %s\n", DS_TYPE_IBP);
     fprintf(fd, "duration = %d # seconds\n", ds->attr_default.attr.duration);
+    fprintf(fd, "ignore_remove = %d # If 1 then remove allocation operations are ignored\n", ds->ignore_remove);
     fprintf(fd, "warm_interval = %d #seconds\n", ds->warm_interval);
     fprintf(fd, "warm_duration = %d #seconds\n", ds->warm_duration);
     fprintf(fd, "chksum_type = %d\n", ds->attr_default.disk_cs_type);
