@@ -1,3 +1,18 @@
+
+lstore (2.6.0) stable; urgency=medium
+  * Update bind mount tooling for LFS
+  * Convert all internal malloc/free calls to using TBX variants
+  * Add internal memory tracking. Enabled via -DENABLE_TBX_TYPE_MALLOC_PROFILE=on for CMake
+  * Switch to using wrapped apr_pool create and destroy routines to make it easy to switch to using
+    unmanaged pools.  This change alone seems to have fixed the memroy growth issue.
+  * Switch to useing a separate APR pool for each depot connection vs a common.  This also seems to have fixed 
+    a randomly occuring apr_pool_destroy() issue that would get stuck in a loop
+  * Fix segfault when encountering mangled exnodes and also print the fname to stderr and other logs
+  * Switch to using 64-bit MQ IDs
+  * Lots of other changes...
+
+ -- Alan Tackett <alan@atackett.com>  Th Jun 18 2026 09:23 -0600
+
 lstore (2.5.4) stable; urgency=medium
   * Rearrange the collision check to work with the remote client resource service which uses it's own MQ IDs
 
