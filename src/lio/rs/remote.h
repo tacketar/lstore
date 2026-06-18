@@ -63,7 +63,6 @@ struct lio_rs_remote_client_priv_t {
     lio_rs_mapping_notify_t version;
     uint64_t update_id;
     int shutdown;
-    int dynamic_mapping;
     int unique_rids;
     int check_interval;
     int delete_target;

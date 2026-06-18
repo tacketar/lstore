@@ -58,7 +58,6 @@ static lio_rs_remote_client_priv_t rsrc_default_options = {
     .section = "rs_remote_client",
     .child_target_file = "/lio/cfg/rid-client.cfg",
     .host_remote_rs = "${rsrc_host}",
-    .dynamic_mapping = 0,
     .check_interval = 3600,
     .local_child_section = "rs_simple",
     .delete_target = 1
@@ -475,7 +474,6 @@ void rsrc_print_running_config(lio_resource_service_fn_t *rs, FILE *fd, int prin
     fprintf(fd, "type = %s\n", RS_TYPE_REMOTE_CLIENT);
     fprintf(fd, "child_fname = %s\n", rsrc->child_target_file);
     fprintf(fd, "remote_address = %s\n", rsrc->host_remote_rs);
-    fprintf(fd, "dynamic_mapping = %d\n", rsrc->dynamic_mapping);
     fprintf(fd, "delete_child_fname = %d  #Remove the child RID file on completeion\n", rsrc->delete_target);
     fprintf(fd, "check_interval = %d #seconds\n", rsrc->check_interval);
     fprintf(fd, "rs_local = %s\n", rsrc->local_child_section);
@@ -553,7 +551,6 @@ lio_resource_service_fn_t *rs_remote_client_create(void *arg, tbx_inip_file_t *f
     //** Now get the other params
     rsrc->child_target_file = tbx_inip_get_string(fd, section, "child_fname", rsrc_default_options.child_target_file);
     rsrc->host_remote_rs = tbx_inip_get_string(fd, section, "remote_address", rsrc_default_options.host_remote_rs);
-    rsrc->dynamic_mapping = tbx_inip_get_integer(fd, section, "dynamic_mapping", rsrc_default_options.dynamic_mapping);
     rsrc->delete_target = tbx_inip_get_integer(fd, section, "delete_child_fname", rsrc_default_options.delete_target);
     rsrc->check_interval = tbx_inip_get_integer(fd, section, "check_interval", rsrc_default_options.check_interval);
 
