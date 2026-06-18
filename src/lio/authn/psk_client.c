@@ -251,11 +251,19 @@ void psk_exchange(lio_authn_t *an, lio_creds_t *c, char *key)
 }
 
 //***********************************************************************
-// _get_psk - Get's the PSK. The format for the PSK file is
+// _get_psk - Get's the PSK. The format for the PSK file is:
 //
-// [psk]
-// account=<account>
+// [default]
+// account = <account-NAME>
+//
+// [account-NAME]
+// user=<user>
 // key=<psk_key>
+//
+//  The default section will be used if no user has been specified.
+//  The account name and user name can be the same.  Only the account name
+//  is used for searching.  If no user is specified in the account secion then the section
+//  name is used.  Multipel account sections are supported
 //
 //***********************************************************************
 
