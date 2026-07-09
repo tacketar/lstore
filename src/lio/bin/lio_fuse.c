@@ -65,7 +65,7 @@ err_out3:
 err_out2:
     fuse_session_destroy(se);
 err_out1:
-    tbx_free(opts.mountpoint);
+    free(opts.mountpoint);
     fuse_opt_free_args(&args);
 
 	return(err);

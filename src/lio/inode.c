@@ -484,7 +484,7 @@ int os_inode_shard_get(os_inode_shard_t *s, ex_id_t inode, ex_id_t *parent_inode
     *len = r->dentry.len;
     if (dentry) *dentry = tbx_stk_strdup(r->dentry.dentry);
 
-    tbx_free(buf);
+    free(buf);
 
     return(0);
 }
