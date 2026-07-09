@@ -156,35 +156,39 @@ int ll_inode2path_from_os(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int
 
 //********************************************************
 // ll_inode2path - Converts the inode to a path
+//    On error -ENOENT is returned otrherwise 0 is returned
+//    signifying a match. *foce_os is updated if the match came from cache instead of the OS
 //********************************************************
 
-int ll_inode2path(lio_fuse_t *lfs, ex_id_t ino, char *fname, int *ftype, int force_os)
+int ll_inode2path(lio_fuse_t *lfs, ex_id_t ino, char *fname, int *ftype, int *force_os)
 {
-    if (force_os) {
+    if (*force_os) {
         if (ll_inode2path_from_os(lfs, ino, fname, ftype) != 0) {
             return(-ENOENT);
         }
     } else if (ll_inode2path_from_ilut(lfs, ino, fname, ftype) != 0) {
+        *force_os = 1;
         if (ll_inode2path_from_os(lfs, ino, fname, ftype) != 0) {
             return(-ENOENT);
         }
     }
 
-    return(0);
+    return(0);  //** Match from cache
 }
 
 //********************************************************
 // ll_new_object_prep - Does the preamble lookup for creating a new object
 //********************************************************
 
-int ll_new_object_prep(lio_fuse_t *lfs, fuse_ino_t parent, const char *name, char *path, int force_os)
+int ll_new_object_prep(lio_fuse_t *lfs, fuse_ino_t parent, const char *name, char *path, int *force_os)
 {
     int len, ftype;
 
     //** See if we have a valid parent
     if (ll_inode2path(lfs, parent, path, &ftype, force_os) != 0) {
-        if (force_os == 0) { //** Let's retry but force the data from the LServer
-            if (ll_inode2path(lfs, parent, path, &ftype, 1) != 0) {
+        if (*force_os == 0) { //** Let's retry but force the data from the LServer
+            *force_os = 1;
+            if (ll_inode2path(lfs, parent, path, &ftype, force_os) != 0) {
                 return(1);
             }
         }
@@ -205,7 +209,7 @@ int ll_new_object_prep(lio_fuse_t *lfs, fuse_ino_t parent, const char *name, cha
 //   and returns the path along with the child inode
 //********************************************************
 
-int ll_inode2path_dentry(lio_fuse_t *lfs, lio_os_authz_local_t *ug, fuse_ino_t parent, const char *name, char *path, ex_id_t *inode, int *ftype, int force_os)
+int ll_inode2path_dentry(lio_fuse_t *lfs, lio_os_authz_local_t *ug, fuse_ino_t parent, const char *name, char *path, ex_id_t *inode, int *ftype, int *force_os)
 {
     struct fuse_entry_param fe;
     int err, len;
@@ -239,7 +243,7 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
     lio_os_authz_local_t ug;
     struct fuse_entry_param fe;
     ex_id_t hparent;
-    int err, len, ftype, hftype, hlen;
+    int err, len, ftype, hftype, hlen, force_os;
     char fname[OS_PATH_MAX];
     char *hde;
 
@@ -266,7 +270,8 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
 
     //** If  we have a hardlink sanity check the preferred dentry still exists
     if (ftype & OS_OBJECT_HARDLINK_FLAG) {
-        if (ll_inode2path(lfs, fe.attr.st_ino, fname, &hftype, 0) == 0) {  //** This generates the primary hardlink path
+        force_os = 0;
+        if (ll_inode2path(lfs, fe.attr.st_ino, fname, &hftype, &force_os) == 0) {  //** This generates the primary hardlink path
             if (lio_fs_exists(lfs->fs, fname) != 0) goto hl_exists;
         }
 
@@ -302,13 +307,15 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     char path[OS_PATH_MAX];
     lio_os_authz_local_t ug;
     struct fuse_entry_param fe;
-    int err, ftype;
+    int err, ftype, force_os;
     char *ptr;
+
+    force_os = 0;
 
     //** See if we have a valid parent
     if ((strcmp(".", name) == 0) || (strcmp("..", name) == 0)) goto direct_lookup;
 
-    if (ll_new_object_prep(lfs, parent, name, path, 0) != 0) {
+    if (ll_new_object_prep(lfs, parent, name, path, &force_os) != 0) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -318,7 +325,7 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 
 direct_lookup:
     //** If we made it here we are doing a direct lookup so we need to get the path and then split it
-    if (ll_inode2path(lfs, parent, path, &ftype, 0) != 0) {
+    if ((ll_inode2path(lfs, parent, path, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -337,6 +344,7 @@ direct_lookup:
     err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), path, &(fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
     _lfs_hint_release(lfs, &ug);
     if (err != 0) {
+        if (force_os == 0) { force_os = 1; goto direct_lookup; };
         fuse_reply_err(req, -err);
         return;
     }
@@ -386,7 +394,7 @@ void ll_stat(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
     } else { //** Got to do an inode lookup
         //** See if we have a valid inode
 retry:
-        if (ll_inode2path(lfs, ino, path, &ftype, force_os) != 0) {
+        if ((ll_inode2path(lfs, ino, path, &ftype, &force_os) != 0) && (force_os == 1)) {
             fuse_reply_err(req, ENOENT);
             return;
         }
@@ -427,7 +435,7 @@ void ll_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr, int to_set, s
     } else {
         //** See if we have a valid inode
 retry:
-        if (ll_inode2path(lfs, ino, path, &ftype, force_os) != 0) {
+        if ((ll_inode2path(lfs, ino, path, &ftype, &force_os) != 0) && (force_os == 1)) {
             fuse_reply_err(req, ENOENT);
             return;
         }
@@ -484,7 +492,7 @@ void ll_listxattr(fuse_req_t req, fuse_ino_t ino,  size_t size)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, fname, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -537,7 +545,7 @@ void ll_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, fname, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -585,7 +593,7 @@ void ll_setxattr(fuse_req_t req, fuse_ino_t ino, const char *name, const char *v
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, fname, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -612,7 +620,7 @@ void ll_removexattr(fuse_req_t req, fuse_ino_t ino, const char *name)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, fname, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -640,7 +648,7 @@ void ll_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, fname, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, fname, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -806,7 +814,7 @@ void ll_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode)
 
     //** See if we have a valid parent
 retry:
-    if (ll_new_object_prep(lfs, parent, name, path, force_os) != 0) {
+    if ((ll_new_object_prep(lfs, parent, name, path, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -837,7 +845,7 @@ void ll_mknod(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode, 
 
     //** See if we have a valid parent
 retry:
-    if (ll_new_object_prep(lfs, parent, name, path, force_os) != 0) {
+    if ((ll_new_object_prep(lfs, parent, name, path, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -870,7 +878,7 @@ void ll_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char 
 
     //** See if we have a valid parent
 retry:
-    if (ll_new_object_prep(lfs, parent, newname, path, force_os) != 0) {
+    if ((ll_new_object_prep(lfs, parent, newname, path, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -911,16 +919,17 @@ void ll_hardlink(fuse_req_t req, fuse_ino_t ino, fuse_ino_t newparent, const cha
     char newpath[OS_PATH_MAX];
     lio_os_authz_local_t ug;
     int force_os = 0;
+    int force_old_os = 0;
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, oldpath, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, oldpath, &ftype, &force_old_os) != 0) && (force_old_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
 
     //** See if we have a valid parent
-    if (ll_new_object_prep(lfs, newparent, newname, newpath, force_os) != 0) {
+    if ((ll_new_object_prep(lfs, newparent, newname, newpath, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -929,7 +938,7 @@ retry:
     _lfs_hint_release(lfs, &ug);
 
     if (err != 0) {  //** Kick out on error
-        if (force_os == 0) { force_os = 1; goto retry; }
+        if ((force_os == 0) || (force_old_os == 0)) { force_old_os = 1; force_os = 1; goto retry; }
         fuse_reply_err(req, -err);
         return;
     }
@@ -954,7 +963,7 @@ void ll_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
 
     //** See if we have a valid object
 retry:
-    if (ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, fname, &inode, &ftype, force_os) != 0) {
+    if ((ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, fname, &inode, &ftype, &force_os) != 0) && (force_os == 1)) {
         _lfs_hint_release(lfs, &ug);
         fuse_reply_err(req, ENOENT);
         return;
@@ -994,7 +1003,7 @@ void ll_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
 
     //** See if we have a valid object
 retry:
-    if (ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, fname, &inode, &ftype, force_os) != 0) {
+    if ((ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, fname, &inode, &ftype, &force_os) != 0) && (force_os == 1)) {
         _lfs_hint_release(lfs, &ug);
         fuse_reply_err(req, ENOENT);
         return;
@@ -1029,14 +1038,14 @@ void ll_rename(fuse_req_t req, fuse_ino_t parent, const char *name, fuse_ino_t n
 
     //** See if we have a valid object
 retry:
-    if (ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, oldpath, &inode, &ftype, force_os) != 0) {
+    if ((ll_inode2path_dentry(lfs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), parent, name, oldpath, &inode, &ftype, &force_os) != 0) && (force_os == 1)) {
         _lfs_hint_release(lfs, &ug);
         fuse_reply_err(req, ENOENT);
         return;
     }
 
     //** See if we have a valid parent
-    if (ll_new_object_prep(lfs, newparent, newname, newpath, force_os) != 0) {
+    if (ll_new_object_prep(lfs, newparent, newname, newpath, &force_os) != 0) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -1075,7 +1084,7 @@ void ll_readlink(fuse_req_t req, fuse_ino_t ino)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, path, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, path, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -1138,7 +1147,7 @@ void ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 
     //** See if we have a valid inode
 retry:
-    if (ll_inode2path(lfs, ino, path, &ftype, force_os) != 0) {
+    if ((ll_inode2path(lfs, ino, path, &ftype, &force_os) != 0) && (force_os == 1)) {
         fuse_reply_err(req, ENOENT);
         return;
     }
