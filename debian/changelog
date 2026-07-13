@@ -1,3 +1,8 @@
+lstore (2.6.1) stable; urgency=medium
+  * Fix retry logic to detect stale cached inode information.  Only impacts using the low-level FUSE API.
+  * Switch some tbx_free calls back to using stock free.
+
+ -- Alan Tackett <alan@atackett.com>  Mon Jul 13 2026 09:10 -0600
 
 lstore (2.6.0) stable; urgency=medium
   * Update bind mount tooling for LFS
