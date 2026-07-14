@@ -238,7 +238,6 @@ char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 #define FS_SLOT_FREAD_BYTES  23
 #define FS_SLOT_FWRITE_BYTES 24
 #define FS_SLOT_IO_DT        25
-#define FS_SLOT_PRINT        25
 #define FS_SLOT_SIZE         26
 
 static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "BG_READDIR", "STAT", "FLOCK", "MKDIR", "RMDIR", "RENAME",
@@ -3211,9 +3210,7 @@ int lio_fs_statfs(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, str
 void lio_fs_info_fn(void *arg, FILE *fd)
 {
     lio_fs_t *fs = arg;
-    int i;
-    ex_off_t submitted, finished;
-    char ppbuf1[100], ppbuf2[100];
+    char ppbuf1[100];
 
     fprintf(fd, "---------------------------------- FS config start --------------------------------------------\n");
     fprintf(fd, "[%s]\n", fs->fs_section);
@@ -3240,13 +3237,7 @@ void lio_fs_info_fn(void *arg, FILE *fd)
 
     fprintf(fd, "\n");
     fprintf(fd, "# FS Op stats ------------------------\n");
-    tbx_stats_printf(fd, fs->stats.op, _fs_stat_name, FS_SLOT_PRINT);
-
-    //** This is the times
-    i = FS_SLOT_IO_DT;
-    submitted = TBX_STATS_GET(fs->stats.op[i].submitted);
-    finished = TBX_STATS_GET(fs->stats.op[i].finished);
-    fprintf(fd, "    %34s:  READ=%s  WRITE=%s\n", _fs_stat_name[i], tbx_stk_pretty_print_time(submitted, 1, ppbuf1), tbx_stk_pretty_print_time(finished, 1, ppbuf2));
+    tbx_stats_printf(fd, fs->stats.op, _fs_stat_name, FS_SLOT_SIZE);
     fprintf(fd, "\n");
 
     //** Print the AuthZ configuration
@@ -3271,6 +3262,12 @@ lio_fs_t *lio_fs_create(tbx_inip_file_t *fd, const char *fs_section, lio_config_
     int i, n, err;
 
     tbx_type_malloc_clear(fs, lio_fs_t, 1);
+
+    //** Configure the stats for logging
+    for (i=0; i<FS_SLOT_SIZE; i++) {
+        fs->stats.op[i].type = TBX_STATS_TYPE_COUNT;
+    }
+    fs->stats.op[FS_SLOT_IO_DT].type = TBX_STATS_TYPE_TIME_2;
 
     fs->lc = (lc) ? lc : lio_gc;
     fs->fs_section = (fs_section) ? tbx_stk_strdup(fs_section) : tbx_stk_strdup("fs");
@@ -3385,7 +3382,6 @@ void lio_fs_destroy(lio_fs_t *fs)
     for (hi=apr_hash_first(fs->mpool, fs->open_files); hi; hi = apr_hash_next(hi)) {
         apr_hash_this(hi, NULL, NULL, (void **)&fop);
         log_printf(0, "ERROR: LFS_OPEN_FILE: fname=%s sid= " XIDT " ref=%d remove=%d\n", fop->fname, fop->sid, fop->ref_count, fop->remove_on_close);
-//        lio_fs_close(fs, fop->fd);
         tbx_free(fop->fname);
         tbx_free(fop);
     }
