@@ -303,7 +303,7 @@ int read_allocate(ibp_task_t *task, char **bstate)
     if (len == 0) {
         log_printf(1, "read_allocate: Bad size : " I64T "\n", len);
         send_cmd_result(task, IBP_E_INVALID_PARAMETER);
-        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad size=%d", cmd->name, len);
+        tbx_monitor_obj_create(&(task->mo), "[%s] PARSE_ERROR: Bad size=I64T", cmd->name, len);
         tbx_monitor_obj_destroy(&(task->mo));
         return (-1);
     }

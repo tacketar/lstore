@@ -603,7 +603,7 @@ int va_inode_get_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
     n = osf_resolve_attr_path(os, fd->attr_dir, fname, fd->object_name, "system.inode", fd->ftype, atype, 20);
     if (n != 0) {
         log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, fd->opath, "system.inode");
-        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", atype);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", *atype);
         return(1);
     }
 
@@ -676,7 +676,7 @@ int va_inode_set_attr(lio_os_virtual_attr_t *va, lio_object_service_fn_t *os, li
     n = osf_resolve_attr_path(os, fd->attr_dir, fname, fd->object_name, "system.inode", fd->ftype, atype, 20);
     if (n != 0) {
         log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, fd->opath, "system.inode");
-        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", atype);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", fd->opath, "system.inode", *atype);
         return(1);
     }
 
@@ -6072,7 +6072,7 @@ int osf_set_attr(lio_object_service_fn_t *os, lio_creds_t *creds, osfile_fd_t *o
     n = osf_resolve_attr_path(os, ofd->attr_dir, fname, ofd->object_name, attr, ofd->ftype, atype, 20);
     if (n != 0) {
         log_printf(15, "ERROR resolving path: fname=%s object_name=%s attr=%s\n", fname, ofd->opath, attr);
-        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", ofd->opath, attr, atype);
+        notify_printf(osf->olog, 1, NULL, "ERROR: OSF_SET_ATTR Unable to resolve attr_path fname=%s attr=%s atype=%d\n", ofd->opath, attr, *atype);
         return(1);
     }
 
@@ -7796,8 +7796,8 @@ ex_off_t copy_dir(lio_object_service_fn_t *os, const char *src_path, const char 
         if (err != 0) {
             err = errno;
             log_printf(0, "ERROR creating rename dest directory! src=%s dest=%s errno=%d\n", src_path, dest_path, err);
-            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE copy_dir error creating rename dest dir errno=%d\n", src_path, dest_path, err);
-            tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir error creating rename dest dir errno=%d\n", src_path, dest_path, err);
+            notify_printf(osf->olog, 1, NULL, "ERROR: REBALANCE copy_dir error creating rename dest dir src=%s dest=%s errno=%d\n", src_path, dest_path, err);
+            tbx_notify_printf(osf->rebalance_log, 1, "", "ERROR: copy_dir error creating rename dest dir src=%s dest=%s errno=%d\n", src_path, dest_path, err);
             total = -1;
             tbx_io_closedir(dirfd);
             goto finished;

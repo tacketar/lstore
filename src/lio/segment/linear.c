@@ -1402,7 +1402,7 @@ int seglin_serialize_text(lio_segment_t *seg, lio_exnode_exchange_t *exp)
     tbx_append_printf(segbuf, &sused, bufsize, "max_size=" XOT "\n", s->total_size);
     tbx_append_printf(segbuf, &sused, bufsize, "used_size=" XOT "\n", s->used_size);
     tbx_append_printf(segbuf, &sused, bufsize, "stripe_size=" XOT "\n", s->stripe_size);
-    tbx_append_printf(segbuf, &sused, bufsize, "write_errors=" XOT "\n", s->write_errors);
+    tbx_append_printf(segbuf, &sused, bufsize, "write_errors=%d\n", s->write_errors);
 
     //** Add the encryption stuff if enabled
     if (s->crypt_enabled > 0) {
@@ -1466,18 +1466,12 @@ int seglin_serialize(lio_segment_t *seg, lio_exnode_exchange_t *exp)
 int seglin_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
 {
     seglin_priv_t *s = (seglin_priv_t *)seg->priv;
-    ex_id_t n;
 
     tbx_append_printf(buffer, used, bufsize, "linear(\n");
     tbx_append_printf(buffer, used, bufsize, "    n_rid_default=%d\n", s->n_rid_default);
     tbx_append_printf(buffer, used, bufsize, "    stripe_size=" XOT "\n", s->stripe_size);
     if (s->crypt_enabled > 0) {
-        if (s->crypt_enabled == 1) {
-            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", s->crypt_enabled);
-        } else {
-            tbx_random_get_bytes(&n, sizeof(ex_id_t));
-            tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XIDT " # Generate new keys if copied\n", n);
-        }
+        tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=%d\n", s->crypt_enabled);
     }
     tbx_append_printf(buffer, used, bufsize, ")\n");
 

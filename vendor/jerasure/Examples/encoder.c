@@ -365,13 +365,13 @@ int main (int argc, char **argv) {
 	/* Find new size by determining next closest multiple */
 	if (packetsize != 0) {
 		if (size%(k*w*packetsize*sizeof(int)) != 0) {
-			while (newsize%(k*w*packetsize*sizeof(int)) != 0) 
+			while (newsize%(k*w*packetsize*(int)sizeof(int)) != 0) 
 				newsize++;
 		}
 	}
 	else {
-		if (size%(k*w*sizeof(int)) != 0) {
-			while (newsize%(k*w*sizeof(int)) != 0) 
+		if (size%(k*w*(int)sizeof(int)) != 0) {
+			while (newsize%(k*w*(int)sizeof(int)) != 0) 
 				newsize++;
 		}
 	}

@@ -277,7 +277,7 @@ int main (int argc, char **argv) {
 					err = fread(data[i-1], sizeof(char), blocksize, fp);
 				}
 				else {
-					fseek(fp, blocksize*(n-1), SEEK_SET); 
+					fseek(fp, (long)blocksize*(n-1), SEEK_SET); 
 					err = fread(data[i-1], sizeof(char), buffersize/k, fp);
 				}
 				fclose(fp);
@@ -300,7 +300,7 @@ int main (int argc, char **argv) {
 					err = fread(coding[i-1], sizeof(char), blocksize, fp);
 				}
 				else {
-					fseek(fp, blocksize*(n-1), SEEK_SET);
+					fseek(fp, (long)blocksize*(n-1), SEEK_SET);
 					err = fread(coding[i-1], sizeof(char), blocksize, fp);
 				}
 				fclose(fp);

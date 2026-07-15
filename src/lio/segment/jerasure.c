@@ -515,7 +515,7 @@ retry:
             if (good_magic == 0) {
                 j=0;  //** See if the data is non-zero
                 for (k=0; k < s->n_devs; k++) {
-                   if (sj_nonzero(&buffer[boff + k*s->chunk_size_with_magic + JE_MAGIC_SIZE], s->chunk_size) != 0) {
+                   if (sj_nonzero(&buffer[boff + (ex_off_t)k*s->chunk_size_with_magic + JE_MAGIC_SIZE], s->chunk_size) != 0) {
                       j = 1;
                       break;
                    }
@@ -569,7 +569,7 @@ retry:
             } else {  //** Either all the data is good or we have a have a few bad blocks
                 //** Make the decoding structure
                 for (k=0; k < s->n_devs; k++) {
-                    ptr[k] = &(buffer[boff + JE_MAGIC_SIZE + k*s->chunk_size_with_magic]);
+                    ptr[k] = &(buffer[boff + JE_MAGIC_SIZE + (ex_off_t)k*s->chunk_size_with_magic]);
                 }
 
                 //** Mark the missing/bad blocks
@@ -630,16 +630,16 @@ retry:
                     }
                     for (k=0; k< s->n_devs; k++) {  //** Store the updated data back in the buffer with consistent magic
                         if ((badmap[k] == 1) || (s->magic_cksum == 0)) {
-                            memcpy(&(buffer[boff + k*s->chunk_size_with_magic]), stripe_magic, JE_MAGIC_SIZE);
+                            memcpy(&(buffer[boff + (ex_off_t)k*s->chunk_size_with_magic]), stripe_magic, JE_MAGIC_SIZE);
                             if (eptr[k] != ptr[k]) memcpy(ptr[k], eptr[k], s->chunk_size);  //** Need to copy the data/parity back to the buffer
 
                             if (s->magic_cksum != 0) {  //** If no adler32's for the magic we have to dump everything
-                                ex_iov[n_iov].offset = ex_read.offset + i*s->stripe_size_with_magic + k*s->chunk_size_with_magic;
+                                ex_iov[n_iov].offset = ex_read.offset + (ex_off_t)i*s->stripe_size_with_magic + (ex_off_t)k*s->chunk_size_with_magic;
 
                                 log_printf(0, "offset=" XOT " k=%d n_iov=%d max_iov=%d\n", ex_iov[n_iov].offset, k, n_iov, max_iov);
                                 ex_iov[n_iov].len = s->chunk_size_with_magic;
                                 iov[n_iov].iov_base = &(buffer[boff + k*s->chunk_size_with_magic]);
-                                log_printf(0, "memcmp=%d\n", memcmp(iov[n_iov].iov_base, &(buffer[boff + index*s->chunk_size_with_magic]), JE_MAGIC_SIZE));
+                                log_printf(0, "memcmp=%d\n", memcmp(iov[n_iov].iov_base, &(buffer[boff + (ex_off_t)index*s->chunk_size_with_magic]), JE_MAGIC_SIZE));
                                 iov[n_iov].iov_len = ex_iov[n_iov].len;
                                 nbytes += ex_iov[n_iov].len;
                                 n_iov++;

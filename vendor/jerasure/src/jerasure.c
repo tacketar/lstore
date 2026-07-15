@@ -827,7 +827,7 @@ static int **jerasure_generate_decoding_schedule(int k, int m, int w, int *bitma
   int *ptr;
   int *row_ids;
   int *ind_to_row;
-  int ddf, cdf;
+  int ddf, cdf, len;
   int **schedule;
   int *b1, *b2;
  
@@ -839,13 +839,13 @@ static int **jerasure_generate_decoding_schedule(int k, int m, int w, int *bitma
   for (i = 0; erasures[i] != -1; i++) {
     if (erasures[i] < k) ddf++; else cdf++;
   }
-  
+
   row_ids = talloc(int, k+m);
   ind_to_row = talloc(int, k+m);
 
   if (set_up_ids_for_scheduled_decoding(k, m, erasures, row_ids, ind_to_row) < 0) return NULL;
 
-  /* Now, we're going to create one decoding matrix which is going to 
+  /* Now, we're going to create one decoding matrix which is going to
      decode everything with one call.  The hope is that the scheduler
      will do a good job.    This matrix has w*e rows, where e is the
      number of erasures (ddf+cdf) */
@@ -857,17 +857,19 @@ static int **jerasure_generate_decoding_schedule(int k, int m, int w, int *bitma
      matrix inversion */
 
   if (ddf > 0) {
-    
+
     decoding_matrix = talloc(int, k*k*w*w);
     ptr = decoding_matrix;
     for (i = 0; i < k; i++) {
       if (row_ids[i] == i) {
-        bzero(ptr, k*w*w*sizeof(int));
+        len = k*w*w*sizeof(int)
+        bzero(ptr, len);
         for (x = 0; x < w; x++) {
           ptr[x+i*w+x*k*w] = 1;
-        } 
+        }
       } else {
-        memcpy(ptr, bitmatrix+k*w*w*(row_ids[i]-k), k*w*w*sizeof(int));
+        len = k*w*w*sizeof(int);
+        memcpy(ptr, bitmatrix+k*w*w*(row_ids[i]-k), len);
       }
       ptr += (k*w*w);
     }

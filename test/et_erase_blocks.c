@@ -100,7 +100,7 @@ printf("n_data=%d strip_size=%lld row_data_size=%d\n", n_data, strip_size, row_d
   for (j=0; j<n_missing; j++) {
      row = atoi(argv[i]); i++;
      dev = atoi(argv[i]); i++;
-     bpos = file_offset + row*row_data_size + (dev-1)*strip_size;
+     bpos = file_offset + (long long int)row*row_data_size + (dev-1)*strip_size;
      nbytes = ((bpos + strip_size) > file_size) ? file_size - bpos : strip_size;
      printf("Data: row=%d dev=%d bpos=%lld nbytes=%d fstart=%lld fsize=%lld\n", row, dev, bpos, nbytes, file_offset, file_size);
      wipe_block(fname, bpos, nbytes);
@@ -110,7 +110,7 @@ printf("n_data=%d strip_size=%lld row_data_size=%d\n", n_data, strip_size, row_d
   for (j=0; j<n_missing; j++) {
      row = atoi(argv[i]); i++;
      dev = atoi(argv[i]); i++;
-     bpos = poffset + row*row_parity_size + (dev-1)*strip_size;
+     bpos = poffset + (long long int)row*row_parity_size + (dev-1)*strip_size;
      printf("Parity: row=%d dev=%d bpos=%lld pstart=%lld\n", row, dev, bpos, poffset);
      wipe_block(pname, bpos, strip_size);
   }

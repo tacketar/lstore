@@ -1440,7 +1440,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
         log_printf(0, "ERROR: No default segment!  Aborting! fname=%s\n", fd->path);
         fprintf(stderr, "ERROR: No default segment!  Aborting! fname=%s\n", fd->path); fflush(stderr);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
-        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%d STATUS=EIO\n", op->path, fd->id, op->mode);
+        notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s mode=%ld STATUS=EIO\n", op->path, fd->id, op->mode);
         goto cleanup;
     }
 

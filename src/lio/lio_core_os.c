@@ -807,7 +807,7 @@ gop_op_status_t lio_remove_regex_object_fn(void *arg, int id)
     it = os_create_object_iter_alist(op->lc->os, op->creds, op->rpath, op->robj, op->obj_types, op->recurse_depth, key, (void **)&ex, v_size, 1);
     if (it == NULL) {
         log_printf(0, "ERROR: Failed with object_iter creation\n");
-        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_remove_regex_object_fn - Failed with object_iter creation. rpath=%s\n", op->rpath);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_remove_regex_object_fn - Failed with object_iter creation\n");
         return(gop_failure_status);
     }
 
@@ -1473,7 +1473,7 @@ gop_op_status_t lio_multiple_setattr_op_fn(void *arg, int id)
     status.error_code = err;
     status.op_status = (err == 0) ? OP_STATE_SUCCESS : OP_STATE_FAILURE;
     if (err != 0) {
-        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_multiple_setattr_op_fn - fname=%s n_keys=%s\n", op->path, op->n_keys);
+        notify_printf(op->lc->notify, 1, op->creds, "ERROR: lio_multiple_setattr_op_fn - fname=%s n_keys=%d\n", op->path, op->n_keys);
     }
 
     return(status);
