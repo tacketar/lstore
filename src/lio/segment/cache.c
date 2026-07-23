@@ -4456,7 +4456,7 @@ int lio_cache_stats_get_print(lio_cache_stats_get_t *cs, char *buffer, int *used
     dt = dt / (1.0*APR_USEC_PER_SEC);
     drate = cs->miss_bytes * 1.0 / dt;
     d2 = (d1 > 0) ? (100.0*cs->miss_bytes) / d1 : 0;
-    n += tbx_append_printf(buffer, used, nmax, "Misses: " XOT " bytes (%s) (%lf%% total) (%lf sec %lf MB/s)\n", cs->miss_bytes, tbx_stk_pretty_print_double_with_scale(1024, 1.0l*cs->miss_bytes, ppbuf), d2, dt, tbx_stk_pretty_print_double_with_scale(1024, drate, ppbuf2));
+    n += tbx_append_printf(buffer, used, nmax, "Misses: " XOT " bytes (%s) (%lf%% total) (%lf sec %s/s)\n", cs->miss_bytes, tbx_stk_pretty_print_double_with_scale(1024, 1.0l*cs->miss_bytes, ppbuf), d2, dt, tbx_stk_pretty_print_double_with_scale(1024, drate, ppbuf2));
 
     n += tbx_append_printf(buffer, used, nmax, "Dirty: " XOT " bytes (%s)\n", cs->dirty_bytes, tbx_stk_pretty_print_double_with_scale(1024, 1.0l*cs->dirty_bytes, ppbuf));
 

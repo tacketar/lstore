@@ -1067,7 +1067,7 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
     tbx_append_printf(buffer, used, nbytes, "chksum_blocksize_kb = " I64T "\n", n);
 
     n = apr_time_sec(res->cache_expire);
-    tbx_append_printf(buffer, used, nbytes, "n_cache = " I64T "\n", res->n_cache);
+    tbx_append_printf(buffer, used, nbytes, "n_cache = %d\n", res->n_cache);
     tbx_append_printf(buffer, used, nbytes, "cache_expire = %d\n", n);
 
     tbx_append_printf(buffer, used, nbytes, "\n");
@@ -2351,7 +2351,7 @@ int get_next_walk_expire_iterator(walk_expire_iterator_t *wei, int direction, Al
     if (direction == DBR_PREV)
         dir = -1;
 
-    dt = dir * (wei->hard_a.expiration - wei->soft_a.expiration);
+    dt = (int64_t)dir * (int64_t)(wei->hard_a.expiration - wei->soft_a.expiration);
     if (dt > 0) {               //** hard > soft so return the soft one
         *a = wei->soft_a;
         err = db_iterator_next(wei->soft, direction, &(wei->soft_a));

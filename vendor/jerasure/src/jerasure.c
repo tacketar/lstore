@@ -827,10 +827,11 @@ static int **jerasure_generate_decoding_schedule(int k, int m, int w, int *bitma
   int *ptr;
   int *row_ids;
   int *ind_to_row;
-  int ddf, cdf, len;
+  int ddf, cdf;
   int **schedule;
   int *b1, *b2;
- 
+  size_t len;
+
  /* First, figure out the number of data drives that have failed, and the
     number of coding drives that have failed: ddf and cdf */
 
@@ -862,13 +863,13 @@ static int **jerasure_generate_decoding_schedule(int k, int m, int w, int *bitma
     ptr = decoding_matrix;
     for (i = 0; i < k; i++) {
       if (row_ids[i] == i) {
-        len = k*w*w*sizeof(int)
+        len = (size_t)k*w*w*sizeof(int)
         bzero(ptr, len);
         for (x = 0; x < w; x++) {
           ptr[x+i*w+x*k*w] = 1;
         }
       } else {
-        len = k*w*w*sizeof(int);
+        len = (size_t)k*w*w*sizeof(int);
         memcpy(ptr, bitmatrix+k*w*w*(row_ids[i]-k), len);
       }
       ptr += (k*w*w);

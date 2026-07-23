@@ -173,7 +173,7 @@ int main(int argc, char **argv)
     erasures[i] = lrand48()%(k+m);
     if (erased[erasures[i]] == 0) {
       erased[erasures[i]] = 1;
-      bzero((erasures[i] < k) ? data[erasures[i]] : coding[erasures[i]-k], psize*w);
+      bzero((erasures[i] < k) ? data[erasures[i]] : coding[erasures[i]-k], (size_t)psize*w);
       i++;
     }
   }
@@ -204,7 +204,7 @@ int main(int argc, char **argv)
 
   //memcpy(&l, data[0], sizeof(long));
   //printf("\nThe value of device #%d, word 0 is: %lx\n", 0, l);
-  bzero(data[0], w*psize);
+  bzero(data[0], (size_t)w*psize);
   jerasure_bitmatrix_dotprod(k, w, decoding_matrix, dm_ids, 0, data, coding, w*psize, psize);
 
   printf("\nAfter calling jerasure_matrix_dotprod, we calculate the value of device #0, packet 0 to be:\n");

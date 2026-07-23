@@ -115,7 +115,7 @@ int main (int argc, char **argv) {
 	int blocksize;					// size of k+m files
 	int total;
 	int extra;
-        char *dummy;
+    char *dummy;
 
 	/* Jerasure Arguments */
 	char **data;
