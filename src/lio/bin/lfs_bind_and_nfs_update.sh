@@ -42,6 +42,8 @@ swing_bind_mount() {
     umount ${BIND_MNT}
     if [ "$?" != "0" ]; then
        echo "ERROR with umount ${BIND_MNT}"
+       log_message "LFS_AND_NFS_BIND_UPDATE  ERROR with umount ${BIND_MNT}"
+
        exit 1
     fi
     mount --bind $(realpath ${BIND_TARGET}) ${BIND_MNT}
@@ -134,12 +136,13 @@ main() {
     #Get the PID
     PID=$(ps agux | grep lio_fuse | grep ${INSTANCE_MNT} | grep -v grep  | awk '{print $2}')
 
-    echo "Bind mount info: ${BIND_MNT} (${SHARED}) -> ${INSTANCE_MNT}  (PID:${PID})"
+    log_message "LFS_AND_NFS_BIND_UPDATE  Bind mount info: ${BIND_MNT} (${SHARED}) -> ${INSTANCE_MNT}  (PID:${PID})"
 
     #Now get the latest instance
     LATEST_MNT=$(realpath ${BIND_TARGET})
     if [ "${LATEST_MNT}" == "" ]; then
         echo "ERROR:  Can't determine the latest instance! Path:${BIND_TARGET}"
+        log_message "LFS_AND_NFS_BIND_UPDATE  ERROR: Can't determine the latest instance! Path:${BIND_TARGET}"
         return 1
     fi
 
@@ -205,7 +208,7 @@ log_message "LFS_AND_NFS_BIND_UPDATE  START $*"
 (
     flock -xn 100
     if [ $? -eq 1 ]; then
-        log_message "FS_AND_NFS_BIND_UPDATE  BLOCKED  $*"
+        log_message "LFS_AND_NFS_BIND_UPDATE  BLOCKED  $*"
         echo "BLOCKED: $*"
         exit 0
     fi
