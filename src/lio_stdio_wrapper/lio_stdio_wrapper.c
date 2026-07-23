@@ -2968,6 +2968,26 @@ int WRAPPER_PREFIX(setrlimit64)(__rlimit_resource_t  resource, const struct rlim
 }
 
 //***********************************************************************
+// sanitize_path - Sanitizes the path
+//    On error NULL is returned
+//***********************************************************************
+
+char *sanitize_path(const char *path)
+{
+    char buf[OS_PATH_MAX];
+    int i;
+
+    if (strlen(path) >= OS_PATH_MAX) return(NULL);
+    if (tbx_normalize_path(path, buf) == NULL) return(NULL);
+
+    for (i=0; buf[i] != '\0'; i++) {
+        if ((buf[i] == '%') || (buf[i] == '\\')) return(NULL);
+    }
+
+    return(strdup(buf));
+}
+
+//***********************************************************************
 // load_prefix_table - Loads the prefix table and creates the fs and lc's as needed
 //      The system parses options of the form:
 //          --fs [config] mount_0 [mount_N]
@@ -3039,10 +3059,18 @@ void load_prefix_table(int argc, char **argv, lio_fs_t *fs_default)
                 link = strchr(argv[i], ':');
                 if (link) {
                     link[0] = '\0';
-                    prefix_table[n_prefix].link = link + 1;
+                    prefix_table[n_prefix].link = sanitize_path(link + 1);
+                    if (prefix_table[n_prefix].link == NULL) {
+                        fprintf(stderr, "ERROR: sanitize_path error for link=%s\n", link + 1);
+                        exit(-1);
+                    }
                     prefix_table[n_prefix].link_len = strlen(prefix_table[n_prefix].link);
                 }
-                prefix_table[n_prefix].prefix = argv[i];
+                prefix_table[n_prefix].prefix = sanitize_path(argv[i]);
+                if (prefix_table[n_prefix].prefix == NULL) {
+                    fprintf(stderr, "ERROR: sanitize_path error for path=%s\n", argv[i]);
+                    exit(-1);
+                }
                 prefix_table[n_prefix].len = strlen(prefix_table[n_prefix].prefix);
                 prefix_table[n_prefix].fs = fs;
                 FPRINTF("load_prefix_table: n_prefix=%d prefix=%s link=%s\n", n_prefix, prefix_table[n_prefix].prefix, prefix_table[n_prefix].link);
@@ -3124,7 +3152,7 @@ static void lio_stdio_wrapper_construct_fn()
     if (argc <= 1) { //** No explicit prefix supplied so use the default of /lio/lfs
         n_prefix = 1;
         tbx_type_malloc(prefix_table, prefix_t, 1);
-        prefix_table[0].prefix = "/lio/lfs";
+        prefix_table[0].prefix = strdup("/lio/lfs");
         prefix_table[0].len = strlen(prefix_table[0].prefix);
         prefix_table[0].fs = fs_default;
         tbx_type_malloc_clear(fs_table, lio_fs_t *, 1);
@@ -3174,7 +3202,13 @@ static void lio_stdio_wrapper_destruct_fn() {
     FPRINTF("lio_stdio_wrapper_destruct_fn: AFTER close loop\n");
 
     //** Clean up the prefix table
-    if (prefix_table) tbx_free(prefix_table);
+    if (prefix_table) {
+        for (i=0; i<n_prefix; i++) {
+            if (prefix_table[i].link) free(prefix_table[i].link);
+            if (prefix_table[i].prefix) free(prefix_table[i].prefix);
+        }
+        tbx_free(prefix_table);
+    }
 
     //** And the FS instances
     for (i=0; i<n_fs; i++) {
