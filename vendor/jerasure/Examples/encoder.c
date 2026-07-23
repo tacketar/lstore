@@ -364,7 +364,7 @@ int main (int argc, char **argv) {
 	
 	/* Find new size by determining next closest multiple */
 	if (packetsize != 0) {
-		if (size%(k*w*packetsize*sizeof(int)) != 0) {
+		if (size%((unsigned long)k*w*packetsize*sizeof(int)) != 0) {
 			while (newsize%(k*w*packetsize*(int)sizeof(int)) != 0) 
 				newsize++;
 		}

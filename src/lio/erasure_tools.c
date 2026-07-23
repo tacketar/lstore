@@ -575,8 +575,7 @@ int et_decode(lio_erasure_plan_t *plan, long long int fsize, const char *fname, 
         }
 
         //** Update the file positions
-        apos = apos + plan->data_strips * block_size;
-//        rpos = rpos + block_size;
+        apos = apos + (long long int)plan->data_strips * block_size;
     }
 
     //** Free the ptrs

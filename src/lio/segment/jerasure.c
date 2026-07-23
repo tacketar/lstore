@@ -478,12 +478,12 @@ retry:
         }
         for (i=0; i<nstripes; i++) {  //** Now check everything
             magic_used = 0;
-            boff = i*s->stripe_size_with_magic;
+            boff = (ex_off_t)i*s->stripe_size_with_magic;
 
             for (k=0; k < s->n_devs; k++) {
                 match = -1;
                 for (j=0; j<magic_used; j++) {
-                    if (memcmp(&(magic_key[j*JE_MAGIC_SIZE]), &(buffer[boff + k*s->chunk_size_with_magic]), JE_MAGIC_SIZE) == 0) {
+                    if (memcmp(&(magic_key[j*JE_MAGIC_SIZE]), &(buffer[boff + (ex_off_t)k*s->chunk_size_with_magic]), JE_MAGIC_SIZE) == 0) {
                         match = j;
                         magic_devs[j*s->n_devs + magic_count[j]] = k;
                         magic_count[j]++;
@@ -494,7 +494,7 @@ retry:
                 if (match == -1) {
                     magic_devs[magic_used*s->n_devs] = k;
                     magic_count[magic_used] = 1;
-                    memcpy(&(magic_key[magic_used*JE_MAGIC_SIZE]), &(buffer[boff + k*s->chunk_size_with_magic]), JE_MAGIC_SIZE);
+                    memcpy(&(magic_key[magic_used*JE_MAGIC_SIZE]), &(buffer[boff + (ex_off_t)k*s->chunk_size_with_magic]), JE_MAGIC_SIZE);
                     magic_used++;
                 }
             }
@@ -638,7 +638,7 @@ retry:
 
                                 log_printf(0, "offset=" XOT " k=%d n_iov=%d max_iov=%d\n", ex_iov[n_iov].offset, k, n_iov, max_iov);
                                 ex_iov[n_iov].len = s->chunk_size_with_magic;
-                                iov[n_iov].iov_base = &(buffer[boff + k*s->chunk_size_with_magic]);
+                                iov[n_iov].iov_base = &(buffer[boff + (ex_off_t)k*s->chunk_size_with_magic]);
                                 log_printf(0, "memcmp=%d\n", memcmp(iov[n_iov].iov_base, &(buffer[boff + (ex_off_t)index*s->chunk_size_with_magic]), JE_MAGIC_SIZE));
                                 iov[n_iov].iov_len = ex_iov[n_iov].len;
                                 nbytes += ex_iov[n_iov].len;
@@ -850,8 +850,8 @@ gop_op_status_t segjerase_inspect_scan(segjerase_inspect_t *si)
 
                 if (err == 0) {  //** It's good see if we need to generate a new task
                     if ((do_fix == 1) && (start_bad != -1)) {
-                        lo = (start_stripe + start_bad) * s->data_size;
-                        hi = (start_stripe + i) * s->data_size - 1;
+                        lo = (ex_off_t)(start_stripe + start_bad) * s->data_size;
+                        hi = (ex_off_t)(start_stripe + i) * s->data_size - 1;
                         gop = segjerase_inspect_full(si, 0, lo, hi);
                         gop_opque_add(q, gop);
                         start_bad = -1;
@@ -868,8 +868,8 @@ gop_op_status_t segjerase_inspect_scan(segjerase_inspect_t *si)
 
             //** Handle any leftover errors
             if ((do_fix == 1) && (start_bad != -1)) {
-                lo = (start_stripe + start_bad) * s->data_size;
-                hi = (start_stripe + curr_stripe) * s->data_size - 1;
+                lo = (ex_off_t)(start_stripe + start_bad) * s->data_size;
+                hi = (ex_off_t)(start_stripe + curr_stripe) * s->data_size - 1;
                 gop = segjerase_inspect_full(si, 0, lo, hi);
                 gop_opque_add(q, gop);
             }
@@ -1254,7 +1254,7 @@ gop_op_generic_t *segjerase_clone(lio_segment_t *seg, data_attr_t *da, lio_segme
         sd->child_seg = NULL;
 
         //** Make the ET plan
-        nbytes = sd->n_data_devs * sd->chunk_size;
+        nbytes = (ex_off_t)sd->n_data_devs * sd->chunk_size;
         sd->plan = et_generate_plan(nbytes, sd->method, sd->n_data_devs, sd->n_parity_devs, sd->w, -1, -1);
         if (sd->plan == NULL) {
             log_printf(0, "seg=" XIDT " No plan generated!\n", segment_id(seg));
@@ -1328,7 +1328,7 @@ gop_op_status_t segjerase_read_func(void *arg, int id)
     lo = INT_MIN;
 
     //** Make the space for the parity
-    parity_len = sw->nstripes * s->parity_size;
+    parity_len = (ex_off_t)sw->nstripes * s->parity_size;
     if (s->max_parity < parity_len) {
         parity_len = s->max_parity;
         for (i=0; i < sw->n_iov; i++) {
@@ -1554,7 +1554,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
         if (i < sw->n_iov) {  //** Kludgy check so we don't have to copy the waitany code twice
             //** Construct the next ops base
             ex_iov[i].offset = lo;
-            ex_iov[i].len = nstripes * s->stripe_size_with_magic;
+            ex_iov[i].len = (ibp_off_t)nstripes * s->stripe_size_with_magic;
 
             iov_start = n_iov;
 
@@ -1614,7 +1614,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                     iov[n_iov].iov_len = JE_MAGIC_SIZE;
                     n_iov++;
                     magic_off += JE_MAGIC_SIZE;
-                    iov[n_iov].iov_base = &(parity[curr_stripe*s->parity_size + poff]);
+                    iov[n_iov].iov_base = &(parity[(ex_off_t)curr_stripe*s->parity_size + poff]);
                     iov[n_iov].iov_len = s->chunk_size;
                     n_iov++;
                     poff += s->chunk_size;
@@ -1631,7 +1631,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
             gop_set_myid(gop, i);
             gop_opque_add(q, gop);
             curr_bytes += len;
-            parity_used += nstripes * s->parity_size;
+            parity_used += (ex_off_t)nstripes * s->parity_size;
         }
     }
 
@@ -1707,7 +1707,7 @@ gop_op_status_t segjerase_write_func(void *arg, int id)
     lo = INT_MIN;
 
     //** Make the space for the parity
-    parity_len = sw->nstripes * s->parity_size;
+    parity_len = (ex_off_t)sw->nstripes * s->parity_size;
     if (s->max_parity < parity_len) {
         parity_len = s->max_parity;
         for (i=0; i < sw->n_iov; i++) {
@@ -1813,7 +1813,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
         if (i < sw->n_iov) {  //** Kludgy check so we don't have to copy the waitany code twice
             //** Construct the next ops base
             ex_iov[i].offset = lo;
-            ex_iov[i].len = nstripes * s->stripe_size_with_magic;
+            ex_iov[i].len = (ibp_off_t)nstripes * s->stripe_size_with_magic;
 
             iov_start = n_iov;
 
@@ -1856,7 +1856,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                         }
                     } else { //** Got an error page
                         hard_error = 1;
-                        empty = &(parity[parity_len + k*s->chunk_size]);   //** This points to an unused part of the buffer
+                        empty = &(parity[parity_len + (ex_off_t)k*s->chunk_size]);   //** This points to an unused part of the buffer
                         memset(empty, 0, s->chunk_size);
                         //ptr[pstripe+k] = NULL;  //** Segfault for debugging QWERT
                         if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "ERROR: HARD_ERROR!!!! jerasure:segjerasre_write_func NULL ptr! seg=" XIDT " off=" XOT " delta_stripe=%d dev=%d\n", segment_id(sw->seg), lo, j, k);
@@ -1911,7 +1911,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
             }
 
             boff = sw->boff + curr_bytes;
-            tbx_tbuf_vec(&(tbuf[i]), nstripes*s->stripe_size_with_magic, n_iov - iov_start, &(iov[iov_start]));
+            tbx_tbuf_vec(&(tbuf[i]), (size_t)nstripes*s->stripe_size_with_magic, n_iov - iov_start, &(iov[iov_start]));
             gop = segment_write(s->child_seg, sw->da, &(rw_hints[i]), 1, &(ex_iov[i]), &(tbuf[i]), 0, sw->timeout);
             gop_set_myid(gop, i);
             gop_opque_add(q, gop);

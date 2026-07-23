@@ -1068,7 +1068,7 @@ int print_resource(char *buffer, int *used, int nbytes, Resource_t *res)
 
     n = apr_time_sec(res->cache_expire);
     tbx_append_printf(buffer, used, nbytes, "n_cache = %d\n", res->n_cache);
-    tbx_append_printf(buffer, used, nbytes, "cache_expire = %d\n", n);
+    tbx_append_printf(buffer, used, nbytes, "cache_expire = " I64T "\n", n);
 
     tbx_append_printf(buffer, used, nbytes, "\n");
 
