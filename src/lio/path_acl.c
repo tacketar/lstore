@@ -851,7 +851,7 @@ char *_find_binary(char *exec, int force_root_uid)
     int n_paths = 5;
     char *search_path[] = { NULL, "/bin", "/sbin", "/usr/bin", "/usr/sbin" };
     char *prefix;
-    char fname[OS_PATH_MAX];
+    char fname[OS_PATH_MAX], rpath[PATH_MAX];
     struct stat sbuf;
     int i;
 
@@ -863,16 +863,21 @@ char *_find_binary(char *exec, int force_root_uid)
         if (prefix) {
             snprintf(fname, sizeof(fname)-1, "%s/%s", prefix, exec);
             fname[OS_PATH_MAX-1] = '\0';
+            rpath[0] = '\0';
             if (stat(fname, &sbuf) == 0) {
                 if (force_root_uid) {
                     if (sbuf.st_uid == 0) {   //** Make sure it's owned by root
-                        return(tbx_stk_strdup(fname));
+                        if (realpath(fname, rpath) != NULL) {  //** Get the realpath to avoid cmd injection later on
+                            rpath[PATH_MAX-1] = '\0';
+                            return(tbx_stk_strdup(rpath));
+                        }
                     } else {
                         log_printf(0, "ERROR: %s should be owned by root! Ignoring...\n", fname);
                         fprintf(stderr, "ERROR: %s should be owned by root! Ignoring...\n", fname);
                     }
-                } else {
-                    return(tbx_stk_strdup(fname));
+                } else if (realpath(fname, rpath) != NULL) {  //** Get the realpath to avoid cmd injection later on
+                    rpath[PATH_MAX-1] = '\0';
+                    return(tbx_stk_strdup(rpath));
                 }
 
             }
