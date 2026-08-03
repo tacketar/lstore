@@ -156,7 +156,7 @@ static tbx_atomic_int_t _fs_atomic_counter = 0;
 #define _inode_key_size_security 11
 #define _inode_key_os_realpath_index 7
 
-//** NOTE: lio_fs_stat uses the array just for the system.inode which it assumes is stored in the 1st slot
+//** NOTE: lio_fs_stat uses the array just for the system.inode which it assumes is stored in the 1st slot. Any changes need to be coordinated with the lio_stat calls!!!!
 static char *_inode_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link",  "os.realpath", "system.posix_acl_default", "security.selinux", "system.posix_acl_access" };
 
 #define _tape_key_size  2
@@ -1961,6 +1961,7 @@ int lio_fs_rename(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *oldname, c
     status = gop_sync_exec_status(lio_move_object_gop(fs->lc, fs->lc->creds, (char *)oldname, (char *)newname));
     if (status.op_status != OP_STATE_SUCCESS) {
         TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].errors);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_RENAME].finished);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("ERROR");
         return((status.error_code != 0) ? -status.error_code : -EREMOTEIO);
     }
