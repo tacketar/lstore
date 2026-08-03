@@ -101,10 +101,10 @@ void rsrs_update_register(lio_resource_service_fn_t *rs, gop_mq_frame_t *fid, mq
     gop_mq_msg_apply_return_address(h->msg, address, 0);
 
     //** Figure out when we wake up if no change
-    if (timeout > 10) {
-        h->reply_time = apr_time_from_sec(timeout-10);
-    } else if (timeout > 5) {
-        h->reply_time = apr_time_from_sec(timeout-5);
+    if (timeout > 120) {
+        h->reply_time = apr_time_from_sec(timeout-60);
+    } else if (timeout > 60) {
+        h->reply_time = apr_time_from_sec(timeout-30);
     } else {
         h->reply_time = apr_time_from_sec(1);
     }
