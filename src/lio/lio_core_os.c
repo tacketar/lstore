@@ -60,7 +60,7 @@ static char *_lio_create_keys[] = { "system.owner", "os.timestamp.system.create"
                                     "os.timestamp.system.modify_attr", "system.inode", "system.exnode", "system.exnode.size"
                                   };
 
-//** NOTE: the _lio_stat_keys it is assumed the system.inode is in the 1st slot
+//** NOTE: the _lio_stat_keys it is assumed the system.inode is in the 1st slot. FS uses a superset of these so any changes need to be coordinated
 #define _lio_stat_keys_size 7
 char *_lio_stat_keys[] = { "system.inode", "system.modify_data", "system.modify_attr", "system.exnode.size", "os.type", "os.link_count", "os.link" };
 
