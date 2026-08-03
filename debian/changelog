@@ -1,3 +1,14 @@
+lstore (2.6.2) stable; urgency=medium
+  * Update logic to swing bind mounts with NFS enabled. Update provided by Sai Medury.
+  * Preserve original val and v_size entry for os.realpath attr for cache rollback.
+    This is a subtle and nasty memory stomp bug.
+  * Add extra logging to track expired RS config updates and reconcile.
+    Also give a little more of a breather to reply on the LServer.
+  * Log a failed rename as finished for tbx_stats
+  * Many CodeQL requested changes
+
+ -- Alan Tackett <alan@atackett.com>  Mon Aug 03 2026 10:10 -0600
+
 lstore (2.6.1) stable; urgency=medium
   * Fix retry logic to detect stale cached inode information.  Only impacts using the low-level FUSE API.
   * Switch some tbx_free calls back to using stock free.
