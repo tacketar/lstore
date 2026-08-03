@@ -308,6 +308,7 @@ gop_op_generic_t *rsrc_update_config_op(lio_resource_service_fn_t *rs, int mode,
     lio_rs_remote_client_priv_t *rsrc = (lio_rs_remote_client_priv_t *)rs->priv;
     mq_msg_t *msg;
     char dt[128];
+    char b64[1024];
     rsrc_gop_rid_config_t *arg;
     gop_op_generic_t *gop;
 
@@ -323,6 +324,8 @@ gop_op_generic_t *rsrc_update_config_op(lio_resource_service_fn_t *rs, int mode,
     gop_mq_msg_append_mem(msg, MQF_TRACKEXEC_KEY, MQF_TRACKEXEC_SIZE, MQF_MSG_KEEP_DATA);
 
     gop_mq_msg_append_mem(msg, &(arg->id), sizeof(uint64_t), MQF_MSG_KEEP_DATA);
+
+    if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "pending rs config sid=%s timeout=%d\n", gop_mq_id2str((char *)&(arg->id), sizeof(uint64_t), b64, sizeof(b64)), timeout);
 
     if (mode == 0) {
         gop_mq_msg_append_mem(msg, RSR_GET_RID_CONFIG_KEY, RSR_GET_RID_CONFIG_SIZE, MQF_MSG_KEEP_DATA);
