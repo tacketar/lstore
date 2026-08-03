@@ -1280,6 +1280,8 @@ gop_op_status_t ostc_cache_fetch(lio_object_service_fn_t *os, char *fname, char 
         skey = key[i];
         if (strcmp(skey, "os.realpath") == 0) {
             if (sobj->realpath) {
+                vs[i] = v_size[i];  //** Store the original values for rollback
+                va[i] = val[i];
                 osf_store_val(sobj->realpath, sobj->rp_len, &(val[i]), &(v_size[i]));
                 continue;
             } else {
@@ -2441,7 +2443,6 @@ gop_op_status_t ostc_get_attrs_fn(void *arg, int tid)
 
         status = gop_sync_exec_status(os_get_multiple_attrs(ostc->os_child, ma->creds, ma->fd->fd_child, cp.key, cp.val, cp.v_size, cp.n_keys_total));
     }
-
 
     //** Store them in the cache on success
     if (status.op_status == OP_STATE_SUCCESS) {
