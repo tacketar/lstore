@@ -99,9 +99,7 @@ void *siginfo_thread(apr_thread_t *th, void *data)
     FILE *fd;
     si_task_t *t;
     char sname[100];
-    apr_status_t ret = 0;
     long signal = (long)data;
-
     if ((signal < 1) || (signal > MAX_SIG)) return(NULL);
 
     snprintf(sname, sizeof(sname), "/tmp/siginfo-%ld.log", signal);
@@ -125,7 +123,7 @@ void *siginfo_thread(apr_thread_t *th, void *data)
 failed:
     apr_thread_mutex_unlock(_si_lock);
 
-    apr_thread_exit(th, ret);
+//    apr_thread_exit(th, ret);  //** Calling this makes ASAN very unhappy
     return(NULL);
 }
 
