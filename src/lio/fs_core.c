@@ -219,30 +219,32 @@ char *_ug_mode_string[] = { "global", "uid", "fsuid" };
 #define FS_SLOT_READDIR       4
 #define FS_SLOT_BG_READDIR    5
 #define FS_SLOT_STAT          6
-#define FS_SLOT_FLOCK         7
-#define FS_SLOT_MKDIR         8
-#define FS_SLOT_RMDIR         9
-#define FS_SLOT_RENAME       10
-#define FS_SLOT_REMOVE       11
-#define FS_SLOT_CREATE       12
-#define FS_SLOT_GETXATTR     13
-#define FS_SLOT_SETXATTR     14
-#define FS_SLOT_RMXATTR      15
-#define FS_SLOT_LISTXATTR    16
-#define FS_SLOT_SYMLINK      17
-#define FS_SLOT_HARDLINK     18
-#define FS_SLOT_FLUSH        19
-#define FS_SLOT_TRUNCATE     20
-#define FS_SLOT_FREAD_OPS    21
-#define FS_SLOT_FWRITE_OPS   22
-#define FS_SLOT_FREAD_BYTES  23
-#define FS_SLOT_FWRITE_BYTES 24
-#define FS_SLOT_IO_DT        25
-#define FS_SLOT_SIZE         26
+#define FS_SLOT_CHOWN         7
+#define FS_SLOT_CHMOD         8
+#define FS_SLOT_FLOCK         9
+#define FS_SLOT_MKDIR        10
+#define FS_SLOT_RMDIR        11
+#define FS_SLOT_RENAME       12
+#define FS_SLOT_REMOVE       13
+#define FS_SLOT_CREATE       14
+#define FS_SLOT_GETXATTR     15
+#define FS_SLOT_SETXATTR     16
+#define FS_SLOT_RMXATTR      17
+#define FS_SLOT_LISTXATTR    18
+#define FS_SLOT_SYMLINK      19
+#define FS_SLOT_HARDLINK     20
+#define FS_SLOT_FLUSH        21
+#define FS_SLOT_TRUNCATE     22
+#define FS_SLOT_FREAD_OPS    23
+#define FS_SLOT_FWRITE_OPS   24
+#define FS_SLOT_FREAD_BYTES  25
+#define FS_SLOT_FWRITE_BYTES 26
+#define FS_SLOT_IO_DT        27
+#define FS_SLOT_SIZE         28
 
-static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "BG_READDIR", "STAT", "FLOCK", "MKDIR", "RMDIR", "RENAME",
-                                 "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR", "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE",
-                                 "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
+static char *_fs_stat_name[] = { "FOPEN", "FCLOSE", "OPENDIR", "CLOSEDIR", "READDIR", "BG_READDIR", "STAT", "CHOWN",
+     "CHMOD", "FLOCK", "MKDIR", "RMDIR", "RENAME", "REMOVE", "CREATE", "GETXATTR", "SETXATTR", "RMXATTR", "LISTXATTR",
+     "SYMLINK", "HARDLINK", "FLUSH", "TRUNCATE", "FREAD_OPS", "FWRITE_OPS", "FREAD_SIZE", "FWRITE_SIZE", "R/W TIME" };
 
 typedef struct {
     tbx_stats_t op[FS_SLOT_SIZE];
@@ -1201,14 +1203,17 @@ int lio_fs_mknod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
 int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode_t mode)
 {
     gop_op_status_t status;
-    int exec_mode, err;
+    int exec_mode, err = 0;
 
     FS_MON_OBJ_CREATE("FS_CHMOD: fname=%s mode=%d", fname, mode);
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_CHMOD].submitted);
 
     //** Make sure we can access it
     if (!fs_osaz_object_access(fs, ug, fname, OS_MODE_WRITE_IMMEDIATE)) {
         log_printf(0, "Invalid access: path=%s\n", fname);
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EACCES");
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_CHMOD].finished);
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_CHMOD].errors);
         return(-EACCES);
     }
 
@@ -1217,9 +1222,14 @@ int lio_fs_chmod(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, mode
 
     exec_mode = ((S_IXUSR|S_IXGRP|S_IXOTH) & mode) ? 1 : 0;
     status = gop_sync_exec_status(os_object_exec_modify(fs->lc->os, fs->lc->creds, (char *)fname, exec_mode));
-    err = (status.op_status == OP_STATE_SUCCESS) ? 0 : -EACCES;
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_CHMOD].finished);
 
-    FS_MON_OBJ_DESTROY();
+    if (status.op_status != OP_STATE_SUCCESS) {
+        err = -EACCES;
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_CHMOD].errors);
+    }
+
+    FS_MON_OBJ_DESTROY_MESSAGE("err=%d\n", err);
 
     return(err);
 }
@@ -1236,10 +1246,15 @@ int lio_fs_chown(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname,  uid
 
     FS_MON_OBJ_CREATE("FS_CHOWN: fname=%s owner=%u gid=%u", fname, owner, group);
 
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_CHOWN].submitted);
     err = fs_modify_perms(fs, ug, fname, &owner, &group, NULL);
-    if (err == 1) err = -fs->chown_errno;
+    TBX_STATS_INC(fs->stats.op[FS_SLOT_CHOWN].finished);
+    if (err == 1) {
+        err = -fs->chown_errno;
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_CHOWN].errors);
+    }
 
-    FS_MON_OBJ_DESTROY();
+    FS_MON_OBJ_DESTROY_MESSAGE("err=%d\n", err);
 
     return(err);
 }
