@@ -1511,7 +1511,7 @@ gop_op_status_t lio_myopen_fn(void *arg, int id)
 
     lio_exnode_exchange_destroy(exp);  //** Clean up
 
-    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s fd=" XIDT " mode=%d STATUS=SUCCESS\n", op->path, fd->id, op->mode);
+    notify_printf(lc->notify, 1, op->creds, "OPEN: fname=%s fd=" XIDT " mode=%d size=" XOT " STATUS=SUCCESS\n", op->path, fd->id, op->mode, fsize);
     return(status);
 
 cleanup:  //** We only make it here on a failure
@@ -1587,6 +1587,7 @@ gop_op_status_t lio_myclose_fn(void *arg, int id)
 
     status = gop_success_status;
     ocl_slot = -1;
+    final_size = -1;   //** Go ahead and set it to flag it's uninitialized on print.
 
     //** Get the handles
     fh = fd->fh;
@@ -1791,9 +1792,9 @@ finished:
         dsec[i] = fd->tally_dt[i];
         dsec[i] /= APR_USEC_PER_SEC;
     }
-    notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " read_ops=" XOT " read_dt=%lf read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
+    notify_printf(lc->notify, 1, fd->creds, "CLOSE: fname=%s fd=" XIDT " size=" XOT " read_ops=" XOT " read_dt=%lf read_bytes=" XOT " read_error_ops=" XOT " read_error_bytes=" XOT
          " write_ops=" XOT " write_dt=%lf write_bytes=" XOT " write_error_ops=" XOT " write_error_bytes=" XOT " flush_ops=" XOT " flush_dt=%lf\n",
-         fd->path, fd->id, fd->tally_ops[0], dsec[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
+         fd->path, fd->id, final_size, fd->tally_ops[0], dsec[0], fd->tally_bytes[0], fd->tally_error_ops[0], fd->tally_error_bytes[0],
          fd->tally_ops[1], dsec[1], fd->tally_bytes[1], fd->tally_error_ops[1], fd->tally_error_bytes[1], fd->tally_ops[2], dsec[2]);
 
     if (fd->ofd) gop_sync_exec(os_close_object(lc->os, fd->ofd));
