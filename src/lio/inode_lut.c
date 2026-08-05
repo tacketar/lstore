@@ -711,7 +711,10 @@ void os_inode_lut_dentry_del(os_inode_lut_t *ilut, int do_lock, ex_id_t parent, 
 
     if (do_lock) apr_thread_mutex_lock(ilut->lock);
     r = tbx_list_search(ilut->dentry_table, de);
-    if (r == NULL) return;
+    if (r == NULL) {
+        if (do_lock) apr_thread_mutex_unlock(ilut->lock);
+        return;
+    }
 
     if (r->hardlink_list == NULL) { //** Simple removal
         os_inode_lut_del(ilut, 0, r->r.inode);
