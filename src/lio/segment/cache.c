@@ -152,6 +152,25 @@ int _cache_ppages_flush(lio_segment_t *seg, data_attr_t *da, ex_off_t lo, ex_off
 
 int cache_direct_pages_merge(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, dio_range_lock_t *rng, ex_off_t *lo_hole, ex_off_t *hi_hole, tbx_tbuf_t *buf, ex_off_t bpos_start, int *dirty_interior);
 
+
+//*******************************************************************************
+//  _safe_page_copy  - Helper routine to hanbdle safely copying data to/from
+//       cache pages.  It checks for NULL src/dest and logs the error
+//*******************************************************************************
+
+int _safe_page_copy(lio_segment_t *seg, lio_cache_page_t *p, int src_is_page, void *dest, const void *src, size_t n)
+{
+    if ((dest == NULL) || (src == NULL)) {
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL,
+            "ERROR: HARD_ERROR!!!! NULL ptr! seg=" XIDT " src=%p dest=%d n=" ST " off=" XOT " src_is_page=%d\n",
+            segment_id(seg), src, dest, n, p->offset, src_is_page);
+        return(1);
+    }
+
+    memcpy(dest, src, n);
+    return(0);
+}
+
 //*******************************************************************************
 //  ------ Direct I/O notes on how the buffers are handled --------
 //
@@ -1511,7 +1530,7 @@ int cache_rw_pages(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, lio_pag
         if ((rw_mode != CACHE_READ) && (last_page > s->child_last_page)) {
             s->child_last_page = last_page;
              s->last_page_buffer_offset = s->child_last_page;
-             memcpy(s->last_page_buffer,cio->page[cio->n_iov-1].p->curr_data->ptr, s->page_size);
+             _safe_page_copy(seg, cio->page[cio->n_iov-1].p, 1, s->last_page_buffer,cio->page[cio->n_iov-1].p->curr_data->ptr, s->page_size);
         }
         for (j=0; j<cio->n_iov; j++) {
             if ((cio->page[j].p->bit_fields & C_EMPTY) > 0) {
@@ -2568,7 +2587,7 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
                 coff = lo_row;
                 s_cache_page_init(seg, np, coff);
                 np->bit_fields ^= C_EMPTY;  //** Clear the empty flag since we already have the data
-                memcpy(np->curr_data->ptr, s->last_page_buffer, s->page_size);
+                _safe_page_copy(seg, np, 0, np->curr_data->ptr, s->last_page_buffer, s->page_size);
                 err = 0;
                 TBX_STATS_INC(s->c->stats.op_stats.op[CACHE_OP_SLOT_CHILD_LAST_PAGE_TRAP].finished);
 
@@ -2675,7 +2694,7 @@ int cache_write_pages_get(lio_segment_t *seg, lio_segment_rw_hints_t *rw_hints, 
                         if (p->data[i].ptr == NULL) {  //** We can use the COW space
                             s->c->write_temp_overflow_used += s->page_size;
                             tbx_type_malloc(p->data[i].ptr, char, s->page_size);
-                            memcpy(p->data[i].ptr, p->data[p->current_index].ptr, s->page_size);
+                            _safe_page_copy(seg, p, 2, p->data[i].ptr, p->data[p->current_index].ptr, s->page_size);
                             p->current_index = i;
                             p->curr_data = &(p->data[i]);
                             can_get = 1;
@@ -2898,7 +2917,7 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
             }
             if ((s->child_last_page == page->offset) && (s->last_page_buffer)) {     //** See if we need to keep the last page
                 s->last_page_buffer_offset = s->child_last_page;
-                memcpy(s->last_page_buffer, page->curr_data->ptr, s->page_size);
+                _safe_page_copy(seg, page, 1, s->last_page_buffer, page->curr_data->ptr, s->page_size);
             }
         } else if (rw_mode == CACHE_FLUSH) {  //** Flush release so tweak dirty page info
             if (cow_hit == 0) {
@@ -2909,7 +2928,7 @@ int cache_release_pages(int n_pages, lio_page_handle_t *page_list, int rw_mode)
                 }
                 if ((s->child_last_page == page->offset) && (s->last_page_buffer)) {     //** See if we need to keep the last page
                     s->last_page_buffer_offset = s->child_last_page;
-                    memcpy(s->last_page_buffer, page->curr_data->ptr, s->page_size);
+                    _safe_page_copy(seg, page, 1, s->last_page_buffer, page->curr_data->ptr, s->page_size);
                 }
             }
         }
