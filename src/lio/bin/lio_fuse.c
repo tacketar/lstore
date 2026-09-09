@@ -79,6 +79,7 @@ void print_usage(void)
     printf("\n"
            "lio_fuse mount_point [FUSE_OPTIONS] [--lio LIO_COMMON_OPTIONS] [--disable-flock]\n"
            "    --disable-flock           Disable LStore integrated flock() functionality\n"
+           "    --enable_copy_file_range  Enable LStore integrated copy_file_range() functionality\n"
            "    --api-low                 Use the FUSE low-level API.\n"
            "    --api-high                Use the FUSE high-level API (default)\n");
     lio_print_options(stdout);
@@ -99,7 +100,7 @@ void print_usage(void)
 int main(int argc, char **argv)
 {
     int err = -1;
-    int idx;
+    int idx, enable_copy_file_range;
     lio_fuse_init_args_t lio_args;
     int fuse_argc;
     char **fuse_argv;
@@ -119,7 +120,7 @@ int main(int argc, char **argv)
     lio_args.lio_argc = 1;
     lio_args.lio_argv = argv;
     lio_args.mount_point = argv[1];
-
+    enable_copy_file_range = 0;
     for (idx=1; idx<argc; idx++) {
         if (strcmp(argv[idx], "--disable-flock") == 0) {
             lfs_fops.flock = NULL;  // ** Have to disable that before fuse_main since it gets copied before lfs_init() is called
@@ -128,6 +129,8 @@ int main(int argc, char **argv)
             lfs_ll_ops.setlk = NULL;
         } else if (strcmp(argv[idx], "--api-low") == 0) {
             lio_args.use_lowlevel_api = 1;
+        } else if (strcmp(argv[idx], "--enable-copy-file-range") == 0) {
+            enable_copy_file_range = 1;
         }
         if (strcmp(argv[idx], "--lio") == 0) {
             fuse_argc = idx;
@@ -139,6 +142,12 @@ int main(int argc, char **argv)
     }
 
     umask(0);
+
+    // ** See if we keep copy_file_range() support
+    if (enable_copy_file_range == 0) {
+        lfs_fops.copy_file_range = NULL;
+        lfs_ll_ops.copy_file_range = NULL;
+    }
 
     if (lio_args.use_lowlevel_api == 1) {
         err = launch_fuse_lowlevel(fuse_argc, fuse_argv, &lfs_ll_ops, &lio_args);

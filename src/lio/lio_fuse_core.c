@@ -1552,12 +1552,18 @@ void lio_fuse_info_fn(void *arg, FILE *fd)
     fprintf(fd, "[%s]\n", lfs->lfs_section);
     fprintf(fd, "mount_point = %s\n", lfs->mount_point);
     fprintf(fd, "enable_osaz_acl_mappings = %d\n", lfs->enable_osaz_acl_mappings);
+    fprintf(fd, "enable_copy_file_range = %d\n", lfs->enable_copy_file_range);
     fprintf(fd, "fs_checks_acls = %d  # Should only be 0 if running lio_fuse since the kernel handles ACL checking\n", lfs->fs_checks_acls);
     fprintf(fd, "no_cache_stat_if_file = %d\n", lfs->no_cache_stat_if_file);
     if (lfs->enable_flock) {
         fprintf(fd, "# flock() is ENABLED\n");
     } else {
         fprintf(fd, "# flock() is DISABLED\n");
+    }
+    if (lfs->enable_copy_file_range) {
+        fprintf(fd, "# copy_file_range() is ENABLED\n");
+    } else {
+        fprintf(fd, "# copy_file_range() is DISABLED\n");
     }
     fprintf(fd, "max_write = %s\n", tbx_stk_pretty_print_double_with_scale(1024, lfs->conn->max_write, ppbuf));
 #ifdef HAS_FUSE3
@@ -1634,6 +1640,7 @@ void *lfs_init_real(struct fuse_config *fuse_cfg, struct fuse_conn_info *conn, l
     lfs->enable_osaz_acl_mappings = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_osaz_acl_mappings", 0);
     lfs->no_cache_stat_if_file = tbx_inip_get_integer(lfs->lc->ifd, section, "no_cache_stat_if_file", 1);
     lfs->enable_flock = (lfs_fops.flock == NULL) ? 0 : 1;
+    lfs->enable_copy_file_range = (lfs_fops.copy_file_range == NULL) ? 0 : 1;
 
 #ifdef FUSE_CAP_WRITEBACK_CACHE
     n = tbx_inip_get_integer(lfs->lc->ifd, section, "enable_writeback_cache", 0);
