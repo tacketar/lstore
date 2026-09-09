@@ -36,18 +36,19 @@
 int main(int argc, char **argv)
 {
     int i, start_option, rw_mode, errors;
+    char *pfile = "rw_params.cfg";
     char *section = "rw_params";
 
 //printf("argc=%d\n", argc);
     if (argc < 2) {
         printf("\n");
-        printf("ex_rw_test LIO_COMMON_OPTIONS [-ex|-aio|-tq|-local] [-s section]\n");
+        printf("ex_rw_test LIO_COMMON_OPTIONS [-ex|-aio|-tq|-local] [-s section] -params rw_params.cfg\n");
         lio_print_options(stdout);
         printf("     -ex        Use the exnode driver\n");
         printf("     -aio       Use LIO Asynchrounous I/O\n");
         printf("     -wq        Use the LIO Work Queue\n");
         printf("     -local     Use a local file\n");
-
+        printf("     -params <params-file>   Params files to use\n");
         printf("     -s          section Section in the config file to usse.  Defaults to %s.\n", section);
         printf("\n");
         return(1);
@@ -77,11 +78,15 @@ int main(int argc, char **argv)
                 i++;
                 section = argv[i];
                 i++;
+            } else if (strcmp(argv[i], "-params") == 0) { //** Change the default section to use
+                i++;
+                pfile = argv[i];
+                i++;
             }
         } while ((start_option < i) && (i<argc));
     }
 
-    errors = lio_rw_test_exec(rw_mode, section);
+    errors = lio_rw_test_exec(rw_mode, section, pfile);
 
     lio_shutdown();
 

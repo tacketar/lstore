@@ -687,18 +687,18 @@ int compare_check(target_t *t, ex_off_t offset, ex_off_t nbytes, char *buffer, i
     int err;
 
     off = (t->data_start + offset) % tile_bytes;
-printf("[ti=%d] ts=%d ds=" XOT "\n", t->index, t->tile_start, t->data_start);
+//printf("[ti=%d] ts=%d ds=" XOT "\n", t->index, t->tile_start, t->data_start);
     len = tile_bytes - off;
     n = (nbytes > len) ? len : nbytes;
     err = memcmp(buffer, tile_data + off, n);
     if (err && do_print) compare_buffers_print(buffer, tile_data + off, n, offset, t->index);
-printf("[ti=%d] 1.wrap around off=" XOT " len=" XOT " nbytes=" XOT "\n", t->index, offset, len, nbytes);
+//printf("[ti=%d] 1.wrap around off=" XOT " len=" XOT " nbytes=" XOT "\n", t->index, offset, len, nbytes);
     if ( nbytes <= len) return(err);  //** No wraparound
 
     //** Got a wraparound
     off = len;
     len = nbytes - len;
-printf("[ti=%d] 2.wrap around off=" XOT " len=" XOT " nbytes=" XOT "\n", t->index, offset+off, len, nbytes);
+//printf("[ti=%d] 2.wrap around off=" XOT " len=" XOT " nbytes=" XOT "\n", t->index, offset+off, len, nbytes);
     err = memcmp(buffer + off, tile_data, len);
     if (err && do_print) compare_buffers_print(buffer+off, tile_data, len, offset+off, t->index);
     return(err);
@@ -1174,7 +1174,7 @@ void *rw_test_thread(apr_thread_t *th, void *arg)
     }
 
     tbx_stack_free(t->free_slots, 0);
-    apr_thread_exit(th, fail);
+//    apr_thread_exit(th, fail);
     return(NULL);
 }
 
@@ -1261,12 +1261,13 @@ void rw_print_options(FILE *fd, char *group)
 // lio_rw_test_exec - Runs the I/O tester
 //*************************************************************************
 
-int lio_rw_test_exec(int rw_mode, char *section)
+int lio_rw_test_exec(int rw_mode, char *section, char *pfile)
 {
     int err, test_errors, i;
     apr_pool_t *mpool;
     apr_thread_t **workers;
     target_t *target, *t;
+    tbx_inip_file_t *fd;
     apr_status_t value;
     lio_cache_stats_get_t cs;
     int tbufsize = 10240;
@@ -1283,11 +1284,20 @@ int lio_rw_test_exec(int rw_mode, char *section)
         return(-1);
     }
 
+    fd = tbx_inip_file_read(pfile, 0);
+    if (lio_gc->ifd == NULL) {
+        printf("ex_rw_test:  Missing config file pfile=%s!\n", pfile);
+        tbx_log_flush();
+        fflush(stdout);
+        return(-1);
+    }
+
     if (section == NULL) section = "rw_params";
 
     //** Lastly load the R/W test params
-    rw_load_options(lio_gc->ifd, section);
-
+    rw_load_options(fd, section);
+    tbx_inip_destroy(fd);
+    fd = NULL;
     rwc.n_parallel /= rwc.n_targets;
     if (rwc.n_parallel <= 0) rwc.n_parallel = 1;
 
