@@ -2639,13 +2639,18 @@ gop_op_generic_t *seglun_tool(lio_segment_t *seg, data_attr_t *da, ex_id_t sid, 
 int seglun_signature(lio_segment_t *seg, char *buffer, int *used, int bufsize)
 {
     lio_seglun_priv_t *s = (lio_seglun_priv_t *)seg->priv;
+    ex_off_t n;
 
     tbx_append_printf(buffer, used, bufsize, "lun(\n");
     tbx_append_printf(buffer, used, bufsize, "    n_devices=%d\n", s->n_devices);
     tbx_append_printf(buffer, used, bufsize, "    n_shift=%d\n", s->n_shift);
     tbx_append_printf(buffer, used, bufsize, "    chunk_size=" XOT "\n", s->chunk_size);
+
+    //** Since the cyrpt keys between files will be different right now just use a random
+    //** number to make the signatures between encrypted files different.
     if (s->crypt_enabled == 1) {
-        tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=%d\n", s->crypt_enabled);
+        tbx_random_get_bytes(&n, sizeof(n));
+        tbx_append_printf(buffer, used, bufsize, "    crypt_enabled=" XOT "\n", n);
     }
     tbx_append_printf(buffer, used, bufsize, ")\n");
 
