@@ -39,10 +39,9 @@ int main(int argc, char **argv)
     char *pfile = "rw_params.cfg";
     char *section = "rw_params";
 
-//printf("argc=%d\n", argc);
     if (argc < 2) {
         printf("\n");
-        printf("ex_rw_test LIO_COMMON_OPTIONS [-ex|-aio|-tq|-local] [-s section] -params rw_params.cfg\n");
+        printf("%s LIO_COMMON_OPTIONS [-ex|-aio|-tq|-local] [-s section] -params rw_params.cfg\n", argv[0]);
         lio_print_options(stdout);
         printf("     -ex        Use the exnode driver\n");
         printf("     -aio       Use LIO Asynchrounous I/O\n");
