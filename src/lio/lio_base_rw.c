@@ -333,22 +333,22 @@ gop_op_status_t lio_read_ex_fn_aio(void *arg, int id)
         ret_size = t2;
     }
 done:
+    apr_thread_mutex_lock(fd->fh->lock);
     segment_lock(fd->fh->seg);
     fd->curr_offset = t1;
     fd->tally_ops[0]++;
     fd->tally_bytes[0] += size;
     _lio_dec_in_flight_and_unlock(fd, in_flight);
-    //segment_unlock(fd->fh->seg);
 
     status.error_code = ret_size;
     return(status);
 
 error:  //** Only make it here on an error
+    apr_thread_mutex_lock(fd->fh->lock);
     segment_lock(fd->fh->seg);
     fd->tally_error_ops[0]++;
     fd->tally_error_bytes[0] += size;
     _lio_dec_in_flight_and_unlock(fd, in_flight);
-    //segment_unlock(fd->fh->seg);
     return(status);
 }
 
@@ -484,23 +484,21 @@ done:
     if (err != OP_STATE_SUCCESS) {
         log_printf(1, "ERROR with write! fname=%s\n", fd->path);
         _op_set_status(status, OP_STATE_FAILURE, -EIO);
+        apr_thread_mutex_lock(fd->fh->lock);
         segment_lock(fd->fh->seg);
         fd->tally_error_ops[1]++;
         fd->tally_error_bytes[1] += size;
         _lio_dec_in_flight_and_unlock(fd, in_flight);
-        //segment_unlock(fd->fh->seg);
-
         return(status);
     }
 
     //** Update the file position to the last write
+    apr_thread_mutex_lock(fd->fh->lock);
     segment_lock(fd->fh->seg);
     if (fd->fh->is_special == 0) fd->curr_offset = iov[op->n_iov-1].offset+iov[op->n_iov-1].len;
     fd->tally_ops[1]++;
     fd->tally_bytes[1] += size;
      _lio_dec_in_flight_and_unlock(fd, in_flight);
-    //segment_unlock(fd->fh->seg);
-
     _op_set_status(status, OP_STATE_SUCCESS, size);
     return(status);
 }

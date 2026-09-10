@@ -1044,18 +1044,13 @@ int lio_adjust_data_tier(lio_fd_t *fd, ex_off_t new_size, int do_lock)
 //    releases the segment_lock().  If needed it will reqcuire the locks
 //    to notify a pending adjust tier call.
 //
-//    **NOTE: we have the segment lock on entry! **
+//    **NOTE: we have the segment and fd->fh lock on entry! **
 //*************************************************************************
 
 void _lio_dec_in_flight_and_unlock(lio_fd_t *fd, int in_flight)
 {
     fd->fh->in_flight -= in_flight;
     if ((fd->fh->adjust_tier_pending > 0) && (fd->fh->in_flight == 0)) {
-        //**Need to raise the flag so release the lock and get them in the
-        //**proper order
-        segment_unlock(fd->fh->seg);
-        apr_thread_mutex_lock(fd->fh->lock);
-        segment_lock(fd->fh->seg);
         //** Make sure the condition is still valid
         if ((fd->fh->adjust_tier_pending > 0) && (fd->fh->in_flight == 0)) {
             apr_thread_cond_broadcast(fd->fh->cond);
@@ -1064,6 +1059,7 @@ void _lio_dec_in_flight_and_unlock(lio_fd_t *fd, int in_flight)
         apr_thread_mutex_unlock(fd->fh->lock);
     } else {
         segment_unlock(fd->fh->seg);
+        apr_thread_mutex_unlock(fd->fh->lock);
     }
 }
 

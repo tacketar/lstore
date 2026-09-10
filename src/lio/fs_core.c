@@ -1633,7 +1633,9 @@ ssize_t lio_fs_pread(lio_fs_t *fs, lio_fd_t *fd, char *buf, size_t size, off_t o
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, size);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[0] += dti;
+    segment_unlock(fd->fh->seg);
 
     dt = apr_time_now() - now;
     dt /= APR_USEC_PER_SEC;
@@ -1668,7 +1670,9 @@ ssize_t lio_fs_readv(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int io
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, nbytes);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[0] += dti;
+    segment_unlock(fd->fh->seg);
 
     ret = (n == nbytes) ? nbytes : 0;
 
@@ -1710,7 +1714,9 @@ int lio_fs_read_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex_
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FREAD_BYTES].finished, iov_nbytes);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].submitted, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[0] += dti;
+    segment_unlock(fd->fh->seg);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1754,7 +1760,9 @@ ssize_t lio_fs_pwrite(lio_fs_t *fs, lio_fd_t *fd, const char *buf, size_t size, 
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, size);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[1] += dti;
+    segment_unlock(fd->fh->seg);
 
     dt = apr_time_now() - now;
 
@@ -1800,7 +1808,9 @@ ssize_t lio_fs_writev(lio_fs_t *fs, lio_fd_t *fd, const struct iovec *iov, int i
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, nbytes);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[1] += dti;
+    segment_unlock(fd->fh->seg);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1833,7 +1843,9 @@ int lio_fs_write_ex(lio_fs_t *fs, lio_fd_t *fd, int n_ex_iov, ex_tbx_iovec_t *ex
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_FWRITE_BYTES].finished, iov_nbytes);
     dti = apr_time_now() - now;
     TBX_STATS_ADD(fs->stats.op[FS_SLOT_IO_DT].finished, dti);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[1] += dti;
+    segment_unlock(fd->fh->seg);
 
     FS_MON_OBJ_DESTROY();
 
@@ -1864,8 +1876,10 @@ int lio_fs_flush(lio_fs_t *fs, lio_fd_t *fd)
     TBX_STATS_INC(fs->stats.op[FS_SLOT_FLUSH].submitted);
     err = gop_sync_exec(lio_flush_gop(fd, 0, -1));
     TBX_STATS_INC(fs->stats.op[FS_SLOT_FLUSH].finished);
+    segment_lock(fd->fh->seg);
     fd->tally_dt[2] += (apr_time_now() - now);
     fd->tally_ops[2]++;
+    segment_unlock(fd->fh->seg);
 
     if (err != OP_STATE_SUCCESS) {
         FS_MON_OBJ_DESTROY_MESSAGE_ERROR("EIO");
