@@ -335,6 +335,8 @@ void lio_os_regex_table_destroy(lio_os_regex_table_t *table)
     int i;
     lio_os_regex_entry_t *re;
 
+    if (table == NULL) return;  //** Kick out if not regex
+
     if (table->regex_entry != NULL) {
         for (i=0; i<table->n; i++) {
             re = &(table->regex_entry[i]);
