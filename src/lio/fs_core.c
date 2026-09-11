@@ -912,7 +912,7 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 {
     lio_fs_dir_iter_t *dit;
     char path[OS_PATH_MAX];
-    char *dir, *file;
+    char *dir, *file, *fname_escaped;
     int i;
 
     if (fs_osaz_object_access(fs, ug, fname, OS_MODE_READ_IMMEDIATE) != 2) {
@@ -929,9 +929,12 @@ lio_fs_dir_iter_t *lio_fs_opendir(lio_fs_t *fs, lio_os_authz_local_t *ug, const 
 
     dit->fs = fs;
     dit->stat_symlink = stat_symlink;
-    snprintf(path, OS_PATH_MAX, "%s/*", fname);
-    dit->path_regex = lio_os_path_glob2regex(path);
 
+    //Convert the path to a literal 1st to handle escape sequences
+    fname_escaped = tbx_stk_escape_text("\\[].*", '\\', (char *)fname);
+    snprintf(path, OS_PATH_MAX, "%s/*", fname_escaped);  //** Now append the wildcard
+    if (fname_escaped) tbx_free(fname_escaped); //** Cleanup
+    dit->path_regex = lio_os_path_glob2regex(path);
     tbx_monitor_obj_create(tbx_monitor_object_fill(&(dit->mo), MON_INDEX_FS, tbx_atomic_counter(&_fs_atomic_counter)), "FS_OPENDIR: fname=%s", fname);
     tbx_monitor_thread_group(&(dit->mo), MON_MY_THREAD);
 
