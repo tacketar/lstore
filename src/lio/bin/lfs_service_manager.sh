@@ -36,6 +36,8 @@
 #   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
 #   LIO_INFO       - Location of where the lio_fuse process dumps state when hit with signal USR1. Defaults to /tmp/lio_info.txt
 #   NFS_MNT        - Optional exportfs path to the bind mount. Disabled in BIND_ENABLE=0 and/or NFS_MNT is empty
+#   START_INSTANCE_PROLOGUE - Script to run before starting an new instance
+#   START_INSTANCE_EPILOGUE - Script to run after starting a new instance
 #
 # Organization of files
 #    ${LFS_ROOTS}
@@ -83,6 +85,8 @@ vars_default() {
     CK_FILE=""
     CK_MEM_GB=""
     HUNG_GCORE_ENABLED="0"
+    START_INSTANCE_PROLOGUE=""
+    START_INSTANCE_EPILOGUE=""
     BIND_ENABLE="0"
 #   BIND_MNT       - Location of the bind mnt if enabled. Defaults to ${LFS_ROOTS}/bmnt
 #   BIND_TARGET    - Location the bind mount points to if enabled. Defaults to ${LFS_ROOTS}/lmnt
@@ -385,6 +389,12 @@ start_instance() {
     date +%s > "$INSTANCE_PATH/created"
     chown  "${LFS_USER}:" "$INSTANCE_PATH" "$INSTANCE_LOGS" "$INSTANCE_MNT" "$INSTANCE_CFG"
 
+    #Execute the prologue if provided
+    if [ ! -z "${START_INSTANCE_PROLOGUE}" ]; then
+        log_message "START_INSTANCE_PROLOGUE ${START_INSTANCE_PROLOGUE} ${INSTANCE_PATH} ${INSTANCE_LOGS} ${INSTANCE_MNT} ${INSTANCE_CFG}"
+        ${START_INSTANCE_PROLOGUE} "${INSTANCE_PATH}" "${INSTANCE_LOGS}" "${INSTANCE_MNT}" "${INSTANCE_CFG}"
+    fi
+
     # allow coredumps, set working dir
     cd ${INSTANCE_LOGS}
     echo "Core dumps enabled (unlimited size), working directory is '$(pwd)' and the current destination/handler is '$(cat /proc/sys/kernel/core_pattern)' (set using /proc/sys/kernel/core_pattern)"
@@ -411,9 +421,17 @@ start_instance() {
     update_symlink $CURRENT_SYMLINK $INSTANCE_PATH
     update_symlink $NESTED_CURRENT_SYMLINK $INSTANCE_RELATIVE_MNT
     if [ "${BIND_ENABLE}" == "1" ]; then
+        log_message "START_INSTANCE ${INSTANCE_ID} Running bind update"
         nohup ${LFS_BIND_AND_NFS_UPDATE_SCRIPT} ${LFS_ROOTS}/lock.bind  ${LIO_INFO} ${LFS_ROOTS}/service.log ${BIND_MNT} ${BIND_TARGET} ${NFS_MNT} > /dev/null 2>&1 &
     fi
     echo "Instance with ID $INSTANCE_ID based in $INSTANCE_PATH started, link to mount: $MOUNT_SYMLINK"
+
+    #Execute the epilogue if provided
+    if [ ! -z "${START_INSTANCE_EPILOGUE}" ]; then
+        log_message "START_INSTANCE_EPILOGUE ${START_INSTANCE_EPILOGUE} ${INSTANCE_PATH} ${INSTANCE_LOGS} ${INSTANCE_MNT} ${INSTANCE_CFG}"
+        ${START_INSTANCE_EPILOGUE} "${INSTANCE_PATH}" "${INSTANCE_LOGS}" "${INSTANCE_MNT}" "${INSTANCE_CFG}"
+    fi
+
 }
 
 #******************************************************************************
@@ -489,6 +507,31 @@ remove_instance() {
 
 
 #******************************************************************************
+# bind_stat - Does a stat on the bind mount reports the time
+#******************************************************************************
+
+bind_stat() {
+    if [ ! -e ${WDIR} ]; then
+        DT="MISSING-OUT-DIR"
+        echo "${DT}"
+        return;
+    fi
+
+    $(which time) -p -o ${WDIR}/stat_time bash -c "${LFS_TIMEOUT_SCRIPT} -v ${CK_TIMEOUT} 9 stat ${BIND_MNT}/${CK_FILE} 2>&1" >/dev/null
+    rcode=$?
+    if [ "${rcode}" == "0" ]; then
+        DT=$(grep real < ${WDIR}/stat_time | awk '{print $2}')
+    elif [ "${rcode}" == "1" ]; then
+        DT="MISSING-FILE"
+    else
+        DT="TIMEOUT"
+    fi
+
+    echo "${DT}"
+    return;
+}
+
+#******************************************************************************
 # get_stat_instance - Does a stat on the instance and reports the time
 #    INSTANCE_ID - Local instance ID
 #******************************************************************************
@@ -496,6 +539,12 @@ remove_instance() {
 get_stat_instance() {
     INSTANCE_ID=$1
     set_instance_vars $INSTANCE_ID
+
+    if [ ! -e ${INSTANCE_LOGS} ]; then
+        DT="MISSING-OUT-DIR"
+        echo "${DT}"
+        return;
+    fi
 
     $(which time) -p -o ${INSTANCE_LOGS}/stat_time bash -c "${LFS_TIMEOUT_SCRIPT} -v ${CK_TIMEOUT} 9 stat ${INSTANCE_MNT}/${CK_FILE} 2>&1" >/dev/null
     rcode=$?
@@ -959,16 +1008,16 @@ health_checkup() {
 
         case "${STATE}" in
             GOOD)
-                log_message "HEALTH-CHECKUP ${id} GOOD ${on_primary} ${top_info}"
+                log_message "HEALTH-CHECKUP ${id} GOOD ${on_primary} ${top_info} -- ${everything_else}"
                 ;;
             HI_MEM)
-                log_message "HEALTH-CHECKUP ${id} HI_MEM ${on_primary} ${top_info}"
+                log_message "HEALTH-CHECKUP ${id} HI_MEM ${on_primary} ${top_info} -- ${everything_else}"
                 if [ "$on_primary" != "" ]; then
                     service_restart
                 fi
                 ;;
             HUNG)
-                log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary} ${top_info}"
+                log_message "HEALTH-CHECKUP ${id} HUNG ${on_primary} ${top_info} -- ${everything_else}"
                 if [ "${HUNG_GCORE_ENABLED}" == "1" ]; then
                     generate_core $id
                 fi
@@ -979,7 +1028,7 @@ health_checkup() {
                 fi
                 ;;
             DEAD)
-                log_message "HEALTH-CHECKUP ${id} DEAD ${on_primary}"
+                log_message "HEALTH-CHECKUP ${id} DEAD ${on_primary} -- ${everything_else}"
                 stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
@@ -987,7 +1036,7 @@ health_checkup() {
                 fi
                 ;;
             UNUSED)
-                log_message "HEALTH-CHECKUP ${id} UNUSED ${on_primary} ${top_info}"
+                log_message "HEALTH-CHECKUP ${id} UNUSED ${on_primary} ${top_info} -- ${everything_else}"
                 stop_instance $id
                 remove_instance $id
                 if [ "$on_primary" != "" ]; then
@@ -995,10 +1044,19 @@ health_checkup() {
                 fi
                 ;;
             *)
-                log_message "ERROR: health_checkup invalid state=${STATE} id=${id}"
+                log_message "ERROR: health_checkup invalid state=${STATE} id=${id} -- ${everything_else}"
                 ;;
         esac
     done
+
+    if [ "${BIND_ENABLE}" == "1" ]; then
+       bstat=$(bind_stat)
+       if [ "${bstat}" == "TIMEOUT" ]; then
+           log_message "HEALTH-CHECKUP BIND_STAT FAILED. Attempting restart"
+           service_restart
+       fi
+    fi
+
 
     log_message "HEALTH-CHECKUP  END"
 
