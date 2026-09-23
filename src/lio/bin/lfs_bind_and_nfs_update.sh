@@ -81,10 +81,10 @@ lfs_in_use_by_nfs() {
     # Drop stale dump content so we wait for a fresh USR1 dump
     : > "${LIO_INFO}"
 
-    log_message "Requesting lio_fuse state dump via kill -USR1 ${pid}"
+    log_message "LFS_AND_NFS_BIND_UPDATE  Requesting lio_fuse state dump via kill -USR1 ${pid}"
     if ! kill -USR1 "${pid}" 2>/dev/null; then
         # Process is already gone; treat as not in use
-        log_message "lio_fuse PID ${pid} is gone; treating as not in use"
+        log_message "LFS_AND_NFS_BIND_UPDATE  lio_fuse PID ${pid} is gone; treating as not in use"
         return 0
     fi
 
@@ -207,9 +207,9 @@ main() {
                 }
             }
         }' /proc/self/mountinfo)
-    log_message "Instance MNT is: $INSTANCE_MNT"
+    log_message "LFS_AND_NFS_BIND_UPDATE  Instance MNT is: $INSTANCE_MNT"
     if [ -z "${INSTANCE_MNT}" ]; then
-        log_message "Unable to find instance mount: ${BIND_MNT}.  Assuming the lio_fuse process is dead."
+        log_message "LFS_AND_NFS_BIND_UPDATE Unable to find instance mount: ${BIND_MNT}.  Assuming the lio_fuse process is dead."
         fetch_exportfs_info
         swing_bind_mount
         log_message "LFS_AND_NFS_BIND_UPDATE  END DEAD: mount --bind $(realpath "${BIND_TARGET}") ${BIND_MNT}"
@@ -316,12 +316,16 @@ BIND_TARGET="$5"
 NFS_MNT="$6"
 NFS_EXPORTS=""
 
-if [ ! -d "${BIND_MNT}" ]; then
-    echo "Invalid path: ${BIND_MNT}"
-    exit 1
-fi
-
 log_message "LFS_AND_NFS_BIND_UPDATE  START $*"
+
+if [ ! -d "${BIND_MNT}" ]; then
+    dead=$(stat ${BIND_MNT} |& grep Transport)  # See if the mount is dead if so continue
+    if [ "${dead}" == "" ]; then
+        echo "Invalid path: ${BIND_MNT}"
+        log_message "LFS_AND_NFS_BIND_UPDATE END Invalid path: ${BIND_MNT}"
+        exit 1
+    fi
+fi
 
 (
     flock -xn 100
