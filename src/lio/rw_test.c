@@ -50,6 +50,7 @@ typedef struct {
     int do_flush_check;
     int timeout;
     double read_fraction;
+    double hole_fraction;
     ex_off_t min_size;
     ex_off_t max_size;
     ex_off_t delta_size;
@@ -65,6 +66,7 @@ typedef struct {
 typedef struct {
     ex_off_t offset;
     ex_off_t len;
+    int is_hole;
 } tile_t;
 
 typedef struct {
@@ -101,6 +103,7 @@ typedef struct {
     int         timeout;
     int         tile_start;
     int         index;
+    int         last_nonhole_write;
 } target_t;
 
 //*** Globals used in the test
@@ -192,6 +195,7 @@ typedef struct {
    off_t offset;
    off_t len;
    void *buffer;
+   int is_hole;
 } local_op_t;
 
 //*************************************************************************
@@ -284,8 +288,11 @@ gop_op_generic_t *io_read_gop(target_t *t, int n_iov, ex_tbx_iovec_t *iov, tbx_t
 
 //*************************************************************************
 
-gop_op_generic_t *io_write_gop(target_t *t, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *tbuf, ex_off_t boff)
+gop_op_generic_t *io_write_gop(target_t *t, int is_hole, int n_iov, ex_tbx_iovec_t *iov, tbx_tbuf_t *tbuf, ex_off_t boff)
 {
+
+    if (is_hole) return(gop_dummy(gop_success_status));
+
     switch (t->rw_mode) {
         case RW_SEGMENT:
             return(segment_write(t->seg, t->da, NULL, n_iov, iov, tbuf, boff, t->timeout));
@@ -478,6 +485,41 @@ void io_close(target_t *t, rw_config_t *rwc)
 //*************************************************************************
 
 //*************************************************************************
+// make_holes - Makes the holes if enabled
+//*************************************************************************
+
+void make_holes()
+{
+    ex_off_t max_hole_bytes, hole_bytes;
+    int slot, hole_ops;
+    double d;
+
+    max_hole_bytes = rwc.hole_fraction * tile_bytes;
+    hole_ops = 0;
+    hole_bytes = 0;
+
+    log_printf(0, "----------Hole Breakdown----------\n");
+    while (hole_bytes < max_hole_bytes) {
+        slot = my_random_int(0, tile_size-1);  //** We don't want to end the file with a hole
+        if (base_tile[slot].is_hole == 0) {
+            base_tile[slot].is_hole = 1;
+            memset(tile_data + base_tile[slot].offset, 0, base_tile[slot].len);
+            hole_ops++;
+            hole_bytes = hole_bytes + base_tile[slot].len;
+            log_printf(0, "HOLE: slot=%d off=" XOT " len=" XOT "\n", slot, base_tile[slot].offset, base_tile[slot].len);
+        }
+    }
+
+    log_printf(0, "-----------------------------------\n");
+    log_printf(0, "Hole Fraction: %lf\n", rwc.hole_fraction);
+    d = hole_bytes / 1024.0 / 1024.0;
+    log_printf(0, "Hole Size: %lfMB (" XOT " bytes)\n", d, hole_bytes);
+    log_printf(0, "Hole Ops/tile: %d\n", hole_ops);
+
+    return;
+}
+
+//*************************************************************************
 // gernerate_task_list - Creates the task list
 //*************************************************************************
 
@@ -489,7 +531,7 @@ void generate_task_list()
     double d;
 
     max_size = inc_size;
-    tbx_type_malloc(base_tile, tile_t, max_size);
+    tbx_type_malloc_clear(base_tile, tile_t, max_size);
 
     dm2 = (rwc.delta_size > 1) ? rwc.delta_size / 2 : 1;
     last_offset = rwc.file_size % rwc.buffer_size;
@@ -515,6 +557,7 @@ log_printf(1, "initial len=" XOT " n=" XOT " m=" XOT "\n", len, n, m);
 log_printf(1, "final len=" XOT "\n", len);
         }
         base_tile[i].len = len;
+        base_tile[i].is_hole = 0;
 
         offset += len;
 
@@ -555,6 +598,9 @@ log_printf(1, "final len=" XOT "\n", len);
     if (n<tile_bytes) n += getpagesize();
     tbx_malloc_align(tile_data, getpagesize(), n);
     my_get_random(tile_data, tile_bytes);
+
+    //** If we are supposed to make holes do that
+    if (rwc.hole_fraction > 0) make_holes();
 
     //** Want to do the reading after thew write phase completes
     if (rwc.read_lag < 0) rwc.read_lag = total_scan_size;
@@ -835,7 +881,7 @@ gop_op_generic_t *find_write_task(target_t *t, task_slot_t *tslot)
     tbx_tbuf_single(&(tslot->tbuf), base_tile[slot].len, &(tile_data[base_tile[slot].offset]));
     ex_iovec_single(&(tslot->iov), offset, base_tile[slot].len);
 
-    gop = io_write_gop(t, 1, &(tslot->iov), &(tslot->tbuf), 0);
+    gop = io_write_gop(t, base_tile[slot].is_hole, 1, &(tslot->iov), &(tslot->tbuf), 0);
     gop_set_private(gop, (void *)tslot);
 
     n = total_scan_size - rwc.write_sigma;
@@ -880,7 +926,7 @@ gop_op_generic_t *find_read_task(target_t *t, task_slot_t *tslot, int write_done
             log_printf(my_tbx_log_level, "[ti=%d] slot=%d wc=%c\n", t->index, slot, t->wc_span[slot]);
             tbx_log_flush();
 
-            if (t->wc_span[slot] == '1') {
+            if ((t->wc_span[slot] == '1') && (t->last_nonhole_write >= slot)) {
                 n = t->read_index.base_index + j;
                 break;
             }
@@ -949,6 +995,29 @@ void complete_write_task(target_t *t, task_slot_t *tslot)
 {
     log_printf(my_tbx_log_level, "[ti=%d] global=%d\n", t->index, tslot->global_index);
     t->wc_span[tslot->global_index] = '1';
+    if (base_tile[tslot->local_index].is_hole == 0) {
+        if (t->last_nonhole_write < tslot->global_index) {
+            t->last_nonhole_write = tslot->global_index;
+            log_printf(0, "ti[%d] last_nonhole_write=%d\n", t->index, t->last_nonhole_write);
+        }
+    }
+}
+
+//*************************************************************************
+// _is_empty - Returns if all the bytes are 0.
+//*************************************************************************
+
+int is_empty(const char *buf, ex_off_t len)
+{
+    ex_off_t i;
+
+    for (i=0; i<len; i++) {
+        if (buf[i] != '\0') {
+            return(0);
+        }
+    }
+
+    return(1);
 }
 
 //*************************************************************************
@@ -968,7 +1037,9 @@ int complete_read_task(target_t *t, task_slot_t *tslot)
     log_printf(my_tbx_log_level, "[ti=%d] Marking global=%d as complete off=%d len=%d\n", t->index, tslot->global_index, off, len);
     if (err != 0) {
         goff = (n / tile_size) * tile_bytes;
-        log_printf(0, "[ti=%d] ERROR with compare! global=%d local=%d off=" XOT " len=%d global_off=" XOT "\n", t->index, tslot->global_index, tslot->local_index, tslot->iov.offset, len, goff);
+        log_printf(0, "[ti=%d] ERROR with compare! global=%d local=%d is_hole=%d off=" XOT " len=%d global_off=" XOT " src_is_empty=%d dest_is_empty=%d\n",
+            t->index, tslot->global_index, tslot->local_index, base_tile[tslot->local_index].is_hole, tslot->iov.offset, len, goff,
+            is_empty(tile_data + off, len), is_empty(tslot->buffer, len));
         compare_buffers_print(tslot->buffer, &(tile_data[off]), len, goff, t->index);
     }
 
@@ -1200,6 +1271,7 @@ void rw_load_options(tbx_inip_file_t *fd, char *group)
     rwc.local_fname = tbx_inip_get_string(fd, group, "local_file", "");
     rwc.read_lag = tbx_inip_get_integer(fd, group, "read_lag", 10);
     rwc.read_fraction = tbx_inip_get_double(fd, group, "read_fraction", 0.0);
+    rwc.hole_fraction = tbx_inip_get_double(fd, group, "hole_fraction", 0.0);
     rwc.seed = tbx_inip_get_integer(fd, group, "seed", 1);
     rwc.rw_mode = tbx_inip_get_integer(fd, group, "rw_mode", RW_SEGMENT);
 
@@ -1248,6 +1320,7 @@ void rw_print_options(FILE *fd, char *group)
     fprintf(fd, "seed=%d\n", rwc.seed);
     fprintf(fd, "read_lag=%d\n", rwc.read_lag);
     fprintf(fd, "read_fraction=%lf\n", rwc.read_fraction);
+    fprintf(fd, "hole_fraction=%lf\n", rwc.hole_fraction);
     fprintf(fd, "min_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.min_size, ppbuf));
     fprintf(fd, "max_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.max_size, ppbuf));
     fprintf(fd, "delta_size=%s\n", tbx_stk_pretty_print_int_with_scale(rwc.delta_size, ppbuf));
@@ -1320,7 +1393,7 @@ int lio_rw_test_exec(int rw_mode, char *section, char *pfile)
     for (i=0; i<rwc.n_targets; i++) {
         t = target + i;
         t->index = i;
-        t->tile_start = my_random_int(0, tile_size-1);
+        t->tile_start = (rwc.hole_fraction == 0.0) ? my_random_int(0, tile_size-1) : 0;
         t->da = lio_gc->da;
         t->timeout = rwc.timeout;
         t->rw_mode = rwc.rw_mode;
