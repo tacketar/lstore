@@ -1626,6 +1626,8 @@ lio_cache_page_t  *cache_page_force_get(lio_segment_t *seg, lio_segment_rw_hints
                         cache_rw_pages(seg, rw_hints, &ph, 1, CACHE_READ, 0, r);
                         cache_lock(s->c);
                         ph.data->usage_count--;
+                    } else {  //** We are growing the file and not a full page so blank it
+                        memset(p->curr_data->ptr, 0, s->page_size);
                     }
                 }
             }
