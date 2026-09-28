@@ -1,3 +1,18 @@
+lstore (2.6.3) stable; urgency=medium
+  * Fix issue with sparse files
+  * Fix several issuse LFS management scripts and bind mounts.
+  * Gracefully handle invalid regex and escape literal paths before appending a wildcard
+  * Protect FD in_flight and tally fields with proper locking
+  * Pick a random value to force signatures for encrypted files to be different
+  * Update R/W test by supporting the test params to come locally
+  * Add support to enable/disable copy_file_range() FUSE fns with the default disabled
+  * Add wrapper to safely copy data to/from page cache when a pointer is NULL
+  * Release the lock if the dentry isn't found before returning.  Fixes deadlock on FUSE mounts with inode tracking enabled
+  * Add tracking of chown/chmod commands and also report any error codes in monitoring
+  * Add the file size if available on open/close in logging
+
+ -- Alan Tackett <alan@atackett.com>  Mon Sep 28 2026 15:19 -0600
+
 lstore (2.6.2) stable; urgency=medium
   * Update logic to swing bind mounts with NFS enabled. Update provided by Sai Medury.
   * Preserve original val and v_size entry for os.realpath attr for cache rollback.
