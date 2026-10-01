@@ -79,8 +79,6 @@ int main(int argc, char **argv)
     tbx_ns_timeout_set(&dt, timeout, 0);
 
     sprintf(cmd, "1 %d %d\n", IBP_PING, timeout);        // IBP_ST_VERSION command
-//sprintf(cmd, "1 4 5 %d\n", timeout);        // IBP_ST_VERSION command
-
 
     tbx_construct_fn_static();
 
