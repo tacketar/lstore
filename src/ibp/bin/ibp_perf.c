@@ -41,6 +41,7 @@
 #include <tbx/network.h>
 #include <tbx/random.h>
 #include <tbx/siginfo.h>
+#include <tbx/string_token.h>
 #include <tbx/transfer_buffer.h>
 #include <tbx/type_malloc.h>
 #include <time.h>
@@ -759,7 +760,7 @@ int main(int argc, char **argv)
     gop_init_opque_system();  //** Initialize GOP.  This needs to be done after any fork() call
     tbx_random_startup();
     tbx_set_log_level(-1);
-    tbx_siginfo_install(strdup("/tmp/lio_info.txt"), SIGUSR1);
+    tbx_siginfo_install(tbx_stk_strdup("/tmp/lio_info.txt"), SIGUSR1);
 
     ic = ibp_context_create();  //** Initialize IBP
 
