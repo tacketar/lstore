@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     char date[512];
     char *host;
     int port = 6714;
-    int timeout = 5;
+    int timeout = 30;
     apr_time_t dt_start, dt_end, dt_total, dt_depot, dt1;
 
     if (argc < 2) {
