@@ -112,6 +112,7 @@ struct tbx_ns_monitor_t {   //** Struct used to handle ports being monitored
     tbx_ns_t *ns;       //** Connection actually being monitored
     char *address;         //** Interface to bind to
     int port;              //** Port to use
+    int thread_priority;          //** Bind monirot thread priority adjustment
     bool is_pending;        //** Flags the connections as ready for an accept call
     bool shutdown_request;  //** Flags the connection to shutdown
     apr_thread_t *thread;  //** Execution thread handle

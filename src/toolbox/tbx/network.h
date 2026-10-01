@@ -100,7 +100,7 @@ TBX_API void tbx_ns_timeout_get(tbx_ns_timeout_t tm, int *sec, int *us);
 TBX_API tbx_network_t *tbx_network_new();
 TBX_API void tbx_network_destroy(tbx_network_t *net);
 TBX_API void tbx_network_close(tbx_network_t *net);
-TBX_API int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, int max_pending);
+TBX_API int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, int max_pending, int thread_priority);
 TBX_API int tbx_network_wait_for_connection(tbx_network_t *net, int max_wait);
 TBX_API int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns);
 TBX_API void tbx_network_wakeup(tbx_network_t *net);

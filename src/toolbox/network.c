@@ -683,9 +683,19 @@ void *monitor_thread(apr_thread_t *th, void *data)
 {
     tbx_ns_monitor_t *nm = (tbx_ns_monitor_t *)data;
     tbx_ns_t *ns = nm->ns;
-    int i;
+    int i, err;
 
     log_printf(15, "monitor_thread: Monitoring port %d\n", nm->port);
+
+    if (nm->thread_priority != 0) {
+                log_printf(1, "Adjusting server_loop priority: %d\n", nm->thread_priority);
+        err = nice(nm->thread_priority);
+        if (err == -1) {
+            err = errno;
+            fprintf(stderr, "WARN: Failed adjusting server_loop() thread priority by %d errno=%d\n", nm->thread_priority, err);
+            log_printf(0, "WARN: Failed adjusting server_loop() thread priority by %d errno=%d\n", nm->thread_priority, err);
+        }
+    }
 
     apr_thread_mutex_lock(nm->lock);
     while (nm->shutdown_request == 0) {
@@ -743,7 +753,7 @@ void *monitor_thread(apr_thread_t *th, void *data)
 // tbx_network_bind - Creates the main port for listening
 //*********************************************************************
 
-int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, int max_pending)
+int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, int max_pending, int thread_priority)
 {
     int err, slot;
     tbx_ns_monitor_t *nm;
@@ -799,6 +809,7 @@ int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, 
     nm->trigger_cond = net->cond;
     nm->trigger_lock = net->ns_lock;
     nm->trigger_count = &(net->accept_pending);
+    nm->thread_priority = thread_priority;
     ns->id = tbx_ns_generate_id();
     _ns_monitor_create(ns, port, "bind");
 
