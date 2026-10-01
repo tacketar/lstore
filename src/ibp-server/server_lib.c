@@ -993,7 +993,7 @@ void server_loop(Config_t *config)
         if (apr_time_now() > print_time) {      //** Print the time stamp
             print_time = apr_time_now();
             apr_ctime(current_time, print_time);
-            log_printf(0, "MARK: " TT " ------> %s", print_time, current_time);
+            log_printf(0, "MARK: " TT " ------> %s\n", print_time, current_time);
             print_time += config->server.timestamp_interval;
         }
 
