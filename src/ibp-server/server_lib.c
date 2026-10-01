@@ -538,6 +538,8 @@ void *worker_task(apr_thread_t *ath, void *arg)
     log_printf(10, "worker_task: ns=%d ***START*** Got a connection at " TT "\n",
                tbx_ns_getid(th->ns), apr_time_now());
 
+log_printf(0, "LAGGY: ns=%d ***START*** Got a connection at " TT "\n", tbx_ns_getid(th->ns), apr_time_now());
+
     //** See if we need to undo the server_loop() extra priority
     if (global_config->server.server_loop_priority != 0) {
         priority = nice(0);  //** Get my priority
@@ -588,6 +590,8 @@ void *worker_task(apr_thread_t *ath, void *arg)
     alog_append_thread_open(myid, tbx_ns_getid(task.ns), task.ipadd.atype, task.ipadd.ip);
 
 
+log_printf(0, "LAGGY: ns=%d ***BEFORE LOOP***\n", tbx_ns_getid(th->ns));
+
     start_read = apr_time_now();
     while ((shutdown_request() == 0) && (closed == 0)) {
         tbx_ns_chksum_read_clear(task.ns);
@@ -624,6 +628,8 @@ void *worker_task(apr_thread_t *ath, void *arg)
                        global_config->server.min_idle, apr_time_now(), start_read, dt_read);
         }
     }
+
+log_printf(0, "LAGGY: ns=%d ***AFTER LOOP***\n", tbx_ns_getid(th->ns));
 
     alog_append_thread_close(myid, ncommands);
 
@@ -985,13 +991,21 @@ void server_loop(Config_t *config)
     while (shutdown_request() == 0) {
         tt = apr_time_now();
         log_printf(10, "server_loop: Waiting for a connection time= " TT "\n", tt);
+log_printf(0, "LAGGY: Waiting for a connection time= " TT "\n", tt);
+
         if (tbx_network_wait_for_connection(network, config->server.timeout_secs) > 0) {        // ** got a new connection
+log_printf(0, "LAGGY: Got a connection request or timed out!  time=" TT "\n", apr_time_now());
+
             log_printf(10, "server_loop: Got a connection request or timed out!  time=" TT "\n",
                        apr_time_now());
             ns = tbx_ns_new();
+log_printf(0, "LAGGY: before accept\n");
             if (tbx_network_accept_pending_connection(network, ns) == 0) {
+log_printf(0, "LAGGY: after accept ns=%d\n", tbx_ns_getid(ns));
                 spawn_new_task(ns, to_many_connections());
+log_printf(0, "LAGGY: after spawn_new_task ns=%d\n", tbx_ns_getid(ns));
             } else {
+log_printf(0, "LAGGY: OOPS failed accept\n");
                 tbx_ns_destroy(ns);
             }
         }

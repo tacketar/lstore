@@ -355,7 +355,13 @@ int sock_connection_request(net_sock_t *nsock, int timeout)
     pfd.events = POLLIN;
     pfd.revents = 0;
 
+log_printf(0, "LAGGY: before poll\n");
+int err =tbx_io_poll(&pfd, 1, timeout*1000);
+log_printf(0, "LAGGY: after poll=%d\n", err);
+return(err);
+
     return(tbx_io_poll(&pfd, 1, timeout*1000));
+
 }
 
 //*********************************************************************
