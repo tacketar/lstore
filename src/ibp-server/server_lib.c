@@ -274,11 +274,10 @@ int print_config(char *buffer, int *used, int nbytes, Config_t *cfg)
     tbx_append_printf(buffer, used, nbytes, "\n");
 
     tbx_append_printf(buffer, used, nbytes, "threads = %d\n", server->max_threads);
+    tbx_append_printf(buffer, used, nbytes, "server_loop_priority = %d # Valid values are from +19 (low priority) to -20 (high priority)\n", server->server_loop_priority);
     tbx_append_printf(buffer, used, nbytes, "max_pending = %d\n", server->max_pending);
-//  tbx_append_printf(buffer, used, nbytes, "max_connections = %d\n", server->max_connections);
     tbx_append_printf(buffer, used, nbytes, "min_idle = " TT "\n", apr_time_sec(server->min_idle));
     tbx_ns_timeout_get(server->timeout, &d, &k);
-//log_printf(0, "print_timeout: s=%d ms=%d\n",d, k);
     d = d * 1000 + k / 1000;
     tbx_append_printf(buffer, used, nbytes, "max_network_wait_ms = %d\n", d);
     tbx_append_printf(buffer, used, nbytes, "password = %s\n", server->password);
@@ -962,7 +961,7 @@ void server_loop(Config_t *config)
         tbx_ns_sock_config(bns, 0);
         if (tbx_network_bind
             (network, bns, config->server.iface[i].hostname, config->server.iface[i].port,
-             config->server.max_pending) != 0) {
+             config->server.max_pending, config->server.server_loop_priority) != 0) {
             log_printf(0, "ERROR binding iface[%d]=%s:%d so shutting down!\n", i,
                        config->server.iface[i].hostname, config->server.iface[i].port);
             fprintf(stderr, "ERROR binding iface[%d]=%s:%d so shutting down!\n", i,

@@ -345,6 +345,9 @@ int parse_config_prefork(tbx_inip_file_t *keyfile, Config_t *cfg, int force_rebu
     server->max_threads = 64;
     server->max_threads = tbx_inip_get_integer(keyfile, "server", "threads", server->max_threads);
 
+    //** See if we adjust the man server_loop priority
+    server->server_loop_priority = tbx_inip_get_integer(keyfile, "server", "server_loop_priority", 0);
+
     //** Find out how many resources we have
     n = 0;
     tbx_inip_group_t *igrp = tbx_inip_group_first(keyfile);
@@ -815,7 +818,7 @@ int main(int argc, const char **argv)
 {
     Config_t config;
     char *config_file, *merge_snap;
-    int i;
+    int i, err;
     apr_thread_t *rid_check_thread;
     apr_status_t dummy;
 
@@ -939,6 +942,17 @@ int main(int argc, const char **argv)
 
     //*** Start the activity log ***
     alog_open();
+
+    if (global_config->server.server_loop_priority != 0) {
+        fprintf(stderr, "Adjusting server_loop priority: %d\n", global_config->server.server_loop_priority);
+        log_printf(0, "Adjusting server_loop priority: %d\n", global_config->server.server_loop_priority);
+        err = nice(global_config->server.server_loop_priority);
+        if (err == -1) {
+            err = errno;
+            fprintf(stderr, "WARN: Failed adjusting server_loop() thread priority by %d errno=%d\n", global_config->server.server_loop_priority, err);
+            log_printf(0, "WARN: Failed adjusting server_loop() thread priority by %d errno=%d\n", global_config->server.server_loop_priority, err);
+        }
+    }
 
     server_loop(&config);       //***** Main processing loop ******
 

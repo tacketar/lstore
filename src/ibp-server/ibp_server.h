@@ -82,6 +82,7 @@ typedef struct {                // Structure containg the overall server config
     interface_t *iface;         //Interfaces listening on
     int n_iface;                //Number of bound interfaces
     int port;                   //Default Port to listen on
+    int server_loop_priority;   //Adjust the main server_loop() priority thread
     int max_threads;            //Max number of threads for pool
     int max_pending;            //Max pending connections
     int timestamp_interval;     //Log timestamp interval in sec
