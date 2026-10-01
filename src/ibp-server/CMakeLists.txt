@@ -99,6 +99,7 @@ set(LSTORE_PROJECT_EXECUTABLES
     ibp_detach_rid
     ibp_rid_mode
     ibp_rescan
+    ibp_ping
     ibp_server
     ibp_undelete
     mkfs_resource

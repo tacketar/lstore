@@ -199,6 +199,7 @@ IBPS_API void wait_all_tasks();
 IBPS_API void signal_taskmgr();
 
 //*** Functions in parse_commands.c ***
+IBPS_API int read_ping(ibp_task_t *task, char **bstate);
 IBPS_API int read_rename(ibp_task_t *task, char **bstate);
 IBPS_API int read_allocate(ibp_task_t *task, char **bstate);
 IBPS_API int read_validate_get_chksum(ibp_task_t *task, char **bstate);
@@ -221,6 +222,7 @@ IBPS_API int read_internal_umount(ibp_task_t *task, char **bstate);
 IBPS_API int read_internal_set_mode(ibp_task_t *task, char **bstate);
 
 //*** Functions in handle_commands.c ***
+IBPS_API int handle_ping(ibp_task_t *task);
 IBPS_API int handle_allocate(ibp_task_t *task);
 IBPS_API int handle_validate_chksum(ibp_task_t *task);
 IBPS_API int handle_get_chksum(ibp_task_t *task);

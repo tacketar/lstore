@@ -285,6 +285,7 @@ int handle_merge(ibp_task_t *task)
     return (0);
 }
 
+
 //*****************************************************************
 // handle_rename - Processes the allocation rename command
 //
@@ -369,6 +370,48 @@ int handle_rename(ibp_task_t *task)
 
     debug_code(if (debug_level() > 5) print_allocation_resource(res, log_fd(), &a);)
         return (err);
+}
+
+//*****************************************************************
+// handle_ping -Returns the ping info
+//
+//    status \n
+
+//*****************************************************************
+
+int handle_ping(ibp_task_t *task)
+{
+    int err, used;
+    apr_time_t dt0, dt_start, dt_end, dt;
+    char token[100*1024];
+    char date1[128], date2[128];
+    resource_list_iterator_t it;
+    Resource_t *r;
+
+    dt0 = apr_time_now();
+    used = 0;
+    tbx_append_printf(token, &used, sizeof(token), "%d \n", IBP_OK);
+
+    it = resource_list_iterator(global_config->rl);
+    while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
+        dt_start = apr_time_now();
+        resource_allocable(r, 0);  //** Dummy call that just uses the RID lock
+        dt_end = apr_time_now();
+        dt = dt_end-dt_start;
+        tbx_append_printf(token, &used, sizeof(token), "RID(us):%s start=%lu end=%lu  dt=%lu %lums\n", r->name, dt_start, dt_end, dt, apr_time_as_msec(dt));
+        apr_ctime(date1, dt_start); apr_ctime(date2, dt_end);
+        tbx_append_printf(token, &used, sizeof(token), "RID(time):%s start=%s end=%s\n", r->name, date1, date2);
+    }
+    resource_list_iterator_destroy(global_config->rl, &it);
+
+    dt_end = apr_time_now();
+    dt = dt_end-dt0;
+    tbx_append_printf(token, &used, sizeof(token), "TOTAL(us): start=%lu end=%lu  dt=%lu %lums\n", dt0, dt_end, dt, apr_time_as_msec(dt));
+    apr_ctime(date1, dt0); apr_ctime(date2, dt_end);
+    tbx_append_printf(token, &used, sizeof(token), "TOTAL(time):%s start=%s end=%s\nEND\n", date1, date2);
+
+    err = server_ns_write_block(task->ns, task->cmd_timeout, token, strlen(token));
+    return(err);
 }
 
 //*****************************************************************

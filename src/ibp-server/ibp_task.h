@@ -62,6 +62,10 @@ typedef struct {
     iovec_ele_t vec[IOVEC_MAX];
 } ibp_iovec_t;
 
+typedef struct {                // IBP Ping
+    rid_t rid;                  // RID to ping
+} Cmd_ping_t;
+
 typedef struct {                // date_free args
     rid_t rid;
     uint64_t size;
@@ -213,6 +217,7 @@ typedef struct {
 
 
 typedef union {                 //** Union of command args
+    Cmd_ping_t ping;
     Cmd_allocate_t allocate;
     Cmd_status_t status;
     Cmd_manage_t manage;

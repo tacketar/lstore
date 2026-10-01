@@ -72,8 +72,9 @@
 #define   IBP_VEC_READ          35
 #define   IBP_VEC_READ_CHKSUM   36
 #define   IBP_RID_BULK_WARM     37
+#define   IBP_PING              38
 
-#define   IBP_MAX_NUM_CMDS      37
+#define   IBP_MAX_NUM_CMDS      38
 
 #define   IBP_TCP          1
 #define   IBP_PHOEBUS      2

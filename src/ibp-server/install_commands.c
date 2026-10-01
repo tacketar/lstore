@@ -100,4 +100,7 @@ void install_commands(tbx_inip_file_t *kf)
     add_command(INTERNAL_RID_SET_MODE, "internal_rid_set_mode", kf, NULL, NULL, NULL, NULL,
                 read_internal_set_mode, handle_internal_set_mode);
 
+    add_command(IBP_PING, "ibp_ping", kf, NULL, NULL, NULL, NULL,
+                read_ping, handle_ping);
+
 }

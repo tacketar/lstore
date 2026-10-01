@@ -381,6 +381,19 @@ int read_merge_allocate(ibp_task_t *task, char **bstate)
 
 
 //*****************************************************************
+//  read_ping - Parse an IBP_PING command
+//
+//  version IBP_PING TIMEOUT \n
+//      %d      %d      %d
+//*****************************************************************
+
+int read_ping(ibp_task_t *task, char **bstate)
+{
+    get_command_timeout(task, bstate);
+    return(0);
+}
+
+//*****************************************************************
 //  read_status - Parses the IBP_STATUS command
 //
 // 1.4
