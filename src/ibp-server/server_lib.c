@@ -532,10 +532,17 @@ void *worker_task(apr_thread_t *ath, void *arg)
     int status;
     int myid;
     int ncommands;
+    int priority;
     tbx_ns_timeout_t start_read, start_handle, end_time, dt_read, dt_handle, dt_total;
 
     log_printf(10, "worker_task: ns=%d ***START*** Got a connection at " TT "\n",
                tbx_ns_getid(th->ns), apr_time_now());
+
+    //** See if we need to undo the server_loop() extra priority
+    if (global_config->server.server_loop_priority != 0) {
+        priority = nice(0);  //** Get my priority
+        if (priority != 0) priority = nice(-priority);  //** Reset it back to normal
+    }
 
     task.tid = 0;
     task.ns = th->ns;

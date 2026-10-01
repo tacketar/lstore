@@ -946,7 +946,7 @@ int main(int argc, const char **argv)
     if (global_config->server.server_loop_priority != 0) {
         fprintf(stderr, "Adjusting server_loop priority: %d\n", global_config->server.server_loop_priority);
         log_printf(0, "Adjusting server_loop priority: %d\n", global_config->server.server_loop_priority);
-        err = nice(global_config->server.server_loop_priority);
+        err = nice(global_config->server.server_loop_priority);  //** This is inherited by all future threads!!!!! So we need to undo it in worker_task()
         if (err == -1) {
             err = errno;
             fprintf(stderr, "WARN: Failed adjusting server_loop() thread priority by %d errno=%d\n", global_config->server.server_loop_priority, err);
