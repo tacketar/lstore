@@ -408,7 +408,7 @@ int handle_ping(ibp_task_t *task)
     dt = dt_end-dt0;
     tbx_append_printf(token, &used, sizeof(token), "TOTAL(us): start=%lu end=%lu  dt=%lu %lums\n", dt0, dt_end, dt, apr_time_as_msec(dt));
     apr_ctime(date1, dt0); apr_ctime(date2, dt_end);
-    tbx_append_printf(token, &used, sizeof(token), "TOTAL(time):%s start=%s end=%s\nEND\n", date1, date2);
+    tbx_append_printf(token, &used, sizeof(token), "TOTAL(time): start=%s end=%s\nEND\n", date1, date2);
 
     err = server_ns_write_block(task->ns, task->cmd_timeout, token, strlen(token));
     return(err);
