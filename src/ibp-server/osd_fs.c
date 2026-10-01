@@ -328,12 +328,11 @@ int fs_direct_cache_read(fs_cache_table_t *c, osd_id_t id, int block)
 
     log_printf(15, "fs_direct_cache_read: c->hash=%p\n", c->hash);
     log_printf(15, "fs_direct_cache_read: key=%p id=" LU " block=%d\n", &key, id, block);
-    tbx_log_flush();
 
     fs_cache_lock(c);
     slot = PTR2INT(apr_hash_get(c->hash, &key, sizeof(fs_cache_key_t)));
+
     log_printf(15, "fs_direct_cache_read: id=" LU " block=%d slot=%d\n", id, block, slot);
-    tbx_log_flush();
 
     if (slot != 0) {
         now = apr_time_now();
@@ -350,7 +349,6 @@ int fs_direct_cache_read(fs_cache_table_t *c, osd_id_t id, int block)
 
     log_printf(15, "fs_direct_cache_read: id=" LU " block=%d slot=%d err=%d\n", id, block, slot,
                err);
-    tbx_log_flush();
 
     return (err);
 }
@@ -768,7 +766,6 @@ void fsfd_unlock(osd_fs_t *fs, osd_fs_fd_t *fsfd)
 
     log_printf(10, "fsfd_unlock: fsfd=%p ts=%d  lo=" I64T " hi=" I64T "\n", fsfd, fsfd->timestamp,
                r->lo, r->hi);
-    tbx_log_flush();
 
     delete_range(fsfd);         //** then delete it
 
@@ -809,7 +806,6 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
 
     log_printf(10, "fsfd_lock: fsfd=%p ts=" I64T " id=" LU " lo=" I64T " hi=" I64T " mode=%d\n",
                fsfd, timestamp, obj->id, start_block, end_block, mode);
-    tbx_log_flush();
     err = 1;
     while (err != 0) {
         *got_block = end_block;
@@ -817,24 +813,20 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
         log_printf(10,
                    "fsfd_lock: fsfd=%p  ts=" I64T " write check lo=" I64T " hi_got=" I64T
                    " err=%d\n", fsfd, timestamp, start_block, *got_block, err);
-        tbx_log_flush();
         if ((err == 0) && (mode == OSD_WRITE_MODE)) {
             err = check_range_overlap(obj->read_range_list, timestamp, start_block, got_block);
             log_printf(10,
                        "fsfd_lock: fsfd=%p ts=" I64T " read check lo=" I64T " hi_got=" I64T
                        " err=%d\n", fsfd, timestamp, start_block, *got_block, err);
-            tbx_log_flush();
         }
         //** No success so insert myself in the queue and wait
         if (err != 0) {
             log_printf(10, "fsfd_lock: fsfd=%p Failed so inserting my request ts=" I64T "\n", fsfd,
                        timestamp);
-            tbx_log_flush();
             insert_range(coop, fsfd, RANGE_REQUEST, timestamp, start_block, end_block);
             apr_thread_cond_timedwait(obj->cond, obj->lock, dt);
             log_printf(10, "fsfd_lock: fsfd=%p Woken back so trying again ts=" I64T "\n", fsfd,
                        timestamp);
-            tbx_log_flush();
             delete_range(fsfd); //** Delete the queue request and try again
         }
     }
@@ -842,7 +834,6 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
     log_printf(10,
                "fsfd_lock: fsfd=%p SUCCESS ts=" I64T " lo=" I64T " hi=" I64T " hi_got=" I64T "\n",
                fsfd, timestamp, start_block, end_block, *got_block);
-    tbx_log_flush();
 
     //** Register my range
     insert_range(coop, fsfd, RANGE_INUSE, timestamp, start_block, *got_block);
@@ -853,14 +844,12 @@ osd_off_t fsfd_lock(osd_fs_t *fs, osd_fs_fd_t *fsfd, int mode, osd_off_t start_b
     log_printf(10,
                "fsfd_lock: fsfd=%p AFTER FINAL INSERT ts=" I64T " lo=" I64T " hi=" I64T " hi_got="
                I64T "\n", fsfd, timestamp, start_block, end_block, *got_block);
-    tbx_log_flush();
 
     apr_thread_mutex_unlock(fsfd->obj->lock);
 
     log_printf(10,
                "fsfd_lock: fsfd=%p AFTER UNLOCK ts=" I64T " lo=" I64T " hi=" I64T " hi_got=" I64T
                "\n", fsfd, timestamp, start_block, end_block, *got_block);
-    tbx_log_flush();
 
     return (0);
 }
@@ -1380,16 +1369,13 @@ int object_open(osd_fs_t *fs, osd_fs_object_t *obj)
         }
         log_printf(10, "object_open: id=" LU " fs=%s normal=%d tbx_io_fread=%d\n", obj->id,
                    fs->devicename, normal, n);
-        tbx_log_flush();
     } else {
         log_printf(1, "ERROR with open id=" LU " fs=%s\n", obj->id, fs->devicename);
-        tbx_log_flush();
         return (1);
     }
 
     log_printf(10, "object_open: id=" LU " fs=%s normal=%d n_opened=%d\n", obj->id, fs->devicename,
                normal, obj->n_opened);
-    tbx_log_flush();
 
     if (normal != 0) {          //** Normal allocation so init the obj header
         fcs->blocksize = 1;
@@ -2155,7 +2141,7 @@ osd_off_t chksum_merged_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, o
     herr = _fs_read_block_header(fsfd, &block_bytes_used, disk_value, bs, nbytes);
 
     if (herr != 0) {            //** Either a disk error or more likely this block is empty
-        log_printf(10,
+        log_printf(0,
                    "chksum_merged_read(%p, " I64T ", " I64T ") ERROR after header read herr=%d\n",
                    fsfd, obj_offset, ocs->blocksize, herr);
     }
@@ -2236,8 +2222,7 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
     obj_offset = FS_MAGIC_HEADER + ocs->hbs_with_chksum + (block - 1) * ocs->bs_with_chksum;
     tbx_io_fseeko(fsfd->fd, obj_offset, SEEK_SET);
 
-    log_printf(0, "chksum_full_read: block=" I64T " fpos=" I64T "\n", block, obj_offset);
-    tbx_log_flush();
+    log_printf(10, "chksum_full_read: block=" I64T " fpos=" I64T "\n", block, obj_offset);
 
     //** Read the data and the chksum
     block_bytes_used = 0;
@@ -2255,7 +2240,7 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
 
     if ((n != block_bytes_used) || (herr != 0)) {
         nbytes = block_bytes_used;
-        log_printf(10,
+        log_printf(0,
                    "chksum_full_read(%p, " I64T ", " I64T ") read error = %d n=" I64T " should be="
                    I64T " herr=%d\n", fsfd, obj_offset, ocs->blocksize, errno, n, nbytes, herr);
         n = (block == 0) ? OSD_STATE_BAD_HEADER : OSD_STATE_BAD_BLOCK;
@@ -2267,7 +2252,7 @@ osd_off_t chksum_full_read(osd_fs_t *fs, osd_fs_fd_t *fsfd, osd_off_t block, buf
 
         n = memcmp(disk_value, cs_value, nbytes);
         if (n != 0) {
-            log_printf(10,
+            log_printf(0,
                        "chksum_merged_read(%p, " I64T ", " I64T ") chksum mismatch! memcmp = " I64T
                        "\n", fsfd, obj_offset, ocs->blocksize, n);
             n = (block == 0) ? OSD_STATE_BAD_HEADER : OSD_STATE_BAD_BLOCK;
@@ -2475,11 +2460,9 @@ int fs_chksum_info(osd_t *d, osd_id_t id, int *cs_type, osd_off_t *header_blocks
     osd_fs_chksum_t *fcs;
     int err;
     log_printf(15, "fs_chksum_info: start id=" LU "\n", id);
-    tbx_log_flush();
     osd_fs_fd_t *fsfd = (osd_fs_fd_t *) fs_open(d, id, OSD_READ_MODE);
 
     log_printf(15, "fs_chksum_info: after open id=" LU "\n", id);
-    tbx_log_flush();
 
     *cs_type = CHKSUM_NONE;
     *header_blocksize = 0;
@@ -2502,7 +2485,6 @@ int fs_chksum_info(osd_t *d, osd_id_t id, int *cs_type, osd_off_t *header_blocks
     fs_close(d, (osd_fd_t *) fsfd);
 
     log_printf(15, "fs_chksum_info: end id=" LU " cs_type=%d\n", id, *cs_type);
-    tbx_log_flush();
 
     return (err);
 }
@@ -2595,7 +2577,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         return (bpos);
     }
     log_printf(5, "fs_get_chksum: start_block=" I64T "\n", start_block);
-    tbx_log_flush();
 
     //** Now cycle through the blocks
     fpos = FS_MAGIC_HEADER + fcs->hbs_with_chksum;      //** Get the starting pos
@@ -2607,7 +2588,6 @@ osd_off_t fs_get_chksum(osd_t *d, osd_id_t id, char *disk_buffer, char *calc_buf
         for (block = start_block; block <= end_got; block++) {
             tbx_io_fseeko(fsfd->fd, fpos, SEEK_SET);
             log_printf(5, "fs_get_chksum: block=" I64T " fpos=" I64T "\n", block, fpos);
-            tbx_log_flush();
 
             block_bytes_used = -1;
             n = tbx_io_fread(&block_bytes_used, 1, sizeof(uint32_t), fsfd->fd);
@@ -3028,7 +3008,6 @@ int fs_trash_iterator_next(osd_iter_t *oi, osd_id_t *id, ibp_time_t *move_time, 
             } else {
                 log_printf(15, "fs_trash_iterator_next: Invalid file so skipping: %s\n",
                            result->d_name);
-                tbx_log_flush();
             }
         }
     } while (finished == 0);
@@ -3079,7 +3058,6 @@ void *fs_shelf_fd_new(void *arg, int size)
 
     log_printf(10, "fs_shelf_fd_new: called data=%p size=%d rid=%s\n", (void *) shelf, size,
                fs->devicename);
-    tbx_log_flush();
 
     for (i = 0; i < size; i++) {
         apr_thread_mutex_create(&(shelf[i].lock), APR_THREAD_MUTEX_DEFAULT, fs->pool);
@@ -3101,7 +3079,6 @@ void fs_shelf_fd_free(void *arg, int size, void *data)
     int i;
 
     log_printf(10, "fs_shelf_fd_free: called data=%p rid=%s size=%d\n", data, fs->devicename, size);
-    tbx_log_flush();
     for (i = 0; i < size; i++) {
         apr_thread_mutex_destroy(shelf[i].lock);
         apr_thread_cond_destroy(shelf[i].cond);
