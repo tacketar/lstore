@@ -1589,7 +1589,6 @@ int tbx_ns_readline(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsi
     int status;
     int n = tbx_ns_readline_raw(ns, buffer, boff, bsize, timeout, &status);
 
-//log_printf(15, "readline_netstream: ns=%d status=%d\n", tbx_ns_getid(ns), status);
     if (status == 1) {
         n = 0;
     } else if (status == -1) {
@@ -1597,7 +1596,6 @@ int tbx_ns_readline(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsi
     } else if (status == 0) {
         n = 1;
     }
-
     return(n);
 }
 
