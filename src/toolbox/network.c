@@ -731,13 +731,13 @@ log_printf(0, "LAGGY: port=%d ns=%d waiting for accept\n", nm->port, tbx_ns_geti
             apr_thread_mutex_lock(nm->lock);
 log_printf(0, "LAGGY: port=%d ns=%d waiting for accept -- inside nm->lock\n", nm->port, tbx_ns_getid(ns));
             while ((nm->is_pending == 1) && (nm->shutdown_request == 0)) {
-log_printf(0, "monitor_thread: port=%d ns=%d before cond_wait\n", nm->port, tbx_ns_getid(ns));
+log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d before cond_wait\n", nm->port, tbx_ns_getid(ns));
                 apr_thread_cond_wait(nm->cond, nm->lock);
-log_printf(0, "monitor_thread: port=%d ns=%d after cond_wait is_pending=%d\n", nm->port, tbx_ns_getid(ns), nm->is_pending);
+log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d after cond_wait is_pending=%d\n", nm->port, tbx_ns_getid(ns), nm->is_pending);
                 log_printf(15, "monitor_thread: port=%d ns=%d Cond triggered=" TT " trigger_count=%d\n", nm->port, tbx_ns_getid(ns), apr_time_now(), *(nm->trigger_count));
             }
             apr_thread_mutex_unlock(nm->lock);
-log_printf(15, "monitor_thread: port=%d ns=%d Connection accepted time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
+log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d Connection accepted time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
             log_printf(15, "monitor_thread: port=%d ns=%d Connection accepted time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
 
             //** Update pending count
