@@ -1634,6 +1634,8 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
     int i, j, k, err;
     tbx_ns_monitor_t *nm = NULL;
 
+log_printf(0, "LAGGY: START\n");
+
     //** Get the global settings
     apr_thread_mutex_lock(net->ns_lock);
 
@@ -1663,8 +1665,10 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
     ns_clone(ns, nm->ns);  //** Clone the settings
     ns->nm = nm;           //** Specify the bind accepted
 
+log_printf(0, "LAGGY: before ns-accept\n");
     ns->sock = nm->ns->accept(nm->ns->sock);   //** Accept the connection
     if (ns->sock == NULL) err = 1;
+log_printf(0, "LAGGY: after ns-accept err=%d\n", err);
 
     nm->is_pending = 0;                  //** Clear the pending flag
     net->accept_pending--;
@@ -1678,6 +1682,7 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
         ns->id = tbx_ns_generate_id();
         ns->set_peer(ns->sock, ns->peer_address, sizeof(ns->peer_address));
 
+log_printf(0, "LAGGY: END accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
 
         err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
@@ -1685,6 +1690,7 @@ int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
         tbx_monitor_obj_message(&ns->mo_recv, "accepted nsid=%d", ns->id);
     } else {
         log_printf(10, "accept_pending_connection: Failed getting a new connection\n");
+log_printf(0, "LAGGY: END accept_pending_connection: Failed getting a new connection\n");
     }
 
     return(err);

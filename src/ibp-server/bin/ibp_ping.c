@@ -60,7 +60,7 @@ int main(int argc, char **argv)
     apr_time_t dt_start, dt_end, dt_total, dt_depot, dt1;
 
     if (argc < 2) {
-        printf("ping -a | host [port timeout]\n");
+        printf("ibp_ping -a | host [port timeout]\n");
         printf("   -a   -Use the local host and default port\n");
         return (0);
     }
@@ -84,9 +84,14 @@ int main(int argc, char **argv)
 
     tbx_dnsc_startup_sized(10);
 
+tbx_log_open("ibp_ping.log", 0); //LAGGY
+
     dt_depot = 0;
     dt_start = apr_time_now();
+log_printf(0, "LAGGY: BEFORE cmd_send\n");
     ns = cmd_send(host, port, cmd, &bstate, timeout);
+log_printf(0, "LAGGY: AFTER cmd_send\n");
+
     dt_end = apr_time_now();
     if (ns == NULL)
         return (-1);
@@ -129,6 +134,7 @@ int main(int argc, char **argv)
     //** Close the connection
     tbx_ns_destroy(ns);
 
+tbx_log_flush(); //LAGGY
     tbx_dnsc_shutdown();
     apr_terminate();
     return (0);

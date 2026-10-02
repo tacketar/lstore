@@ -64,10 +64,12 @@ tbx_ns_t *cmd_send(char *host, int port, char *cmd, char **res_buffer, int timeo
             ns = tbx_ns_new();
             tbx_ns_sock_config(ns, -1);
             tbx_ns_timeout_set(&dt, 60, 0);
+log_printf(0, "LAGGY: BEFORE ns_connect ns=%d\n", tbx_ns_getid(ns));
             err = tbx_ns_connect(ns, host, port, dt);
+log_printf(0, "LAGGY: AFTER ns_connect ns=%d err=%d\n", tbx_ns_getid(ns), err);
             if (err != 0) {
                 tbx_ns_destroy(ns);
-                printf("get_version: Can't connect to host!  host=%s port=%d  err=%d\n", host,
+                printf("Can't connect to host!  host=%s port=%d  err=%d\n", host,
                        port, err);
                 if (retry <= 0) {
                     printf("cmd_send: Aborting!\n");
@@ -82,11 +84,15 @@ tbx_ns_t *cmd_send(char *host, int port, char *cmd, char **res_buffer, int timeo
 
         //** Send the command
         dt = apr_time_now() + apr_time_make(timeout, 0);
+log_printf(0, "LAGGY: BEFORE ns_write_block\n");
         n = server_ns_write_block(ns, dt, cmd, strlen(cmd));
+log_printf(0, "LAGGY: AFTER ns_write_block n=%d\n", n);
 
         //** Get the result line
         tbx_ns_timeout_set(&dt, timeout, 0);
         n = server_ns_readline(ns, buffer, bufsize, dt);
+log_printf(0, "LAGGY: AFTER ns_readline n=%d\n", n);
+
         if (n == NS_OK) {
             n = atoi(tbx_stk_string_token(buffer, " ", &bstate, &err));
             if (n != IBP_OK) {
