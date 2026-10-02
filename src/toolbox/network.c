@@ -561,7 +561,9 @@ int _ns_encrypt_server_handshake(tbx_ns_t *ns)
     //** Attempt to Read the first packet and dump it into the stream buffer
     tbx_ns_timeout_set(&to, 5, 0);
     tbx_tbuf_single(&ns_tb, N_BUFSIZE, ns->buffer);
+log_printf(0, "before encrypt sniff ns=%d\n", tbx_ns_getid(ns));
     nbytes = _tbx_ns_read(ns, &ns_tb, 0, ENCRYPT_PACKET_SIZE, to, 0);  //**there should be 0 bytes in buffer now since this si the 1st read
+log_printf(0, "after encrypt sniff ns=%d nbytes=%d\n", tbx_ns_getid(ns), nbytes);
     if (nbytes != ENCRYPT_PACKET_SIZE) goto done; //** Not enough characters to enable encryption
 
     //** check if they are requesting encryption
@@ -1682,10 +1684,12 @@ log_printf(0, "LAGGY: after ns-accept err=%d\n", err);
         ns->id = tbx_ns_generate_id();
         ns->set_peer(ns->sock, ns->peer_address, sizeof(ns->peer_address));
 
-log_printf(0, "LAGGY: END accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
+log_printf(0, "LAGGY: accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
 
         err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
+log_printf(0, "LAGGY: END after encrypt handshake ns=%d err=%d\n", ns->id, err);
+
         _ns_monitor_create(ns, 0, "accept");
         tbx_monitor_obj_message(&ns->mo_recv, "accepted nsid=%d", ns->id);
     } else {
