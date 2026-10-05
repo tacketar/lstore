@@ -559,7 +559,7 @@ int tbx_ns_encrypt_server_handshake(tbx_ns_t *ns)
     int err = 0;
 
     //** Attempt to Read the first packet and dump it into the stream buffer
-    tbx_ns_timeout_set(&to, 0, 100*000);  //** We just linger for 100ms.  This way a connection that is just reading doesn't backlog
+    tbx_ns_timeout_set(&to, 0, 100*1000);  //** We just linger for 100ms.  This way a connection that is just reading doesn't backlog
     tbx_tbuf_single(&ns_tb, N_BUFSIZE, ns->buffer);
     nbytes = _tbx_ns_read(ns, &ns_tb, 0, ENCRYPT_PACKET_SIZE, to, 0);  //**there should be 0 bytes in buffer now since this si the 1st read
     if (nbytes != ENCRYPT_PACKET_SIZE) goto done; //** Not enough characters to enable encryption
