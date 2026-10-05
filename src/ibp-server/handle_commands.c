@@ -392,8 +392,7 @@ int handle_ping(ibp_task_t *task)
     used = 0;
     tbx_append_printf(token, &used, sizeof(token), "%d \n", IBP_OK);
 
-log_printf(0, "LAGGY: START ns=%d\n", tbx_ns_getid(task->ns));
-tbx_append_printf(token, &used, sizeof(token), "LAGGY: ns=%d\n", tbx_ns_getid(task->ns));
+    tbx_append_printf(token, &used, sizeof(token), "IBP_Server NS: %d\n", tbx_ns_getid(task->ns));
 
     it = resource_list_iterator(global_config->rl);
     while ((r = resource_list_iterator_next(global_config->rl, &it)) != NULL) {
@@ -413,10 +412,7 @@ tbx_append_printf(token, &used, sizeof(token), "LAGGY: ns=%d\n", tbx_ns_getid(ta
     apr_ctime(date1, dt0); apr_ctime(date2, dt_end);
     tbx_append_printf(token, &used, sizeof(token), "TOTAL(time): start=%s end=%s\nEND\n", date1, date2);
 
-log_printf(0, "LAGGY: ns=%d token=%s\n", tbx_ns_getid(task->ns), token);
-
     err = server_ns_write_block(task->ns, task->cmd_timeout, token, strlen(token));
-log_printf(0, "LAGGY: END ns=%d\n", tbx_ns_getid(task->ns));
 
     return(err);
 }

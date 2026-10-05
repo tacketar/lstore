@@ -390,9 +390,7 @@ int read_merge_allocate(ibp_task_t *task, char **bstate)
 int read_ping(ibp_task_t *task, char **bstate)
 {
 
-log_printf(0, "LAGGY: ns=%d\n", tbx_ns_getid(task->ns));
     get_command_timeout(task, bstate);
-log_printf(0, "LAGGY: ns=%d cmd_timeout=" TT "\n", tbx_ns_getid(task->ns), task->cmd_timeout);
     return(0);
 }
 
