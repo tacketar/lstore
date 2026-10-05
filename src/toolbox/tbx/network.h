@@ -62,6 +62,7 @@ typedef enum tbx_net_type_t tbx_net_type_t;
 // Functions
 TBX_API void  tbx_ns_setid(tbx_ns_t *ns, int id);
 TBX_API void tbx_ns_encrypt_enable(tbx_ns_t *ns);
+TBX_API int tbx_ns_encrypt_server_handshake(tbx_ns_t *ns);
 TBX_API int tbx_ns_encrypt_status(tbx_ns_t *ns);
 TBX_API char *tbx_ns_peer_address_get(tbx_ns_t *ns);
 TBX_API char *tbx_nm_host_get(tbx_ns_monitor_t *nm);
@@ -102,7 +103,7 @@ TBX_API void tbx_network_destroy(tbx_network_t *net);
 TBX_API void tbx_network_close(tbx_network_t *net);
 TBX_API int tbx_network_bind(tbx_network_t *net, tbx_ns_t *ns, char *address, int port, int max_pending, int thread_priority);
 TBX_API int tbx_network_wait_for_connection(tbx_network_t *net, int max_wait);
-TBX_API int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns);
+TBX_API int tbx_network_accept_pending_connection(tbx_network_t *net, int do_encrypt_handshake, tbx_ns_t *ns);
 TBX_API void tbx_network_wakeup(tbx_network_t *net);
 
 // Stubs for unused code

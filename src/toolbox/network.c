@@ -546,12 +546,12 @@ int _ns_encrypt_client(tbx_ns_t *ns)
 }
 
 //*********************************************************************
-// _ns_encrypt_server_handshake - Performs the handshake for doing encryption on the server
+// tbx_ns_encrypt_server_handshake - Performs the handshake for doing encryption on the server
 //    if the client requests it.  This is accomplished by checking for the handshake
 //    encrypt command in the first few seconds of the connections
 //*********************************************************************
 
-int _ns_encrypt_server_handshake(tbx_ns_t *ns)
+int tbx_ns_encrypt_server_handshake(tbx_ns_t *ns)
 {
     tbx_tbuf_t ns_tb;
     tbx_ns_timeout_t to;
@@ -559,11 +559,9 @@ int _ns_encrypt_server_handshake(tbx_ns_t *ns)
     int err = 0;
 
     //** Attempt to Read the first packet and dump it into the stream buffer
-    tbx_ns_timeout_set(&to, 0, 5000);  //** We just linger for 5ms.  This way a connection that is just reading doesn't backlog
+    tbx_ns_timeout_set(&to, 0, 100*000);  //** We just linger for 100ms.  This way a connection that is just reading doesn't backlog
     tbx_tbuf_single(&ns_tb, N_BUFSIZE, ns->buffer);
-log_printf(0, "before encrypt sniff ns=%d\n", tbx_ns_getid(ns));
     nbytes = _tbx_ns_read(ns, &ns_tb, 0, ENCRYPT_PACKET_SIZE, to, 0);  //**there should be 0 bytes in buffer now since this si the 1st read
-log_printf(0, "after encrypt sniff ns=%d nbytes=%d\n", tbx_ns_getid(ns), nbytes);
     if (nbytes != ENCRYPT_PACKET_SIZE) goto done; //** Not enough characters to enable encryption
 
     //** check if they are requesting encryption
@@ -703,49 +701,31 @@ void *monitor_thread(apr_thread_t *th, void *data)
     while (nm->shutdown_request == 0) {
         apr_thread_mutex_unlock(nm->lock);
 
-log_printf(0, "LAGGY: Waiting for a connection time= " TT "\n", apr_time_now());
         i = ns->connection_request(ns->sock, 1);
-log_printf(0, "LAGGY: connection_request=%d\n", i);
-
         if (i == 1) {  //** Got a request
             log_printf(15, "monitor_thread: port=%d ns=%d Got a connection request time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
-log_printf(0, "LAGGY: port=%d ns=%d Got a connection request time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
 
             //** Mark that I have a connection pending
             apr_thread_mutex_lock(nm->lock);
             nm->is_pending = 1;
             apr_thread_mutex_unlock(nm->lock);
 
-log_printf(0, "LAGGY: Setting trigger\n");
-
             //** Wake up the calling thread
             apr_thread_mutex_lock(nm->trigger_lock);
             (*(nm->trigger_count))++;
-log_printf(0, "LAGGY: trigger_count=%d\n", *(nm->trigger_count));
             apr_thread_cond_signal(nm->trigger_cond);
             apr_thread_mutex_unlock(nm->trigger_lock);
 
             log_printf(15, "monitor_thread: port=%d ns=%d waiting for accept\n", nm->port, tbx_ns_getid(ns));
 
-log_printf(0, "LAGGY: port=%d ns=%d waiting for accept\n", nm->port, tbx_ns_getid(ns));
-
             //** Sleep until my connection is accepted
             apr_thread_mutex_lock(nm->lock);
-log_printf(0, "LAGGY: port=%d ns=%d waiting for accept -- inside nm->lock\n", nm->port, tbx_ns_getid(ns));
             while ((nm->is_pending == 1) && (nm->shutdown_request == 0)) {
-log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d before cond_wait\n", nm->port, tbx_ns_getid(ns));
                 apr_thread_cond_wait(nm->cond, nm->lock);
-log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d after cond_wait is_pending=%d\n", nm->port, tbx_ns_getid(ns), nm->is_pending);
                 log_printf(15, "monitor_thread: port=%d ns=%d Cond triggered=" TT " trigger_count=%d\n", nm->port, tbx_ns_getid(ns), apr_time_now(), *(nm->trigger_count));
             }
             apr_thread_mutex_unlock(nm->lock);
-log_printf(0, "LAGGY: monitor_thread: port=%d ns=%d Connection accepted time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
             log_printf(15, "monitor_thread: port=%d ns=%d Connection accepted time=" TT "\n", nm->port, tbx_ns_getid(ns), apr_time_now());
-
-            //** Update pending count
-//         apr_thread_mutex_lock(nm->trigger_lock);
-//         *(nm->trigger_count)--;
-//         apr_thread_mutex_unlock(nm->trigger_lock);
         }
 
         apr_thread_mutex_lock(nm->lock);
@@ -1631,12 +1611,10 @@ int tbx_ns_readline(tbx_ns_t *ns, tbx_tbuf_t *buffer, unsigned int boff, int bsi
 //    ns type
 //*********************************************************************
 
-int tbx_network_accept_pending_connection(tbx_network_t *net, tbx_ns_t *ns)
+int tbx_network_accept_pending_connection(tbx_network_t *net, int do_encrypt_handshake, tbx_ns_t *ns)
 {
     int i, j, k, err;
     tbx_ns_monitor_t *nm = NULL;
-
-log_printf(0, "LAGGY: START\n");
 
     //** Get the global settings
     apr_thread_mutex_lock(net->ns_lock);
@@ -1667,10 +1645,8 @@ log_printf(0, "LAGGY: START\n");
     ns_clone(ns, nm->ns);  //** Clone the settings
     ns->nm = nm;           //** Specify the bind accepted
 
-log_printf(0, "LAGGY: before ns-accept\n");
     ns->sock = nm->ns->accept(nm->ns->sock);   //** Accept the connection
     if (ns->sock == NULL) err = 1;
-log_printf(0, "LAGGY: after ns-accept err=%d\n", err);
 
     nm->is_pending = 0;                  //** Clear the pending flag
     net->accept_pending--;
@@ -1684,17 +1660,14 @@ log_printf(0, "LAGGY: after ns-accept err=%d\n", err);
         ns->id = tbx_ns_generate_id();
         ns->set_peer(ns->sock, ns->peer_address, sizeof(ns->peer_address));
 
-log_printf(0, "LAGGY: accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
         log_printf(10, "accept_pending_connection: Got a new connection from %s! Storing in ns=%d \n", ns->peer_address, ns->id);
 
-        err = _ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
-log_printf(0, "LAGGY: END after encrypt handshake ns=%d err=%d\n", ns->id, err);
+        if (do_encrypt_handshake) err = tbx_ns_encrypt_server_handshake(ns);  //** See if we need to encrypt the channel
 
         _ns_monitor_create(ns, 0, "accept");
         tbx_monitor_obj_message(&ns->mo_recv, "accepted nsid=%d", ns->id);
     } else {
         log_printf(10, "accept_pending_connection: Failed getting a new connection\n");
-log_printf(0, "LAGGY: END accept_pending_connection: Failed getting a new connection\n");
     }
 
     return(err);
