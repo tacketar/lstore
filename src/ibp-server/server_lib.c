@@ -533,12 +533,27 @@ void *worker_task(apr_thread_t *ath, void *arg)
     int myid;
     int ncommands;
     int priority;
+    int err;
     tbx_ns_timeout_t start_read, start_handle, end_time, dt_read, dt_handle, dt_total;
 
     log_printf(10, "worker_task: ns=%d ***START*** Got a connection at " TT "\n",
                tbx_ns_getid(th->ns), apr_time_now());
 
-log_printf(0, "LAGGY: ns=%d ***START*** Got a connection at " TT "\n", tbx_ns_getid(th->ns), apr_time_now());
+    //** Try and do the encryption handshake
+    err = tbx_ns_encrypt_server_handshake(th->ns);
+    if (err) {
+        //** Push myself on the completed task
+        apr_thread_mutex_lock(taskmgr.lock);
+        tbx_stack_push(taskmgr.completed, th);
+
+        log_printf(10, "worker_task: ns=%d  ***END*** ENCRYPT handshake failed at " TT "\n",
+                   tbx_ns_getid(th->ns), apr_time_now());
+
+        apr_thread_mutex_unlock(taskmgr.lock);
+
+        //** Lastly exit
+        return(NULL);
+    }
 
     //** See if we need to undo the server_loop() extra priority
     if (global_config->server.server_loop_priority != 0) {
@@ -589,9 +604,6 @@ log_printf(0, "LAGGY: ns=%d ***START*** Got a connection at " TT "\n", tbx_ns_ge
 
     alog_append_thread_open(myid, tbx_ns_getid(task.ns), task.ipadd.atype, task.ipadd.ip);
 
-
-log_printf(0, "LAGGY: ns=%d ***BEFORE LOOP***\n", tbx_ns_getid(th->ns));
-
     start_read = apr_time_now();
     while ((shutdown_request() == 0) && (closed == 0)) {
         tbx_ns_chksum_read_clear(task.ns);
@@ -629,10 +641,7 @@ log_printf(0, "LAGGY: ns=%d ***BEFORE LOOP***\n", tbx_ns_getid(th->ns));
         }
     }
 
-log_printf(0, "LAGGY: ns=%d ***AFTER LOOP***\n", tbx_ns_getid(th->ns));
-
     alog_append_thread_close(myid, ncommands);
-
     release_thread_slot(myid);
 
     //** Notify the client why I'm closing.  IF already closed this just returns
@@ -991,21 +1000,14 @@ void server_loop(Config_t *config)
     while (shutdown_request() == 0) {
         tt = apr_time_now();
         log_printf(10, "server_loop: Waiting for a connection time= " TT "\n", tt);
-log_printf(0, "LAGGY: Waiting for a connection time= " TT "\n", tt);
 
         if (tbx_network_wait_for_connection(network, config->server.timeout_secs) > 0) {        // ** got a new connection
-log_printf(0, "LAGGY: Got a connection request or timed out!  time=" TT "\n", apr_time_now());
-
             log_printf(10, "server_loop: Got a connection request or timed out!  time=" TT "\n",
                        apr_time_now());
             ns = tbx_ns_new();
-log_printf(0, "LAGGY: before accept\n");
-            if (tbx_network_accept_pending_connection(network, ns) == 0) {
-log_printf(0, "LAGGY: after accept ns=%d\n", tbx_ns_getid(ns));
+            if (tbx_network_accept_pending_connection(network, 0, ns) == 0) {
                 spawn_new_task(ns, to_many_connections());
-log_printf(0, "LAGGY: after spawn_new_task ns=%d\n", tbx_ns_getid(ns));
             } else {
-log_printf(0, "LAGGY: OOPS failed accept\n");
                 tbx_ns_destroy(ns);
             }
         }
