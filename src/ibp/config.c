@@ -509,6 +509,9 @@ int _ibp_connect(tbx_ns_t *ns, void *connect_context, char *host, int port, tbx_
 // set/unset routines for options
 //**********************************************************
 
+void ibp_context_encrypt_conn_set(ibp_context_t *ic, int n) { gop_hpc_encrypt_conn_set(ic->pc, n); }
+int  ibp_context_encrypt_conn_get(ibp_context_t *ic) { return(gop_hpc_encrypt_conn_get(ic->pc)); }
+
 int ibp_context_chksum_set(ibp_context_t *ic, tbx_ns_chksum_t *ncs)
 {
     tbx_ns_chksum_clear(&(ic->ncs));

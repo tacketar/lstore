@@ -83,7 +83,9 @@ IBP_API gop_op_generic_t *ibp_alloc_chksum_get_gop(ibp_context_t *ic, ibp_cap_t 
 IBP_API gop_op_generic_t *ibp_rid_bulk_warm_gop(ibp_context_t *ic, ibp_depot_t *depot, int duration, int n_caps, ibp_cap_t **mcaps, int *n_fail, int *results, int timeout);
 
 // Config accessor functions
-IBP_API int ibp_context_chksum_set(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
+IBP_API void ibp_context_encrypt_conn_set(ibp_context_t *ic, int n);
+IBP_API int  ibp_context_encrypt_conn_get(ibp_context_t *ic);
+IBP_API int  ibp_context_chksum_set(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
 IBP_API void ibp_context_chksum_get(ibp_context_t *ic, tbx_ns_chksum_t *ncs);
 IBP_API int  ibp_context_tcpsize_get(ibp_context_t *ic);
 IBP_API void ibp_context_max_host_conn_set(ibp_context_t *ic, int n);

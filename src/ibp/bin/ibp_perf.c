@@ -709,6 +709,7 @@ int main(int argc, char **argv)
         printf("\n");
         printf("-d                  - Enable *minimal* debug output\n");
         printf("-dd                 - Enable *FULL* debug output\n");
+        printf("-encrypt_conn       - Enable ecrypted connections\n");
         printf("-network_chksum type blocksize - Enable network checksumming for transfers.\n");
         printf("                      type should be SHA256, SHA512, SHA1, or MD5.\n");
         printf("                      blocksize determines how many bytes to send between checksums in kbytes.\n");
@@ -781,6 +782,9 @@ int main(int argc, char **argv)
             i++;
         } else if (strcmp(argv[i], "-dd") == 0) { //** Enable debugging
             tbx_set_log_level(20);
+            i++;
+        } else if (strcmp(argv[i], "-encrypt_conn") == 0) { //** Enable debugging
+            ibp_context_encrypt_conn_set(ic, 1);
             i++;
         } else if (strcmp(argv[i], "-random") == 0) { //** Random buffers
             i++;
@@ -949,7 +953,7 @@ int main(int argc, char **argv)
         printf("Transfer_mode: ASYNC\n");
     }
     printf("Use proxy: %d\n", use_proxy);
-
+    printf("Encyrpted connection: %d\n", ibp_context_encrypt_conn_get(ic));
     if (cc != NULL) {
         switch (cc->type) {
         case NS_TYPE_SOCK:
