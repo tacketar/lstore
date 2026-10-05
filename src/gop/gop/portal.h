@@ -48,13 +48,13 @@ extern "C" {
 #define HP_HOSTPORT_SEPARATOR "|"
 
 // Typedefs
-typedef void *(*gop_portal_dup_fn_t)(void *connect_context);  //** Duplicates a ccon
+typedef void *(*gop_portal_dup_fn_t)(void *connect_context);  // ** Duplicates a ccon
 typedef void (*gop_portal_destroy_fn_t)(void *connect_context);
 typedef int (*gop_portal_connect_fn_t)(tbx_ns_t *ns, void *connect_context, char *host, int port, tbx_ns_timeout_t timeout);
 typedef void (*gop_portal_close_fn_t)(tbx_ns_t *ns);
-typedef void (*gop_portal_sort_fn_t)(void *arg, gop_opque_t *q);        //** optional
+typedef void (*gop_portal_sort_fn_t)(void *arg, gop_opque_t *q);        // ** optional
 typedef void (*gop_portal_submit_fn_t)(void *arg, gop_op_generic_t *op);
-typedef void *(*gop_portal_exec_fn_t)(void *arg, gop_op_generic_t *op);   //** optional
+typedef void *(*gop_portal_exec_fn_t)(void *arg, gop_op_generic_t *op);   // ** optional
 
 struct gop_portal_fn_t {
     gop_portal_dup_fn_t dup_connect_context;
@@ -82,6 +82,8 @@ GOP_API int gop_hp_submit(gop_host_portal_t *dp, gop_op_generic_t *op, bool addt
 GOP_API void gop_hpc_print_running_config(gop_portal_context_t *hpc, FILE *fd, int print_section_heading);
 
 // tunable accessors
+GOP_API void gop_hpc_encrypt_conn_set(gop_portal_context_t *hpc, int n);
+GOP_API int gop_hpc_encrypt_conn_get(gop_portal_context_t *hpc);
 GOP_API void gop_hpc_dead_dt_set(gop_portal_context_t *hpc, apr_time_t dt);
 GOP_API apr_time_t gop_hpct_dead_dt_get(gop_portal_context_t *hpc);
 GOP_API void gop_hpc_dead_check_set(gop_portal_context_t *hpc, apr_time_t dt);

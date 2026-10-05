@@ -1640,6 +1640,9 @@ int gop_hp_que_op_submit(gop_portal_context_t *hpc, gop_op_generic_t *op)
 // Tunable functions
 //************************************************************************
 
+void gop_hpc_encrypt_conn_set(gop_portal_context_t *hpc, int n) { hpc->encrypt_conn = n; }
+int gop_hpc_encrypt_conn_get(gop_portal_context_t *hpc) { return(hpc->encrypt_conn); }
+
 void gop_hpc_dead_dt_set(gop_portal_context_t *hpc, apr_time_t dt) { hpc->dt_dead_timeout = dt; }
 apr_time_t gop_hpct_dead_dt_get(gop_portal_context_t *hpc) { return(hpc->dt_dead_timeout); }
 void gop_hpc_dead_check_set(gop_portal_context_t *hpc, apr_time_t dt) { hpc->dt_dead_check = dt; }
