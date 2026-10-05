@@ -1,3 +1,13 @@
+lstore (2.6.4) stable; urgency=medium
+  * Add ibp_ping to better understand timeout issues between client and depot
+  * Separate out encrypting a socket from the accept().  This lead to long connection delays in ibp_server for clients.
+  * Relocate encrypted socket handshake to take place in the worker_task() to keep the main server_loop() unblocked
+  * Ability to adjust the priority of the accept() and server_loop threads to improve performance
+  * Use tbx_stk_strdup() in ibp_perf to fix segfault on close
+  * Add encrypted socket support from the command line for ibp_perf
+  * Code cleanup
+ -- Alan Tackett <alan@atackett.com>  Mon Oct 05 2026 10:00 -0600
+
 lstore (2.6.3) stable; urgency=medium
   * Fix issue with sparse files
   * Fix several issuse LFS management scripts and bind mounts.
