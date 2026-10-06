@@ -283,8 +283,9 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
             os_inode_lut_dentry_del(lfs->ilut, 1, hparent, hde);
             if (hde) tbx_free(hde);
         }
-hl_exists:  //** We've done any cleanup so continue as normal
     }
+
+hl_exists:  //** We've done any cleanup needed so continue as normal
 
     //** Add the inodeq
     os_inode_lut_put(lfs->ilut, 1, fe.attr.st_ino, parent, ftype, strlen(name), name);
