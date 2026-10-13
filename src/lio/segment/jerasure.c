@@ -1482,6 +1482,8 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                         if ((magic_count[index] < s->n_data_devs) || (data_ok == -1)) {  //** Unrecoverable error
                             log_printf(5, "seg=" XIDT " ERROR with read off=" XOT " len=" XOT " n_parity=%d good=%d error_code=%d\n",
                                        segment_id(sw->seg), sw->iov[slot].offset, sw->iov[slot].len, s->n_parity_devs, magic_count[index], op_status.error_code);
+                            if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR:A seg=" XIDT " jerase read off=" XOT " len=" XOT " n_parity=%d good=%d error_code=%d\n",
+                                       segment_id(sw->seg), sw->iov[slot].offset, sw->iov[slot].len, s->n_parity_devs, magic_count[index], op_status.error_code);
                             status.op_status = OP_STATE_FAILURE;
                             status.error_code = op_status.error_code;
                             hard_error = 1;
@@ -1522,7 +1524,9 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                                     if (eptr[k] != ptr[k]) memcpy(ptr[k], eptr[k], s->chunk_size);  //** Need to copy the data back to the buffer
                                 }
                             } else {
-                                log_printf(5, "seg=" XIDT " ERROR with read off=" XOT " len=" XOT " n_parity=%d good=%d error_code=%d\n",
+                                log_printf(0, "seg=" XIDT " ERROR with read off=" XOT " len=" XOT " n_parity=%d good=%d error_code=%d\n",
+                                           segment_id(sw->seg), sw->iov[slot].offset, sw->iov[slot].len, s->n_parity_devs, magic_count[index], op_status.error_code);
+                                if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR:B seg=" XIDT " jerase read off=" XOT " len=" XOT " n_parity=%d good=%d error_code=%d\n",
                                            segment_id(sw->seg), sw->iov[slot].offset, sw->iov[slot].len, s->n_parity_devs, magic_count[index], op_status.error_code);
                                 status.op_status = OP_STATE_FAILURE;
                                 status.error_code = op_status.error_code;
@@ -1645,7 +1649,8 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
 
     //** See if we need to retry without blacklisting enabled
     if ((hard_error > 0) && (s->blacklist) && (loop < JE_MAX_RETRY)) {
-        log_printf(5, "sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
+        log_printf(0, "sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR: sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
     }
@@ -1786,7 +1791,9 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
                 if (!gop_completed_successfully(gop)) {
                     op_status = gop_get_status(gop);
                     if (op_status.error_code > s->n_parity_devs) {
-                        log_printf(5, "seg=" XIDT " ERROR with write off=" XOT " len= "XOT " n_parity=%d n_failed=%d\n",
+                        log_printf(0, "seg=" XIDT " ERROR with write off=" XOT " len= "XOT " n_parity=%d n_failed=%d\n",
+                                   segment_id(sw->seg), sw->iov[j].offset, sw->iov[j].len, s->n_parity_devs, op_status.error_code);
+                        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR: seg=" XIDT " jerase write off=" XOT " len= " XOT " n_parity=%d n_failed=%d\n",
                                    segment_id(sw->seg), sw->iov[j].offset, sw->iov[j].len, s->n_parity_devs, op_status.error_code);
                         status = op_status;
                         hard_error = 1;
@@ -1930,6 +1937,7 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     //** See if we need to retry because of a hard error or an almost hard_error (soft_error=2)
     if (((soft_error > 1) || (hard_error > 0)) && (loop < JE_MAX_RETRY)) {
         log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
+        if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR: sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
         goto tryagain;
     }
