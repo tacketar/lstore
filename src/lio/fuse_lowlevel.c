@@ -56,51 +56,6 @@ lio_os_authz_local_t *_ll_get_fuse_ug(lio_fuse_t *lfs, lio_os_authz_local_t *ug,
     return(ug);
 }
 
-
-//********************************************************
-//  ll_inode2path_from_ilut - Converts an inode to a path only used the iLUT
-//     The path should be allocated to OS_PATH_MAX
-//     On success 0 is returned otherwise 1 if the inode can't be located
-//********************************************************
-
-int ll_inode2path_from_ilut(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int *ftype_target)
-{
-    char *dentry[OS_PATH_MAX];
-    ex_id_t inode_curr, parent;
-    int f, len, i, err, n_dirs;
-    char *de;
-
-    inode_curr = inode_target;
-    i = 0;
-    *ftype_target = 0;
-    while ((err = os_inode_lut_get(lfs->ilut, 1, inode_curr, &parent, &f, &len, &de)) == 0) {
-        if (*ftype_target == 0) *ftype_target = f;
-        dentry[i] = de;
-        inode_curr = parent;
-        i++;
-
-        if (parent == 0) break;  //** We've reached the root directory
-        if (i == OS_PATH_MAX-1) {  //** We have a loop so flag it
-            fprintf(stderr, "ERROR: Hit recursion max! inode_target=" XIDT " curr_parent=" XIDT " cuff_ftype=%d curr_dentry=%s\n", inode_target, parent, f, de);
-            break;
-        }
-    }
-
-    n_dirs = i;
-
-    if (err == 0) {
-        //** Got a valid set of inodes so convert it to a path
-        os_inode_lookup2path(path, n_dirs, NULL, dentry);
-    }
-
-    //** Cleanup up the dentry
-    for (i=0; i<n_dirs; i++) {
-        if (dentry[i]) tbx_free(dentry[i]);
-    }
-
-    return(err);
-}
-
 //********************************************************
 //  ll_inode2path_from_os - Converts an inode to a path using the OS
 //     The path should be allocated to OS_PATH_MAX
@@ -139,6 +94,11 @@ int ll_inode2path_from_os(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int
         used += tbx_zigzag_decode((uint8_t *)blob + used, v_size, &v); len = v;
         de = blob + used;
         used += len;
+        if (inode == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
+            log_printf(0, "ERROR: MISSING_INODE! inode=" XIDT " parent=" XIDT " currrent path=%s de=%s\n", inode, parent, path, de);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: MISSING_INODE! inode=" XIDT " parent=" XIDT " currrent path=%s de=%s\n", inode, parent, path, de);
+            return(1);
+        }
         os_inode_lut_put(lfs->ilut, 1, inode, parent, ftype, len-1, de);
         parent = inode;
         if (i > 0) tbx_append_printf(path, &k, OS_PATH_MAX, "/%s", de);
@@ -152,6 +112,70 @@ int ll_inode2path_from_os(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int
 
     *ftype_target = ftype;
     return(0);
+}
+
+//********************************************************
+//  ll_inode2path_from_ilut - Converts an inode to a path only used the iLUT
+//     The path should be allocated to OS_PATH_MAX
+//     On success 0 is returned otherwise 1 if the inode can't be located
+//********************************************************
+
+int ll_inode2path_from_ilut(lio_fuse_t *lfs, ex_id_t inode_target, char *path, int *ftype_target)
+{
+    char *dentry[OS_PATH_MAX];
+    ex_id_t inode_curr, parent, prev;
+    ex_id_t  inode_table[OS_PATH_MAX];
+    int f, len, i, err, n_dirs;
+    char *de;
+
+    prev = -1;
+    inode_curr = inode_target;
+    i = 0;
+    *ftype_target = 0;
+    while ((err = os_inode_lut_get(lfs->ilut, 1, inode_curr, &parent, &f, &len, &de)) == 0) {
+        if (*ftype_target == 0) *ftype_target = f;
+        dentry[i] = de;
+        inode_table[i] = inode_curr;  //** For help with debugginf
+        prev = inode_curr;
+        inode_curr = parent;
+        i++;
+
+        if (parent == 0) break;  //** We've reached the root directory
+        if (i == OS_PATH_MAX-1) {  //** We have a loop so flag it
+            fprintf(stderr, "ERROR: Hit recursion max! inode_target=" XIDT " curr_parent=" XIDT " cuff_ftype=%d curr_dentry=%s\n", inode_target, parent, f, de);
+            break;
+        }
+    }
+
+    n_dirs = i;
+
+    if (err == 0) {
+        //** We should always be recursing back to the root inode which is 1
+        if (prev != 1) {
+            log_printf(0, "ERROR: Failed to recurse to root!  inode_target=" XIDT " ndirs=%d\n", inode_target, n_dirs);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: ll_inode2path_from_ilut: Failed to recurse to root!  inode_target=" XIDT " ndirs=%d\n", inode_target, n_dirs);
+            for (i=0; i<n_dirs; i++) {
+                log_printf(0, "ERROR: ilut i=%d inode=" XIDT " de=%s\n", i, inode_table[i], dentry[i]);
+                notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: ilut i=%d inode=" XIDT " de=%s\n", i, inode_table[i], dentry[i]);
+            }
+
+            //** Fallback to getting it from the OS
+            path[0] = '\0';
+            err = ll_inode2path_from_os(lfs, inode_target, path, ftype_target);
+            log_printf(0, "ERROR: fallback from OS: err=%d!  inode_target=" XIDT " path=%s\n", err, inode_target, path);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: fallback from OS: err=%d inode_target=" XIDT " path=%s\n", err, inode_target, path);
+        } else {
+            //** Got a valid set of inodes so convert it to a path
+            os_inode_lookup2path(path, n_dirs, NULL, dentry);
+        }
+    }
+
+    //** Cleanup up the dentry
+    for (i=0; i<n_dirs; i++) {
+        if (dentry[i]) tbx_free(dentry[i]);
+    }
+
+    return(err);
 }
 
 //********************************************************
@@ -185,6 +209,7 @@ int ll_new_object_prep(lio_fuse_t *lfs, fuse_ino_t parent, const char *name, cha
     int len, ftype;
 
     //** See if we have a valid parent
+retry:
     if (ll_inode2path(lfs, parent, path, &ftype, force_os) != 0) {
         if (*force_os == 0) { //** Let's retry but force the data from the LServer
             *force_os = 1;
@@ -198,6 +223,14 @@ int ll_new_object_prep(lio_fuse_t *lfs, fuse_ino_t parent, const char *name, cha
     len = strlen(path);
     if ((len == 1) && (path[0] == '/')) {
         snprintf(path+len, OS_PATH_MAX-len, "%s", name);
+        if (parent != 1) {
+            log_printf(0, "ERROR: Got a root prefix but parent=" XIDT " is NOT root name=%s force_os=%d\n", parent, name, *force_os);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: Got a root prefix but parent=" XIDT " is NOT root name=%s force_os=%d\n", parent, name, *force_os);
+            if (*force_os == 0) {
+                *force_os = 1;
+                goto retry;
+            }
+        }
     } else {
         snprintf(path+len, OS_PATH_MAX-len, "/%s", name);
     }
@@ -226,6 +259,12 @@ int ll_inode2path_dentry(lio_fuse_t *lfs, lio_os_authz_local_t *ug, fuse_ino_t p
     //** Do the FS stat call
     err = lio_fs_stat_full(lfs->fs, ug, path, &(fe.attr), ftype, NULL, 1, lfs->no_cache_stat_if_file);
     if (err != 0) return(1);  //** No matching entry
+
+    if (fe.attr.st_ino == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
+        log_printf(0, "ERROR: MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR: MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
+        return(1);
+    }
 
     //** Add the inode
     os_inode_lut_put(lfs->ilut, 1, fe.attr.st_ino, parent, *ftype, strlen(name), name);  //**FIXME  name could be fifferent for hardlinks
@@ -287,7 +326,14 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
 
 hl_exists:  //** We've done any cleanup needed so continue as normal
 
-    //** Add the inodeq
+    if (fe.attr.st_ino == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
+        log_printf(0, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
+        fuse_reply_err(req, -EREMOTEIO);
+        return;
+    }
+
+    //** Add the inode
     os_inode_lut_put(lfs->ilut, 1, fe.attr.st_ino, parent, ftype, strlen(name), name);
 
     //** Form the reply
@@ -779,6 +825,13 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         de->fe.generation = 0;
         de->fe.attr_timeout = lfs->ll_stat_timeout;
         de->fe.entry_timeout = lfs->ll_entry_timeout;
+
+        if (de->fe.attr.st_ino == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
+            log_printf(0, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s\n", de->fe.attr.st_ino, de->dentry);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s\n", de->fe.attr.st_ino, de->dentry);
+            fuse_reply_err(req, EIO);
+            return;
+        }
 
         //** Add it to the ilut if not a special entry
         if ((strcmp(de->dentry, ".") != 0) && (strcmp(de->dentry, "..") != 0)) {
