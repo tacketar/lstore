@@ -1218,6 +1218,8 @@ void *hc_send_thread(apr_thread_t *th, void *data)
     //** Attempt to connect
     err = hpc->fn->connect(ns, hp->connect_context, hp->host, hp->port, hp->hpc->dt_connect);
 
+    memset(&cmd, 0, sizeof(cmd));
+
     //** If failed then err out and exit
     if (err) {
         log_printf(10, "FAILED internal hp=%s SEND CONN_CLOSED\n", hp->skey);
@@ -1241,6 +1243,7 @@ log_printf(15, "internal hp=%s SEND CONN_READY\n", hp->skey);
     timeout = hpc->max_idle;
     recv_idle = 0;
     while (finished.op_status == OP_STATE_SUCCESS) {
+        memset(&cmd, 0, sizeof(cmd));
         cmd.cmd = CONN_EMPTY;
         nbytes = tbx_que_get(hc->incoming, &cmd, timeout);
 log_printf(15, "hp=%s get=%d cmd=%d\n", hp->skey, nbytes, cmd.cmd);
@@ -1347,6 +1350,7 @@ void *hc_recv_thread(apr_thread_t *th, void *data)
     tbx_mon_object_t ns_mo;
 
     //** Wait to make sure the send_thread connected
+    memset(&cmd, 0, sizeof(cmd));
     tbx_que_get(hc->internal, &cmd, TBX_QUE_BLOCK);
     if (cmd.cmd != CONN_READY) {  //** IF we fail pass the error on and exit
         log_printf(10, "hp=%s CONN_CLOSED\n", hc->hp->skey);
@@ -1367,11 +1371,13 @@ log_printf(15, "hp=%s CONN_READY\n", hc->hp->skey);
 
     //** Now enter the main loop
     status = gop_success_status;
+    memset(&cmd, 0, sizeof(cmd));
     cmd.cmd = CONN_EMPTY;
     timeout = apr_time_from_sec(1);
     notify_hp = 1;
     gop = NULL;
     while (status.op_status == OP_STATE_SUCCESS) {
+        memset(&cmd, 0, sizeof(cmd));
         cmd.cmd = CONN_EMPTY;
         nbytes = tbx_que_get(hc->internal, &cmd, timeout);
 log_printf(15, "hp=%s get=%d cmd=%d\n", hc->hp->skey, nbytes, cmd.cmd);
@@ -1436,6 +1442,7 @@ log_printf(15, "hp=%s sending a CONN_CLOSE_REQUEST\n", hp->skey);
         //** Wait until I get an official close request
         //** In the meantime just dump all the requests back on the que
         while (1) {
+            memset(&cmd, 0, sizeof(cmd));
             cmd.cmd = CONN_EMPTY;
             nbytes = tbx_que_get(hc->internal, &cmd, timeout);
             if (nbytes == 0) {
