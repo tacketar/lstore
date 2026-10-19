@@ -31,6 +31,7 @@ extern "C" {
 typedef void (*tbx_siginfo_fn_t)(void *arg, FILE *fd);
 
 // Functions
+TBX_API void tbx_siginfo_trigger(int signal, const char *fname);
 TBX_API void tbx_siginfo_handler_add(int signal, tbx_siginfo_fn_t fn, void *arg);
 TBX_API void tbx_siginfo_handler_remove(int signal, tbx_siginfo_fn_t fn, void *arg);
 TBX_API void tbx_siginfo_install(char *fname, int signal);

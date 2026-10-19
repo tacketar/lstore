@@ -89,27 +89,19 @@ void tbx_siginfo_handler_remove(int signal, tbx_siginfo_fn_t fn, void *arg)
 }
 
 // ***************************************************************
-// siginfo_thread - Runs the siginfo handlers. This is done
-//     in a separate thead to avoid any interrupt deadlocks in
-//     case a handler needs a lock
+// tbx_siginfo_trigger - Does a manual triggering of the signal
 // ***************************************************************
 
-void *siginfo_thread(apr_thread_t *th, void *data)
+void tbx_siginfo_trigger(int signal, const char *fname)
 {
     FILE *fd;
     si_task_t *t;
-    char sname[100];
-    long signal = (long)data;
-    if ((signal < 1) || (signal > MAX_SIG)) return(NULL);
-
-    snprintf(sname, sizeof(sname), "/tmp/siginfo-%ld.log", signal);
-
-    apr_thread_detach(th);  //** Detach us
+    if ((signal < 1) || (signal > MAX_SIG)) return;
 
     apr_thread_mutex_lock(_si_lock);
-    fd = tbx_io_fopen((_siginfo_name[signal]) ? _siginfo_name[signal] : sname, "w");
+    fd = tbx_io_fopen(fname, "w");
     if (fd == NULL) {
-        log_printf(0, "Unable to dump info to %s for signal %ld\n", _siginfo_name[signal], signal);
+        log_printf(0, "Unable to dump info to %s for signal %d\n", _siginfo_name[signal], signal);
         goto failed;
     }
 
@@ -122,6 +114,26 @@ void *siginfo_thread(apr_thread_t *th, void *data)
 
 failed:
     apr_thread_mutex_unlock(_si_lock);
+}
+
+// ***************************************************************
+// siginfo_thread - Runs the siginfo handlers. This is done
+//     in a separate thead to avoid any interrupt deadlocks in
+//     case a handler needs a lock
+// ***************************************************************
+
+void *siginfo_thread(apr_thread_t *th, void *data)
+{
+    char sname[10*1024];
+    char *fname;
+    long signal = (long)data;
+    if ((signal < 1) || (signal > MAX_SIG)) return(NULL);
+
+    apr_thread_detach(th);  //** Detach us
+
+    snprintf(sname, sizeof(sname), "/tmp/siginfo-%ld.log", signal);
+    fname = (_siginfo_name[signal]) ? _siginfo_name[signal] : sname;
+    tbx_siginfo_trigger(signal, fname);
 
 //    apr_thread_exit(th, ret);  //** Calling this makes ASAN very unhappy
     return(NULL);
