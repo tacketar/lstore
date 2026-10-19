@@ -576,6 +576,158 @@ retry:
     if (buf != tmpbuf) tbx_free(buf);
 }
 
+
+//*****************************************************************
+// _ll_inode_lookup_text - Takes the inode info and forms the return string
+//*****************************************************************
+
+int _ll_inode_lookup_text(char *buf, int bufsize, int n, char **dentry, ex_id_t *inode, int *ftype)
+{
+    int i, used;
+
+    //** Store the attribute
+    used = 0;
+    tbx_append_printf(buf, &used, bufsize, "ENTRIES: %d\n", n);
+
+    //** 1st store the path
+    tbx_append_printf(buf, &used, bufsize, "PATH: ");
+    os_inode_lookup2path(buf + used, n, inode, dentry);
+    for (i=n-1; i>=0; i--) {
+        if (dentry[i]) tbx_free(dentry[i]);
+    }
+    used = strlen(buf);
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    //** Now the inode table
+    tbx_append_printf(buf, &used, bufsize, "INODE: ");
+    for (i=n-1; i>=0; i--) {
+        if (i >= n-1) {
+            tbx_append_printf(buf, &used, bufsize, XIDT, inode[i]);
+        } else {
+            tbx_append_printf(buf, &used, bufsize, "/" XIDT, inode[i]);
+        }
+    }
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    //** and the ftypes
+    tbx_append_printf(buf, &used, bufsize, "FTYPE(hex): ");
+    for (i=n-1; i>=0; i--) {
+       if (i >= n-1) {
+           tbx_append_printf(buf, &used, bufsize, "%X", ftype[i]);
+       } else {
+           tbx_append_printf(buf, &used, bufsize, "/%X", ftype[i]);
+       }
+    }
+    tbx_append_printf(buf, &used, bufsize, "\n");
+
+    return(used);
+}
+
+//*****************************************************************
+// ll_inode_lut_get - Does an internal iLUT lookup of the inode
+//*****************************************************************
+
+void ll_inode_lut_get(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
+{
+    char *dentry[OS_PATH_MAX];
+    ex_id_t inode_curr, parent, inode_target;
+    ex_id_t  inode_table[OS_PATH_MAX];
+    int f, len, i, err, n_dirs;
+    int ftype[OS_PATH_MAX];
+    char *de;
+    char buf[64*1024];
+
+    inode_target = 0;
+    sscanf(name, XIDT, &inode_target);
+
+    //** Verify we have an ilut
+    if (lfs->ilut == NULL) {
+        fuse_reply_err(req, ENODATA);
+        return;
+    } else if (size == 0) {
+        fuse_reply_xattr(req, 64*1024);
+        return;
+    }
+
+    inode_curr = inode_target;
+    i = 0;
+    while ((err = os_inode_lut_get(lfs->ilut, 1, inode_curr, &parent, &f, &len, &de)) == 0) {
+        dentry[i] = de;
+        inode_table[i] = inode_curr;
+        ftype[i] =f;
+        inode_curr = parent;
+        i++;
+
+        if (parent == 0) break;  //** We've reached the root directory
+        if (i == OS_PATH_MAX-1) {  //** We have a loop so flag it
+            fprintf(stderr, "ERROR: Hit recursion max! inode_target=" XIDT " curr_parent=" XIDT " cuff_ftype=%d curr_dentry=%s\n", inode_target, parent, f, de);
+            break;
+        }
+    }
+
+    n_dirs = i;
+
+    //** Kick out if not found
+    if (err != 0) {
+        fuse_reply_err(req, ENODATA);
+        for (i=0; i<n_dirs; i++) if (dentry[i]) tbx_free(dentry[i]);
+        return;
+    }
+
+    //** Now form the return string
+    len = _ll_inode_lookup_text(buf, sizeof(buf), n_dirs, dentry, inode_table, ftype);
+
+    fuse_reply_buf(req, buf, len);
+    return;
+}
+
+//*****************************************************************
+// ll_inode_os_get - Gets the path info from the OS
+//*****************************************************************
+
+void ll_inode_os_get(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
+{
+    ex_id_t inode_target;
+    int ftype, force_os, err, len;
+    char fname[OS_PATH_MAX];
+
+    inode_target = 0;
+    sscanf(name, XIDT, &inode_target);
+    if (size == 0) {
+        fuse_reply_xattr(req, 64*1024);
+        return;
+    }
+
+    force_os = 1;
+    fname[0] = 0;
+    err = ll_inode2path(lfs, inode_target, fname, &ftype, &force_os);
+    if (err) {
+        fuse_reply_err(req, ENODATA);
+        return;
+    }
+
+    len = strlen(fname);
+    fname[len] = '\n'; fname[len+1]=0;
+    fuse_reply_buf(req, fname, len+1);
+    return;
+}
+
+//*****************************************************************
+// ll_inode_del_get - Deletes the inode from the ILUT
+//*****************************************************************
+
+void ll_inode_del_get(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
+{
+    ex_id_t inode_target;
+
+    inode_target = 0;
+    sscanf(name, XIDT, &inode_target);
+    os_inode_lut_del(lfs->ilut, 1, inode_target);
+
+    fuse_reply_err(req, ENODATA);
+    return;
+}
+
 //*****************************************************************
 // ll_getxattr - Rerturns an extended attribute
 //*****************************************************************
@@ -589,6 +741,20 @@ void ll_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name, size_t size)
     char *buf;
     int err, ftype;
     int force_os = 0;
+
+    //** See if we have a special xattr we directly parse
+    if (strncmp("lfs.inode.", name, 10) == 0) {
+        if (strncmp("lut.", name + 10, 4) == 0) {
+            ll_inode_lut_get(lfs, req, ino, name + 14, size);
+            return;
+        } else if (strncmp("os.", name + 10, 3) == 0) {
+            ll_inode_os_get(lfs, req, ino, name + 13, size);
+            return;
+        } else if (strncmp("del.", name + 10, 4) == 0) {
+            ll_inode_del_get(lfs, req, ino, name + 14, size);
+            return;
+        }
+    }
 
     //** See if we have a valid inode
 retry:
