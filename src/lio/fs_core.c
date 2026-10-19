@@ -2666,6 +2666,54 @@ void lio_fs_get_tape_attr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fn
 }
 
 //*****************************************************************
+//  lio_fs_set_usr1 - Uses the provided attr value as a filename
+//      to store  the normal SIGUSR1 information
+//*****************************************************************
+
+void lio_fs_set_usr1(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *attrname, const char *fout, int v_size)
+{
+    char fname[OS_PATH_MAX];
+
+    if (v_size >= OS_PATH_MAX) {
+        notify_printf(fs->lc->notify, 1, fs->lc->creds, "ERROR: lio_fs_set_usr1 fname is to large!  v_size=%d\n", v_size);
+        return;
+    }
+
+    memcpy(fname, fout, v_size);
+    fname[v_size] = '\0';
+
+    tbx_siginfo_trigger(SIGUSR1, fname);
+
+    return;
+}
+
+//*****************************************************************
+//  lio_fs_get_usr1 - Returns the normal SIGUSR1 information via an attribute
+//*****************************************************************
+
+void lio_fs_get_usr1(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, char *val, int *v_size)
+{
+    char path[1024];
+
+    //** Make the name we are dumping the data too
+    strcpy(path, "/tmp/lfs_usr1.txt");
+
+    //** Kick out if the buffer is to small but specify what we need
+    if (*v_size < (int)strlen(path)+50) {
+        *v_size = strlen(path)+50;  //** Give us a buffer so the next try will work
+        return;
+    }
+
+    tbx_siginfo_trigger(SIGUSR1, path);
+
+    sprintf(val, "Dumped: %s\n", path);
+    *v_size = strlen(val)+1;
+
+    return;
+}
+
+
+//*****************************************************************
 // lio_fs_getxattr - Gets an extended attribute
 //   NOTE: We don't want to record most of the security ACL checks since they are always NULL
 //*****************************************************************
@@ -2679,7 +2727,7 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     char *val[2];
     char *attrs[2];
     char *use_instead;
-    int v_size[2], err, ftype, na;
+    int v_size[2], err, ftype, na, vs;
     ex_id_t ino;
     gop_op_status_t status;
     int n_readers, n_writers;
@@ -2736,6 +2784,15 @@ int lio_fs_getxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
           TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
           return(-ENODATA);
        }
+    }
+
+    //** See if we are trying to dump state
+    if (strcmp("lfs.usr1", name) == 0) {
+        vs = size;
+        lio_fs_get_usr1(fs, ug, name, buf, &vs);
+        FS_MON_OBJ_DESTROY();
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_GETXATTR].finished);
+        return(vs);
     }
 
 use_alternate:
@@ -2874,7 +2931,7 @@ int lio_fs_setxattr(lio_fs_t *fs, lio_os_authz_local_t *ug, const char *fname, c
     int v_size, err, lmode;
     int n_readers, n_writers;
 
-    v_size= size;
+    v_size = size;
 
     if (strcmp("system.posix_acl_access", name) == 0) return(0);  //** We don't allow setting that now
     if (strcmp("system.exnode", name) == 0) return(0);  //** We don't allow setting the exnode from FUSE
@@ -2931,7 +2988,13 @@ already_have_a_lock:
     }
 
     v_size = size;
-    if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
+    //** See if we are trying to dump state
+    if (strcmp("lfs.usr1", name) == 0) {
+        lio_fs_set_usr1(fs, ug, name, fval, v_size);
+        FS_MON_OBJ_DESTROY();
+        TBX_STATS_INC(fs->stats.op[FS_SLOT_SETXATTR].finished);
+        return(0);
+    } else if ((fs->enable_tape == 1) && (strcmp(name, LIO_FS_TAPE_ATTR) == 0)) {  //** Got the tape attribute
         //** Make sure we can access it
         if (fs_osaz_attr_access(fs, ug, fname, name, OS_MODE_WRITE_IMMEDIATE, &filter)) {
             if (ofd) gop_sync_exec(os_close_object(fs->lc->os, ofd));  //** Close it if needed
