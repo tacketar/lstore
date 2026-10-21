@@ -405,11 +405,9 @@ gop_op_status_t vec_write_command(gop_op_generic_t *gop, tbx_ns_t *ns)
     tbx_ns_chksum_write_set(ns, op->ncs);
     tbx_ns_chksum_write_disable(ns);
 
-    log_printf(1, "sending command ns=%d gid=%d, command=%s\n", tbx_ns_getid(ns), gop_id(gop), buffer);
-
     err = send_command(gop, ns, buffer);
     if (err.op_status != OP_STATE_SUCCESS) {
-        log_printf(10, "write_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
+        log_printf(1, "write_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
     }
 
     if (buffer != stackbuffer) tbx_free(buffer);
@@ -438,11 +436,9 @@ gop_op_status_t write_command(gop_op_generic_t *gop, tbx_ns_t *ns)
     tbx_ns_chksum_write_set(ns, op->ncs);
     tbx_ns_chksum_write_disable(ns);
 
-    log_printf(1, "sending command ns=%d gid=%d, command=%s\n", tbx_ns_getid(ns), gop_id(gop), buffer);
-
     err = send_command(gop, ns, buffer);
     if (err.op_status != OP_STATE_SUCCESS) {
-        log_printf(10, "write_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
+        log_printf(1, "write_command: Error with send_command()! ns=%d\n", tbx_ns_getid(ns));
     }
 
     return(err);
