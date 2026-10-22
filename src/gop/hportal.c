@@ -29,6 +29,7 @@
 #include <tbx/atomic_counter.h>
 #include <tbx/fmttypes.h>
 #include <tbx/network.h>
+#include <tbx/notify.h>
 #include <tbx/que.h>
 #include <tbx/siginfo.h>
 #include <tbx/stack.h>
@@ -405,6 +406,7 @@ void hc_history_destroy(hc_history_t *h)
 void hc_history_add(hc_history_t *h, hconn_t *hc)
 {
     hc_history_ele_t *c;
+    char ppbuf1[100];
 
     c = &(h->hc[h->slot % h->max_size]);
     if (c->skey) tbx_free(c->skey);
@@ -419,6 +421,15 @@ void hc_history_add(hc_history_t *h, hconn_t *hc)
 
     //** Update the slot
     h->slot++;
+
+    //** If no commands were processed then flag it
+c->n_commands = -1;
+    if (c->n_commands <= 0) {
+        if (tbx_notify_handle) {
+            tbx_notify_printf(tbx_notify_handle, 1, NULL, "WARN: skey=%s ns=%d cmds_processed=" I64T " reason=%s DT=%s\n",
+                c->skey, c->ns_id, c->n_commands, hc_reasons[c->reason], tbx_stk_pretty_print_time(c->dt, 0, ppbuf1));
+        }
+    }
 }
 
 //************************************************************************
