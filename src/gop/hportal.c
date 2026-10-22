@@ -423,7 +423,6 @@ void hc_history_add(hc_history_t *h, hconn_t *hc)
     h->slot++;
 
     //** If no commands were processed then flag it
-c->n_commands = -1;
     if (c->n_commands <= 0) {
         if (tbx_notify_handle) {
             tbx_notify_printf(tbx_notify_handle, 1, NULL, "WARN: skey=%s ns=%d cmds_processed=" I64T " reason=%s DT=%s\n",
