@@ -36,6 +36,7 @@ typedef struct {
     tbx_stack_t *stack;
     int state;
     ex_id_t parent;
+    char dirname[OS_PATH_MAX];
 } ll_dir_iter_t;
 
 lio_fuse_t *glfs = NULL;  //** Global LFS handle
@@ -282,9 +283,12 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
     lio_os_authz_local_t ug;
     struct fuse_entry_param fe;
     ex_id_t hparent;
-    int err, len, ftype, hftype, hlen, force_os;
+    int err, len, ftype, hftype, hlen, force_os, loop;
     char fname[OS_PATH_MAX];
     char *hde;
+
+    loop = 0;
+retry:
 
     //** Do the FS stat call
     ftype = 0;
@@ -327,8 +331,13 @@ void ll_object_reply_entry(lio_fuse_t *lfs, fuse_req_t req, fuse_ino_t parent, c
 hl_exists:  //** We've done any cleanup needed so continue as normal
 
     if (fe.attr.st_ino == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
-        log_printf(0, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
-        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s\n", fe.attr.st_ino, path);
+        log_printf(0, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s loop=%d\n", fe.attr.st_ino, path, loop);
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:B MISSING_INODE! inode=" XIDT " path=%s retry=%d retry_wait=" TT "us\n", fe.attr.st_ino, path, loop, lfs->ll_stat_retry_wait);
+        if (loop == 0) { //** We're going to try 1 more time in hopes the LServer is just busy
+            loop++;
+            apr_sleep(lfs->ll_stat_retry_wait);
+            goto retry;
+        }
         fuse_reply_err(req, -EREMOTEIO);
         return;
     }
@@ -869,6 +878,11 @@ retry:
     tbx_type_malloc_clear(dit, ll_dir_iter_t, 1);
     dit->lfs = lfs;
     dit->parent = ino;
+
+    //** Keep our base path in case we have do do a manual stat call due to a missing inode
+    strncpy(dit->dirname, fname, OS_PATH_MAX);
+    dit->dirname[OS_PATH_MAX-1] = '\0';
+
     dit->fsit = lio_fs_opendir(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, 1);
     _lfs_hint_release(lfs, &ug);
 
@@ -905,8 +919,7 @@ void ll_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
         //** Cyle through releasing all the entries
         while ((de = (ll_dir_entry_t *)tbx_stack_pop(dit->stack)) != NULL) {
             log_printf(15, "fname=%s\n", de->dentry);
-            tbx_log_flush();
-            tbx_free(de->dentry);
+            if (de->dentry) tbx_free(de->dentry);
             tbx_free(de);
         }
 
@@ -932,6 +945,8 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
     struct stat stbuf;
     int bleft, bused, be, bmax;
     char buf[1024*1024];
+    char fname[OS_PATH_MAX];
+    lio_os_authz_local_t ug;
 
     if (dit == NULL) {
         fuse_reply_err(req, EBADF);
@@ -982,6 +997,39 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
             }
         }
 
+        //** Uhoh this object is missing an inode so try again in case it was an LServer create/remove op
+        if (de->fe.attr.st_ino == OS_INODE_MISSING) {
+            log_printf(0, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s dirname=%s\n", de->fe.attr.st_ino, de->dentry, dit->dirname);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s dirname=%s\n", de->fe.attr.st_ino, de->dentry, dit->dirname);
+
+            //** Wait a bit for things to complete on hte LServer
+            apr_sleep(lfs->ll_stat_retry_wait);
+
+            //** Form the full name
+            snprintf(fname, sizeof(fname), "%s/%s", dit->dirname, de->dentry);
+            fname[sizeof(fname)-1] = '\0';
+
+            //** Do the stat
+            err = lio_fs_stat_full(lfs->fs, _ll_get_fuse_ug(lfs, &ug, fuse_req_ctx(req)), fname, &(de->fe.attr), &ftype, NULL, 1, lfs->no_cache_stat_if_file);
+            log_printf(0, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+
+            if (err == (-ENOENT)) { //** It's missing so we were caught i nthe middle of a delete
+                if (de->dentry) tbx_free(de->dentry);
+                tbx_free(de);
+                continue;  //** Skip to the next entry
+            } else if (err != 0) {
+                fuse_reply_err(req, EIO);
+                return;
+            } else if (de->fe.attr.st_ino == OS_INODE_MISSING) {
+                log_printf(0, "ERROR:D MISSING_INODE retry still bad! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+                notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:D MISSING_INODE retry still bad! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+                fuse_reply_err(req, EIO);
+                return;
+            }
+        }
+
+
         tbx_stack_move_to_bottom(dit->stack);
         tbx_stack_insert_below(dit->stack, de);
 
@@ -991,13 +1039,6 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
         de->fe.generation = 0;
         de->fe.attr_timeout = lfs->ll_stat_timeout;
         de->fe.entry_timeout = lfs->ll_entry_timeout;
-
-        if (de->fe.attr.st_ino == OS_INODE_MISSING) { //** Uhoh this object is missing an inode so kick out with an error
-            log_printf(0, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s\n", de->fe.attr.st_ino, de->dentry);
-            notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:C MISSING_INODE! inode=" XIDT " de=%s\n", de->fe.attr.st_ino, de->dentry);
-            fuse_reply_err(req, EIO);
-            return;
-        }
 
         //** Add it to the ilut if not a special entry
         if ((strcmp(de->dentry, ".") != 0) && (strcmp(de->dentry, "..") != 0)) {
@@ -1597,9 +1638,12 @@ void ll_lseek(fuse_req_t req, fuse_ino_t ino, off_t off, int whence, struct fuse
 void lfs_ll_print_fuse_info(void *arg, FILE *fd)
 {
     lio_fuse_t *lfs = arg;
+    double d;
 
     fprintf(fd, "ll_stat_timeout = %lf\n", lfs->ll_stat_timeout);
     fprintf(fd, "ll_entry_timeout = %lf\n", lfs->ll_entry_timeout);
+    d = lfs->ll_stat_retry_wait / (1.0*APR_USEC_PER_SEC);
+    fprintf(fd, "ll_stat_retry_wait = %lf\n", d);
 
     fprintf(fd, "ilut_section = %s\n\n", lfs->ilut_section);
 
@@ -1628,6 +1672,7 @@ void lfs_ll_init(void *userdata, struct fuse_conn_info *conn)
     //** Get the stat/attr and entry timeouts
     glfs->ll_stat_timeout = tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_timeout", 5);
     glfs->ll_entry_timeout = tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_timeout", 1000);
+    glfs->ll_stat_retry_wait = APR_USEC_PER_SEC * tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_retry_wait", 1);
 
     //** Load the LUT
     glfs->ilut_section = tbx_inip_get_string(glfs->lc->ifd, glfs->lfs_section, "ilut_section", "ilut");

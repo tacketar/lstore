@@ -73,6 +73,7 @@ struct lio_fuse_t {
     lio_fs_t *fs;
     double ll_entry_timeout;
     double ll_stat_timeout;
+    apr_time_t ll_stat_retry_wait;
 };
 
 #define IS_CAP(cap, var) (((cap) & (var)) ? 1 : 0)
