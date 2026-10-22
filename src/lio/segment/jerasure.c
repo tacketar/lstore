@@ -1355,7 +1355,6 @@ gop_op_status_t segjerase_read_func(void *arg, int id)
     }
 
 tryagain:  //** We first try allowing blacklisting to proceed as normal and then start over if that fails
-
     q = gop_opque_new();
     tbx_tbuf_var_init(&tbv);
     magic_stripe = JE_MAGIC_SIZE*s->n_devs;
@@ -1463,8 +1462,8 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                             }
                         }
 
-                        if (j == 0) { //** No data
-                            data_ok = 2;
+                        if (j == 0) { //** No data so check that we got enough responses to validate no data exists vs missing allocations
+                            if  (check_status.error_code < s->n_parity_devs) data_ok = 2;
                         } else {  //** Got some non-zero data
                             data_ok = ((magic_count[index] == s->n_devs) && (check_status.error_code == 0)) ? 1 : 0;
                         }
