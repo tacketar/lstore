@@ -70,8 +70,6 @@
 
 #define JE_MAGIC_SIZE 4
 
-#define JE_MAX_RETRY 5
-
 // Forward declaration
 const lio_segment_vtable_t lio_jeraseseg_vtable;
 
@@ -97,6 +95,8 @@ typedef struct {
     int data_size;
     int parity_size;
     int paranoid_check;
+    int retry_max;
+    apr_time_t retry_wait;
     int w;
 } segjerase_priv_t;
 
@@ -1488,7 +1488,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
                             status.error_code = op_status.error_code;
                             hard_error = 1;
                         } else {  //** Recoverable
-                            log_printf(5, "seg=" XIDT " recoverable write error off=" XOT " len= "XOT " n_parity=%d good=%d error_code=%d magic_used=%d index=%d magic_count[index]=%d\n",
+                            log_printf(5, "seg=" XIDT " recoverable read error off=" XOT " len= "XOT " n_parity=%d good=%d error_code=%d magic_used=%d index=%d magic_count[index]=%d\n",
                                        segment_id(sw->seg), sw->iov[slot].offset, sw->iov[slot].len, s->n_parity_devs, magic_count[index], op_status.error_code, magic_used, index, magic_count[index]);
                             if (hard_error == 0) status.error_code = op_status.error_code;
                             soft_error = 1;
@@ -1648,7 +1648,7 @@ tryagain:  //** We first try allowing blacklisting to proceed as normal and then
     gop_opque_free(q, OP_DESTROY);
 
     //** See if we need to retry without blacklisting enabled
-    if ((hard_error > 0) && (s->blacklist) && (loop < JE_MAX_RETRY)) {
+    if ((hard_error > 0) && (s->blacklist) && (loop < s->retry_max)) {
         log_printf(0, "sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
         if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR: sid=" XIDT " RETRY Looks like we failed to read with blacklisting enabled so trying again\n", segment_id(sw->seg));
         loop++;
@@ -1704,6 +1704,7 @@ gop_op_status_t segjerase_write_func(void *arg, int id)
     gop_op_generic_t *gop;
     tbx_tbuf_var_t tbv;
     int loop;
+
     loop = 0;
 
     // Give some garbage initial values since Alan didn't give any
@@ -1935,9 +1936,10 @@ tryagain: //** In case blacklisting failed we'll retry with it disabled
     gop_opque_free(q, OP_DESTROY);
 
     //** See if we need to retry because of a hard error or an almost hard_error (soft_error=2)
-    if (((soft_error > 1) || (hard_error > 0)) && (loop < JE_MAX_RETRY)) {
-        log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
+    if (((soft_error > 1) || (hard_error > 0)) && (loop < s->retry_max)) {
+        log_printf(5, "sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again wait=" TT "us\n", segment_id(sw->seg), s->retry_wait);
         if (tbx_notify_handle) tbx_notify_printf(tbx_notify_handle, 1, NULL, "HARD_ERROR: sid=" XIDT " RETRY Looks like we failed to write with blacklisting enabled so trying again\n", segment_id(sw->seg));
+        apr_sleep(s->retry_wait);
         loop++;
         goto tryagain;
     }
@@ -2444,6 +2446,8 @@ lio_segment_t *segment_jerasure_create(void *arg)
 
     //** Pluck the paranoid max parity stack size setting for Jerase
     s->paranoid_check = lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_paranoid", 0);
+    s->retry_wait = APR_USEC_PER_SEC * lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_retry_wait_sec", 0);
+    s->retry_max = lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_retry_max", 0);
     s->max_parity_on_stack = lio_lookup_integer_flag_service(es, ESS_RUNNING, "jerase_max_parity_on_stack", 1024*1024);
     s->magic_cksum = 1;
 
