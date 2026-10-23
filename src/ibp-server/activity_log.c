@@ -2640,7 +2640,8 @@ int alog_read_thread_open(activity_log_t *alog, int cmd, FILE *outfd)
     if (tid >= alog->max_id) {
         log_printf(0, "alog_read_thread_open: Invalid TID!!! tid=%d max_tid=%d\n", tid,
                    alog->max_id);
-        fprintf(outfd, "CMD:THREAD_OPEN ERROR INVALID id:%d max:%d\n", tid, alog->max_id);
+        fprintf(stderr, "CMD:THREAD_OPEN ERROR INVALID id:%d max:%d\n", tid, alog->max_id);
+        if (outfd) fprintf(outfd, "CMD:THREAD_OPEN ERROR INVALID id:%d max:%d\n", tid, alog->max_id);
         return (1);
     }
 
@@ -3340,6 +3341,7 @@ int activity_log_read_next_entry(activity_log_t *alog, FILE *fd)
         n = alog->table[command].process_entry(alog, command, fd);
     } else {
         log_printf(0, "activity_log_read_next_entry: Invalid command: %d\n", command);
+        fprintf(stderr, "Invalid header! t=" TT " * id=%d command=%d!!!!!!!!!!!!!!!!\n", t, id, command);
         if (fd != NULL)
             fprintf(fd, "Invalid header! t=" TT " * id=%d command=%d!!!!!!!!!!!!!!!!\n", t, id,
                     command);
