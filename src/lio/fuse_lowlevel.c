@@ -382,7 +382,7 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 direct_lookup:
     //** If we made it here we are doing a direct lookup so we need to get the path and then split it
     if ((ll_inode2path(lfs, parent, path, &ftype, &force_os) != 0) && (force_os == 1)) {
-        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "LOOKUP: missing parent=" XIDT " name=%s err=ENOENT\n", parent, name);
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "WARN-LOOKUP: missing parent=" XIDT " name=%s err=ENOENT\n", parent, name);
         fuse_reply_err(req, ENOENT);
         return;
     }
@@ -402,7 +402,7 @@ direct_lookup:
     _lfs_hint_release(lfs, &ug);
     if (err != 0) {
         if (force_os == 0) { force_os = 1; goto direct_lookup; };
-        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "LOOKUP: missing parent=" XIDT " name=%s stat_err=%d\n", parent, name, -err);
+        notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "WARN-LOOKUP: missing parent=" XIDT " name=%s stat_err=%d\n", parent, name, -err);
         fuse_reply_err(req, -err);
         return;
     }
