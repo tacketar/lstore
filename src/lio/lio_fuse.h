@@ -71,6 +71,7 @@ struct lio_fuse_t {
     struct fuse_conn_info *conn;
     struct fuse_config *fuse_cfg;
     lio_fs_t *fs;
+    int ll_drop_mangled_inodes;
     double ll_entry_timeout;
     double ll_stat_timeout;
     apr_time_t ll_stat_retry_wait;

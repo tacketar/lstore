@@ -1024,8 +1024,15 @@ void ll_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, stru
                 fuse_reply_err(req, EIO);
                 return;
             } else if (de->fe.attr.st_ino == OS_INODE_MISSING) {
-                log_printf(0, "ERROR:D MISSING_INODE retry still bad! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
                 notify_printf(lfs->lc->notify, 1, lfs->lc->creds, "ERROR:D MISSING_INODE retry still bad! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+                log_printf(0, "ERROR:D MISSING_INODE retry still bad! inode=" XIDT " de=%s dirname=%s fs_stat_err=%d\n", de->fe.attr.st_ino, de->dentry, dit->dirname, err);
+
+                if (lfs->ll_drop_mangled_inodes) { //** Most likely it was deleted on another node so we are just dropping it
+                    if (de->dentry) tbx_free(de->dentry);
+                    tbx_free(de);
+                    continue;
+                }
+
                 fuse_reply_err(req, EIO);
                 return;
             }
@@ -1642,6 +1649,7 @@ void lfs_ll_print_fuse_info(void *arg, FILE *fd)
     lio_fuse_t *lfs = arg;
     double d;
 
+    fprintf(fd, "ll_drop_mangled_inodes = %d\n", lfs->ll_drop_mangled_inodes);
     fprintf(fd, "ll_stat_timeout = %lf\n", lfs->ll_stat_timeout);
     fprintf(fd, "ll_entry_timeout = %lf\n", lfs->ll_entry_timeout);
     d = lfs->ll_stat_retry_wait / (1.0*APR_USEC_PER_SEC);
@@ -1675,6 +1683,9 @@ void lfs_ll_init(void *userdata, struct fuse_conn_info *conn)
     glfs->ll_stat_timeout = tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_timeout", 5);
     glfs->ll_entry_timeout = tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_timeout", 1000);
     glfs->ll_stat_retry_wait = APR_USEC_PER_SEC * tbx_inip_get_double(glfs->lc->ifd, glfs->lfs_section, "ll_stat_retry_wait", 1);
+
+    //** And what we do with mangled inodes
+    glfs->ll_drop_mangled_inodes = tbx_inip_get_integer(glfs->lc->ifd, glfs->lfs_section, "ll_drop_mangled_inodes", 1);
 
     //** Load the LUT
     glfs->ilut_section = tbx_inip_get_string(glfs->lc->ifd, glfs->lfs_section, "ilut_section", "ilut");
